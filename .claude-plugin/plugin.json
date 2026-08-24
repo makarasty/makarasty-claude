@@ -1,0 +1,13 @@
+{
+  "name": "makarasty",
+  "description": "Parallel agent sessions that verify a running app instead of guessing at it. Gated browser checks, per-stage model selection, file-based reporting.",
+  "version": "0.1.0",
+  "author": {
+    "name": "makarasty",
+    "url": "https://github.com/makarasty"
+  },
+  "agents": [
+    "./agents/fleet-scenario.md",
+    "./agents/fleet-triage.md"
+  ]
+}
