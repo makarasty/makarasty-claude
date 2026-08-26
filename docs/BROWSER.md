@@ -111,7 +111,9 @@ rather than merely possible.
 **Zooming the application window out buys another readable column.** Nobody thinks of it with eight chats
 already open.
 
-**On Windows a window can be made larger than the monitors.** Drag it left until its left edge passes
+**On Windows a window can be made larger than the monitors.** Windows only; macOS has no window manager
+equivalent, though a virtual display or a second Space serves the same end, and on Linux it depends on the
+compositor. Drag it left until its left edge passes
 beyond the screen, then grab the right edge and pull, and the top edge as well. The window keeps growing
 past what the desktop can show. Parts of it, whole panes included, can end up entirely off screen while
 the compositor keeps rendering them.

@@ -12,6 +12,24 @@ file. **Worker** is a session that runs one brief. **Wave** is a batch of worker
 Workers are fire and forget. They read a brief, write findings, and exit. They never message the planner
 and the planner never messages them, because a file has an address and a session handle does not.
 
+## A worker gets exactly one interactive question
+
+**The only thing a worker may ask the operator directly is to display its Browser pane.** Nothing else.
+
+In a fleet the operator is looking at one chat out of five or ten, usually the planner's. A worker that
+opens a second interactive question sits there unanswered, holding a claimed task, while its chat is not
+the one being read. One worker doing that costs its own run; several doing it stall the queue.
+
+The pane question is the exception because it is the only one the planner cannot answer: the planner
+cannot open a pane, and a blind worker that guesses instead produces fiction. That question also announces
+itself on disk through `.waiting`, so it is visible without anyone reading that chat.
+
+Everything else goes to the planner as a file in `ask/`, and the worker keeps working. Missing context, an
+ambiguous assertion, a screen that turns out to belong to someone else, a task that looks wrong: all of it
+is a question for the planner, answered at the worker's next task boundary.
+
+**Only the planner may ask the operator**, because the operator is watching the planner.
+
 ## Directory layout
 
 ```
@@ -145,3 +163,42 @@ every command reads it when present:
 
 Absent that file, each command discovers what it can and says plainly what it could not find. Guessing at
 an origin or a login form wastes an hour and produces nothing.
+
+## Portability
+
+Two things a fleet needs differ per operating system. Everything else here is plain files.
+
+**Is a port listening.**
+
+```bash
+# macOS, Linux
+lsof -nP -iTCP:5173 -sTCP:LISTEN || ss -ltn 'sport = :5173'
+```
+```powershell
+# Windows
+Get-NetTCPConnection -State Listen -LocalPort 5173
+```
+
+**Machine load, for a measurement to be interpretable.**
+
+```bash
+# Linux
+free -m; nproc; uptime
+# macOS
+vm_stat; sysctl -n hw.ncpu; uptime
+```
+```powershell
+# Windows
+$os = Get-CimInstance Win32_OperatingSystem
+"free {0:N1}GB of {1:N1}GB" -f ($os.FreePhysicalMemory/1MB), ($os.TotalVisibleMemorySize/1MB)
+```
+
+A project's `FLEET.md` may pin the exact command for its own machine, which removes the guess entirely.
+
+Atomic claiming works everywhere: `mkdir` failing on an existing directory is POSIX behaviour and NTFS
+behaviour alike, and it is the reason the claim is a directory rather than a file.
+
+The one genuinely platform bound trick is growing a window past the edges of the display, which is
+described for Windows in [`BROWSER.md`](BROWSER.md). macOS has no equivalent through the window manager,
+though a virtual display via `displayplacer` or a second Space serves the same purpose. On Linux it depends
+entirely on the compositor.

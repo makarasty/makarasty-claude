@@ -29,7 +29,8 @@ inputs commonly ignore synthetic events and the form then blocks submit in silen
 
 ## 2. Confirm the services are up
 
-Check that the ports the runbook names are listening. Dev servers, emulators and watchers belong to the
+Check that the ports the runbook names are listening, using the command for this operating system from
+`docs/PROTOCOL.md`. Dev servers, emulators and watchers belong to the
 operator, so a missing one is a precise report rather than something to start.
 
 ## 3. Open the pane

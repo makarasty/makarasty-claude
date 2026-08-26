@@ -79,9 +79,13 @@ plan repair itself instead of being wrong for the entire run.
 A worker writes `ask/<chip>-<n>.md`, one question with enough context to answer without the transcript,
 then **keeps working**. It reads `answers/<chip>-<n>.md` at its next task boundary.
 
-Blocking on an answer is what turns a question into a stall, and most questions are not worth a stall. The
-ones that are, are almost always about the pane, and those go to the operator through `.waiting` and
-`AskUserQuestion` instead, because the planner cannot open a pane.
+Blocking on an answer turns a question into a stall, and in a fleet the operator is reading one chat out
+of five. So a worker may ask the operator exactly one thing, which is to display its pane, and that one is
+the exception only because the planner cannot open a pane and a blind worker produces fiction. It goes
+through `.waiting` and `AskUserQuestion`, which puts it on disk where it is visible without anyone reading
+that chat.
+
+Every other question is a file, and the worker keeps moving while it waits for the answer.
 
 The planner watches `ask/` and `tasks/done/` with one `Monitor`, so both a question and a finished task
 wake it without polling.

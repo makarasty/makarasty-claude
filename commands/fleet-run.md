@@ -40,7 +40,9 @@ ended.
 
 Findings accumulate in one `<chip>.jsonl` across every task you take.
 
-A question for the planner goes in `ask/<chip>-<n>.md`, and then you keep working and read
+Ask the operator exactly one thing, ever: to display your Browser pane. Their eyes are on the planner's
+chat, not yours, so a second interactive question waits unanswered while you hold a claimed task. Every
+other question goes in `ask/<chip>-<n>.md`, and then you keep working and read
 `answers/<chip>-<n>.md` at your next task boundary. Blocking on an answer turns a question into a stall.
 A pane that is not displayed is the exception, and that goes to the operator through `.waiting` and
 `AskUserQuestion`, because the planner cannot open a pane.
