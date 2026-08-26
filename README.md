@@ -92,7 +92,6 @@ importantly, the axis the mission splits along.
 | `fix` | file cluster, re-verifying each entry before repairing | worktree |
 | `investigate` | hypothesis | worktree when instrumenting |
 | `implement` | seam | worktree |
-| `fix` | file cluster | worktree |
 | `research` | source | none |
 
 Splitting along the wrong axis is what makes a fleet run worthless. Two workers on one slice cost twice

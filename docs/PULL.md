@@ -81,6 +81,7 @@ claim directory and the done marker carry all the state. Deleting the task a wor
 that worker see its own work vanish with no way to tell a legitimate claim from a lost write, and there is
 no gain to trade against that: an extra file on disk costs nothing, and the claim attempt is what filters
 `ready/` anyway.
+
 ## Budgets and finishing together
 
 Every task carries `budget: <minutes>`, the planner's estimate.
