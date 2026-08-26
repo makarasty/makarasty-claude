@@ -14,11 +14,15 @@ Exercise a running system and report what is wrong with it.
 Split by **screen ownership**. Workers share one account against one running instance, so two workers on
 one screen invalidate each other the moment either changes state. Two workers on two screens do not.
 
-Isolation: none. Verification reads.
+Isolation: none. Verification changes no stored data.
 
-Posture: read only. State a worker changes is state another worker was measuring.
+Posture: exercise every control that neither mutates shared state nor leaves the machine, and read the
+rest. Open a dialog and cancel it. State a worker actually changes is state another worker was measuring,
+so the line is drawn at mutation rather than at clicking. See `SWEEPS.md` for the interaction posture and
+the sweeps a verify brief carries.
 
-Reference: [`BROWSER.md`](BROWSER.md) for the pane gate, [`PERF.md`](PERF.md) when the mission includes
+Reference: [`BROWSER.md`](BROWSER.md) for the pane gate, [`SWEEPS.md`](SWEEPS.md) for the interaction
+posture and the class-of-defect checks, [`PERF.md`](PERF.md) when the mission includes
 speed or stability.
 
 ## investigate

@@ -74,9 +74,26 @@ does not.
 
 Close it with the escape hatch: a screen that reveals its behaviour only by firing a reserved control is a
 limit of this run, recorded as unreached. Without that sentence the boundary reads as a puzzle to route
+
+## 5. Give verify briefs their sweeps
+
+A verify brief that only says "look at these screens" produces a worker that reads the first row of each
+and calls it fine. Name the sweeps it must run, from `docs/SWEEPS.md`, and say which screens each applies
+to.
+
+The interaction posture belongs in the brief in one line: exercise every control that neither mutates
+shared state nor leaves the machine, open dialogs and cancel them, and record every control that produced
+no observable change.
+
+Carry the truncation sweep on every screen that lists rows and claims a total, since a list holding a
+fraction of its own count while looking complete is invisible to a worker that is only reading. Carry the
+zoom sweep wherever layout or geometry decides what the operator sees, and name the zoom levels.
+
+Findings from a sweep report the conditions they were measured under: the zoom, the viewport, and the
+claimed total where a count is involved.
 around.
 
-## 5. Add measurement rules when speed is in scope
+## 6. Add measurement rules when speed is in scope
 
 A brief that measures speed carries a "How to measure" section built from
 `docs/PERF.md`: three runs with median and spread, machine load
@@ -84,7 +101,7 @@ recorded beside every number, a named comparison arm, `setInterval` for sampling
 
 Schedule those workers in their own wave. They are measuring a machine the other workers are loading.
 
-## 6. Offer the chips
+## 7. Offer the chips
 
 One `spawn_task` per brief, titled exactly `fleet <run-id> NN`. That title is the only reliable address
 later: session handles from `ListAgents` are opaque, change between calls, and reach other accounts on the
@@ -94,7 +111,7 @@ Each chip's prompt is one line:
 
     Run the brief at .fleet/<run-id>/brief-NN.md by following the makarasty fleet-run command. Invoke it as /makarasty:fleet-run .fleet/<run-id>/brief-NN.md, and if that name does not resolve in this session, read the command file directly: ls ~/.claude/plugins/cache/*/makarasty/*/commands/fleet-run.md
 
-## 7. Hand over
+## 8. Hand over
 
 Tell the operator, in this order: the run id, how many chips are waiting, the wave order you recommend and
 why, that each worker needing a browser wants its pane opened and kept on screen, and that

@@ -41,5 +41,6 @@ agent starts them on its own initiative. The other three are reachable by an age
 - `docs/PROTOCOL.md`: run layout, brief format, finding schema, project configuration.
 - `docs/MISSIONS.md`: the five mission kinds and how each one splits.
 - `docs/BROWSER.md`: the pane gate and why a hidden pane invents findings.
+- `docs/SWEEPS.md`: the interaction posture, and the checks that catch a class of defect rather than one bug.
 - `docs/PERF.md`: measuring speed on a machine the fleet is loading.
 - `docs/MODELS.md`: which model per stage, and the delegation economics behind it.
