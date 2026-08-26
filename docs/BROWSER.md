@@ -189,10 +189,39 @@ a targeted `querySelectorAll(...).length` answers the same question in twenty.
 Screenshots earn their cost when the question is about pixels. For everything else, the DOM read is both
 cheaper and stronger evidence.
 
+## Screenshots are the expensive read
+
+The ban on full accessibility trees works: measured across an eight worker run, zero were pulled. The cost
+moved to screenshots instead, 120 of them, 3.4 MB of base64, roughly 207,000 image tokens, and all of it
+inside four workers. One took fifty one.
+
+Fifty one screenshots is not fifty one questions about pixels. Take one when the question is genuinely
+visual, when a measurement disagrees with what the DOM says, or when the finding needs the picture as
+evidence. A screenshot to confirm a navigation landed, or to see whether a list has rows, is a DOM read
+wearing a costume.
+
+The delegation ratio holds regardless, 0.96 to 2.04 percent returned across that run. What varies by an
+order of magnitude is the denominator: the cheapest executor made 30 calls and took no screenshots, the
+most expensive made 194 and took 51.
+
 ## Spend round trips, not seconds
 
 Every tool call is a model round trip, and round trips dominate the wall clock of a browser walk far more
 than the page does. Measured 2026-08-26: two workers, 33 tool calls each, 219 s and 322 s.
+
+Measured across one eight worker run: **259 of 1,350 tool calls were avoidable on a conservative count,
+473 on a generous one**, so between a fifth and a third of every call made. Three shapes accounted for
+almost all of it, and each is recognisable while you are about to make the mistake:
+
+- **103 pairs of adjacent read-only probes.** Two `javascript_tool` calls in a row, neither changing
+  anything, each returning one value. One expression returns both.
+- **117 independent searches issued one per message.** Greps and file reads with no dependency between
+  them, each paying a full model turn. They go in one message.
+- **30 pairs of documentation reads.** Two files opened back to back that were always going to be read
+  together.
+
+Before any tool call, ask what else you already know you will need, and whether this call and that one
+depend on each other. Independent calls belong in one message; dependent ones do not.
 
 Three habits cut that without giving up a single check:
 

@@ -19,7 +19,11 @@ operator except an open pane.
 
 ## 1. Find the project's runbook
 
-Read `FLEET.md` at the repository root for the login runbook path, the origin, and the services that must
+Probe the session before reading anything. Three workers in the 2026-08-26 run read 58 KB of login runbook
+after they had already established they were signed in, which is a whole document of context bought for
+nothing. Read `FLEET.md` for the origin and probe; open the runbook only when the probe says signed out.
+
+`FLEET.md` at the repository root carries the login runbook path, the origin, and the services that must
 be running. Without it, look for `docs/HOW_TO_LOGIN_AS_AI.md`, then any `*LOGIN*AS*AI*` or
 `docs/**/login*.md`.
 

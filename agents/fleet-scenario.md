@@ -45,7 +45,9 @@ is the outcome this agent exists to produce.
   rather than sleeping a guessed interval.
 - Read state through expressions that return a small JSON string. A full accessibility tree costs
   thousands of tokens and you are here to keep bulk away from the parent.
-- Reserve screenshots for questions about pixels. They stay with you.
+- Reserve screenshots for questions genuinely about pixels. They stay with you, but they are the most
+  expensive read there is: one worker measured 2026-08-26 took 51 of them, roughly 207k image tokens
+  across the run. Confirming a navigation landed or that a list has rows is a DOM read, not a picture.
 - Record the viewport and the zoom beside every layout observation, read rather than assumed. Your pane is
   smaller than the browser window a person would open, so a width you never wrote down makes the finding
   unreproducible. `resize_window` changes it deliberately, its emulation persists on the tab across

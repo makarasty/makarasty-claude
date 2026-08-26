@@ -120,7 +120,10 @@ killed, compacted or closed at ninety percent of a two hour brief must leave tho
 holding them in context until the last minute is how a crashed worker reads as a clean area. The `.done`
 marker says you finished, never the existence of the file.
 
-Delegate a long scenario to one subagent, using the brief's `model:`. One spawn for the whole scenario
+Delegate the scenario to one subagent, using the brief's `model:`. One spawn per brief, and if the brief
+needs a second the brief was too big: browser subagents share this session's single pane, so a second
+spawn runs strictly after the first while you sit idle. One worker measured 2026-08-26 spent 74 percent of
+its life queued behind three of them. One spawn for the whole scenario
 rather than one per step: the fixed overhead per spawn makes small delegations cost more than doing the
 work inline. The economics and the exact numbers are in
 `docs/MODELS.md`; the subagent's required brief lines, tool

@@ -90,6 +90,22 @@ short work last finish within a few minutes of each other; the reverse order lea
 forty minute task while the rest idle. This is the whole answer to making a fleet land together, and it
 costs nothing but the order of the files.
 
+## One browser spawn per task
+
+A task is sized so it takes **one** scenario or profiler spawn. Browser subagents share the parent's single
+pane, so two spawns in one task run strictly one after the other, and the worker sits idle for the first
+one's entire duration.
+
+Measured 2026-08-26: the worker holding a task that needed three sequential spawns spent **4,306 of its
+5,784 seconds queued**, seventy four percent, and finished sixty four minutes after the first worker rather
+than the fourteen the plan assumed. Splitting that one task into three would have collapsed the run's
+spread to roughly twenty seven minutes on its own, which was the largest single saving available anywhere
+in that run.
+
+So: a task needing a second browser spawn was split wrong. File the remainder as its own task and let a
+free worker take it in parallel, because parallelism between workers is real while parallelism inside one
+is not.
+
 **A worker past twice its budget stops that task.** It writes what it has, records the rest as unreached
 with the reason, marks the task done, and takes the next one. An unbounded task starves the queue, and a
 worker that quietly runs four times its estimate is indistinguishable from one that hung.

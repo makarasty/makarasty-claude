@@ -34,6 +34,16 @@ walking two screens spent **57,103 tokens over 33 tool calls in 219 seconds**, a
 tokens** to the parent. That is **1.3 percent**, and it is the case the fixed overhead was always waiting
 for. The screenshots, DOM reads and settle polling stayed in the subagent.
 
+Confirmed at scale, 2026-08-26: executor return ratios across eight workers ran 0.96 to 2.04 percent,
+bracketing that reference. The ratio is stable and it is not the lever. **The denominator varies by an
+order of magnitude**: the cheapest executor made 30 tool calls, took no screenshots and read 4.0 M cached
+tokens; the most expensive made 194, took 51 screenshots and read 55.6 M. Both returned about the same
+number of lines. What a run costs is decided by how much the executor looked at, never by how much it
+said.
+
+The same run read 311 M cached tokens against 8.31 M non-cached, a ratio of 37 to 1, so most of what a
+fleet moves is cache rather than new context.
+
 The parent then spent six inline probes ruling on what came back, which was cheaper than a second spawn.
 That is the rule stated from the other side: one probe inline beats a spawn, one scenario delegated beats
 running it inline.
