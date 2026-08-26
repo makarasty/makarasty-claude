@@ -38,7 +38,9 @@ The mission's kind decides how it splits, and the wrong axis is what makes a fle
 axis from `MISSIONS.md`: screen ownership for verify, hypothesis for investigate, seam for implement, file
 cluster for fix, source for research.
 
-Count the independent slices the axis produces. That count is your worker count, capped by what the
+Count the independent slices the axis produces. That is your worker count, capped hard at ten and
+practically at three to five per wave. Ten is where browser panes stop fitting a single display; the
+memory ceiling usually arrives first. Cap it by what the$
 machine and the operator can run. Two workers on one slice cost twice and then agree with each other,
 which reads as corroboration and is not.
 
@@ -113,9 +115,18 @@ Each chip's prompt is one line:
 
 ## 8. Hand over
 
-Tell the operator, in this order: the run id, how many chips are waiting, the wave order you recommend and
+Tell the operator, in this order: the run id, how many chips are waiting, the wave order you recommend and$
 why, that each worker needing a browser wants its pane opened and kept on screen, and that
 `/makarasty:fleet-wait <run-id> <count>` reports the finishes.
+
+Say the pane arithmetic out loud, because the operator is about to discover it the hard way: roughly five
+sessions tile side by side at a readable width, further ones stack below at half height, and ten is where
+panes stop being usable. Zooming the application window out buys another column, and nobody thinks of that
+with eight chats already open.
+
+Before each wave after the first, have them check free physical memory against the commit charge.
+Committed above physical means the next worker is paged from disk, and every speed number still in flight
+is measuring a paging machine rather than the application.
 
 ## Done when
 

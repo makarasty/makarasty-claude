@@ -73,14 +73,27 @@ tool's output.
 
 ## Wave sizing
 
-Start workers that need a visible pane in waves of two or three, and close a wave's panes before opening
-the next. Each live pane costs real memory on a machine that is usually already running a dev server, a
-watcher and an emulator.
+**Ten panes is the hard ceiling, and it comes from the window rather than the machine.** Measured
+2026-08-26 on an ultrawide: about five sessions tile side by side at a readable width, and further ones
+stack below at roughly half the height, which is enough to keep a pane composited but not enough to read
+comfortably. Past ten, panes stop being usable at all. A larger display or a lower operating system scale
+raises the count, so tell the operator that zooming the window out is what buys them another column: they
+will not think of it while eight chats are already open.
 
-Workers measuring speed get a wave to themselves. They are measuring a machine the other workers are
-loading, so numbers taken alongside them describe the fleet rather than the application. See
-[`PERF.md`](PERF.md).
+**Three to five concurrent is the working range.** Two are confirmed working under real concurrent load.
+Eight ran at once on a 16 core, 31 GB box and stayed up, at a cost worth knowing: 5.0 GB physical free of
+31.2, 42 GB committed against 31 GB of physical memory, 14 node processes, 41 agent processes, 60 percent
+CPU. That machine is paging, and everything it reports about speed is a description of a paging machine.
 
+So the true limit is not the pane count. Before adding a wave, read free physical memory and the commit
+charge. Committed above physical means the next worker buys its slot from the pagefile, and every
+measurement in flight is contaminated from that moment.
+
+Close a wave's panes before opening the next.
+
+Workers measuring speed get a wave to themselves, and it is not optional at this scale. They are measuring
+a machine the other workers are loading, so numbers taken alongside them describe the fleet rather than
+the application. See [`PERF.md`](PERF.md).
 ## Order of operations
 
 1. `preview_start`. Creating the pane and loading the app both work while blind, and it means the operator
