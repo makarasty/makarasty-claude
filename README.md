@@ -60,7 +60,7 @@ worse than no run.
 Two concurrent live panes are measured working, in different sessions, with the second chat unfocused and
 greyed out — the gate is the pane being displayed, not chat focus. Three or more is untested.
 
-Details: [`docs/BROWSER.md`](docs/BROWSER.md).
+Details: [`docs/BROWSER.md`](docs/BROWSER.md). Measuring performance from inside a fleet: [`docs/PERF.md`](docs/PERF.md).
 
 ## Models
 

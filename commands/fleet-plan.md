@@ -59,6 +59,29 @@ one tier up: a missed defect costs a release, a tier costs cents.
 Every brief carries the read-only posture in writing: no archiving, deleting, or bulk edits. Shared
 account, concurrent testers.
 
+## Side effects that leave the machine
+
+If any briefed area can reach an outside system — telephony, payments, email or SMS, a shipping or
+fulfilment vendor, anything that costs money or contacts a real person — the brief gets a section
+titled **"Never do these"**, listing the specific controls by name. Not a general "be careful": the
+specific buttons.
+
+Write it as prohibitions a tester cannot reinterpret. "Never dial, including click-to-call from a row, and
+including just to see what the call window looks like" survives contact with a curious model; "avoid
+placing calls" does not.
+
+Add the escape hatch explicitly: if a screen only reveals its behaviour by firing that action, that is a
+limit of the run — record it as unreached and move on. Without that line a tester treats the prohibition
+as a puzzle to route around.
+
+## Performance briefs
+
+An area briefed for performance gets a **"How to measure"** section built from
+`${CLAUDE_PLUGIN_ROOT}/docs/PERF.md`: three runs with median and spread, machine load recorded beside
+every number, a named comparison arm, and `setInterval` rather than `requestAnimationFrame` for sampling.
+
+Schedule those chips in their own wave. They are measuring a machine the other chips are loading.
+
 ## Then offer the chips
 
 One `spawn_task` per brief. Title each chip exactly `fleet <run-id> <chip-id>` — that title is the only
