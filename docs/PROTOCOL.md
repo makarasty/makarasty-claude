@@ -20,6 +20,7 @@ and the planner never messages them, because a file has an address and a session
   01.jsonl             findings, append only, one JSON object per line
   01.notes.md          everything that is not a finding: assertions passed, claims refuted, tooling
   01.done              empty, written last, means this worker finished
+  01.waiting           present while the worker is blocked on an answer from the operator
   01.blocked           written instead of .done when the worker could not see
   backlog.md           written by collection
 ```
@@ -102,6 +103,18 @@ to it, and the planner treats the marker as permission to read.
 A worker that stayed blind writes `<chip-id>.blocked` instead, holding one line naming what it could not
 see, and writes no findings at all. Collection reports blocked workers separately. A run that reads
 "clean" while a third of it saw nothing is worse than no run.
+
+## The waiting marker
+
+A worker that stops to ask the operator something writes `<chip-id>.waiting` first, holding one line
+naming what it needs, and deletes it once the answer arrives.
+
+Without it a worker blocked on a question is indistinguishable from a worker doing its job: no new files
+either way, and the run simply takes longer for no visible reason. The most common case is a pane that was
+never displayed, where the worker is correctly refusing to guess and is waiting for a person who does not
+know they are being waited on.
+
+The marker turns a silent stall into a named one, and it is the only thing on disk that can.
 
 ## Project configuration
 

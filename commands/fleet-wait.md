@@ -10,10 +10,12 @@ between them.
 
 ## Pick the shape
 
-**One event per worker**, using `Monitor`, where each stdout line arrives as a notification:
+**One event per worker**, using `Monitor`, where each stdout line arrives as a notification. It watches
+`.waiting` alongside the finish markers, so a worker stopped on a question announces itself rather than
+merely looking slow:
 
 ```bash
-run=RUNID; seen=""; while true; do for f in .fleet/$run/*.done .fleet/$run/*.blocked; do [ -e "$f" ] || continue; case "$seen" in *"$f"*) ;; *) echo "finished: $f"; seen="$seen $f";; esac; done; sleep 5; done
+run=RUNID; seen=""; while true; do for f in .fleet/$run/*.done .fleet/$run/*.blocked .fleet/$run/*.waiting; do [ -e "$f" ] || continue; case "$seen" in *"$f"*) ;; *) case "$f" in *.waiting) echo "NEEDS YOU: $f -- $(cat "$f")";; *) echo "finished: $f";; esac; seen="$seen $f";; esac; done; sleep 5; done
 ```
 
 **One event when the whole run lands**, using a backgrounded Bash command that exits by itself:
@@ -53,4 +55,5 @@ If the operator asked to review the raw findings before merging, say so and stop
 
 ## Report
 
-Which workers finished, which were blocked, and the raw finding count each produced. Then collect.
+Which workers finished, which were blocked, which are waiting on the operator and for what, and the raw
+finding count each produced. Then collect.

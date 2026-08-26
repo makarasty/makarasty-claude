@@ -50,7 +50,10 @@ list live in `docs/BROWSER.md`. Run it.
 
 Live: continue.
 
-Blind: ask the operator to display this session's Browser pane with `AskUserQuestion`, and measure again
+Blind: write `.fleet/<run-id>/<chip-id>.waiting` holding one line saying the pane is not displayed, then
+ask the operator to display it with `AskUserQuestion`, and delete the marker once they answer. A worker
+stopped on a question looks exactly like a worker still working, and the marker is the only thing that
+says otherwise. Measure again
 when they answer, because the reading is the proof rather than the reply. Hold login and navigation until
 it reads live, since both hang for minutes through a blind pane and the hang reads as a broken backend.
 
@@ -90,7 +93,8 @@ could not see, and writes no findings.
 
 ## Done when
 
-Every step of the brief is either worked or recorded as unreached with its reason, findings carry
+No `.waiting` marker of yours is left on disk, every step of the brief is either worked or recorded as
+unreached with its reason, findings carry
 evidence, and the marker file exists.
 
 ## Report
