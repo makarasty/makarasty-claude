@@ -4,10 +4,20 @@ argument-hint: <run-id>
 allowed-tools: Bash, Read, Write, Glob, Grep, Agent
 ---
 
+The reference files named below (`docs/PROTOCOL.md` and its siblings) live in this plugin's own directory,
+not in the project you are working on. Resolve that directory once, before following any pointer:
+
+```bash
+ls -d ~/.claude/plugins/cache/*/makarasty/*/docs 2>/dev/null | tail -1
+```
+
+Empty output means the plugin is running from a checkout instead of an install: look for `docs/` beside
+the `commands/` directory holding this file.
+
 Merge every `.fleet/<run-id>/*.jsonl` into one ranked backlog. Mechanical work: dedupe, group, order. It
 does not decide whether a finding is worth fixing, and it does not fix anything.
 
-The finding schema is in [`${CLAUDE_PLUGIN_ROOT}/docs/PROTOCOL.md`](../docs/PROTOCOL.md).
+The finding schema is in `docs/PROTOCOL.md`.
 
 Above roughly thirty raw findings, hand the mechanical pass to the `fleet-triage` agent. Below that, the
 spawn costs more than the work.

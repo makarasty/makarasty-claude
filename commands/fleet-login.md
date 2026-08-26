@@ -3,6 +3,16 @@ description: Open and authenticate the project's local app in this session's bro
 allowed-tools: Bash, Read, Glob, Grep, AskUserQuestion, mcp__Claude_Browser__preview_start, mcp__Claude_Browser__preview_logs, mcp__Claude_Browser__javascript_tool, mcp__Claude_Browser__navigate
 ---
 
+The reference files named below (`docs/PROTOCOL.md` and its siblings) live in this plugin's own directory,
+not in the project you are working on. Resolve that directory once, before following any pointer:
+
+```bash
+ls -d ~/.claude/plugins/cache/*/makarasty/*/docs 2>/dev/null | tail -1
+```
+
+Empty output means the plugin is running from a checkout instead of an install: look for `docs/` beside
+the `commands/` directory holding this file.
+
 Get this session's Browser pane authenticated against the project's local app. Everything here runs on
 localhost against whatever account the project provisioned for agents, so it needs nothing from the
 operator except an open pane.
@@ -30,7 +40,7 @@ correct.
 
 ## 4. Gate the pane
 
-Run the gate from [`${CLAUDE_PLUGIN_ROOT}/docs/BROWSER.md`](../docs/BROWSER.md).
+Run the gate from `docs/BROWSER.md`.
 
 Blind: ask the operator to open the Browser pane in this chat with `AskUserQuestion`, then measure again
 when they reply. Hold the login until the reading is live, because an in-page login request through a

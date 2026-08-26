@@ -4,19 +4,29 @@ argument-hint: <path to brief file>
 disable-model-invocation: true
 ---
 
+The reference files named below (`docs/PROTOCOL.md` and its siblings) live in this plugin's own directory,
+not in the project you are working on. Resolve that directory once, before following any pointer:
+
+```bash
+ls -d ~/.claude/plugins/cache/*/makarasty/*/docs 2>/dev/null | tail -1
+```
+
+Empty output means the plugin is running from a checkout instead of an install: look for `docs/` beside
+the `commands/` directory holding this file.
+
 You are one worker in a fleet. Your whole job is the brief at `$ARGUMENTS`. Read it first, frontmatter
 included. An empty or missing path ends this here: say which path you tried.
 
 You report by writing files. No session messages you and you message none, so everything you learn has to
 reach the disk.
 
-Read [`${CLAUDE_PLUGIN_ROOT}/docs/PROTOCOL.md`](../docs/PROTOCOL.md) for the finding schema and the
+Read `docs/PROTOCOL.md` for the finding schema and the
 completion markers.
 
 ## 1. Set up for your kind
 
 The brief's `kind` decides what happens next. Working styles per kind are in
-[`${CLAUDE_PLUGIN_ROOT}/docs/MISSIONS.md`](../docs/MISSIONS.md).
+`docs/MISSIONS.md`.
 
 **Kinds that need the running application** (verify, and any other kind whose steps name a screen):
 
@@ -37,7 +47,7 @@ Verify scoped, and leave the full sweep to the operator.
 
 A pane that is not displayed stops compositing while still navigating and still returning plausible DOM,
 so a blind worker reports fiction confidently. The canonical gate, its threshold, and the full symptom
-list live in [`${CLAUDE_PLUGIN_ROOT}/docs/BROWSER.md`](../docs/BROWSER.md). Run it.
+list live in `docs/BROWSER.md`. Run it.
 
 Live: continue.
 
@@ -54,7 +64,7 @@ Work every step before writing anything. Depth is why a session was spent on thi
 Delegate a long scenario to one subagent, using the brief's `model:`. One spawn for the whole scenario
 rather than one per step: the fixed overhead per spawn makes small delegations cost more than doing the
 work inline. The economics and the exact numbers are in
-[`${CLAUDE_PLUGIN_ROOT}/docs/MODELS.md`](../docs/MODELS.md); the subagent's required brief lines, tool
+`docs/MODELS.md`; the subagent's required brief lines, tool
 loading included, are in `BROWSER.md`.
 
 Use the `fleet-scenario` agent for browser work. It already carries the gate, the output contract, and the

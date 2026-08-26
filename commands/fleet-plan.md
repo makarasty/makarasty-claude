@@ -4,11 +4,21 @@ argument-hint: <mission> [worker count]
 disable-model-invocation: true
 ---
 
+The reference files named below (`docs/PROTOCOL.md` and its siblings) live in this plugin's own directory,
+not in the project you are working on. Resolve that directory once, before following any pointer:
+
+```bash
+ls -d ~/.claude/plugins/cache/*/makarasty/*/docs 2>/dev/null | tail -1
+```
+
+Empty output means the plugin is running from a checkout instead of an install: look for `docs/` beside
+the `commands/` directory holding this file.
+
 Split the mission in `$ARGUMENTS` into briefs, one per worker session, then offer a chip for each and
 stop. You write briefs. You do not do the mission.
 
-Read [`${CLAUDE_PLUGIN_ROOT}/docs/PROTOCOL.md`](../docs/PROTOCOL.md) for the run layout and brief format,
-and [`${CLAUDE_PLUGIN_ROOT}/docs/MISSIONS.md`](../docs/MISSIONS.md) for the mission kinds. Both are short.
+Read `docs/PROTOCOL.md` for the run layout and brief format,
+and `docs/MISSIONS.md` for the mission kinds. Both are short.
 
 ## 1. Ground yourself in the project
 
@@ -45,7 +55,7 @@ Every brief carries:
 - **The evidence contract**, restated in one line: a finding carries a `file:line`, a reproducing
   expression, or three readings with spread and machine load.
 - **A model choice per stage.** `model:` walks the work and `verdict-model:` rules on it. Take the tiers
-  from [`${CLAUDE_PLUGIN_ROOT}/docs/MODELS.md`](../docs/MODELS.md) rather than defaulting.
+  from `docs/MODELS.md` rather than defaulting.
 - **Whole brief demand.** The worker completes its entire brief before writing findings, rather than
   stopping at the first interesting thing.
 
@@ -69,7 +79,7 @@ around.
 ## 5. Add measurement rules when speed is in scope
 
 A brief that measures speed carries a "How to measure" section built from
-[`${CLAUDE_PLUGIN_ROOT}/docs/PERF.md`](../docs/PERF.md): three runs with median and spread, machine load
+`docs/PERF.md`: three runs with median and spread, machine load
 recorded beside every number, a named comparison arm, `setInterval` for sampling.
 
 Schedule those workers in their own wave. They are measuring a machine the other workers are loading.

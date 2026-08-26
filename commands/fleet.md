@@ -3,6 +3,16 @@ description: What the fleet commands are and which one to reach for
 disable-model-invocation: true
 ---
 
+The reference files named below (`docs/PROTOCOL.md` and its siblings) live in this plugin's own directory,
+not in the project you are working on. Resolve that directory once, before following any pointer:
+
+```bash
+ls -d ~/.claude/plugins/cache/*/makarasty/*/docs 2>/dev/null | tail -1
+```
+
+Empty output means the plugin is running from a checkout instead of an install: look for `docs/` beside
+the `commands/` directory holding this file.
+
 A fleet runs one mission across several Claude Code sessions at once. Each session opens its own browser,
 holds its own context, works one brief, and reports by writing a file. Nothing messages anything.
 
@@ -28,8 +38,8 @@ agent starts them on its own initiative. The other three are reachable by an age
 
 ## Reference
 
-- [`docs/PROTOCOL.md`](../docs/PROTOCOL.md): run layout, brief format, finding schema, project configuration.
-- [`docs/MISSIONS.md`](../docs/MISSIONS.md): the five mission kinds and how each one splits.
-- [`docs/BROWSER.md`](../docs/BROWSER.md): the pane gate and why a hidden pane invents findings.
-- [`docs/PERF.md`](../docs/PERF.md): measuring speed on a machine the fleet is loading.
-- [`docs/MODELS.md`](../docs/MODELS.md): which model per stage, and the delegation economics behind it.
+- `docs/PROTOCOL.md`: run layout, brief format, finding schema, project configuration.
+- `docs/MISSIONS.md`: the five mission kinds and how each one splits.
+- `docs/BROWSER.md`: the pane gate and why a hidden pane invents findings.
+- `docs/PERF.md`: measuring speed on a machine the fleet is loading.
+- `docs/MODELS.md`: which model per stage, and the delegation economics behind it.
