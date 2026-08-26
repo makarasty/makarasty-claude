@@ -44,7 +44,13 @@ that shows.
 Every expected worker has a `.done` or a `.blocked`, or you have said which ones are still outstanding and
 for how long.
 
+**When the whole run has landed, invoke `/makarasty:fleet-collect <run-id>` yourself.** Do not print it as
+a command for someone else to run. A finished run that nobody merges is a directory of JSONL files, and
+the operator who clicked the chips has already moved on: measured 2026-08-26, seven finished workers and
+74 findings sat unread because the next step was printed rather than taken.
+
+If the operator asked to review the raw findings before merging, say so and stop instead.
+
 ## Report
 
-Which workers finished, which were blocked, and the raw finding count each produced. Then stop. Merging
-and ranking is `/makarasty:fleet-collect`.
+Which workers finished, which were blocked, and the raw finding count each produced. Then collect.

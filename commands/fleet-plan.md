@@ -115,19 +115,23 @@ Each chip's prompt is one line:
 
     Run the brief at .fleet/<run-id>/brief-NN.md by following the makarasty fleet-run command. Invoke it as /makarasty:fleet-run .fleet/<run-id>/brief-NN.md, and if that name does not resolve in this session, read the command file directly: ls -t ~/.claude/plugins/cache/*/makarasty/*/commands/fleet-run.md | head -1
 
-## 8. Hand over
+## 8. Arm the watch, then hand over
 
-Tell the operator, in this order: the run id, how many chips are waiting, the wave order you recommend and$
-why, that each worker needing a browser wants its pane opened and kept on screen, and that
-`/makarasty:fleet-wait <run-id> <count>` reports the finishes.
+**Invoke `/makarasty:fleet-wait <run-id> <count>` yourself, before you stop.** Do not print it as a command
+for the operator to run. Measured 2026-08-26: a planner that printed the line and stopped left seven
+finished workers sitting on disk unnoticed, because the operator assumed the planner was watching and the
+planner assumed the operator would run it. The watch waits in the shell, so arming it early costs nothing
+and it fires whether the chips are clicked in one minute or twenty.
 
-Say the pane arithmetic out loud, because the operator is about to discover it the hard way: five
-sessions tile side by side at a readable width, further ones stack below at half height, and ten is where
-panes stop being usable. Five or ten, never six. Pass on the three ergonomics from `docs/BROWSER.md` as
-well: drag the planning chat out into its own floating window, zoom the application window out to buy a
-column, and on Windows a window can be sized past the monitors by pushing it off one edge and pulling the
-opposite one. Nobody thinks of any of that
-with eight chats already open.
+Then tell the operator, in this order: the run id, how many chips are waiting, the wave order you
+recommend and why, and that each worker needing a browser wants its pane opened and kept on screen.
+
+Say the pane arithmetic out loud, because the operator is about to discover it the hard way: five sessions
+tile side by side at a readable width, further ones stack below at half height, and ten is where panes
+stop being usable. Five or ten, never six. Pass on the three ergonomics from `docs/BROWSER.md` as well:
+drag the planning chat out into its own floating window, zoom the application window out to buy a column,
+and on Windows a window can be sized past the monitors by pushing it off one edge and pulling the opposite
+one. Nobody thinks of any of that with eight chats already open.
 
 Before each wave after the first, have them check free physical memory against the commit charge.
 Committed above physical means the next worker is paged from disk, and every speed number still in flight
@@ -135,5 +139,6 @@ is measuring a paging machine rather than the application.
 
 ## Done when
 
-Every brief exists on disk, every slice of the axis has exactly one owner, every chip is offered, and the
-operator has the wave order. Then stop, without opening a browser and without starting the mission.
+Every brief exists on disk, every slice of the axis has exactly one owner, every chip is offered, **the
+watch is armed**, and the operator has the wave order. Then stop, without opening a browser and without
+starting the mission.

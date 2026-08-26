@@ -71,7 +71,11 @@ JSON.stringify({ w: innerWidth, h: innerHeight, dpr: devicePixelRatio,
   zoom: getComputedStyle(document.documentElement).zoom })
 ```
 
-**Zoom.** Find the application's own scale control and repeat the screen's key assertions at the default,
+**Zoom.** Use the application own scale control when it has one. Many applications do not: the zoom is a
+build time constant applied to `html`, with nothing to click. Then set it yourself with
+`document.documentElement.style.zoom` and record in the finding that the change was simulated rather than
+operated, because a simulated zoom exercises the layout without exercising whatever the real control also
+does. Repeat the key assertions at the default,
 one step down and one step up.
 
 **Viewport.** `resize_window` emulates a size on the tab: presets `mobile` (375x812), `tablet` (768x1024),
