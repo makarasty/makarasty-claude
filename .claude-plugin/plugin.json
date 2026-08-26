@@ -1,7 +1,7 @@
 {
   "name": "makarasty",
-  "description": "Run one mission across several Claude Code sessions at once. Each worker holds its own context and browser, gates what it can actually see, and reports by writing files.",
-  "version": "1.4.0",
+  "description": "Run one mission across several Claude Code sessions at once, plus the commands for the work around it. Workers hold their own context and browser, gate what they can actually see, and report by writing files.",
+  "version": "1.5.0",
   "author": {
     "name": "makarasty",
     "url": "https://github.com/makarasty"
@@ -10,5 +10,19 @@
     "./agents/fleet-scenario.md",
     "./agents/fleet-profiler.md",
     "./agents/fleet-triage.md"
-  ]
+  ],
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/unslop.mjs\"",
+            "timeout": 5,
+            "statusMessage": "Checking unslop mode"
+          }
+        ]
+      }
+    ]
+  }
 }
