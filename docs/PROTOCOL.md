@@ -65,7 +65,7 @@ editing one tree produce a merge nobody asked for.
 One JSON object per line in `<chip-id>.jsonl`:
 
 ```json
-{"area":"", "severity":"blocker|major|minor|polish", "what":"", "repro":"", "evidence":""}
+{"area":"", "severity":"blocker|major|minor|polish", "what":"", "repro":"", "evidence":"", "conditions":""}
 ```
 
 `evidence` carries one of:
@@ -76,6 +76,17 @@ One JSON object per line in `<chip-id>.jsonl`:
 
 A finding without evidence stays out of the file. Whoever fixes this needs a starting point, and "looks
 off" is not one.
+
+`conditions` carries what the observation depended on, as a short string: the viewport, the zoom and
+whether it was simulated, the claimed total where a count is involved, the machine load where a timing is.
+
+It is a field rather than a sentence inside `evidence` because collection ranks and dedupes by it. Measured
+2026-08-26 across 94 findings: one worker recorded the viewport in 14 of its 15 findings, two profilers in
+none of their twelve, and the worker whose entire task was zoom recorded it in 4 of 20 while carrying the
+systematic answer in its notes file. The discipline was real and it landed where no tool could read it.
+
+A layout or timing finding without `conditions` is not reproducible: a column overflowing at 1100 px and
+fitting at 1600 is a responsive difference, and the number is the only thing separating that from a defect.
 
 An empty findings file is a real result. Report it as such.
 

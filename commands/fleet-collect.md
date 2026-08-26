@@ -27,6 +27,10 @@ spawn costs more than the work.
 Keep findings whose `evidence` is a `file:line`, a reproducing expression, or three readings with spread
 and machine load. Set aside the rest.
 
+Flag, without setting aside, any layout or timing finding whose `conditions` is empty. It is unreproducible
+until someone supplies the viewport and zoom it was seen at, and it belongs in the backlog marked as such
+rather than ranked beside findings that carry theirs.
+
 Set aside every finding from a worker that also wrote `.blocked`. That worker observed through a pane that
 never composited, so frozen transitions, empty rows and hung requests are artifacts of the blind pane.
 

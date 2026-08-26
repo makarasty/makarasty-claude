@@ -74,7 +74,8 @@ asked for JSON returns a fenced block often enough that a strict parser is the w
     "severity": "blocker|major|minor|polish",
     "what": "one sentence naming the defect",
     "repro": "numbered steps, shortest path",
-    "evidence": "file:line, or an expression that reproduces it"
+    "evidence": "file:line, or an expression that reproduces it",
+    "conditions": "viewport, zoom and whether it was simulated, claimed total where a count is involved"
   }
 ]
 ```

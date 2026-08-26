@@ -63,6 +63,20 @@ Every brief carries:
 
 Briefs that write code carry `isolation: worktree`.
 
+## 3b. Fixed briefs, or a queue
+
+Eight briefs freeze one guess about where the defects are for the whole run. Over a surface larger than
+the plan, write a **queue** instead: read `docs/PULL.md` and put tasks in `tasks/ready/` rather than briefs
+in the run root.
+
+Pull mode changes three things for you. Order the queue **longest task first**, because workers taking long
+work first and short work last land within minutes of each other while the reverse leaves one worker alone
+with a forty minute task. Give every task a `budget` in minutes, since a worker past twice its budget stops
+and hands the remainder back. And expect to stay awake: you answer `ask/`, re-file unreached remainders,
+add tasks when a finding points somewhere new, and reclaim claims whose heartbeat went stale.
+
+The fleet size stops being yours to choose. It is however many panes the operator has open.
+
 ## 4. Guard the actions that leave the machine
 
 When an area can reach something outside the machine, telephony, payments, email or SMS, a shipping or

@@ -19,6 +19,35 @@ included. An empty or missing path ends this here: say which path you tried.
 You report by writing files. No session messages you and you message none, so everything you learn has to
 reach the disk.
 
+## Assigned or pull
+
+`$ARGUMENTS` naming a brief file is the assigned shape: work that one brief, then stop.
+
+`$ARGUMENTS` naming a run directory that contains `tasks/ready/` is **pull mode**. Read
+`docs/PULL.md` and then loop:
+
+1. Walk `tasks/ready/` in order and try `mkdir tasks/claimed/<task-id>` on each. The first success is
+   your task; the attempt is also the check, so failing all of them means the queue is drained.
+2. Write `owner` inside the claim directory: your chip id and the time.
+3. Work the task exactly as the sections below describe a brief, rewriting
+   `claimed/<task-id>/heartbeat` at every natural boundary.
+4. Past twice the task's `budget`, stop that task: write what you have, record the rest as unreached with
+   the reason, and take the next one. An unbounded task starves the queue.
+5. Write `tasks/done/<task-id>`, then loop.
+
+Queue drained: write `<chip>.done` and stop. That marker means the queue is empty, not that one task
+ended.
+
+Findings accumulate in one `<chip>.jsonl` across every task you take.
+
+A question for the planner goes in `ask/<chip>-<n>.md`, and then you keep working and read
+`answers/<chip>-<n>.md` at your next task boundary. Blocking on an answer turns a question into a stall.
+A pane that is not displayed is the exception, and that goes to the operator through `.waiting` and
+`AskUserQuestion`, because the planner cannot open a pane.
+
+Your own narration during the run is read by nobody: compress it. Findings prose is read by whoever fixes
+the defect, so that stays full length.
+
 Read `docs/PROTOCOL.md` for the finding schema and the
 completion markers.
 
