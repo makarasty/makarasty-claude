@@ -7,7 +7,7 @@ The reference files named below (`docs/PROTOCOL.md` and its siblings) live in th
 not in the project you are working on. Resolve that directory once, before following any pointer:
 
 ```bash
-ls -d ~/.claude/plugins/cache/*/makarasty/*/docs 2>/dev/null | tail -1
+ls -dt ~/.claude/plugins/cache/*/makarasty/*/docs 2>/dev/null | head -1
 ```
 
 Empty output means the plugin is running from a checkout instead of an install: look for `docs/` beside

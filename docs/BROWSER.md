@@ -98,6 +98,30 @@ Workers measuring speed get a wave to themselves, and at this scale it is not op
 a machine the other workers are loading, so numbers taken alongside them describe the fleet rather than
 the application. See [`PERF.md`](PERF.md).
 
+## Screen ergonomics the operator will not discover alone
+
+These are worth saying before the first wave, because every one of them is invisible until someone points
+it out and painful to realise afterwards.
+
+**Pull the planning chat into its own window.** Press and hold the chat in the chat list and drag it out.
+It becomes a separate window that floats above the tiled workers, so the chat coordinating the run stops
+competing for space with the run itself. This is the single change that makes eight workers manageable
+rather than merely possible.
+
+**Zooming the application window out buys another readable column.** Nobody thinks of it with eight chats
+already open.
+
+**On Windows a window can be made larger than the monitors.** Drag it left until its left edge passes
+beyond the screen, then grab the right edge and pull, and the top edge as well. The window keeps growing
+past what the desktop can show. Parts of it, whole panes included, can end up entirely off screen while
+the compositor keeps rendering them.
+
+That last trick is the one to use carefully, because it points straight at the thing that makes a worker
+blind. Do not reason about whether an off screen pane still composites: **let the gate answer.** A worker
+whose pane stopped compositing reads zero frames, stops, and asks, so the arrangement checks itself. If
+the workers you parked out of sight keep reporting live frame counts, the trick is working for them; if
+one goes blind, it just told you so. Either way nobody has to guess, and nobody gets fiction.
+
 ## The viewport is not the operator's browser
 
 A worker's pane is a panel inside an application window, so its viewport is smaller than the browser

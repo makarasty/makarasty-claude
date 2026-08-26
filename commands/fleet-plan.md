@@ -8,7 +8,7 @@ The reference files named below (`docs/PROTOCOL.md` and its siblings) live in th
 not in the project you are working on. Resolve that directory once, before following any pointer:
 
 ```bash
-ls -d ~/.claude/plugins/cache/*/makarasty/*/docs 2>/dev/null | tail -1
+ls -dt ~/.claude/plugins/cache/*/makarasty/*/docs 2>/dev/null | head -1
 ```
 
 Empty output means the plugin is running from a checkout instead of an install: look for `docs/` beside
@@ -113,7 +113,7 @@ same machine.
 
 Each chip's prompt is one line:
 
-    Run the brief at .fleet/<run-id>/brief-NN.md by following the makarasty fleet-run command. Invoke it as /makarasty:fleet-run .fleet/<run-id>/brief-NN.md, and if that name does not resolve in this session, read the command file directly: ls ~/.claude/plugins/cache/*/makarasty/*/commands/fleet-run.md
+    Run the brief at .fleet/<run-id>/brief-NN.md by following the makarasty fleet-run command. Invoke it as /makarasty:fleet-run .fleet/<run-id>/brief-NN.md, and if that name does not resolve in this session, read the command file directly: ls -t ~/.claude/plugins/cache/*/makarasty/*/commands/fleet-run.md | head -1
 
 ## 8. Hand over
 
@@ -121,9 +121,12 @@ Tell the operator, in this order: the run id, how many chips are waiting, the wa
 why, that each worker needing a browser wants its pane opened and kept on screen, and that
 `/makarasty:fleet-wait <run-id> <count>` reports the finishes.
 
-Say the pane arithmetic out loud, because the operator is about to discover it the hard way: roughly five
+Say the pane arithmetic out loud, because the operator is about to discover it the hard way: five
 sessions tile side by side at a readable width, further ones stack below at half height, and ten is where
-panes stop being usable. Zooming the application window out buys another column, and nobody thinks of that
+panes stop being usable. Five or ten, never six. Pass on the three ergonomics from `docs/BROWSER.md` as
+well: drag the planning chat out into its own floating window, zoom the application window out to buy a
+column, and on Windows a window can be sized past the monitors by pushing it off one edge and pulling the
+opposite one. Nobody thinks of any of that
 with eight chats already open.
 
 Before each wave after the first, have them check free physical memory against the commit charge.
