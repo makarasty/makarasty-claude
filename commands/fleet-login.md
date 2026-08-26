@@ -1,60 +1,57 @@
 ---
-description: Sign this session's browser into the project's locally running app, proving the pane is live first
+description: Open and authenticate the project's local app in this session's browser pane. Use when a task needs the running app, when a pane shows a login screen, when a page read comes back empty or a request hangs, or before any visual check.
 allowed-tools: Bash, Read, Glob, Grep, AskUserQuestion, mcp__Claude_Browser__preview_start, mcp__Claude_Browser__preview_logs, mcp__Claude_Browser__javascript_tool, mcp__Claude_Browser__navigate
 ---
 
-Get this session's Browser pane authenticated against the app running locally. Do not ask the operator for
-credentials, and do not start, stop or restart anything of theirs.
+Get this session's Browser pane authenticated against the project's local app. Everything here runs on
+localhost against whatever account the project provisioned for agents, so it needs nothing from the
+operator except an open pane.
 
 ## 1. Find the project's runbook
 
-Look for `docs/HOW_TO_LOGIN_AS_AI.md`, then any file matching `*LOGIN*AS*AI*` or `docs/**/login*.md`.
+Read `FLEET.md` at the repository root for the login runbook path, the origin, and the services that must
+be running. Without it, look for `docs/HOW_TO_LOGIN_AS_AI.md`, then any `*LOGIN*AS*AI*` or
+`docs/**/login*.md`.
 
-If there is none, **stop**. Say what you searched for and that the project has no documented agent login
-path. Do not improvise against a login form — a scripted fill commonly fails silently against framework
-inputs that ignore synthetic events, and you will spend an hour proving nothing.
+Nothing found ends this: name what you searched for and say the project has no documented agent login path.
+A scripted fill against an undocumented form is the classic hour with nothing to show, because framework
+inputs commonly ignore synthetic events and the form then blocks submit in silence.
 
-## 2. Check what is already serving
+## 2. Confirm the services are up
 
-Read the ports the runbook names and confirm something is listening:
-
-```
-Get-NetTCPConnection -State Listen -LocalPort <ports from the runbook>
-```
-
-Dev servers, emulators and watchers belong to the operator. Never start a second one. If something the
-runbook requires is not listening, name it precisely and stop.
+Check that the ports the runbook names are listening. Dev servers, emulators and watchers belong to the
+operator, so a missing one is a precise report rather than something to start.
 
 ## 3. Open the pane
 
-`preview_start` at the origin the runbook gives. Honour its literal host — some projects must be reached
-as `[::1]` rather than `localhost`, and getting this wrong lands on an error page whose title still looks
+`preview_start` at the runbook's origin, honouring its literal host. Some projects must be reached as
+`[::1]` rather than `localhost`, and getting that wrong lands on an error page whose title still looks
 correct.
 
-## 4. Prove the pane composites — before touching login
+## 4. Gate the pane
 
-```js
-new Promise(res => { let f = 0; requestAnimationFrame(function t(){ f++; requestAnimationFrame(t); }); setTimeout(() => res(f), 1000); })
-```
+Run the gate from [`${CLAUDE_PLUGIN_ROOT}/docs/BROWSER.md`](../docs/BROWSER.md).
 
-`0` means the pane is not displayed. Call `AskUserQuestion`, ask the operator to open the Browser pane in
-this chat, and **re-measure when they reply**. Their answer is not the proof; the frame count is.
-
-Do not attempt login while the reading is `0`. A blind pane can hang the login request until its timeout
-and then look exactly like a broken backend. See `${CLAUDE_PLUGIN_ROOT}/docs/BROWSER.md`.
+Blind: ask the operator to open the Browser pane in this chat with `AskUserQuestion`, then measure again
+when they reply. Hold the login until the reading is live, because an in-page login request through a
+blind pane can hang to its timeout and then look exactly like a broken backend.
 
 ## 5. Probe before signing in
 
-Panes usually keep a persistent profile across sessions, so you may already be authenticated. Read the
-auth state the runbook names. Non-empty user id: stop, you are done.
+Panes usually keep a persistent profile across sessions, so this one may already be authenticated. Read
+the auth state the runbook names. A non-empty identity ends the command here.
 
 ## 6. Sign in, then prove it
 
-Follow the runbook's path exactly. Then re-read the auth state and assert a non-empty user id.
+Follow the runbook exactly. Then read the auth state again and assert a non-empty identity.
 
-Assert identity, never a landing URL — landing routes differ per account and per role. Never a screenshot;
-a store read is stronger and costs a fraction as much.
+Identity is the assertion. Landing URLs differ per account and per role, and a screenshot costs more while
+proving less than the store read.
+
+## Done when
+
+The auth state reads a non-empty identity, read after the sign in rather than assumed from it.
 
 ## Report
 
-Two lines: already signed in or signed in now, and the identity you read back.
+Two lines: already authenticated or authenticated now, and the identity you read back.

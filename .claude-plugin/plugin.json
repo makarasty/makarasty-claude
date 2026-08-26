@@ -1,13 +1,14 @@
 {
   "name": "makarasty",
-  "description": "Parallel agent sessions that verify a running app instead of guessing at it. Gated browser checks, per-stage model selection, file-based reporting.",
-  "version": "0.2.0",
+  "description": "Run one mission across several Claude Code sessions at once. Each worker holds its own context and browser, gates what it can actually see, and reports by writing files.",
+  "version": "0.3.0",
   "author": {
     "name": "makarasty",
     "url": "https://github.com/makarasty"
   },
   "agents": [
     "./agents/fleet-scenario.md",
+    "./agents/fleet-profiler.md",
     "./agents/fleet-triage.md"
   ]
 }

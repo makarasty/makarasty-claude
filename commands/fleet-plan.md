@@ -1,100 +1,96 @@
 ---
-description: Split an area of the product into independent briefs and offer one chip per brief
-argument-hint: <area> [chip count]
+description: Split a mission into independent briefs and offer one worker chip per brief
+argument-hint: <mission> [worker count]
 disable-model-invocation: true
 ---
 
-Split `$ARGUMENTS` into independent briefs, one per tester session. Default to 3 unless a count is given.
+Split the mission in `$ARGUMENTS` into briefs, one per worker session, then offer a chip for each and
+stop. You write briefs. You do not do the mission.
 
-This command spawns work that costs money and needs the operator to click. It is deliberately
-user-invocable only.
+Read [`${CLAUDE_PLUGIN_ROOT}/docs/PROTOCOL.md`](../docs/PROTOCOL.md) for the run layout and brief format,
+and [`${CLAUDE_PLUGIN_ROOT}/docs/MISSIONS.md`](../docs/MISSIONS.md) for the mission kinds. Both are short.
 
-## Before splitting, read the project
+## 1. Ground yourself in the project
 
-Find the domain documentation for the area — start at `docs/README.md` if it exists, otherwise the
-project's own index — and read the domain page. Do not write briefs from memory of the feature. A brief
-that invents a synonym for a feature produces findings nobody can match back to a screen.
+Read the project's `FLEET.md` if it has one. It carries the app origin, which services must already be
+running, the login runbook, the naming rules, and the actions reserved for the operator.
 
-Search with the fastest tool available: `rg` for text, `sg` (ast-grep) for structure in TypeScript or
-JavaScript. Issue independent searches in one message rather than one per turn — round-trips dominate.
+Then read the project's own documentation for the area the mission touches. Start at its index and follow
+it to the specific page. Briefs written from memory of a feature invent names, and a brief that names a
+screen the project does not call that produces findings nobody can match to anything.
 
-## How to cut
+Search with `rg` for text and with `sg` for TypeScript structure when both are available. Send independent
+searches in one message, since each round trip costs a full model turn.
 
-**Cut by screen ownership, not by concern.** Testers share one account against one running app. Two
-testers on one screen invalidate each other's observations the moment either changes state. Two testers on
-two screens do not.
+## 2. Choose the kind, then the axis
 
-## Brief format
+The mission's kind decides how it splits, and the wrong axis is what makes a fleet run worthless. Take the
+axis from `MISSIONS.md`: screen ownership for verify, hypothesis for investigate, seam for implement, file
+cluster for fix, source for research.
 
-One file per chip at `.fleet/<run-id>/brief-<chip-id>.md`:
+Count the independent slices the axis produces. That count is your worker count, capped by what the
+machine and the operator can run. Two workers on one slice cost twice and then agree with each other,
+which reads as corroboration and is not.
 
-```markdown
----
-run-id: 2026-08-24-billing
-chip-id: 01
-model: sonnet          # walks the scenario — see docs/MODELS.md
-verdict-model: opus    # decides which observations are defects
-owns: [/bills/list, /bills/:id]
-must-not-touch: [/cases/*, anything owned by chips 02-03]
----
+## 3. Write the briefs
 
-## Route in
-How to reach the first screen from the landing page.
+One file per worker at `.fleet/<run-id>/brief-NN.md`, in the format `PROTOCOL.md` gives.
 
-## Steps
-Numbered. Each step: the action, and the assertion that makes it pass or fail.
+Every brief carries:
 
-## Correct looks like
-Concrete. "Totals row sums the visible rows" — not "check the totals work".
+- **Exclusive ownership.** `owns` lists what this worker may touch, and the out of scope section names the
+  areas the other workers hold, by number.
+- **Assertions rather than intentions.** "The Completed tab's count equals the number of rows it lists"
+  gives a worker something to be right or wrong about. "Check the tabs work" does not.
+- **The evidence contract**, restated in one line: a finding carries a `file:line`, a reproducing
+  expression, or three readings with spread and machine load.
+- **A model choice per stage.** `model:` walks the work and `verdict-model:` rules on it. Take the tiers
+  from [`${CLAUDE_PLUGIN_ROOT}/docs/MODELS.md`](../docs/MODELS.md) rather than defaulting.
+- **Whole brief demand.** The worker completes its entire brief before writing findings, rather than
+  stopping at the first interesting thing.
 
-## Out of scope
-Named explicitly, so the tester stops instead of wandering.
-```
+Briefs that write code carry `isolation: worktree`.
 
-Choose `model:` per brief rather than defaulting. Dense state, unfamiliar domain, or a subtle correctness
-question earn Opus — weak models do not fail loudly there, they fail by not noticing. Clear spec and
-obvious pass/fail earn Sonnet. Mechanical extraction with an exact contract earns Haiku. When unsure, go
-one tier up: a missed defect costs a release, a tier costs cents.
+## 4. Guard the actions that leave the machine
 
-Every brief carries the read-only posture in writing: no archiving, deleting, or bulk edits. Shared
-account, concurrent testers.
+When an area can reach something outside the machine, telephony, payments, email or SMS, a shipping or
+fulfilment vendor, anything that costs money or contacts a real person, the brief gets a section
+naming what the worker observes and what stays with the operator.
 
-## Side effects that leave the machine
+Write the observable path first, so attention lands there: read the screens, the lists, the history, the
+configuration, the state behind them. Then name the reserved controls specifically, by their label. "Dial,
+including click to call from a row" survives contact with a curious model where "avoid placing calls"
+does not.
 
-If any briefed area can reach an outside system — telephony, payments, email or SMS, a shipping or
-fulfilment vendor, anything that costs money or contacts a real person — the brief gets a section
-titled **"Never do these"**, listing the specific controls by name. Not a general "be careful": the
-specific buttons.
+Close it with the escape hatch: a screen that reveals its behaviour only by firing a reserved control is a
+limit of this run, recorded as unreached. Without that sentence the boundary reads as a puzzle to route
+around.
 
-Write it as prohibitions a tester cannot reinterpret. "Never dial, including click-to-call from a row, and
-including just to see what the call window looks like" survives contact with a curious model; "avoid
-placing calls" does not.
+## 5. Add measurement rules when speed is in scope
 
-Add the escape hatch explicitly: if a screen only reveals its behaviour by firing that action, that is a
-limit of the run — record it as unreached and move on. Without that line a tester treats the prohibition
-as a puzzle to route around.
+A brief that measures speed carries a "How to measure" section built from
+[`${CLAUDE_PLUGIN_ROOT}/docs/PERF.md`](../docs/PERF.md): three runs with median and spread, machine load
+recorded beside every number, a named comparison arm, `setInterval` for sampling.
 
-## Performance briefs
+Schedule those workers in their own wave. They are measuring a machine the other workers are loading.
 
-An area briefed for performance gets a **"How to measure"** section built from
-`${CLAUDE_PLUGIN_ROOT}/docs/PERF.md`: three runs with median and spread, machine load recorded beside
-every number, a named comparison arm, and `setInterval` rather than `requestAnimationFrame` for sampling.
+## 6. Offer the chips
 
-Schedule those chips in their own wave. They are measuring a machine the other chips are loading.
+One `spawn_task` per brief, titled exactly `fleet <run-id> NN`. That title is the only reliable address
+later: session handles from `ListAgents` are opaque, change between calls, and reach other accounts on the
+same machine.
 
-## Then offer the chips
+Each chip's prompt is one line:
 
-One `spawn_task` per brief. Title each chip exactly `fleet <run-id> <chip-id>` — that title is the only
-reliable address later. Session handles from `ListAgents` are opaque, unstable between calls, and span
-other accounts on the same machine; they are not addresses.
+    run /makarasty:fleet-run .fleet/<run-id>/brief-NN.md
 
-Each chip's prompt is one line: run `/makarasty:fleet-run .fleet/<run-id>/brief-<chip-id>.md`.
+## 7. Hand over
 
-## Tell the operator what only they can do
+Tell the operator, in this order: the run id, how many chips are waiting, the wave order you recommend and
+why, that each worker needing a browser wants its pane opened and kept on screen, and that
+`/makarasty:fleet-wait <run-id> <count>` reports the finishes.
 
-1. Click each chip.
-2. Open the Browser pane in each chip's chat and keep it on screen. A pane that is not displayed does not
-   composite; that tester will stop and ask rather than guess.
-3. Two concurrent live panes are measured working. Beyond about three, run the chips in waves.
+## Done when
 
-Finish by naming the run-id and that `/makarasty:fleet-wait <run-id>` will report each tester finishing.
+Every brief exists on disk, every slice of the axis has exactly one owner, every chip is offered, and the
+operator has the wave order. Then stop, without opening a browser and without starting the mission.

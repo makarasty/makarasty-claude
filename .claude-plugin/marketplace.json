@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "makarasty",
-  "description": "Agent-fleet tooling for Claude Code: parallel sessions that verify a running app, with gates that stop a blind agent from inventing findings.",
+  "description": "Fleet tooling for Claude Code: run one mission across several sessions, each gating what it can actually see, all reporting through files.",
   "owner": {
     "name": "makarasty",
     "url": "https://github.com/makarasty"
@@ -9,7 +9,7 @@
   "plugins": [
     {
       "name": "makarasty",
-      "description": "Fan work out across sessions, verify against the real app, report through files. Speed, quality, economy — in that order of argument.",
+      "description": "Split a mission across worker sessions. Gated browser checks, per stage model selection, file based reporting, five mission kinds.",
       "source": "./",
       "category": "workflow"
     }

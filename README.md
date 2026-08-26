@@ -1,11 +1,14 @@
 # makarasty
 
-Claude Code plugin for running several agent sessions against a **live application** instead of against
-their own assumptions.
+A Claude Code plugin for running one mission across several sessions at once.
 
-The problem it solves is narrow and specific: an agent driving a browser it cannot actually see will
-report findings with complete confidence, and those findings look exactly like real ones. Every command
-here is built around measuring first and trusting second.
+Each worker session holds its own context, drives its own browser, works one brief, and reports by writing
+a file. Nothing messages anything, so a worker that dies leaves its findings behind and a worker that
+finishes needs nobody's attention.
+
+The problem it exists for is narrow. An agent driving a browser it cannot actually see reports findings
+with complete confidence, and those findings are indistinguishable from real ones. Every path through this
+plugin measures before it trusts.
 
 ## Install
 
@@ -14,31 +17,54 @@ here is built around measuring first and trusting second.
 /plugin install makarasty@makarasty
 ```
 
+Restart Claude Code afterwards. Plugins load at session start.
+
 ## Commands
 
-| Command | Who can call it | What it does |
+| Command | Who reaches it | What it does |
 |---|---|---|
-| `/makarasty:fleet-login` | Claude or you | Opens the pane, proves it composites, signs in via the project's own runbook, asserts identity |
-| `/makarasty:fleet-plan <area> [n]` | **you only** | Splits an area into independent briefs, one per screen owner, and offers one chip per brief |
-| `/makarasty:fleet-run <brief>` | **you only** | Runs one brief: gate, login, whole scenario through one subagent, findings to JSONL |
-| `/makarasty:fleet-wait <run-id> [n]` | Claude or you | Waits on the run without spending model turns polling |
-| `/makarasty:fleet-collect <run-id>` | Claude or you | Merges, enforces the evidence contract, dedupes, ranks |
+| `/makarasty:fleet` | you | Names the other commands and when to use each |
+| `/makarasty:fleet-plan <mission> [n]` | you | Splits a mission into briefs and offers one worker chip per brief |
+| `/makarasty:fleet-run <brief>` | you | Runs one brief inside a worker session |
+| `/makarasty:fleet-login` | you or Claude | Opens and authenticates the project's local app |
+| `/makarasty:fleet-wait <run-id> [n]` | you or Claude | Waits on a run without spending model turns |
+| `/makarasty:fleet-collect <run-id>` | you or Claude | Merges, enforces the evidence contract, dedupes, ranks |
 
-`fleet-plan` and `fleet-run` are marked `disable-model-invocation` — they spawn paid work and need a human
-to click chips, so Claude cannot decide to start them on its own.
+`fleet`, `fleet-plan` and `fleet-run` carry `disable-model-invocation`. They spawn paid work and depend on
+your clicks, so no agent starts them on its own initiative, and they cost nothing in context until you
+type them. The other three keep descriptions so an agent mid task can reach them.
 
 ## Agents
 
-- **`fleet-scenario`** — walks a scenario in the parent session's pane and returns bounded JSON. The
-  screenshots and DOM reads stay in its context; roughly eighty tokens come back to the parent.
-- **`fleet-triage`** — mechanical merge and rank of a run's findings, on Haiku.
+- **`fleet-scenario`** walks a multi step browser scenario and returns bounded JSON. The screenshots and
+  DOM reads stay in its context; roughly eighty tokens come back to the parent.
+- **`fleet-profiler`** measures load, interaction and stability, and returns readings with their spread and
+  the machine load beside them.
+- **`fleet-triage`** merges and ranks a run's findings, on Haiku.
+
+## Mission kinds
+
+A fleet is not only for testing. The brief declares its `kind`, which decides the working style and, more
+importantly, the axis the mission splits along.
+
+| Kind | Splits by | Isolation |
+|---|---|---|
+| `verify` | screen ownership | none |
+| `investigate` | hypothesis | worktree when instrumenting |
+| `implement` | seam | worktree |
+| `fix` | file cluster | worktree |
+| `research` | source | none |
+
+Splitting along the wrong axis is what makes a fleet run worthless. Two workers on one slice cost twice
+and then agree with each other, which reads as corroboration and is not. Details in
+[`docs/MISSIONS.md`](docs/MISSIONS.md).
 
 ## The gate
 
-A Browser pane that is not displayed on screen does not composite frames. It still navigates, still loads
-pages, still returns plausible DOM — and every visual observation made through it is false:
+A browser pane that is not displayed on screen stops compositing. It still navigates, still loads pages,
+still returns plausible DOM, and every visual observation made through it is false:
 
-| Symptom | Reality |
+| Symptom | Cause |
 |---|---|
 | screenshot times out after 5s | pane not displayed |
 | `requestAnimationFrame` never fires | nothing is scheduled without compositing |
@@ -46,50 +72,59 @@ pages, still returns plausible DOM — and every visual observation made through
 | virtualized rows read as empty text | they need layout that never runs |
 | in-page requests hang to their timeout | measured: an axios POST sat 180s while `curl` answered in 4s |
 
-So every command measures before trusting:
+So every path measures first:
 
 ```js
 new Promise(res => { let f = 0; requestAnimationFrame(function t(){ f++; requestAnimationFrame(t); }); setTimeout(() => res(f), 1000); })
 ```
 
-`0` means blind. The tester stops and asks rather than guessing, and re-measures when you answer — because
-the reading is the proof, not your reply. A blind tester writes `.blocked` and **no findings at all**, and
-`fleet-collect` reports blocked chips separately. A run that says "clean" while a third of it was blind is
-worse than no run.
+Zero means blind. That worker asks you to open its pane, then measures again, because the reading is the
+proof and not the reply. A worker that stays blind writes `.blocked` and no findings at all, and
+collection reports blocked workers by name. A run that says clean while a third of it saw nothing is worse
+than no run.
 
-Two concurrent live panes are measured working, in different sessions, with the second chat unfocused and
-greyed out — the gate is the pane being displayed, not chat focus. Three or more is untested.
+Two concurrent live panes are measured working, in separate sessions, with the second chat greyed out and
+unfocused. The gate is the pane being displayed, not chat focus. Three or more is untested.
 
-Details: [`docs/BROWSER.md`](docs/BROWSER.md). Measuring performance from inside a fleet: [`docs/PERF.md`](docs/PERF.md).
+Full symptom list and wave sizing: [`docs/BROWSER.md`](docs/BROWSER.md). Measuring speed from inside a
+fleet that is itself load: [`docs/PERF.md`](docs/PERF.md).
 
 ## Models
 
-Set per brief, not by default:
+Set per brief rather than globally:
 
 ```yaml
-model: sonnet          # walks the scenario
-verdict-model: opus    # decides which observations are defects
+model: sonnet          # walks the work
+verdict-model: opus    # rules on what the walk produced
 ```
 
-Measured, 2026-08-24: a Haiku subagent driving a live pane cost **45,775 tokens for 3 tool calls** and
-returned 4 lines. Nearly all of that is fixed startup. Two conclusions that point in different directions:
-delegation always wins on parent context, and only wins on cost across a long burst. So one subagent per
-scenario — never one per step.
+Measured on 2026-08-24: a Haiku subagent driving a live pane cost 45,775 tokens across 3 tool calls and
+returned 4 lines. Nearly all of that is fixed startup, which gives two conclusions pointing in different
+directions. Delegation always wins on parent context. On cost it wins only across a long burst, so one
+subagent per scenario rather than one per step.
 
-That measurement shows Haiku can run mechanics correctly. It shows nothing about judging a UI. Details and
-the full selection guidance: [`docs/MODELS.md`](docs/MODELS.md).
+That measurement shows Haiku handling mechanics. It shows nothing about judging an interface. Selection
+guidance in [`docs/MODELS.md`](docs/MODELS.md).
 
-## What it deliberately does not do
+## Project configuration
 
-- **No hardcoded project details.** Origins, ports and the login recipe live in the repo being tested,
-  conventionally `docs/HOW_TO_LOGIN_AS_AI.md`. Missing that file, `fleet-login` stops and says so instead
-  of improvising against a login form.
-- **No session-to-session messaging in the happy path.** Session handles are opaque, unstable between
-  calls, and reach other accounts on the same machine — a message aimed by handle once landed in an
-  unrelated account's release-prep chat. Files have addresses; sessions do not. Chips are fire-and-forget.
-- **No review command.** [`caveman`](https://github.com/JuliusBrussee/caveman)'s `cavecrew-reviewer`
+The plugin carries no project details. A project that runs fleets keeps a `FLEET.md` at its root naming
+the app origin, the services that must already be running, the login runbook, the naming rules, and the
+actions reserved for the operator. Every command reads it when present, and says plainly what it could not
+find when absent.
+
+Guessing at an origin or improvising against a login form costs an hour and produces nothing, so the
+commands stop instead.
+
+## What it deliberately leaves out
+
+- **Session to session messaging in the happy path.** Session handles are opaque, change between calls,
+  and reach other accounts on the same machine. A message aimed by handle once landed in an unrelated
+  account's release preparation chat. Files have addresses; sessions do not.
+- **A review command.** [`caveman`](https://github.com/JuliusBrussee) ships `cavecrew-reviewer`, which
   already does terse diff review well. This plugin has a soft dependency on caveman: it uses it when
   installed and works without it.
+- **Project specifics.** They live in the project, in `FLEET.md`.
 
 ## Licence
 

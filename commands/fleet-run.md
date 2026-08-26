@@ -1,90 +1,88 @@
 ---
-description: Execute one fleet brief in this session — gate the pane, log in, run the scenario, write findings
+description: Execute one fleet brief in this session and report by writing files
 argument-hint: <path to brief file>
 disable-model-invocation: true
 ---
 
-You are one tester in a fan-out of independent sessions. Your whole job is the brief at `$ARGUMENTS`.
-Read it first, including its frontmatter. If the path is missing or empty, stop and say so — do not invent
-a scenario.
+You are one worker in a fleet. Your whole job is the brief at `$ARGUMENTS`. Read it first, frontmatter
+included. An empty or missing path ends this here: say which path you tried.
 
-You report by writing files. You never message another session, and none will message you.
+You report by writing files. No session messages you and you message none, so everything you learn has to
+reach the disk.
 
-## 1. Open the pane
+Read [`${CLAUDE_PLUGIN_ROOT}/docs/PROTOCOL.md`](../docs/PROTOCOL.md) for the finding schema and the
+completion markers.
 
-`preview_start` at the origin the project's login runbook gives. Keep the `tabId`.
+## 1. Set up for your kind
 
-Do not start a dev server; confirm what is already listening and stop if something required is absent.
-Those processes belong to the operator.
+The brief's `kind` decides what happens next. Working styles per kind are in
+[`${CLAUDE_PLUGIN_ROOT}/docs/MISSIONS.md`](../docs/MISSIONS.md).
 
-## 2. Gate — before anything else
+**Kinds that need the running application** (verify, and any other kind whose steps name a screen):
 
-A pane that is not displayed does not composite. It still loads pages and still returns plausible DOM, so
-a blind session cannot tell it is blind; it reports fiction confidently. Measure:
+1. Read the project's `FLEET.md` for the origin and the services that must already be up. Confirm they are
+   listening. Those processes belong to the operator, so a missing one is a report rather than something
+   to start.
+2. `preview_start` at that origin, honouring its literal host. Keep the `tabId`.
+3. Gate the pane, next section.
+4. `/makarasty:fleet-login`, or the project's runbook directly.
 
-```js
-new Promise(res => { let f = 0; requestAnimationFrame(function t(){ f++; requestAnimationFrame(t); }); setTimeout(() => res(f), 1000); })
-```
+**Kinds that only read or write files** (investigate without instrumentation, research, and the file half
+of implement and fix): skip the browser entirely and go to step 3.
 
-- 60 or more: live, continue.
-- `0`: **do not log in, do not navigate, do not assert anything.** `AskUserQuestion` asking the operator to
-  display this session's Browser pane, then re-measure when they answer. The reading is the proof, not
-  their reply.
+**Kinds that write code**: your brief carries `isolation: worktree`, so you are in your own checkout.
+Verify scoped, and leave the full sweep to the operator.
 
-Re-run the gate before each batch of visual work. If the pane is collapsed mid-run you go blind silently
-and everything after that point is worthless. Full symptom list:
-`${CLAUDE_PLUGIN_ROOT}/docs/BROWSER.md`.
+## 2. Gate the pane before trusting it
 
-## 3. Log in
+A pane that is not displayed stops compositing while still navigating and still returning plausible DOM,
+so a blind worker reports fiction confidently. The canonical gate, its threshold, and the full symptom
+list live in [`${CLAUDE_PLUGIN_ROOT}/docs/BROWSER.md`](../docs/BROWSER.md). Run it.
 
-Run `/makarasty:fleet-login`, or follow the project's runbook directly. Probe first — the pane usually
-keeps a persistent profile and you may already be authenticated.
+Live: continue.
 
-## 4. Run the scenario through a subagent
+Blind: ask the operator to display this session's Browser pane with `AskUserQuestion`, and measure again
+when they answer, because the reading is the proof rather than the reply. Hold login and navigation until
+it reads live, since both hang for minutes through a blind pane and the hang reads as a broken backend.
 
-Spawn ONE subagent for the whole scenario, using the `model:` from the brief's frontmatter. Not one per
-step: a spawn costs roughly 40k tokens in fixed startup regardless of the work it does, so many small
-delegations are strictly worse than doing it inline.
+Gate again before each later batch of visual work.
 
-Use the `fleet-scenario` agent, or write an equivalent brief containing all of:
+## 3. Do the whole brief
 
-1. The full step list with per-step assertions, quoted from the brief. **Do not compress the assertions.**
-   Prompts to models may drop articles and filler; they may never drop a negation, a number, or a unit.
-2. That `mcp__Claude_Browser__*` tools are deferred for it and must be loaded first with `ToolSearch`,
-   query `select:mcp__Claude_Browser__javascript_tool,mcp__Claude_Browser__computer`. Without this line it
-   reports having no browser tools and stops.
-3. The `tabId`, and not to open a second pane.
-4. A bounded output contract: a small JSON array of findings and nothing else. Explicitly forbid pasting
-   DOM dumps, accessibility trees or page text into its final message — that is the entire point of
-   delegating.
-5. `read_page` is banned. State reads go through `javascript_tool` returning a small JSON string.
-   Screenshots are for judging pixels and stay in the subagent's context.
-6. Read-only posture. Other sessions test the same account concurrently; archiving, deleting or bulk
-   editing shared records corrupts their runs as well as yours.
+Work every step before writing anything. Depth is why a session was spent on this.
 
-If the brief sets `verdict-model`, you rule on the returned observations yourself rather than trusting the
-executor's severities. Observation and verdict are different jobs; the brief separates them on purpose.
+Delegate a long scenario to one subagent, using the brief's `model:`. One spawn for the whole scenario
+rather than one per step: the fixed overhead per spawn makes small delegations cost more than doing the
+work inline. The economics and the exact numbers are in
+[`${CLAUDE_PLUGIN_ROOT}/docs/MODELS.md`](../docs/MODELS.md); the subagent's required brief lines, tool
+loading included, are in `BROWSER.md`.
 
-## 5. Write the findings
+Use the `fleet-scenario` agent for browser work. It already carries the gate, the output contract, and the
+rule that keeps bulk out of your context.
 
-Append-only JSONL, one finding per line, at `.fleet/<run-id>/<chip-id>.jsonl`:
+Read state through expressions that return small JSON. Reserve screenshots for questions that are about
+pixels.
 
-```json
-{"area":"", "severity":"blocker|major|minor|polish", "what":"", "repro":"", "evidence":""}
-```
+When the brief sets `verdict-model`, rule on the returned observations yourself rather than adopting the
+executor's severities. Observing and judging are different jobs, and the brief separates them deliberately.
 
-`evidence` is mandatory: a `file:line` reference, or an expression that reproduces the observation. A
-finding without evidence is not a finding — drop it rather than writing it. "Looks off" wastes the time of
-whoever fixes this.
+## 4. Write findings
 
-Finish by writing an empty `.fleet/<run-id>/<chip-id>.done`. Separate file on purpose: the presence of the
-JSONL says nothing about whether you were still writing it. The parent treats your run as complete the
-moment `.done` appears, so write it last.
+Append to `.fleet/<run-id>/<chip-id>.jsonl`, one JSON object per line, in the schema `PROTOCOL.md` gives.
+Every finding carries evidence. An empty file is a real result.
 
-If the gate never came up live, write `.fleet/<run-id>/<chip-id>.blocked` containing one line saying the
-pane was never displayed — **and no findings at all**.
+Write `.fleet/<run-id>/<chip-id>.done` last, after the findings file is closed. The planner reads on that
+marker.
+
+A worker that stayed blind writes `.fleet/<run-id>/<chip-id>.blocked` holding one line naming what it
+could not see, and writes no findings.
+
+## Done when
+
+Every step of the brief is either worked or recorded as unreached with its reason, findings carry
+evidence, and the marker file exists.
 
 ## Report
 
-At most five lines: findings by severity, and anything in the brief you could not reach. No summary of the
-app, no suggestions outside the brief.
+Five lines at most: findings by severity, and what you could not reach. The app already has documentation;
+your summary of it helps nobody.
