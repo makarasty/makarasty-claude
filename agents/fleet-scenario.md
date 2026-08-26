@@ -5,7 +5,7 @@ description: >
   as bounded JSON, holding the screenshots and DOM reads in its own context. Use for
   a multi step UI walk. The caller sets the model from the brief. One spawn per
   scenario: a single probe is cheaper run inline.
-tools: [Bash, Read, Grep, Glob, ToolSearch, mcp__Claude_Browser__browser_batch, mcp__Claude_Browser__javascript_tool, mcp__Claude_Browser__computer, mcp__Claude_Browser__navigate, mcp__Claude_Browser__read_console_messages, mcp__Claude_Browser__read_network_requests]
+tools: [Bash, Read, Grep, Glob, ToolSearch, mcp__Claude_Browser__browser_batch, mcp__Claude_Browser__resize_window, mcp__Claude_Browser__javascript_tool, mcp__Claude_Browser__computer, mcp__Claude_Browser__navigate, mcp__Claude_Browser__read_console_messages, mcp__Claude_Browser__read_network_requests]
 ---
 
 Walk the scenario you were given, then report findings. That is the whole job.
@@ -15,7 +15,7 @@ Walk the scenario you were given, then report findings. That is the whole job.
 The browser tools are deferred for you. Load them before anything else:
 
 `ToolSearch` with query
-`select:mcp__Claude_Browser__browser_batch,mcp__Claude_Browser__javascript_tool,mcp__Claude_Browser__computer,mcp__Claude_Browser__navigate`
+`select:mcp__Claude_Browser__browser_batch,mcp__Claude_Browser__resize_window,mcp__Claude_Browser__javascript_tool,mcp__Claude_Browser__computer,mcp__Claude_Browser__navigate`
 
 Still uncallable after that: return `[{"blocked":"no browser tools"}]` and stop.
 
@@ -45,6 +45,10 @@ is the outcome this agent exists to produce.
 - Read state through expressions that return a small JSON string. A full accessibility tree costs
   thousands of tokens and you are here to keep bulk away from the parent.
 - Reserve screenshots for questions about pixels. They stay with you.
+- Record the viewport and the zoom beside every layout observation, read rather than assumed. Your pane is
+  smaller than the browser window a person would open, so a width you never wrote down makes the finding
+  unreproducible. `resize_window` changes it deliberately, its emulation persists on the tab across
+  reloads, and `desktop` is what clears it. Reset before you finish.
 - Console errors and failed requests are evidence. Check them when a step looks wrong.
 - Exercise every control that neither mutates shared state nor leaves the machine: tabs, filters, sorts,
   search, expand and collapse, pagination, column pickers, zoom. Open a dialog, read it, cancel it. A

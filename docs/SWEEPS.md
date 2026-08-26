@@ -57,26 +57,40 @@ whether rows were appended separate them.
 **Rule.** Reachable rows below the claimed total is a blocker when the page gives no sign it is partial,
 and a major when it does. Report the claimed total, the reachable count, and the request evidence.
 
-## Zoom sweep
+## Zoom and viewport sweep
 
-**Catches:** layout and measurement that break at anything other than 100 percent. Applications that set a
-global CSS zoom hit this constantly, because imperative measurement and observers do not all agree about
-the coordinate space.
+**Catches:** layout and measurement that break at anything other than the size the developer happened to
+have open. Applications with a global CSS zoom hit this constantly, because imperative measurement and
+observers do not all agree about the coordinate space.
 
-**Method.** Repeat the screen's key assertions at each zoom the application supports, at minimum the
-default plus one step down and one step up. Read the effective value rather than assuming it:
+**Read both numbers rather than assuming either.** A worker's pane is smaller than the browser window a
+person would open by hand, so the default it sees is already not the default a developer sees:
 
 ```js
-getComputedStyle(document.documentElement).zoom
+JSON.stringify({ w: innerWidth, h: innerHeight, dpr: devicePixelRatio,
+  zoom: getComputedStyle(document.documentElement).zoom })
 ```
 
-At each level check: rows do not overlap, sticky headers stay above the content they cover, action cells
-keep their buttons inside the cell, scrollers still reach their end, and any count that is computed from
-geometry still matches the count computed from data.
+**Zoom.** Find the application's own scale control and repeat the screen's key assertions at the default,
+one step down and one step up.
 
-**Rule.** A defect that appears at one zoom and not another is a finding in its own right, and it changes
-the fix, so always report the zoom beside the symptom. Never report a layout finding without the zoom it
-was measured at.
+**Viewport.** `resize_window` emulates a size on the tab: presets `mobile` (375x812), `tablet` (768x1024),
+`desktop` (clears emulation), or a custom width and height together. Check the default, one width narrow
+enough to cross the application's own breakpoints, and one wide enough to prove nothing depends on a
+narrow container.
+
+Two traps. The emulated size persists on that tab across reloads and navigation until `desktop` clears it,
+so a worker that forgets to reset hands every later observation a phone layout. And a width below 768 also
+emulates a mobile device, with a touch stack and no hover states, which is right for a phone check and
+wrong for "narrow desktop window". Reload after switching so load-time device decisions run again.
+
+At each combination check: rows not overlapping, sticky headers above the content they cover, action cells
+keeping their buttons inside, scrollers still reaching their end, tooltips still openable, and any count
+derived from geometry still matching the count derived from data.
+
+**Rule.** A defect that appears at one size or zoom and not another is a finding in its own right, and it
+changes the fix. Never report a layout finding without the zoom and the viewport it was measured at, and
+reset the tab to `desktop` before finishing.
 
 ## Overflow sweep
 

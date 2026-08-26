@@ -5,7 +5,7 @@ description: >
   returns numbers with their spread and the machine load beside them. Use when a brief
   asks how slow, how janky, or what breaks over a long session. Holds the raw traces in
   its own context.
-tools: [Bash, Read, Grep, Glob, ToolSearch, mcp__Claude_Browser__browser_batch, mcp__Claude_Browser__javascript_tool, mcp__Claude_Browser__computer, mcp__Claude_Browser__navigate, mcp__Claude_Browser__read_console_messages, mcp__Claude_Browser__read_network_requests]
+tools: [Bash, Read, Grep, Glob, ToolSearch, mcp__Claude_Browser__browser_batch, mcp__Claude_Browser__resize_window, mcp__Claude_Browser__javascript_tool, mcp__Claude_Browser__computer, mcp__Claude_Browser__navigate, mcp__Claude_Browser__read_console_messages, mcp__Claude_Browser__read_network_requests]
 ---
 
 Measure the page you were given. Return numbers that survive scrutiny.
@@ -16,7 +16,7 @@ with the application. Numbers taken without accounting for that are confident no
 ## Setup
 
 Load the browser tools first with `ToolSearch`, query
-`select:mcp__Claude_Browser__browser_batch,mcp__Claude_Browser__javascript_tool,mcp__Claude_Browser__computer,mcp__Claude_Browser__navigate`.
+`select:mcp__Claude_Browser__browser_batch,mcp__Claude_Browser__resize_window,mcp__Claude_Browser__javascript_tool,mcp__Claude_Browser__computer,mcp__Claude_Browser__navigate`.
 
 Then gate the pane. A pane that is not displayed has stopped compositing, so `requestAnimationFrame` never
 fires and every timing instrument reads empty:

@@ -73,27 +73,62 @@ tool's output.
 
 ## Wave sizing
 
-**Ten panes is the hard ceiling, and it comes from the window rather than the machine.** Measured
-2026-08-26 on an ultrawide: about five sessions tile side by side at a readable width, and further ones
-stack below at roughly half the height, which is enough to keep a pane composited but not enough to read
-comfortably. Past ten, panes stop being usable at all. A larger display or a lower operating system scale
-raises the count, so tell the operator that zooming the window out is what buys them another column: they
-will not think of it while eight chats are already open.
+**Five is the comfortable number.** Five sessions tile side by side at a readable width with nothing
+stacked below, and that is the shape to plan for by default.
 
-**Three to five concurrent is the working range.** Two are confirmed working under real concurrent load.
-Eight ran at once on a 16 core, 31 GB box and stayed up, at a cost worth knowing: 5.0 GB physical free of
-31.2, 42 GB committed against 31 GB of physical memory, 14 node processes, 41 agent processes, 60 percent
-CPU. That machine is paging, and everything it reports about speed is a description of a paging machine.
+**Ten is the ceiling, and the step from five to ten is a decision rather than a slope.** Past five, panes
+stack in a second row at roughly half height: still composited, still usable, noticeably cramped. Once the
+operator accepts a second row they should fill it, because six workers pay the whole cost of stacking for
+one extra slot. Five, or ten. Sitting between them buys the worst of both.
 
-So the true limit is not the pane count. Before adding a wave, read free physical memory and the commit
-charge. Committed above physical means the next worker buys its slot from the pagefile, and every
-measurement in flight is contaminated from that moment.
+Zooming the application window out is what buys another readable column, and nobody thinks of it with
+eight chats already open. Say it before the first wave rather than after.
+
+**The memory ceiling usually arrives before the pane ceiling.** Measured 2026-08-26 with eight workers on
+a 16 core, 31 GB box: 5.0 GB physical free of 31.2, **42 GB committed against 31 GB of physical memory**,
+14 node processes, 41 agent processes, 60 percent CPU. The box stayed up and it was paging, so every speed
+number taken in that window describes a paging machine rather than the application.
+
+So the check before adding a wave is free physical memory against commit charge, not a count of panes.
+Committed above physical means the next worker buys its slot from the pagefile.
 
 Close a wave's panes before opening the next.
 
-Workers measuring speed get a wave to themselves, and it is not optional at this scale. They are measuring
+Workers measuring speed get a wave to themselves, and at this scale it is not optional. They are measuring
 a machine the other workers are loading, so numbers taken alongside them describe the fleet rather than
 the application. See [`PERF.md`](PERF.md).
+
+## The viewport is not the operator's browser
+
+A worker's pane is a panel inside an application window, so its viewport is smaller than the browser
+window the same person would open by hand, and a different shape. Two consequences, both load bearing.
+
+**Every layout finding records the viewport it was measured at**, alongside the zoom. A column that
+overflows at 1100 px wide and fits at 1600 is a responsive finding, not a defect report, and the number is
+what separates them. Read it rather than assuming:
+
+```js
+JSON.stringify({ w: innerWidth, h: innerHeight, dpr: devicePixelRatio,
+  zoom: getComputedStyle(document.documentElement).zoom })
+```
+
+**A worker can change the size deliberately.** `resize_window` emulates a viewport on its tab: presets
+`mobile` (375x812), `tablet` (768x1024), and `desktop`, which clears emulation and returns the tab to the
+pane's own size. Custom sizes need both width and height. `colorScheme` emulates `prefers-color-scheme`.
+
+Three things to know before using it:
+
+- The emulated size **persists on that tab** across reloads and navigation until `desktop` clears it. A
+  worker that finishes a responsive pass and leaves the tab at 375 px hands every later observation a
+  phone layout. Reset it.
+- A width below 768 also emulates a mobile **device**: Android user agent, touch points, and mouse events
+  translated to touch, so hover states stop existing. That is the right emulation for a phone check and
+  the wrong one for "narrow desktop window".
+- **Reload after switching**, so anything the application decides at load time about the device runs again.
+
+Responsive work is worth a deliberate pass rather than an accident: check the default, one width narrow
+enough to trigger the application's own breakpoints, and one wide enough to prove nothing depends on a
+narrow container. Then reset to `desktop`.
 ## Order of operations
 
 1. `preview_start`. Creating the pane and loading the app both work while blind, and it means the operator

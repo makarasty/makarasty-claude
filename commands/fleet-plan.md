@@ -89,7 +89,9 @@ no observable change.
 
 Carry the truncation sweep on every screen that lists rows and claims a total, since a list holding a
 fraction of its own count while looking complete is invisible to a worker that is only reading. Carry the
-zoom sweep wherever layout or geometry decides what the operator sees, and name the zoom levels.
+zoom and viewport sweep wherever layout or geometry decides what the operator sees. Name the zoom levels
+and the widths, and say that the worker resets the tab to `desktop` before finishing: an emulated size
+persists across reloads and quietly reshapes everything measured afterwards.
 
 Findings from a sweep report the conditions they were measured under: the zoom, the viewport, and the
 claimed total where a count is involved.
