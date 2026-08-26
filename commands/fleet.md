@@ -20,7 +20,7 @@ holds its own context, works one brief, and reports by writing a file. Nothing m
 
 | Command | Reach for it when |
 |---|---|
-| `/makarasty:fleet-init` | A project has never run a fleet: writes FLEET.md, sets up the agent login, sizes the machine |
+| `/makarasty:fleet-init` | A project has never run a fleet: writes FLEET.md, sets up the agent login, sizes the machine. The other commands run it themselves when they find it missing |
 | `/makarasty:fleet-plan <mission> [n]` | You have a mission and want it split into briefs with a chip offered per brief |
 | `/makarasty:fleet-run <brief>` | You are inside a worker session and want it to execute its brief |
 | `/makarasty:fleet-login` | A session needs the project's app open and authenticated |

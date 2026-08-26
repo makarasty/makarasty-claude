@@ -12,7 +12,13 @@ Merge findings. Mechanical work under an exact contract.
 
 ## Input
 
-Every `*.jsonl` in the run directory you were given, plus any `*.blocked` files.
+Every `*.jsonl` in the run directory you were given, plus every `*.blocked`, `*.done` and `*.notes.md`.
+
+A worker with findings but neither `.done` nor `.blocked` is still running: list it as outstanding and do
+not merge its file, because a JSONL read mid-append gives a torn last line.
+
+Lines of the shape `{"unreached": ...}` are not findings. Collect them per area and report them: an area
+with unreached entries is never reported clean, whatever its finding count.
 
 ## Set aside, and count what you set aside
 

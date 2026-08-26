@@ -95,6 +95,16 @@ One JSON object per line in `<chip-id>.jsonl`:
 A finding without evidence stays out of the file. Whoever fixes this needs a starting point, and "looks
 off" is not one.
 
+A second line shape belongs in the same file, because an area nobody finished is not an area that came
+back clean:
+
+```json
+{"unreached":"steps 7-9 of task-04, the Completed tab", "reason":"budget exceeded"}
+```
+
+Without it, unreached work can only land in the notes file, and collection does not read notes. A worker
+that stops at twice its budget then produces a backlog reporting that area clean.
+
 `conditions` carries what the observation depended on, as a short string: the viewport, the zoom and
 whether it was simulated, the claimed total where a count is involved, the machine load where a timing is.
 

@@ -1,7 +1,7 @@
 ---
 description: Wait for a fleet run's workers to finish, spending no model turns on the waiting. Use when workers are running, when asked whether a run has finished, or before collecting a run.
 argument-hint: <run-id> [expected worker count]
-allowed-tools: Bash, Read, Glob, Monitor
+allowed-tools: Bash, Read, Write, Glob, Grep, Monitor, Agent
 ---
 
 Watch `.fleet/<run-id>/` for workers finishing. The waiting belongs in the shell, where it is free, rather
@@ -15,7 +15,7 @@ between them.
 merely looking slow:
 
 ```bash
-run=RUNID; seen=""; while true; do for f in .fleet/$run/*.done .fleet/$run/*.blocked .fleet/$run/*.waiting; do [ -e "$f" ] || continue; case "$seen" in *"$f"*) ;; *) case "$f" in *.waiting) echo "NEEDS YOU: $f -- $(cat "$f")";; *) echo "finished: $f";; esac; seen="$seen $f";; esac; done; sleep 5; done
+run=RUNID; n=N; seen=""; while true; do for f in .fleet/$run/*.done .fleet/$run/*.blocked .fleet/$run/*.waiting; do [ -e "$f" ] || continue; case "$seen" in *"$f"*) ;; *) case "$f" in *.waiting) echo "NEEDS YOU: $f -- $(cat "$f")";; *) echo "finished: $f";; esac; seen="$seen $f";; esac; done; c=$(ls .fleet/$run/*.done .fleet/$run/*.blocked 2>/dev/null | wc -l); [ "$c" -ge "$n" ] && { echo "run complete: $c of $n"; break; }; sleep 5; done
 ```
 
 **One event when the whole run lands**, using a backgrounded Bash command that exits by itself:

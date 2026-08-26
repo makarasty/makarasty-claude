@@ -30,7 +30,9 @@ This is the canonical form. Everything that needs it points here.
 new Promise(res => { let f = 0; requestAnimationFrame(function t(){ f++; requestAnimationFrame(t); }); setTimeout(() => res(f), 1000); })
 ```
 
-Sixty or more means the pane is live. Zero means blind.
+Sixty or more means the pane is live. Zero means blind. **Anything between one and fifty-nine is also
+blind**, and the number goes in the report: a pane compositing intermittently usually means a paging
+machine or a pane being collapsed while you read it, and timing taken from it looks real and is not.
 
 Run it before the first visual step, and again before each batch of visual work. A pane collapsed mid run
 takes the worker blind silently, and every observation after that point is worthless.
@@ -171,6 +173,8 @@ A subagent can drive the parent session's pane. Two things belong in its brief:
   query `select:mcp__Claude_Browser__browser_batch,mcp__Claude_Browser__javascript_tool,mcp__Claude_Browser__computer`. Without that line it
   reports having no browser tools and stops.
 - It shares the parent's pane and tab, so browser subagents run one at a time.
+- **The `tabId`.** The agent is told to use the tab it was given and has no way to discover which one that
+  is, so a brief that omits it leaves the agent guessing at a pane it may not own.
 
 Screenshots and DOM reads then land in the subagent's context, and only its final message reaches the
 parent. Give it a bounded output contract, and say that its final message carries findings alone. Left

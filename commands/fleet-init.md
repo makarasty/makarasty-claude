@@ -1,6 +1,5 @@
 ---
-description: Prepare a project to run fleets: write FLEET.md, establish the agent login path, and size the machine
-disable-model-invocation: true
+description: Prepare a project to run fleets: discover the app origin and services, establish the agent login path, write FLEET.md, size the machine. Use before a first fleet run, when FLEET.md is missing, or when a fleet command finds the project uninitialised.
 ---
 
 The reference files named below (`docs/PROTOCOL.md` and its siblings) live in this plugin's own directory,
@@ -47,6 +46,10 @@ project needs one, and writing it is most of what this command exists for:
 - **Write the runbook**: the origin and its literal host, the probe that says whether this session is
   already authenticated, the sign in call, and the assertion that proves it worked. Assert an identity from
   application state rather than a URL, since landing routes differ per account and per role.
+
+Make the probe round-trip the server rather than only reading client state. A store hydrated from local
+storage reads as signed in while its token is expired, and absence of a rejection is not proof of a
+session.
 
 Test the probe against a signed-out session before you write it down. A probe that reads an empty string
 as a signed-in session is the single most expensive defect a runbook can carry, and it is easy to write by

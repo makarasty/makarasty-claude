@@ -62,6 +62,12 @@ That is a normal outcome, not an error and not something you did wrong. It means
 claim stale and returned the task to the queue. A worker that treats a vanished claim as a failed write
 will try to repair it, and two workers repairing one task is worse than either of them dropping it.
 
+**A reclaimed task returns under a new id.** The planner does not put `task-07` back; it files
+`task-07b` with the same content. A worker that was slow rather than dead may still write
+`tasks/done/task-07` or refresh a heartbeat, and under the old id those writes would land in the
+successor's directory, refreshing the wrong liveness and marking work done that nobody did. Under a new
+id they land in a graveyard and change nothing.
+
 **Only the planner reclaims.** When a heartbeat is older than three times the task's budget, the planner
 renames the claim to `claimed/task-NN.dead-<timestamp>` rather than deleting it. Renaming leaves the
 evidence, and it means the original worker discovers the loss at its next heartbeat instead of finishing
@@ -117,7 +123,12 @@ It is not idle, and this is the part fixed briefs never allowed:
 - Re-files unreached remainders.
 - Reclaims dead claims by heartbeat age, renaming rather than deleting so the original worker learns it
   lost the task.
-- Reorders `ready/` when the estimates turn out wrong.
+- Checks for orphaned work at the end. A worker that fails every claim writes its `.done` and exits, so a
+  task filed after the last worker left has nobody to take it and will sit in `ready/` looking queued.
+  Before calling a run finished, compare `ready/` against `done/` and offer a chip for whatever is left.
+- Re-prioritises by filing a new task, never by renaming an existing one. Order lives in the numeric
+  prefix and is fixed when the task is published, because renaming a file changes the task id under
+  whoever currently holds it.
 
 ## Worker economy
 

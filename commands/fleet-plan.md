@@ -14,6 +14,23 @@ ls -dt ~/.claude/plugins/cache/*/makarasty/*/docs 2>/dev/null | head -1
 Empty output means the plugin is running from a checkout instead of an install: look for `docs/` beside
 the `commands/` directory holding this file.
 
+## Missing prerequisites are work, not a refusal
+
+A fleet command run against a project that was never set up finds no `FLEET.md`, no login runbook and no
+`.fleet/`. Refusing at that point is the wrong answer: the missing pieces are exactly what an agent is
+good at producing.
+
+So: say what is missing in one line, run `/makarasty:fleet-init` to produce it, and continue into the
+work the operator actually asked for. No blocker, no second command for them to remember.
+
+The same rule holds for everything else that can be absent. A missing directory gets created. An
+accelerator that is not installed gets noted once and worked around. A brief that names a screen the
+project does not have becomes a question in `ask/`, not a stop.
+
+Stop for exactly two things, because neither can be produced by working harder: a **credential or account
+only the operator can provide**, and a **reserved control** that would cost money or reach a real person.
+Everything else is repairable, and repairing it quietly is the difference between a tool and a form.
+
 A person reads this chat and only this chat, so start by turning on the humanised reply mode:
 `/makarasty:unslop on`. The workers write for a parser; you write for the operator.
 
@@ -43,7 +60,7 @@ cluster for fix, source for research.
 
 Count the independent slices the axis produces. That is your worker count, capped hard at ten and
 practically at three to five per wave. Ten is where browser panes stop fitting a single display; the
-memory ceiling usually arrives first. Cap it by what the$
+memory ceiling usually arrives first. Cap it by what the
 machine and the operator can run. Two workers on one slice cost twice and then agree with each other,
 which reads as corroboration and is not.
 
@@ -92,7 +109,7 @@ including click to call from a row" survives contact with a curious model where 
 does not.
 
 Close it with the escape hatch: a screen that reveals its behaviour only by firing a reserved control is a
-limit of this run, recorded as unreached. Without that sentence the boundary reads as a puzzle to route
+limit of this run, recorded as unreached. Without that sentence the boundary reads as a puzzle to route around.
 
 ## 5. Give verify briefs their sweeps
 
@@ -112,7 +129,6 @@ persists across reloads and quietly reshapes everything measured afterwards.
 
 Findings from a sweep report the conditions they were measured under: the zoom, the viewport, and the
 claimed total where a count is involved.
-around.
 
 ## 6. Add measurement rules when speed is in scope
 
@@ -131,6 +147,15 @@ same machine.
 Each chip's prompt is one line:
 
     Run the brief at .fleet/<run-id>/brief-NN.md by following the makarasty fleet-run command. Invoke it as /makarasty:fleet-run .fleet/<run-id>/brief-NN.md, and if that name does not resolve in this session, read the command file directly: ls -t ~/.claude/plugins/cache/*/makarasty/*/commands/fleet-run.md | head -1
+
+In pull mode there are no briefs, so the chip prompt carries the worker's identity instead. Without it a
+worker has to invent one, two workers pick the same number, and their findings interleave into one file
+that collection reads as a single worker, corrupting the count of independent sightings:
+
+    You are worker NN of run <run-id>. Work the queue by following the makarasty fleet-run command. Invoke it as /makarasty:fleet-run .fleet/<run-id>/, and if that name does not resolve in this session, read the command file directly: ls -t ~/.claude/plugins/cache/*/makarasty/*/commands/fleet-run.md | head -1
+
+The chip number is the worker id everywhere after that: `NN.jsonl`, `NN.notes.md`, `NN.done`, the `owner`
+line inside a claim, and `ask/NN-1.md`.
 
 ## 8. Arm the watch, then hand over
 

@@ -49,6 +49,11 @@ blind pane can hang to its timeout and then look exactly like a broken backend.
 
 ## 5. Probe before signing in
 
+**Probe with an authenticated request, not only a store read.** A pane keeps a persistent profile, so the
+client state can read as signed in while the token behind it expired: every later call then returns 401
+and every list renders empty, which reads as an application defect rather than a failed session. A
+non-empty local identity whose authenticated request fails means signed out.
+
 Panes usually keep a persistent profile across sessions, so this one may already be authenticated. Read
 the auth state the runbook names. A non-empty identity ends the command here.
 

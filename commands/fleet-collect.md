@@ -22,6 +22,22 @@ The finding schema is in `docs/PROTOCOL.md`.
 Above roughly thirty raw findings, hand the mechanical pass to the `fleet-triage` agent. Below that, the
 spawn costs more than the work.
 
+## Read only what is finished
+
+A worker with findings but no `.done` and no `.blocked` is still running. List it as outstanding and do
+not merge its file: reading a JSONL mid-append gives you a torn last line, which is either a parse error
+or a finding silently dropped.
+
+## An unreached area is never clean
+
+Collect the `{"unreached": ...}` lines alongside the findings, and report them per area. An area carrying
+unreached entries appears in the backlog as incomplete, whatever its finding count. A worker that stopped
+at twice its budget covered part of its area, and a backlog that says otherwise is the failure this whole
+plugin is built against.
+
+Read each worker's `<chip>.notes.md` for claims it raised and then refuted. Do not re-file a refuted
+claim, and carry the refutation into the backlog: the next run meets the same misleading evidence.
+
 ## Enforce the evidence contract
 
 Keep findings whose `evidence` is a `file:line`, a reproducing expression, or three readings with spread

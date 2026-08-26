@@ -28,7 +28,8 @@ navigates and still returns plausible DOM, so looking at it tells you nothing. M
 new Promise(res => { let f = 0; requestAnimationFrame(function t(){ f++; requestAnimationFrame(t); }); setTimeout(() => res(f), 1000); })
 ```
 
-Sixty or more: live, continue.
+Sixty or more: live, continue. Anything from one to fifty-nine is blind as well, and the number is worth
+reporting: it means intermittent compositing, usually a paging machine or a pane closing under you.
 
 Zero: every visual observation available to you is false. Frozen transitions, empty virtualized rows,
 screenshots that time out, requests that hang to their timeout. Return

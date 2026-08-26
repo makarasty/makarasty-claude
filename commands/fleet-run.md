@@ -13,6 +13,23 @@ ls -dt ~/.claude/plugins/cache/*/makarasty/*/docs 2>/dev/null | head -1
 Empty output means the plugin is running from a checkout instead of an install: look for `docs/` beside
 the `commands/` directory holding this file.
 
+## Missing prerequisites are work, not a refusal
+
+A fleet command run against a project that was never set up finds no `FLEET.md`, no login runbook and no
+`.fleet/`. Refusing at that point is the wrong answer: the missing pieces are exactly what an agent is
+good at producing.
+
+So: say what is missing in one line, run `/makarasty:fleet-init` to produce it, and continue into the
+work the operator actually asked for. No blocker, no second command for them to remember.
+
+The same rule holds for everything else that can be absent. A missing directory gets created. An
+accelerator that is not installed gets noted once and worked around. A brief that names a screen the
+project does not have becomes a question in `ask/`, not a stop.
+
+Stop for exactly two things, because neither can be produced by working harder: a **credential or account
+only the operator can provide**, and a **reserved control** that would cost money or reach a real person.
+Everything else is repairable, and repairing it quietly is the difference between a tool and a form.
+
 You are one worker in a fleet. Your whole job is the brief at `$ARGUMENTS`. Read it first, frontmatter
 included. An empty or missing path ends this here: say which path you tried.
 
@@ -82,7 +99,8 @@ A pane that is not displayed stops compositing while still navigating and still 
 so a blind worker reports fiction confidently. The canonical gate, its threshold, and the full symptom
 list live in `docs/BROWSER.md`. Run it.
 
-Live: continue.
+Live: continue. A reading between one and fifty-nine is blind as well, not a weak pass: report the number,
+since intermittent compositing usually means a paging machine or a pane closing under you.
 
 Blind: write `.fleet/<run-id>/<chip-id>.waiting` holding one line saying the pane is not displayed, then
 ask the operator to display it with `AskUserQuestion`, and delete the marker once they answer. A worker
@@ -95,13 +113,23 @@ Gate again before each later batch of visual work.
 
 ## 3. Do the whole brief
 
-Work every step before writing anything. Depth is why a session was spent on this.
+Work every step of the brief before writing your final report. Depth is why a session was spent on this.
+
+**Append each finding to the JSONL the moment its evidence is complete**, not at the end. A worker that is
+killed, compacted or closed at ninety percent of a two hour brief must leave those ninety percent behind;
+holding them in context until the last minute is how a crashed worker reads as a clean area. The `.done`
+marker says you finished, never the existence of the file.
 
 Delegate a long scenario to one subagent, using the brief's `model:`. One spawn for the whole scenario
 rather than one per step: the fixed overhead per spawn makes small delegations cost more than doing the
 work inline. The economics and the exact numbers are in
 `docs/MODELS.md`; the subagent's required brief lines, tool
 loading included, are in `BROWSER.md`.
+
+A `fleet-scenario` or `fleet-profiler` agent returning `[{"blocked": ...}]` means the pane stopped
+compositing after your own gate passed, usually because the operator collapsed it. Treat that exactly like
+failing the gate yourself: write `.waiting`, ask the operator to display it, re-measure, and re-run the
+agent. Do not accept the empty result as a finding.
 
 Use the `fleet-scenario` agent for browser work. Strip any code fence from its final message before
 parsing: it returns the contract faithfully and fences it often. It already carries the gate, the output
@@ -111,7 +139,12 @@ rule that keeps bulk out of your context.
 Read state through expressions that return small JSON. Reserve screenshots for questions that are about
 pixels.
 
-When the brief sets `verdict-model`, rule on the returned observations yourself rather than adopting the
+When the brief sets `verdict-model` and it names a model other than the one this session runs, spawn one
+verdict pass at that model over the returned observations. Ruling "yourself" cannot honour the field: your
+own model was fixed when this session started and you cannot change it, so a brief asking for Opus
+verdicts from a Sonnet session gets Sonnet verdicts and paperwork that says otherwise.
+
+When it matches, rule on the returned observations yourself rather than adopting the
 executor's severities. Observing and judging are different jobs, and the brief separates them deliberately.
 
 ## 4. Write findings
@@ -127,10 +160,19 @@ could not see, and writes no findings.
 
 ## Done when
 
-No `.waiting` marker of yours is left on disk, every step of the brief is either worked or recorded as
-unreached with its reason, findings carry
-evidence, and the marker file exists.
+Before writing your findings, re-read your brief's Steps and its Correct-looks-like section. You read them
+once, dozens of tool calls ago, and end-of-run duties are the kind of instruction a long run drifts from.
+Then walk this list:
 
+- Every step worked, or recorded as unreached with its reason.
+- Every finding carries evidence and, where layout or timing is involved, `conditions`.
+- The browser tab reset to `desktop` if you emulated a viewport. An emulated size persists across
+  reloads and would reshape anything measured after you.
+- No `.waiting` marker of yours left on disk.
+- `<chip-id>.notes.md` written: assertions that passed, claims you raised and then refuted, tooling
+  observations. A run with no findings is otherwise ambiguous between checked-and-clean and never-checked,
+  and this file is the only thing that separates them.
+- `<chip-id>.done` written last, after the findings file is closed.
 ## Report
 
 Five lines at most: findings by severity, and what you could not reach. The app already has documentation;
