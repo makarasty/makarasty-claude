@@ -56,6 +56,9 @@ is the outcome this agent exists to produce.
 - Exercise every control that neither mutates shared state nor leaves the machine: tabs, filters, sorts,
   search, expand and collapse, pagination, column pickers, zoom. Open a dialog, read it, cancel it. A
   control that produces no observable change is a finding, and say which signals you checked for it.
+- Injecting into your own pane is allowed and often the point: a store write or an intercepted response
+  lives in one tab and no other worker can see it. Say in `conditions` what you injected and whether the
+  screen was reached normally or filled directly.
 - Leave stored data alone, unless your brief says otherwise. Other sessions test the same account, so
   data you change is data another worker was measuring.
 - Assert against what the brief says correct looks like. A difference from the brief is a finding. A

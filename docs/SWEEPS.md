@@ -15,6 +15,10 @@ that can be opened and then cancelled.
 Open a dialog, read it, cancel it. The cancel path is a control too, and a dialog that leaves state behind
 after cancel is a finding.
 
+Setting up a scene in your own pane is not mutating shared state: a store write or an intercepted response
+lives in one tab, vanishes on reload, and no other worker can see it. See `MOCKING.md`. Anything that
+reaches the server is a different thing entirely.
+
 The controls that stay with the operator are the ones the project's `FLEET.md` reserves, plus anything
 that writes shared data the other workers are observing. Those get read, not pressed, and a screen only
 observable by pressing one is recorded as unreached.
@@ -105,6 +109,51 @@ Check each column and card for text painting outside its box, buttons pushed out
 a value clipped without an ellipsis, and a tooltip that never opens because its trigger has zero width.
 
 **Rule.** Report the specific value that overflows and the viewport plus zoom it overflowed at.
+
+## Pixel seam and scroll sweep
+
+**Catches:** the small visual wrongness that survives every functional check. A one pixel line along the
+top or right edge of a virtualized table. A border that doubles where a sticky header meets its first row.
+A scrollbar that appears for two pixels of content. A container that scrolls when nothing overflows, or
+refuses to when something does. Layout that grows on interaction and never shrinks back.
+
+These are the defects users report as "it looks broken" and nobody can reproduce from a description, so
+they need measuring rather than looking.
+
+**Probe.** For each scrolling container and each table:
+
+```js
+(() => { const el = document.querySelector('SELECTOR'); const r = el.getBoundingClientRect();
+  return JSON.stringify({ w: Math.round(r.width*100)/100, h: Math.round(r.height*100)/100,
+    sw: el.scrollWidth, cw: el.clientWidth, sh: el.scrollHeight, ch: el.clientHeight,
+    overflowsX: el.scrollWidth > el.clientWidth, overflowsY: el.scrollHeight > el.clientHeight,
+    gutter: el.offsetWidth - el.clientWidth,
+    zoom: getComputedStyle(document.documentElement).zoom, vw: innerWidth }); })()
+```
+
+**Rules.**
+
+- `scrollWidth` exceeding `clientWidth` by one or two pixels is the classic stray seam: a border, a
+  rounding error under zoom, or a child a fraction wider than its parent. Report the exact difference.
+- A fractional width on a table or its header, when the two disagree, misaligns every column below.
+  Compare header and body cell rectangles rather than trusting that they match.
+- Scroll to the end and back. Geometry that changes after scrolling means a virtualizer estimating row
+  height wrongly, and it is worth the finding even when nothing looks wrong at rest.
+- Interact, then measure again. A panel, tooltip or dropdown that grows its container and leaves it grown
+  is a defect the screenshot at rest will never show.
+
+Measure at more than one zoom. Under a scaled root a one pixel seam is a rounding artifact of the scale
+factor as often as it is a real border, and which one it is decides whether there is anything to fix.
+
+## Every control opens
+
+**Catches:** the select, facet, dropdown or picker that renders but never opens, opens empty, opens behind
+something, or opens off screen. A control that cannot be opened is invisible to every test that only reads
+the page.
+
+Open every one of them. For each, record that it opened, that it had options, and that its panel is inside
+the viewport. Then close it and confirm it closed: a picker that stays open under the next click is as
+broken as one that never opens, and it is the half people forget to check.
 
 ## Empty against failed
 
