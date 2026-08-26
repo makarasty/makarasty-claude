@@ -92,7 +92,7 @@ same machine.
 
 Each chip's prompt is one line:
 
-    run /makarasty:fleet-run .fleet/<run-id>/brief-NN.md
+    Run the brief at .fleet/<run-id>/brief-NN.md by following the makarasty fleet-run command. Invoke it as /makarasty:fleet-run .fleet/<run-id>/brief-NN.md, and if that name does not resolve in this session, read the command file directly: ls ~/.claude/plugins/cache/*/makarasty/*/commands/fleet-run.md
 
 ## 7. Hand over
 

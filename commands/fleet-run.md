@@ -1,7 +1,6 @@
 ---
-description: Execute one fleet brief in this session and report by writing files
+description: Execute one fleet brief in this session and report by writing files. Use when this session was started to work a brief under .fleet/, or when asked to run a brief file.
 argument-hint: <path to brief file>
-disable-model-invocation: true
 ---
 
 The reference files named below (`docs/PROTOCOL.md` and its siblings) live in this plugin's own directory,

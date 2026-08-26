@@ -41,6 +41,23 @@ An operator can open a different pane, or open one and collapse it, and both ans
 Page text length is not a gate. Measured at 157 characters on the same page in both the live and the blind
 reading, identical. The frame count is the only separator.
 
+Neither is a successful navigation. `preview_start` returning `navOk: true` with the correct tab title,
+measured 2026-08-26 on a pane compositing zero frames, is the same false comfort: the page really did load,
+which is exactly why the DOM looks plausible. Title, URL and navigation success all survive blindness. The
+frame count does not.
+
+## Evidence a browser tool cannot give you
+
+`read_page` prints an accessible name for buttons and a `href` for links. A link therefore shows no name
+in that output whether or not it has one, so an empty name column there is a property of the renderer
+rather than a finding about the page. Measured 2026-08-26: a worker nearly filed a WCAG 4.1.2 failure
+against thirteen navigation links on that basis, and caught it because a plainly labelled profile link
+came back equally nameless.
+
+Accessibility claims come from the DOM or from the browser's own computed accessible name, never from a
+tool's summary formatting. The same caution applies to any finding whose only evidence is the shape of a
+tool's output.
+
 ## Multiple panes
 
 - One pane per session. Several sessions each get their own.
