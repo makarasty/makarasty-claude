@@ -18,6 +18,7 @@ and the planner never messages them, because a file has an address and a session
 .fleet/<run-id>/
   brief-01.md          one per worker, written by the planner
   01.jsonl             findings, append only, one JSON object per line
+  01.notes.md          everything that is not a finding: assertions passed, claims refuted, tooling
   01.done              empty, written last, means this worker finished
   01.blocked           written instead of .done when the worker could not see
   backlog.md           written by collection
@@ -76,6 +77,21 @@ A finding without evidence stays out of the file. Whoever fixes this needs a sta
 off" is not one.
 
 An empty findings file is a real result. Report it as such.
+
+## The notes file
+
+`<chip-id>.notes.md` holds what the findings file must not: assertions that passed, claims the worker
+raised and then refuted, and observations about the tooling rather than the application.
+
+Write refutations down. A claim killed on review is the more useful result of the two, because the next
+worker meets the same misleading evidence and re-files it otherwise. Record what the claim was, what
+refuted it, and the probe that settled it.
+
+Assertions that passed belong here too. A run reporting no findings is ambiguous between "checked and
+clean" and "never checked", and the notes file is what separates them.
+
+Keep it out of the findings file so collection stays mechanical: the JSONL is the contract, the notes are
+for the human reading afterwards.
 
 ## Completion markers
 

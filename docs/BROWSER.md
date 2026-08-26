@@ -66,7 +66,9 @@ tool's output.
   same time.
 - The gate is the pane being displayed. Chat focus does not enter into it, and neither does which chat is
   active.
-- Two concurrent live panes are confirmed. Three or more is untested, and so is an occluded or collapsed
+- Two concurrent live panes are confirmed under real concurrent work, 2026-08-26: two workers walked
+  different screens at the same time, each reading roughly 300 frames per second, neither observing
+  anything attributable to the other. Three or more is untested, and so is an occluded or collapsed
   pane.
 
 ## Wave sizing
@@ -92,7 +94,7 @@ loading, so numbers taken alongside them describe the fleet rather than the appl
 A subagent can drive the parent session's pane. Two things belong in its brief:
 
 - The `mcp__Claude_Browser__*` tools are deferred for subagents. It loads them first with `ToolSearch`,
-  query `select:mcp__Claude_Browser__javascript_tool,mcp__Claude_Browser__computer`. Without that line it
+  query `select:mcp__Claude_Browser__browser_batch,mcp__Claude_Browser__javascript_tool,mcp__Claude_Browser__computer`. Without that line it
   reports having no browser tools and stops.
 - It shares the parent's pane and tab, so browser subagents run one at a time.
 
@@ -108,3 +110,25 @@ a targeted `querySelectorAll(...).length` answers the same question in twenty.
 
 Screenshots earn their cost when the question is about pixels. For everything else, the DOM read is both
 cheaper and stronger evidence.
+
+## Spend round trips, not seconds
+
+Every tool call is a model round trip, and round trips dominate the wall clock of a browser walk far more
+than the page does. Measured 2026-08-26: two workers, 33 tool calls each, 219 s and 322 s.
+
+Three habits cut that without giving up a single check:
+
+- **Batch with `browser_batch`.** It runs a sequence of pane actions in ONE round trip: navigate, click,
+  type, press a key, read. A walk written as batches costs a fraction of the same walk written one call at
+  a time. Coordinates inside a batch refer to the screenshot taken before the call, so put a screenshot at
+  the end of a batch rather than relying on one mid-sequence.
+- **One expression, many answers.** A single `javascript_tool` call can return every value a step needs as
+  one small JSON object: row count, claimed total, scroll geometry, zoom, the store flag, the console
+  error count. Ten separate probes for ten values is ten round trips buying nothing.
+- **Wait on a condition, not on a clock.** Poll the state that means ready, inside one expression, rather
+  than sleeping a guessed interval and hoping. A `setInterval` that resolves when a store flag flips ends
+  as soon as the app is ready; a fixed sleep is either too short and flaky or too long and wasteful.
+
+What stays expensive on purpose: three runs per performance claim. That rule refused a 4552 ms difference
+whose own spread was 5116 ms, which is exactly the confident nonsense the method exists to prevent. Buy
+speed from round trips, never from sample size.

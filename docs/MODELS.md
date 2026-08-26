@@ -29,6 +29,15 @@ Two conclusions that point in different directions:
 What that measurement does not show: that Haiku can judge an interface. It ran a fixed probe and described
 a login screen. Read it as evidence about mechanics alone.
 
+Measured again on a real scenario rather than a probe, 2026-08-26: a Sonnet `fleet-scenario` executor
+walking two screens spent **57,103 tokens over 33 tool calls in 219 seconds**, and returned roughly **750
+tokens** to the parent. That is **1.3 percent**, and it is the case the fixed overhead was always waiting
+for. The screenshots, DOM reads and settle polling stayed in the subagent.
+
+The parent then spent six inline probes ruling on what came back, which was cheaper than a second spawn.
+That is the rule stated from the other side: one probe inline beats a spawn, one scenario delegated beats
+running it inline.
+
 ## How a stage picks its model
 
 The brief carries the choice, in `model:` and `verdict-model:`. A single brief splitting the two is normal:

@@ -5,7 +5,7 @@ description: >
   returns numbers with their spread and the machine load beside them. Use when a brief
   asks how slow, how janky, or what breaks over a long session. Holds the raw traces in
   its own context.
-tools: [Bash, Read, Grep, Glob, ToolSearch, mcp__Claude_Browser__javascript_tool, mcp__Claude_Browser__computer, mcp__Claude_Browser__navigate, mcp__Claude_Browser__read_console_messages, mcp__Claude_Browser__read_network_requests]
+tools: [Bash, Read, Grep, Glob, ToolSearch, mcp__Claude_Browser__browser_batch, mcp__Claude_Browser__javascript_tool, mcp__Claude_Browser__computer, mcp__Claude_Browser__navigate, mcp__Claude_Browser__read_console_messages, mcp__Claude_Browser__read_network_requests]
 ---
 
 Measure the page you were given. Return numbers that survive scrutiny.
@@ -16,7 +16,7 @@ with the application. Numbers taken without accounting for that are confident no
 ## Setup
 
 Load the browser tools first with `ToolSearch`, query
-`select:mcp__Claude_Browser__javascript_tool,mcp__Claude_Browser__computer,mcp__Claude_Browser__navigate`.
+`select:mcp__Claude_Browser__browser_batch,mcp__Claude_Browser__javascript_tool,mcp__Claude_Browser__computer,mcp__Claude_Browser__navigate`.
 
 Then gate the pane. A pane that is not displayed has stopped compositing, so `requestAnimationFrame` never
 fires and every timing instrument reads empty:
@@ -29,6 +29,11 @@ Zero: return `[{"blocked":"pane not compositing"}]` and stop. An empty timing re
 happened", which is the most dangerous thing you could report.
 
 ## Method
+
+**Batch.** `browser_batch` runs a sequence of pane actions in one round trip, and one expression can
+install the observers, navigate, wait for the ready condition and read the entries back. Round trips, not
+page speed, dominate your wall clock: 33 separate calls took a previous profiler 322 seconds. Keep the
+three runs; buy the time back from round trips.
 
 **Sample the machine.** Before and after each batch, record the node process count and free memory. Every
 number you report carries this beside it.

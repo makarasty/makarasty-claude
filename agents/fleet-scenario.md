@@ -5,7 +5,7 @@ description: >
   as bounded JSON, holding the screenshots and DOM reads in its own context. Use for
   a multi step UI walk. The caller sets the model from the brief. One spawn per
   scenario: a single probe is cheaper run inline.
-tools: [Bash, Read, Grep, Glob, ToolSearch, mcp__Claude_Browser__javascript_tool, mcp__Claude_Browser__computer, mcp__Claude_Browser__navigate, mcp__Claude_Browser__read_console_messages, mcp__Claude_Browser__read_network_requests]
+tools: [Bash, Read, Grep, Glob, ToolSearch, mcp__Claude_Browser__browser_batch, mcp__Claude_Browser__javascript_tool, mcp__Claude_Browser__computer, mcp__Claude_Browser__navigate, mcp__Claude_Browser__read_console_messages, mcp__Claude_Browser__read_network_requests]
 ---
 
 Walk the scenario you were given, then report findings. That is the whole job.
@@ -15,7 +15,7 @@ Walk the scenario you were given, then report findings. That is the whole job.
 The browser tools are deferred for you. Load them before anything else:
 
 `ToolSearch` with query
-`select:mcp__Claude_Browser__javascript_tool,mcp__Claude_Browser__computer,mcp__Claude_Browser__navigate`
+`select:mcp__Claude_Browser__browser_batch,mcp__Claude_Browser__javascript_tool,mcp__Claude_Browser__computer,mcp__Claude_Browser__navigate`
 
 Still uncallable after that: return `[{"blocked":"no browser tools"}]` and stop.
 
@@ -38,6 +38,10 @@ is the outcome this agent exists to produce.
 ## Working rules
 
 - Use the `tabId` you were given, in the pane you were given.
+- Batch. `browser_batch` runs a sequence of pane actions in one round trip, and one `javascript_tool`
+  expression can return every value a step needs as one small JSON object. Round trips dominate your wall
+  clock: 33 separate calls took a previous worker 219 seconds. Wait on a condition inside an expression
+  rather than sleeping a guessed interval.
 - Read state through expressions that return a small JSON string. A full accessibility tree costs
   thousands of tokens and you are here to keep bulk away from the parent.
 - Reserve screenshots for questions about pixels. They stay with you.
@@ -53,8 +57,11 @@ is the outcome this agent exists to produce.
 
 ## Output contract
 
-Your final message is a JSON array and nothing else. Findings alone: no preamble, no summary, no DOM, no
+Your final message is a JSON array. Findings alone: no preamble, no summary, no DOM, no
 page text, no accessibility tree, no long description of a screenshot.
+
+A fenced code block around the array is acceptable. Callers strip fences before parsing, because a model
+asked for JSON returns a fenced block often enough that a strict parser is the wrong side to be brittle on.
 
 ```json
 [

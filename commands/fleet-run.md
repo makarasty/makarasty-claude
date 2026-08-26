@@ -66,7 +66,9 @@ work inline. The economics and the exact numbers are in
 `docs/MODELS.md`; the subagent's required brief lines, tool
 loading included, are in `BROWSER.md`.
 
-Use the `fleet-scenario` agent for browser work. It already carries the gate, the output contract, and the
+Use the `fleet-scenario` agent for browser work. Strip any code fence from its final message before
+parsing: it returns the contract faithfully and fences it often. It already carries the gate, the output
+contract, and the
 rule that keeps bulk out of your context.
 
 Read state through expressions that return small JSON. Reserve screenshots for questions that are about
