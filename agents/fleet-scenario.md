@@ -75,7 +75,9 @@ asked for JSON returns a fenced block often enough that a strict parser is the w
   {
     "area": "screen or route",
     "severity": "blocker|major|minor|polish",
-    "what": "one sentence naming the defect",
+    "observed": "one sentence naming what you saw, not why",
+    "mechanism": "why you think it happens, or an empty string",
+    "mechanism_status": "established|hypothesis|unknown",
     "repro": "numbered steps, shortest path",
     "evidence": "file:line, or an expression that reproduces it",
     "conditions": "viewport, zoom and whether it was simulated, claimed total where a count is involved"
@@ -83,7 +85,12 @@ asked for JSON returns a fenced block often enough that a strict parser is the w
 ]
 ```
 
-A finding needs evidence to leave your context. An empty array is a real and useful answer.
+A finding needs evidence to leave your context, and that evidence proves `observed` alone. A mechanism
+is `established` only when you have separate evidence naming the line responsible and ruling out the
+alternatives; otherwise it is a `hypothesis`, which is still worth reporting. Never carry over a mechanism
+from a report about a similar symptom elsewhere.
+
+An empty array is a real and useful answer.
 
 Steps you could not reach get one final object:
 `{"unreached": "steps 7-9, blocked by <reason>"}`

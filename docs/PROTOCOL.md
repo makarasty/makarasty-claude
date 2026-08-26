@@ -118,6 +118,44 @@ fitting at 1600 is a responsive difference, and the number is the only thing sep
 
 An empty findings file is a real result. Report it as such.
 
+## Observation and mechanism are separate claims
+
+The evidence contract catches a finding with nothing behind it. It does not catch the failure that
+actually happens, which is a finding whose evidence proves the **symptom** and is then used to license a
+claim about the **cause**.
+
+Measured 2026-08-26: a fix mission working 100 findings refuted roughly 15 of them, and the refuted ones
+all carried evidence that looked exactly like the evidence on the true ones.
+
+- A blocker reported a count branch and a select branch disagreeing, citing a seed report's hypothesis.
+  The symptom was real and reproduced. The mechanism was invented: one predicate was built and both halves
+  honoured it, and the rows genuinely matched, because the search parser was stripping letters and turning
+  `wilson9` into `9`.
+- "Escape does not close the menu" came from a probe firing the key on `document` while the handler sat on
+  a descendant. The probe was broken, not the application.
+- "A constant 2880 pixel gap" was one loaded page: working pagination read as a defect.
+- A channel reinstalling itself was the documented shape of forced long polling, switched on deliberately
+  with the reason recorded beside it.
+
+So the schema carries them apart:
+
+```json
+{"area":"", "severity":"", "observed":"", "evidence":"", "mechanism":"", "mechanism_status":"established|hypothesis|unknown", "conditions":""}
+```
+
+`observed` is what you saw, and `evidence` proves that and only that. `mechanism` is why you think it
+happens, and `mechanism_status` says how far you actually got. **`established` requires its own evidence,
+naming the line that does it and the check that rules out the alternatives.** Anything short of that is
+`hypothesis`, and a hypothesis is a perfectly good finding: it sends the next person to the right screen
+without sending them down the wrong path.
+
+Never borrow a mechanism from a report of a similar symptom elsewhere. Two screens can produce the same
+wrong number for unrelated reasons, and an inherited diagnosis is the most expensive kind of wrong,
+because it reads as corroboration.
+
+A refuted finding is a result worth as much as a confirmed one. Record what refuted it, with the work
+shown, so the next run meets the same misleading evidence and does not file it again.
+
 ## The notes file
 
 `<chip-id>.notes.md` holds what the findings file must not: assertions that passed, claims the worker

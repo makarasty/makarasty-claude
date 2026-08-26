@@ -64,9 +64,30 @@ twelve unrelated fixes does the first three well.
 
 Isolation: worktree.
 
+**Re-verify before repairing.** A backlog entry is a report, not a fact. Measured 2026-08-26: a fix
+mission over 100 findings refuted about 15, and three of eight blockers and majors changed diagnosis the
+moment someone tried to fix them, including the flagship blocker whose stated mechanism turned out to be
+a different bug entirely. A worker that repairs what the entry claims, rather than what the code does,
+writes a fix for a defect nobody had.
+
+**Name the twins before fixing a shared seam.** When a defect lives in something more than one surface
+uses, find every other user of it first and say which ones share the flaw. A fix applied to one side of a
+seam and not the other leaves two surfaces behaving differently under the same input, and that divergence
+is worse than the original defect because nothing looks broken from either side alone. Measured in the
+same mission: fixing a filter on the client left its server twin and its export twin untouched, so one
+call was labelled three ways.
+
+**A fix can create the next defect.** In the same mission, removing a cosmetic transform was correct by
+the project's own convention and improved every label but one, which had been relying on it. Expect the
+cascade, and check what depended on the thing you removed.
+
 Demand: a fix arrives with a reproduction that failed before it and passes after. A fix nobody can prove
 is a change, not a fix.
 
+**End with the full suite, once, sequentially.** Scoped runs during the work; the whole thing at the end.
+The regression that mission shipped closest to production was invisible to every worker and every review,
+and only the full run caught it: a new import in one store pulled a realtime graph into a test whose mock
+had never needed it.
 ## research
 
 Read sources and produce an answer.

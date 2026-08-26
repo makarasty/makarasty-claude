@@ -89,6 +89,7 @@ importantly, the axis the mission splits along.
 | Kind | Splits by | Isolation |
 |---|---|---|
 | `verify` | screen ownership | none |
+| `fix` | file cluster, re-verifying each entry before repairing | worktree |
 | `investigate` | hypothesis | worktree when instrumenting |
 | `implement` | seam | worktree |
 | `fix` | file cluster | worktree |
@@ -120,6 +121,7 @@ One eight worker run over a large application, 2026-08-26:
 | Blocked time | 70 percent of summed elapsed |
 | Avoidable tool calls | 259 of 1,350 conservatively, 473 at the upper bound |
 | Executor return ratio | 0.96 to 2.04 percent |
+| Refuted when someone tried to fix them | roughly 15 of 100 |
 
 The return ratio is stable and is not the lever. The denominator varies by an order of magnitude: one
 executor made 30 calls and read 4.0 M cached tokens, another made 194 and read 55.6 M, and both returned

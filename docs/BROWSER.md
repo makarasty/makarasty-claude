@@ -9,7 +9,10 @@ A pane that is not displayed on screen stops compositing. It still navigates, st
 returns plausible DOM. A session working through it cannot tell, so it reports fiction with full
 confidence, and that output is indistinguishable from real findings.
 
-This is the failure this plugin exists to prevent. Treat **blind** as a state to test for, not a risk to
+This is the failure this plugin exists to prevent, and it is not only a tester's problem. Measured
+2026-08-26: a fix worker hit it while trying to measure whether its own repair had worked, and correctly
+refused to change code for a metric it could not read, reporting the two items as decisions rather than
+as tasks. Treat **blind** as a state to test for, not a risk to
 keep in mind.
 
 Symptoms, every one of which reads as an application defect and is not:

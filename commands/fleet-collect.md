@@ -66,7 +66,13 @@ mechanical.
 
 1. Severity: blocker, major, minor, polish.
 2. Then the number of independent workers that saw it, descending.
-3. Then evidence type, with `file:line` above a reproducing expression, since it is closer to a fix.
+3. Then `mechanism_status`, with `established` above `hypothesis` above `unknown`, since a finding whose
+   cause is proven is closer to a fix than one whose cause is guessed.
+4. Then evidence type, with `file:line` above a reproducing expression.
+
+Carry `mechanism_status` into the backlog table. A hypothesis presented as a diagnosis is how a fix
+mission spends its time disproving the report instead of repairing the product: measured 2026-08-26,
+three of eight blockers and majors changed diagnosis the moment somebody tried to fix them.
 
 ## Write
 
@@ -82,3 +88,17 @@ set aside section, and `backlog.md` exists.
 
 Totals per severity, the set aside counts, and the top three by severity. Fixing is a separate session's
 job, and in most projects a fix ships with a reproduction that failed before it.
+
+## A thin review is a signal
+
+Compare the effort a review spent against its siblings on the same run. Measured 2026-08-26: reviews on
+one mission ran 9, 18, and 32 to 39 tool calls. The two thin ones came back clean and left the load
+bearing questions unanswered, and both were about the parts that most needed answering: date arithmetic
+across a daylight saving transition, and the acknowledgement semantics of an endpoint deciding what every
+user sees as new.
+
+A clean review that cost a fraction of what its siblings cost has not cleared the work, it has skimmed it.
+Re-ask the specific question yourself, on the specific lines, rather than accepting the verdict.
+
+The planner in that mission did exactly this and it held: the modules turned out sound, and the check took
+minutes. The value is not in catching the reviewer out, it is in knowing which verdicts were bought.
