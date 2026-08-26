@@ -49,15 +49,32 @@ moving a file and finishing its work would take the task with it.
 Write `owner` inside the claim directory immediately after winning: your chip id and the time. It costs
 one line and it is what makes a stuck claim diagnosable.
 
-## Heartbeat and reclaiming
+## Heartbeat, and losing a claim
 
 Rewrite `claimed/task-NN/heartbeat` with the current time at every natural boundary: after the gate, after
 each screen, before each batch of measurements.
 
-**Only the planner reclaims.** When a heartbeat is older than three times the task's budget, the planner
-removes the claim directory and the task becomes available again. Workers never reclaim from each other,
-because two workers deciding a third is dead is how one live worker gets its task stolen mid-run.
+**The heartbeat write is also your ownership check.** Before writing it, confirm `claimed/task-NN/owner`
+still names you. If the claim directory is gone, or `owner` names someone else, you no longer hold this
+task: abandon it silently, write nothing to `done/`, and claim another.
 
+That is a normal outcome, not an error and not something you did wrong. It means the planner judged your
+claim stale and returned the task to the queue. A worker that treats a vanished claim as a failed write
+will try to repair it, and two workers repairing one task is worse than either of them dropping it.
+
+**Only the planner reclaims.** When a heartbeat is older than three times the task's budget, the planner
+renames the claim to `claimed/task-NN.dead-<timestamp>` rather than deleting it. Renaming leaves the
+evidence, and it means the original worker discovers the loss at its next heartbeat instead of finishing
+work nobody will read.
+
+Workers never reclaim from each other. Two workers deciding a third is dead is how a live worker gets its
+task stolen mid run.
+
+**Nothing is ever removed from `ready/`.** Not by a worker, not by the planner, not on completion. The
+claim directory and the done marker carry all the state. Deleting the task a worker just took would make
+that worker see its own work vanish with no way to tell a legitimate claim from a lost write, and there is
+no gain to trade against that: an extra file on disk costs nothing, and the claim attempt is what filters
+`ready/` anyway.
 ## Budgets and finishing together
 
 Every task carries `budget: <minutes>`, the planner's estimate.
@@ -98,7 +115,8 @@ It is not idle, and this is the part fixed briefs never allowed:
 - Adds tasks to `ready/` when a finding suggests somewhere else worth looking. A worker reporting a shared
   component defect earns a task for every other screen mounting that component.
 - Re-files unreached remainders.
-- Reclaims dead claims by heartbeat age.
+- Reclaims dead claims by heartbeat age, renaming rather than deleting so the original worker learns it
+  lost the task.
 - Reorders `ready/` when the estimates turn out wrong.
 
 ## Worker economy

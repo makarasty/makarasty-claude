@@ -47,7 +47,10 @@ other question goes in `ask/<chip>-<n>.md`, and then you keep working and read
 A pane that is not displayed is the exception, and that goes to the operator through `.waiting` and
 `AskUserQuestion`, because the planner cannot open a pane.
 
-Your own narration during the run is read by nobody: compress it. Findings prose is read by whoever fixes
+Your own narration during the run is read by nobody, so compress it from the first message. When the
+`caveman` plugin is installed, `/caveman full` does this for you; without it, drop articles, filler and
+pleasantries by hand and keep every number, unit, negation and identifier exact. Findings prose is read by
+whoever fixes
 the defect, so that stays full length.
 
 Read `docs/PROTOCOL.md` for the finding schema and the

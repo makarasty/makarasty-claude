@@ -14,6 +14,9 @@ ls -dt ~/.claude/plugins/cache/*/makarasty/*/docs 2>/dev/null | head -1
 Empty output means the plugin is running from a checkout instead of an install: look for `docs/` beside
 the `commands/` directory holding this file.
 
+A person reads this chat and only this chat, so start by turning on the humanised reply mode:
+`/makarasty:unslop on`. The workers write for a parser; you write for the operator.
+
 Split the mission in `$ARGUMENTS` into briefs, one per worker session, then offer a chip for each and
 stop. You write briefs. You do not do the mission.
 

@@ -159,6 +159,7 @@ every command reads it when present:
 - Naming: user facing names come from mainNav labels and router meta.title
 - Actions reserved for the operator: anything that dials, charges, ships, or messages a real person
 - Verification cost: full test suite 63s, full typecheck 30s, both memory heavy
+- Accelerators present: rg, sg, bun. Absent: fd, jq. Project query tool: graphify query "..."
 ```
 
 Absent that file, each command discovers what it can and says plainly what it could not find. Guessing at

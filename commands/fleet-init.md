@@ -84,6 +84,35 @@ Also report the ceiling that is not about memory at all: five browser panes tile
 readable width, further ones stack below at half height, and ten is where panes stop being usable. Five or
 ten, never six.
 
+## 5b. Inventory the accelerators
+
+Check which of these the machine has, and record the answer in `FLEET.md` so no worker spends a turn
+re-detecting it.
+
+The rule for what belongs here: **prefer a tool that removes a round trip, not one that is faster at the
+same round trip.** Every tool call is a model turn, and a model turn is seconds. Saving milliseconds
+inside one changes nothing; replacing four calls with one changes the run.
+
+Worth having, in that order:
+
+- **A structural search over the project's language.** `ast-grep` (`sg`) answers "where is this shape"
+  in one call where grep plus three file reads answers it in four, and it does not match inside strings
+  and comments.
+- **A code knowledge graph**, where the project keeps one. One query returns a scoped subgraph instead of
+  a fan of greps.
+- **`rg`** for text search, which most harnesses already use underneath.
+- **`fd`** for finding files by name.
+- **`jq`** for reading a JSON result without writing a script.
+- **`bun`**, when hooks are involved. Measured 2026-08-26: a node hook costs about 41 ms per prompt even
+  when it does nothing, and that is paid on every prompt of every session.
+
+Report the missing ones with the single command that installs each, and say plainly that none of them are
+required. This is an offer, not a gate: a fleet runs fine without any of them, and a worker that stops
+because `fd` is absent has invented a dependency.
+
+Where the project already has its own faster path, that beats a general tool: record it in `FLEET.md` by
+name, because a worker cannot guess that a repository ships a query tool of its own.
+
 ## 6. Prove it once
 
 Sign in through the runbook you just wrote, in this session, and report the identity you read back. An
