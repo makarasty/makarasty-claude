@@ -175,6 +175,52 @@ application documents, and a second visit should not silently show fewer rows th
 
 **Rule.** A second visit that differs from the first is a finding, whichever direction it differs in.
 
+## Route transition sweep
+
+**Catches:** what the screen does *during* a navigation, which every other check misses because they all
+measure at rest. Content from the page you left still painted under the page you arrived at. An overlay,
+tooltip or dropdown that outlives the route that opened it. A skeleton in the shape of the old page. Scroll
+position carried across. A panel that unmounts a beat late, so for a few hundred milliseconds two pages
+are on screen at once.
+
+Users describe this as "it flickers" or "the old page hangs around", and it never reproduces from a
+description because it is gone by the time anyone looks.
+
+**This sweep needs a live pane.** In a blind one transitions freeze at their start value and
+`transitionend` never fires, so the artifact either never appears or never clears, and both readings are
+fiction. Gate immediately before it.
+
+**Probe.** Sample across the transition rather than around it, with `setInterval` rather than
+`requestAnimationFrame`:
+
+```js
+(() => { const marks = [], t0 = performance.now();
+  const snap = () => marks.push({ t: Math.round(performance.now() - t0),
+    path: location.pathname,
+    roots: [...document.querySelectorAll('[data-page], main > *')].map(e => e.className).slice(0, 6),
+    overlays: document.querySelectorAll('[role="dialog"], .popup, .tooltip, [data-overlay]').length,
+    scrollTop: (document.scrollingElement || document.body).scrollTop });
+  const id = setInterval(snap, 40); snap();
+  return new Promise(r => setTimeout(() => { clearInterval(id); r(JSON.stringify(marks)); }, 1200)); })()
+```
+
+Fire the navigation, then read the samples. Walk the busiest pairs of screens in both directions, since
+teardown is rarely symmetric: leaving a heavy page for a light one exposes different ordering than the
+reverse.
+
+**Rules.**
+
+- Content belonging to the previous route present in a sample where `path` already reads the new route is
+  a finding. Report the interval it persisted and both routes by name.
+- An overlay count that does not return to its baseline after the navigation settles is a leak, not a
+  flicker: the element is still in the document.
+- Scroll position that survives a route change, or that resets when the application documents that it
+  should not, is a finding either way.
+- Two page roots in one sample means overlapping mount and unmount. Give the millisecond window.
+
+**Rule.** Every transition finding names both routes, the direction, and the timings from the samples. A
+transition artifact without a duration cannot be told apart from a normal frame of rendering.
+
 ## Reporting a sweep
 
 A sweep finding carries the same evidence contract as any other, plus the sweep it came from and the
