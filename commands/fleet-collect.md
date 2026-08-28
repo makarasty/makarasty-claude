@@ -1,7 +1,7 @@
 ---
 description: Merge a fleet run's findings into one ranked backlog. Use after a run's workers have finished, or when asked what a run found.
 argument-hint: <run-id>
-allowed-tools: Bash, Read, Write, Glob, Grep, Agent
+allowed-tools: Bash, Read, Write, Glob, Grep, Agent, PushNotification
 ---
 
 The reference files named below (`docs/PROTOCOL.md` and its siblings) live in this plugin's own directory,
@@ -19,8 +19,52 @@ does not decide whether a finding is worth fixing, and it does not fix anything.
 
 The finding schema is in `docs/PROTOCOL.md`.
 
-Above roughly thirty raw findings, hand the mechanical pass to the `fleet-triage` agent. Below that, the
-spawn costs more than the work.
+## The merge is a script, and it is the first thing you run
+
+```bash
+f=$(ls -t ~/.claude/plugins/cache/*/makarasty/*/scripts/fleet.sh | head -1)
+sh "$f" merge  .fleet/<run-id>     # -> backlog.jsonl, skipped.jsonl, unreached.jsonl, and a reconciliation
+sh "$f" render .fleet/<run-id>     # -> backlog.md and skipped.md, generated from the JSONL
+```
+
+`merge` assigns every finding a stable id, groups by area plus symptom, carries the sighting lineage,
+flags anything observed after a `state_changed` line, and then **refuses to finish** if the sightings do
+not add up to the input or if a blocker present in the input is absent from the output. Verified against a
+254 finding run: 254 in, 254 accounted for, six blockers in and six out.
+
+**Your judgement goes on top of that file, never instead of it.** Rank, annotate, name the twins, say what
+you would fix first. Do not retype rows into a markdown table: measured 2026-08-28, a merge written by hand
+rendered 68 of 254 findings while claiming 255, reported one blocker where the workers filed six, and lost
+the run's worst finding entirely. Nothing about the output looked wrong.
+
+Above roughly thirty raw findings, hand the annotation pass to the `fleet-triage` agent. Below that, the
+spawn costs more than the work. Either way the JSONL comes from the script.
+
+## Confirm observations, not mechanisms
+
+Roughly 15 of every 100 findings are refuted when somebody tries to fix them, and the refutations are
+almost always of the mechanism rather than the symptom. Confirming mechanisms here would pay twice for
+what the fix kind does anyway, so confirm the part that is executable:
+
+- Re-run the `repro` expression. Re-read the `file:line`. Re-intersect the `rects`.
+- **Every blocker and every major.** Sample the minors. Skip the polish.
+- A finding that confirms gets `"confirmation":"confirmed"`. One that does not gets `skip_reason` naming
+  what failed, and lands in `skipped.jsonl` rather than being deleted.
+
+An environmental artefact goes the same way: a window resized mid-run, a pane that was collapsed, a state
+another worker wrote. Say which, keep the row. The whole schema stays, so promoting it back later needs no
+re-observation.
+
+## Hand the fix work over as a queue
+
+```bash
+sh "$f" fixqueue .fleet/<run-id>   # -> .fleet/fix-<run-id>/tasks/ready/*.md
+```
+
+One task per blocker and major, each carrying the finding id, the reproduction, the evidence, the
+mechanism marked as a lead rather than a diagnosis, the lane it needs, and the twins that share its files.
+A second fleet claims that queue with `/makarasty:fleet-run .fleet/fix-<run-id>/`, or one chat works it
+alone. Either way the input is a queue, not a document somebody has to re-read.
 
 ## Read only what is finished
 
@@ -38,41 +82,41 @@ plugin is built against.
 Read each worker's `<chip>.notes.md` for claims it raised and then refuted. Do not re-file a refuted
 claim, and carry the refutation into the backlog: the next run meets the same misleading evidence.
 
-## Count from the files, then check the backlog against the count
+**Severity is copied, never decided.** A worker chose it with the screen in front of it; you have a JSON
+line. The script preserves it, and the reconciliation refuses a run where a blocker went missing, which is
+the failure it was written for.
 
-The merge is where a run's worst findings disappear, and nothing about the output looks wrong when they
-do. Measured 2026-08-28 on a 254 finding run: the backlog rendered **68 rows while its own summary claimed
-255 findings**, reported **1 blocker where the workers had filed 6**, moved 83 findings from major into
-polish, and dropped two of the six blockers entirely, including the run's worst one, ten Firestore
-collections readable by any authenticated user. Every number in that summary was written as prose by the
-same pass that lost the rows.
+## Land the run: notify, then stop the watch
 
-So take the numbers from the source before you write anything, mechanically:
+These are one act, done once, when the run is **genuinely** finished. That is a checkable state rather than
+a feeling, and the script checks it:
 
 ```bash
-cd .fleet/<run-id> && node -e '
-const fs=require("fs");let sev={},n=0,un=0;
-for(const f of fs.readdirSync(".").filter(x=>/^\d+\.jsonl$/.test(x)))
- for(const l of fs.readFileSync(f,"utf8").split("\n").filter(Boolean)){let o;try{o=JSON.parse(l)}catch{continue}
-  if(o.severity){n++;sev[o.severity]=(sev[o.severity]||0)+1}else if(o.unreached)un++}
-console.log({findings:n,unreached:un,sev});'
+sh "$f" landed .fleet/<run-id> <expected-chips>
 ```
 
-Then, before you hand the backlog over, count the rendered rows and reconcile:
+It passes when every chip has a `.done` or `.blocked`, every claim has a done marker, every task in
+`ready/` was claimed by somebody, `backlog.jsonl` exists and is not empty, and no `.waiting` marker is on
+disk. "The workers went quiet" is not the same state, and the whole reason this plugin has a stall rule is
+that silence is ambiguous between finished and dead.
 
-- Rows in the backlog plus rows deduped away plus rows refuted must equal the source count. If they do
-  not, say the number that is missing rather than publishing a total you did not verify.
-- Every `blocker` in the source appears in the backlog **as a blocker**. Collection dedupes and ranks; it
-  does not re-grade. A severity a worker chose with evidence in front of it is not overturned by a pass
-  that never saw the screen.
-- A backlog too long to render in one pass is written incrementally, area by area, and never truncated
-  silently. Truncation reads as coverage, which is the exact defect class this plugin exists to catch.
+Then, in this order:
 
-## Stop the watch as your last act
+1. **`PushNotification`** with the headline: run id, findings by severity, blockers, and where the backlog
+   is. It reaches the operator's phone when Remote Control is connected, and it is skipped automatically if
+   they are sitting at the terminal, which is the behaviour you want. One notification per run.
+2. **`TaskStop`** the run's `fleet-wait` monitor. Measured 2026-08-27: a watch left armed after its run
+   finished kept polling for five hours and forty two minutes, and was noticed only when the operator asked
+   what the six hour task in their task list was.
 
-`TaskStop` the run's `fleet-wait` monitor once the backlog is written. Measured 2026-08-27: a watch left
-armed after its run finished kept polling for five hours and forty two minutes, and was noticed only when
-the operator asked what the six hour task in their task list was.
+Exactly two other things are worth waking someone for, and both belong to the planner rather than here: a
+fleet still stalled after a revive attempt failed, and nothing else. A worker asking for its pane must
+never page at night, because a sleeping operator cannot open a pane; that is what the paneless lane and the
+panes-open-before-bed rule in `fleet-plan` are for.
+
+**If the project's `FLEET.md` names a webhook**, post the same headline there as well: run id and counts.
+Never findings text. A webhook is egress, the findings can carry data from the application under test, and
+the URL belongs outside the repository.
 
 ## Enforce the evidence contract
 

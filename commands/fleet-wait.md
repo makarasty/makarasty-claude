@@ -1,7 +1,7 @@
 ---
 description: Wait for a fleet run's workers to finish, spending no model turns on the waiting. Use when workers are running, when asked whether a run has finished, or before collecting a run.
 argument-hint: <run-id> [expected worker count]
-allowed-tools: Bash, Read, Write, Glob, Grep, Monitor, Agent
+allowed-tools: Bash, Read, Write, Glob, Grep, Monitor, Agent, TaskStop, PushNotification
 ---
 
 Watch `.fleet/<run-id>/` for workers finishing. The waiting belongs in the shell, where it is free, rather

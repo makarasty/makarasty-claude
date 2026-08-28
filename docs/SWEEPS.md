@@ -110,6 +110,38 @@ a value clipped without an ellipsis, and a tooltip that never opens because its 
 
 **Rule.** Report the specific value that overflows and the viewport plus zoom it overflowed at.
 
+## Collision sweep: text painted over text
+
+**Catches:** the class a reader notices instantly and no functional check ever sees. Two labels sharing the
+same pixels. A value cut off with no ellipsis, so the number on screen is simply the wrong number. Content
+painted outside a parent that is not clipping it. An element four thousand pixels off the right edge,
+dragging a horizontal scrollbar onto every page.
+
+**Run the geometry first. The screenshot is corroboration, never the claim.** A model shown a screenshot
+and asked whether anything overlaps will find something, every time, whether or not anything does. The
+browser already knows every box's exact rectangle, and a rectangle cannot be talked into a defect.
+
+`scripts/visual-probe.js` in this plugin is that sweep. Paste it into `javascript_tool` and it returns a
+bounded JSON object: collisions, clipped, escaping, offscreen, invisibleText, each entry carrying a
+selector and the rectangles. It ends with a hit test at the centre of every overlap, which is what
+separates a real collision from a dialog doing its job, and that hit test is the difference between a
+usable sweep and a page of false positives. Verified on a fixture carrying five planted defects: five
+found, one collision reported, zero false positives, and the deliberately ellipsised label correctly
+ignored.
+
+Then screenshot the candidates it returned, zoomed to the region, and rule on those. Screenshot count is
+now bounded by the number of defects rather than by the number of screens, which matters: measured across
+one run, the most expensive executor took 51 screenshots and read 55.6 M cached tokens.
+
+**Rule.** A collision finding carries `rects` with both rectangles, and `conditions` carries the viewport
+and the zoom. `fleet.sh find` refuses it otherwise, and it refuses rectangles that do not actually
+intersect whatever the screenshot seemed to show. Geometry lies under CSS zoom and transforms, which is
+exactly why the viewport is not optional.
+
+**What this sweep cannot do**, and where a screenshot is still the only instrument: wrong colours, optical
+misalignment inside a correctly sized box, and paint order. Those get a screenshot with one named question
+each. "Look at this page and report visual defects" is not a task shape; it is where invention lives.
+
 ## Pixel seam and scroll sweep
 
 **Catches:** the small visual wrongness that survives every functional check. A one pixel line along the

@@ -143,8 +143,21 @@ editing one tree produce a merge nobody asked for.
 One JSON object per line in `<chip-id>.jsonl`:
 
 ```json
-{"area":"", "severity":"blocker|major|minor|polish", "observed":"", "repro":"", "evidence":"", "mechanism":"", "mechanism_status":"established|hypothesis|unknown", "conditions":""}
+{"area":"", "severity":"blocker|major|minor|polish", "observed":"", "repro":"", "evidence":"", "mechanism":"", "mechanism_status":"established|hypothesis|unknown", "conditions":"", "when":"", "rects":null, "skip_reason":null}
 ```
+
+`fleet.sh find` stamps `when` and `chip` for you and refuses the line if the rest is not there, so the
+schema is a gate rather than a request. `when` matters because a run changes shared state under itself:
+without an observed-at time, quarantining the findings taken after a role flip or a saved setting is
+guesswork, and with it the quarantine is a script.
+
+`rects` carries the two rectangles of a visual claim, `{"a":{"x","y","w","h"},"b":{...}}`. The gate
+refuses a visual finding whose rectangles do not intersect, whatever the model believes it saw, and
+refuses one whose `conditions` names no viewport.
+
+`skip_reason` moves a finding out of the backlog without deleting it: an artefact of the environment
+rather than the application, a reproduction that no longer reproduces. Collection files those in
+`skipped.jsonl` with the full schema intact, so promoting one back later needs no re-observation.
 
 `observed`, `mechanism` and `mechanism_status` are the load bearing split, and the section "Observation
 and mechanism are separate claims" below is where the rule for them lives. This block used to name a

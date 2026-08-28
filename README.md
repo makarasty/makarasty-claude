@@ -3,13 +3,15 @@
 A Claude Code plugin for running one mission across several sessions at once, plus a few commands for the
 work around it.
 
-Each worker session holds its own context, drives its own browser, works one task, and reports by writing
-a file. Nothing messages anything, so a worker that dies leaves its findings behind and a worker that
-finishes needs nobody's attention.
+Each worker session holds its own context, claims one task at a time, and reports by writing a file.
+Nothing messages anything, so a worker that dies leaves its findings behind and a worker that finishes
+needs nobody's attention.
 
-The problem it exists for is narrow. An agent driving a browser it cannot actually see reports findings
-with complete confidence, and those findings are indistinguishable from real ones. Every path through this
-plugin measures before it trusts.
+The problem it exists for is narrow. An agent that cannot actually see what it is inspecting reports
+findings with complete confidence, and those findings are indistinguishable from real ones. A browser pane
+that stopped compositing is the sharpest case, but a green suite that skipped your file and a documentation
+page that never loaded produce the same confident nothing. Every path through this plugin measures before
+it trusts.
 
 ## Install
 
@@ -30,7 +32,7 @@ machine will carry. The other commands run it themselves when they find a projec
 |---|---|---|
 | `/makarasty:fleet` | you | Names the other commands and when to use each |
 | `/makarasty:fleet-init` | you or Claude | Prepares a project: origin, services, agent login, `FLEET.md`, machine sizing |
-| `/makarasty:fleet-plan <mission> [n]` | you | Splits a mission into briefs or a task queue, and offers one chip per worker |
+| `/makarasty:fleet-plan <mission> [fast]` | you | Interviews you into a plan, splits it into a queue or briefs, offers one chip per worker |
 | `/makarasty:fleet-run <brief or run dir>` | you | Runs one brief, or works a queue until it is drained |
 | `/makarasty:fleet-login` | you or Claude | Opens and authenticates the project's local app |
 | `/makarasty:fleet-wait <run-id> [n]` | you or Claude | Waits without spending model turns, then collects |
@@ -115,6 +117,24 @@ importantly, the axis the mission splits along.
 Splitting along the wrong axis is what makes a fleet run worthless. Two workers on one slice cost twice
 and then agree with each other, which reads as corroboration and is not.
 
+## Lanes, and why this is not only a browser tool
+
+A fleet queues for whatever the machine has exactly one of, and a worker is the thing holding it. Name that
+a **lane**: `pane` for the browser, `verify` for the test suite and the typechecker, `repo` for work that
+only reads files and is therefore not scarce at all.
+
+Every task declares its lane. A pane task is strictly serial per worker, because browser subagents drive
+the parent session's pane. A repo task fans out. A verify task takes the machine.
+
+That one field is what makes the tool general. A run with no pane tasks is an ordinary run whose pane lane
+happens to be empty: a refactor across a hundred files, a migration, a research sweep, a codebase somebody
+is learning. The gate travels with it, changing only its referent - a reproduction that fails before a fix
+and passes after, a verbatim quote with its locator from each source, a test count rather than a colour.
+
+The largest measured lever lives here too. A pane worker spends about 20 of its 23 minutes waiting on one
+scenario subagent, so it claims one repo task and works it during the wait. Full rules in
+[`docs/LANES.md`](docs/LANES.md).
+
 ## Two shapes
 
 **Assigned**: the planner writes one brief per worker and the run ends when the briefs do.
@@ -159,7 +179,7 @@ A six worker pull mode run over the same application, 2026-08-27, is the counter
 | Watch left running after the run finished | 5 hours 42 minutes |
 
 Every row below the findings is a defect in this plugin rather than in the application, and every one of
-them is fixed in 2.4.0. The queue itself worked: 34 tasks off a queue that did not exist when the run
+them is fixed in 2.4.0, and 2.5.0 adds the lanes. The queue itself worked: 34 tasks off a queue that did not exist when the run
 started is the shape a fixed set of briefs cannot produce.
 
 ## Reference
@@ -171,8 +191,13 @@ started is the shape a fixed set of briefs cannot produce.
 - [`docs/SWEEPS.md`](docs/SWEEPS.md) checks that catch a class of defect rather than one bug
 - [`docs/MOCKING.md`](docs/MOCKING.md) reaching states the sandbox data will not produce, and the line
   between a scene and a shared write
+- [`docs/LANES.md`](docs/LANES.md) what a fleet is really queueing for, fan-out, and a run with no browser
 - [`scripts/fleet.sh`](scripts/fleet.sh) the queue's bookkeeping in one call per boundary, and the only
   place the finding schema is enforced rather than requested
+- [`scripts/fleet-merge.mjs`](scripts/fleet-merge.mjs) findings to a reconciled backlog, and a backlog to a
+  queue a fix fleet can claim
+- [`scripts/visual-probe.js`](scripts/visual-probe.js) visual defects found by geometry, so a screenshot
+  confirms rather than invents
 - [`docs/PERF.md`](docs/PERF.md) measuring speed on a machine the fleet is loading
 - [`docs/MODELS.md`](docs/MODELS.md) which model per stage, and the delegation economics
 - [`docs/PORTING.md`](docs/PORTING.md) every assumption this makes about its host, and its substitute

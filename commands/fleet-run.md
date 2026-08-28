@@ -114,10 +114,21 @@ the defect, so that stays full length.
 Read `docs/PROTOCOL.md` for the finding schema and the
 completion markers.
 
-## 1. Set up for your kind
+## 1. Set up for your kind and your lane
 
 The brief's `kind` decides what happens next. Working styles per kind are in
-`docs/MISSIONS.md`.
+`docs/MISSIONS.md`. Its `needs` field decides what you may do at the same time, and the rules are in
+`docs/LANES.md`:
+
+- `needs: pane` - one browser subagent at a time, because they all drive this session's single pane.
+  **While that subagent runs, claim one `repo` task and work it.** That wait is about 20 of the task's 23
+  minutes, and filling it roughly doubles what this session produces without a second pane.
+- `needs: repo` - fan out. Three subagents in one message is the default width, `fanout:` overrides it,
+  and the parts must not read each other's output.
+- `needs: verify` - the full suite or the full typecheck is the whole machine. One worker holds it at a
+  time and the others verify scoped.
+
+A pending subagent is not a wake. Arm the sleep anyway.
 
 **Kinds that need the running application** (verify, and any other kind whose steps name a screen):
 

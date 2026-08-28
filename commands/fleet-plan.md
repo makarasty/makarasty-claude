@@ -1,6 +1,6 @@
 ---
-description: Split a mission into independent briefs and offer one worker chip per brief
-argument-hint: <mission> [worker count]
+description: Interview the operator into a good plan, split the mission into a queue or briefs, and offer one worker chip per worker
+argument-hint: <mission in plain words> [fast]
 disable-model-invocation: true
 ---
 
@@ -63,6 +63,71 @@ practically at three to five per wave. Ten is where browser panes stop fitting a
 memory ceiling usually arrives first. Cap it by what the
 machine and the operator can run. Two workers on one slice cost twice and then agree with each other,
 which reads as corroboration and is not.
+
+**Then give every slice a lane**, from `docs/LANES.md`: `pane` for work that needs the running interface,
+`verify` for work that runs the suite or the typechecker, `repo` for everything answerable from files. Do
+this before writing a single step, because a slice drafted as a browser walk stays one even when its
+evidence is a file reference. Measured 2026-08-27: 33 of 34 tasks were written as browser tasks and
+several never needed a pane, including an audit that read source files for eight minutes while holding a
+pane slot a browser task was waiting for.
+
+The pane lane's width is how many panes fit a display. The repo lane's is the machine. A mission with no
+pane slices at all is a normal mission, not a special case.
+
+## 2b. Interview the operator until the plan stops changing
+
+The operator writes a mission in plain words from a fresh chat that knows nothing. Your job is to turn
+that into a plan good enough to run unattended, and the only way there is to ask. Default to depth: an
+argument of `fast` means bail out after the first round with whatever the draft says, and its absence
+means keep going until the plan stops moving.
+
+**Hold a complete draft plan from the first exchange.** Not a list of open questions, a plan: run id, kind,
+axis, the slices with their lanes, what correct looks like for each, the reserved actions. It is allowed
+to be wrong. It is not allowed to be absent, because the draft is what makes the interview terminate.
+
+**Ask only questions whose answer would change a named line of that draft.** Then the stop condition is
+mechanical: **a round that changes nothing ends the interview.** Questions-exhausted is a form; plan-stops-
+moving is a decision procedure, and in practice it takes three to five rounds.
+
+Ask a whole round at once, numbered, each with your recommended answer, so the operator can reply "all
+yours" and lose nothing:
+
+```
+Q1 - Axis: I am splitting by screen ownership, six slices. The alternative is by user role, which
+     would cross every screen and make two workers report the same defect.
+     -> Recommend screen ownership.
+```
+
+Order the rounds by **invalidation radius**, largest first, because a wrong answer high up throws away
+everything below it:
+
+1. **Kind and axis.** One wrong choice here makes the whole run worthless.
+2. **The slice list**, presented enumerated and concrete, to be corrected rather than answered. Correcting
+   a wrong list is fast and generative; "which areas matter to you" is slow and produces mush.
+3. **What correct looks like, per slice.** This is where the depth belongs and where most rounds go. The
+   operator says something vague, you convert it into an assertion and offer it back: "the Completed tab's
+   count equals the rows it lists" is checkable, "the tabs work" is not.
+4. **Reserved actions and the writing band**: what may be created, changed or sent, and what is the
+   operator's alone.
+
+**Three classes of question are refused outright.**
+
+Anything discoverable. The origin, the login path, which screens exist, what a component is called, how
+long the suite takes: you have a repository, a `FLEET.md` and search tools, and asking is a confession
+that step 1 was skipped. Dispatch a subagent to find it and ask the rest of the round meanwhile.
+
+Anything policy already answers. A question whose answer cannot change what is permitted is not a
+question: production writes, vendor calls that cost money, messages to real people are reserved whatever
+anyone says.
+
+Budgets and worker counts. You have the measurements: the median task runs 23 minutes, budgets written at
+40 and 45 were met by three tasks out of 36, and the pane lane holds as many workers as the display holds
+panes. State those and move on.
+
+**The failure mode is interview theatre**: good questions, answers collected, and then the plan you would
+have written anyway. The guard is that every answer visibly edits a named line of the draft, and you show
+the edit. If an answer changes nothing, that question should not have been asked, and the round it was in
+was the last one.
 
 ## 3. Write the briefs
 
@@ -179,6 +244,12 @@ all three came back within seconds of one. Findings still travel by file, never 
 **Collect the run you have before planning the next one.** Measured 2026-08-27: a planner went straight
 from a finished run into planning its successor, and the first run's six finished workers sat unmerged for
 two hours forty nine minutes.
+
+**If the operator is arming a run and going to bed, say the one thing that decides whether it survives the
+night.** A pane worker whose pane goes dark stops and asks a person, and at three in the morning there is
+no person. So an overnight run is either paneless, which the lane split now makes possible, or every pane
+it needs is open and stays open before the operator leaves. Say which one this run is, out loud, while
+they can still act on it.
 
 Then tell the operator, in this order: the run id, how many chips are waiting, the wave order you
 recommend and why, and that each worker needing a browser wants its pane opened and kept on screen.
