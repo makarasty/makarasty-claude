@@ -8,32 +8,92 @@ Watch `.fleet/<run-id>/` for workers finishing. The waiting belongs in the shell
 than in a re-read each turn, which costs a model turn per empty check and needs the operator to prod you
 between them.
 
-## Pick the shape
+## The watch must emit on silence, not only on progress
 
-**One event per worker**, using `Monitor`, where each stdout line arrives as a notification. It watches
-`.waiting` alongside the finish markers, so a worker stopped on a question announces itself rather than
-merely looking slow:
+A watch that fires only when a file appears cannot tell a busy fleet from a dead one. Both look like an
+empty inbox.
+
+Measured 2026-08-27: three of six workers stalled at the same minute, no file in the run directory changed
+for nearly three hours, the watch stayed silent because silence was all it had to say, and the planner
+slept for 65 minutes until the operator typed "I think the chat has hung". The `Monitor` tool's own
+guidance names this failure: if the thing you are watching died right now, would your filter emit
+anything?
+
+So the loop below carries a quiet timer. Every ten minutes with no change on disk it says so and names
+every claim still outstanding and who holds it. That line is the planner's cue to send a status check to
+the worker holding it, which is the only thing that revives a dead session.
+
+## The loop
+
+`run` and `n` are the run id and the expected worker count. `quiet` is the stall interval in seconds.
 
 ```bash
-run=RUNID; n=N; seen=""; while true; do for f in .fleet/$run/*.done .fleet/$run/*.blocked .fleet/$run/*.waiting; do [ -e "$f" ] || continue; case "$seen" in *"$f"*) ;; *) case "$f" in *.waiting) echo "NEEDS YOU: $f -- $(cat "$f")";; *) echo "finished: $f";; esac; seen="$seen $f";; esac; done; c=$(ls .fleet/$run/*.done .fleet/$run/*.blocked 2>/dev/null | wc -l); [ "$c" -ge "$n" ] && { echo "run complete: $c of $n"; break; }; sleep 5; done
+run=RUNID; n=N; quiet=600
+d=.fleet/$run; seen=$d/.watch-seen; : > "$seen"; last=$(date +%s)
+while true; do
+  for f in $d/tasks/claimed/*/owner $d/tasks/done/* $d/ask/*.md $d/*.done $d/*.blocked $d/*.waiting; do
+    [ -e "$f" ] || continue; grep -Fxq "$f" "$seen" && continue; echo "$f" >> "$seen"; last=$(date +%s)
+    case "$f" in
+      *.waiting) echo "NEEDS OPERATOR: $f -- $(cat "$f")";;
+      */ask/*) echo "QUESTION FOR PLANNER: $f -- $(head -c 300 "$f")";;
+      */owner) ;;
+      */tasks/done/*) echo "task finished: $f";;
+      *) echo "worker finished queue: $f";;
+    esac
+  done
+  now=$(date +%s)
+  if [ $((now-last)) -ge $quiet ]; then
+    echo "STALL: nothing on disk changed for $(( (now-last)/60 ))m"
+    for c in $d/tasks/claimed/*/; do
+      [ -d "$c" ] || continue; t=$(basename "$c"); [ -e "$d/tasks/done/$t" ] && continue
+      echo "  held: $t by $(head -1 "$c/owner" 2>/dev/null || echo 'NO OWNER')"
+    done
+    last=$now
+  fi
+  c=$(ls $d/*.done $d/*.blocked 2>/dev/null | wc -l)
+  [ "$c" -ge "$n" ] && { echo "run complete: $c of $n"; break; }
+  sleep 10
+done
 ```
 
-**One event when the whole run lands**, using a backgrounded Bash command that exits by itself:
+Run it with `Monitor`, `persistent: true`. A fleet run outlasts the hour a bounded monitor can be given,
+and the loop ends itself the moment the last worker lands.
 
-```bash
-run=RUNID; n=N; until [ "$(ls .fleet/$run/*.done .fleet/$run/*.blocked 2>/dev/null | wc -l)" -ge "$n" ]; do sleep 5; done; echo "all $n workers finished"
-```
+For a run with fixed briefs and no queue, drop the three `tasks/` globs from the `for` line. Everything
+else, the stall timer included, still applies.
 
-Substitute the real run id and count.
+**A claim is tracked but not announced.** It is entered in `seen`, which resets the quiet timer, and it
+shows up by name in the stall report, but it does not wake you on its own: a claim needs nothing from the
+planner. Measured 2026-08-27: of 62 notifications one planner received, 13 were claims it took no action
+on, each costing a full model turn to read and dismiss.
 
-A third shape exists for sessions you spawned yourself: `SendMessage` with `notify_when_idle: true`
-delivers exactly one notice when that session next goes idle, costing it nothing and needing no message
-body. The file watch stays the default, because a file has an address and a session handle does not.
+**Two details in that loop are load bearing.** The `seen` file is matched with `grep -Fxq`, whole line, not
+by substring: the previous version tested `case "$seen" in *"$f"*`, under which the presence of `task-22b`
+silently suppressed every event for `task-22`, and a reclaimed task always produces exactly that pair. And
+the file lives inside the run directory rather than in a temp path, so a restarted watch on a different
+machine or shell finds it.
+
+## The watch must end
+
+Measured 2026-08-27: a planner armed a `while true` watch with `persistent: true` and no exit condition.
+It ran for **five hours and forty two minutes**, long past every worker finishing, and was killed only when
+the operator asked what the six hour task in the task list was.
+
+The loop above breaks on its own when the expected count lands. It is still yours to stop when the run ends
+some other way, when you re-arm a replacement, or when the operator cancels the run: call `TaskStop` with
+the watch's task id. `fleet-collect` stops it as its last act.
 
 ## While waiting
 
-Read the briefs whose workers have already landed and start ranking their findings. The wait is free only
-if you spend it on something.
+The wait is free only if you spend it on something. In pull mode there is real work: answer the questions
+in `ask/`, re-file the remainders workers hand back, add tasks when a finding points somewhere new, check
+claims against the three-term dead test in `docs/PULL.md`. With fixed briefs, read the briefs whose workers
+have landed and start ranking their findings.
+
+Do not start a second run before the first one is collected. Measured 2026-08-27: a planner moved straight
+from a finished run into planning the next one, and the first run's six finished workers sat unmerged for
+**two hours forty nine minutes**. Collection is cheap and the findings are already on disk; the cost is
+entirely in forgetting.
 
 ## Read `.blocked` as an absence, not a pass
 

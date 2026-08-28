@@ -9,8 +9,15 @@ than restating it, so changing the shape is a one file edit.
 file. **Worker** is a session that runs one brief. **Wave** is a batch of workers started together.
 **Blind** describes a worker whose browser pane is not compositing, so everything it observes is false.
 
-Workers are fire and forget. They read a brief, write findings, and exit. They never message the planner
-and the planner never messages them, because a file has an address and a session handle does not.
+Workers are fire and forget. They read a brief, write findings, and exit. **Nothing a run produces travels
+by message**, because a file has an address and a session handle does not: a worker that dies leaves its
+findings behind, and one that finishes needs nobody's attention.
+
+Messaging has exactly one job, in the other direction. The planner may send a worker a status check to
+**revive** it, and that is the only thing that brings back a session which ended a turn with nothing
+pending. Measured 2026-08-27: three workers dead for nearly three hours came back within seconds of a
+cross-session message and finished their tasks. Nothing else in the system can do that, so keep the
+handles usable, and never let a finding or an answer ride that channel.
 
 ## A worker gets exactly one interactive question
 
@@ -29,6 +36,59 @@ ambiguous assertion, a screen that turns out to belong to someone else, a task t
 is a question for the planner, answered at the worker's next task boundary.
 
 **Only the planner may ask the operator**, because the operator is watching the planner.
+
+**A question about a reserved action is not asked at all.** Sending a message to a real person, a vendor
+call that costs money, a production write, deleting stored data: none of those become permitted by an
+answer, so there is nothing to wait for. Record the step as unreached with the reason and take the next
+one. If the operator wants it done they do it themselves, which keeps the judgement with them and costs
+the run nothing. Measured 2026-08-27: one worker put a "is this writing band sanctioned" question to the
+operator through `AskUserQuestion` and blocked for four minutes twenty six seconds holding a claimed task,
+for an answer that could not have changed what it was allowed to do.
+
+**If you ever open an interactive prompt at all, write `.waiting` first.** The marker is defined below for
+the pane question, but the property that makes it worth writing is not about panes: a blocked worker
+holding a claim looks exactly like a working one from every other angle.
+
+## A session with nothing pending is dead
+
+This is the failure that costs a run the most wall clock, and it is invisible from outside.
+
+An agent session runs only while something invokes it. A turn ends, and unless a message arrives or a
+background task finishes, that session never runs again. Nothing in a fleet types into a worker's chat.
+So a worker that ends a turn with no background work armed has stopped, permanently, whatever it said it
+was about to do next.
+
+Measured 2026-08-27, run `2026-08-27-create`: three of six workers ended a turn immediately after claiming
+their next task and sat dead for **169, 171 and 176 minutes**, each holding a claim, until the planner
+noticed and sent a cross-session message. All three had written a confident summary saying which task they
+had just taken. None of them had begun it. From the outside they were indistinguishable from workers doing
+slow work, which is why nobody looked for three hours.
+
+**So: while a run is live, never end a turn without something pending.** Either a subagent is running, or
+you arm a wake yourself before you stop:
+
+```bash
+sleep 120; echo wake
+```
+
+Run that with `run_in_background`. A backgrounded command that exits delivers a notification, and the
+notification re-invokes the session. Both halves are measured: the notification on exit was verified
+directly 2026-08-28, and in the same run the workers that stayed alive were the ones woken this way, turn
+after turn, by their own backgrounded subagents finishing.
+
+That wake is also the only timeout a fleet has. A subagent that never returns, an answer that never
+arrives, a pane nobody displays: in every one of those the session is waiting on an event that may not
+come, and the armed wake is what turns a permanent stall into a decision made two minutes later.
+
+Exactly two boundaries are safe to end a turn on, because after each of them the session has no further
+job: after writing `<chip-id>.done`, and after writing `<chip-id>.blocked`. Everywhere else, arm the wake
+first.
+
+**The planner is a session too.** Its wake is usually a file watcher over the run directory, which emits
+only when a file appears. When every live worker is stalled, no file appears, so the watcher stays silent
+and the planner sleeps with it. In the same run the planner sat idle for 65 minutes and was restarted by
+the operator typing "I think the chat has hung". A watch that reports only good news is why silence read
+as health: `fleet-wait` now emits a stall line on a quiet interval for exactly this reason.
 
 ## Directory layout
 
@@ -83,8 +143,13 @@ editing one tree produce a merge nobody asked for.
 One JSON object per line in `<chip-id>.jsonl`:
 
 ```json
-{"area":"", "severity":"blocker|major|minor|polish", "what":"", "repro":"", "evidence":"", "conditions":""}
+{"area":"", "severity":"blocker|major|minor|polish", "observed":"", "repro":"", "evidence":"", "mechanism":"", "mechanism_status":"established|hypothesis|unknown", "conditions":""}
 ```
+
+`observed`, `mechanism` and `mechanism_status` are the load bearing split, and the section "Observation
+and mechanism are separate claims" below is where the rule for them lives. This block used to name a
+single `what` field, which contradicted that section two screens further down; workers reading both wrote
+the union of them. Corrected 2026-08-28.
 
 `evidence` carries one of:
 
@@ -104,6 +169,23 @@ back clean:
 
 Without it, unreached work can only land in the notes file, and collection does not read notes. A worker
 that stops at twice its budget then produces a backlog reporting that area clean.
+
+Two more line shapes exist for the same reason, and for the same file:
+
+```json
+{"created":"user Ada Test, group QA-2, tag rerun", "where":"sandbox company 41"}
+{"state_changed":"active role a -> p", "when":"inside task-34", "cause":"", "blast_radius":""}
+```
+
+`created` is what the run left behind in the environment. A fleet writes real rows, and the next person to
+read that sandbox deserves to know which of them an agent made rather than a person.
+
+`state_changed` is any change to state the whole fleet shares: the account's role, a saved column
+selection, a dashboard's card set, anything the server persists per account rather than per session. Write
+the line the moment you notice, and open an `ask/` alongside it, because every finding measured after that
+point was measured under different conditions. Measured 2026-08-27: an account's active role changed
+mid-run and the rest of that run's lists returned 403 and its badges read 0, which is indistinguishable
+from a defect until somebody names the window.
 
 `conditions` carries what the observation depended on, as a short string: the viewport, the zoom and
 whether it was simulated, the claimed total where a count is involved, the machine load where a timing is.
@@ -192,6 +274,32 @@ never displayed, where the worker is correctly refusing to guess and is waiting 
 know they are being waited on.
 
 The marker turns a silent stall into a named one, and it is the only thing on disk that can.
+
+## The account is shared, so a setting is a fleet-wide write
+
+Every worker signs into the same sandbox account. Anything that account persists on the server is
+therefore shared by all of them, and changing it reshapes what the others are measuring.
+
+Measured 2026-08-27 in one application: the visible-column selection, the analytics dashboard's card set
+and the general settings group are all stored per account. One worker saving a column selection changed
+which columns five other workers were looking at, and their measurements of that table were taken under a
+layout nobody chose. The browser profile is shared too, so `localStorage` is common ground: filters one
+worker saved were read by the next.
+
+Three rules follow. Prefer a setting you can change in your own pane over one the server keeps. When you
+must change a persisted one, write the `state_changed` line and an `ask/` note as you do it, never
+afterwards. And read a surprising reading twice before filing it: under a shared account, "this list is
+empty" and "this badge is 0" are as likely to be another worker's write as a defect.
+
+## One chip, one run
+
+A worker session works one run and then stops. Reusing it for the next mission looks free and is not.
+
+The chip title is the run's addressing scheme, so a session titled for run A that is working run B cannot
+be found by anyone reading the titles. Measured 2026-08-27: six sessions titled for a visual run worked a
+second, unrelated queue for another five hours under those titles, and the planner had to identify them by
+what they had recently written instead. Their contexts also carried the whole first run, which is paid for
+again on every turn of the second.
 
 ## Project configuration
 

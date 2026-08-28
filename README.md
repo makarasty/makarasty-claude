@@ -81,6 +81,24 @@ while a third of it saw nothing is worse than no run.
 Two concurrent live panes are measured working in separate sessions, with the second chat greyed out and
 unfocused: the gate is the pane being displayed, not chat focus.
 
+## The other way a run dies
+
+A pane going blind is loud once you know the symptom. This one is silent.
+
+A session runs only while something invokes it. When a turn ends with no subagent running and no
+backgrounded command pending, that session has stopped, and nothing in a fleet types into a worker's chat
+to restart it. It does not crash, it does not report anything, and its last message usually says what it
+was about to do next.
+
+Measured 2026-08-27: three of six workers ended a turn immediately after claiming their next task and sat
+dead for 169, 171 and 176 minutes, each holding a claim nobody else could take. The planner slept through
+it, because its watch reported new files and there were none. A single cross-session status check brought
+all three back within seconds.
+
+So a worker claims and begins in the same turn, arms `sleep 120; echo wake` in the background when it must
+stop anywhere else, and the planner's watch reports silence as well as progress. Full rules in
+[`docs/PROTOCOL.md`](docs/PROTOCOL.md).
+
 ## Mission kinds
 
 A fleet is not only for testing. Each task declares its `kind`, which decides the working style and, more
@@ -127,6 +145,23 @@ executor made 30 calls and read 4.0 M cached tokens, another made 194 and read 5
 about the same number of lines. What a run costs is decided by how much the executor looked at, never by
 how much it said.
 
+A six worker pull mode run over the same application, 2026-08-27, is the counterweight:
+
+| | |
+|---|---|
+| Findings | 254, of which 6 blockers, plus 58 unreached entries |
+| Tasks worked | 34, claimed from a queue the planner kept extending |
+| Wall clock | 4 hours 57 minutes, first claim to last `.done` |
+| Worker time lost to dead sessions | 516 minutes of 1,782, 29 percent, in three simultaneous stalls |
+| Planner time lost to the same cause | 65 minutes, ended by the operator typing "I think the chat has hung" |
+| Operator interruptions | 8 interactive prompts across six chats, 7 of them the same pane question |
+| Planner wake-ups | 62, of which 13 were claims it took no action on |
+| Watch left running after the run finished | 5 hours 42 minutes |
+
+Every row below the findings is a defect in this plugin rather than in the application, and every one of
+them is fixed in 2.4.0. The queue itself worked: 34 tasks off a queue that did not exist when the run
+started is the shape a fixed set of briefs cannot produce.
+
 ## Reference
 
 - [`docs/PROTOCOL.md`](docs/PROTOCOL.md) run layout, brief format, finding schema, portability, shell traps
@@ -134,6 +169,10 @@ how much it said.
 - [`docs/MISSIONS.md`](docs/MISSIONS.md) the five kinds and the axis each splits along
 - [`docs/BROWSER.md`](docs/BROWSER.md) blindness, the gate, panes, viewports, round trips
 - [`docs/SWEEPS.md`](docs/SWEEPS.md) checks that catch a class of defect rather than one bug
+- [`docs/MOCKING.md`](docs/MOCKING.md) reaching states the sandbox data will not produce, and the line
+  between a scene and a shared write
+- [`scripts/fleet.sh`](scripts/fleet.sh) the queue's bookkeeping in one call per boundary, and the only
+  place the finding schema is enforced rather than requested
 - [`docs/PERF.md`](docs/PERF.md) measuring speed on a machine the fleet is loading
 - [`docs/MODELS.md`](docs/MODELS.md) which model per stage, and the delegation economics
 - [`docs/PORTING.md`](docs/PORTING.md) every assumption this makes about its host, and its substitute
@@ -143,7 +182,9 @@ how much it said.
 - **Session to session messaging in the happy path.** Session handles are opaque, change between listings,
   and reach other accounts on the same machine: a message aimed by handle once landed in an unrelated
   account's release chat. Files have addresses; sessions do not. Claude Code's own Agent Teams may be a
-  better transport for waking a session sooner, but never for carrying the only copy of a result.
+  better transport for waking a session sooner, but never for carrying the only copy of a result. The one
+  place messaging is now required is reviving a stalled worker, where nothing else works: see the section
+  above.
 - **Project specifics.** They live in the project, in `FLEET.md`.
 - **Required dependencies.** `rg`, `sg`, `jq` and friends are offered by `fleet-init` and none are needed.
   A worker that stops because `fd` is absent has invented a dependency.

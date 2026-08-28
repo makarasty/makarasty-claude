@@ -192,6 +192,40 @@ a targeted `querySelectorAll(...).length` answers the same question in twenty.
 Screenshots earn their cost when the question is about pixels. For everything else, the DOM read is both
 cheaper and stronger evidence.
 
+## Instruments that return a confident zero
+
+A blind pane is not the only way to get a plausible nothing. These are the ones a six worker run hit on
+2026-08-27, every one of them found the hard way, and each returns a number rather than an error.
+
+- **`performance.getEntriesByType('resource')` reported 0 API requests on a page issuing more than twenty.**
+  The default 250-entry buffer was already full before the application booted: `{link: 2, script: 248}`,
+  because a dev server serves every module as its own script request. Call
+  `performance.setResourceTimingBufferSize(6000)` at document start, or patch `fetch` and
+  `XMLHttpRequest` and count there. A worker that trusts the empty buffer concludes the screen makes no
+  requests.
+- **`transferSize` and `encodedBodySize` read 0 cross-origin** when the API sends no `Timing-Allow-Origin`.
+  Byte counts have to come from decoded response bodies read off the request, and the finding says which
+  it measured. Wire size is simply not available.
+- **Patching only `fetch` misses half an application.** Anything on axios uses the XHR adapter. Patch both,
+  and re-install after every full page load, because a reload wipes the patch and the next measurement
+  silently runs unpatched.
+- **`javascript_tool` hard-times-out at 30 seconds.** One 16 route navigate-and-measure batch was lost
+  whole to it. Around six routes is the ceiling, and batches are budgeted by route count rather than by
+  expression size.
+- **Evaluating an expression blurs the page**, which closes an open dropdown or panel. State that only
+  exists while a control is open cannot be read by a probe that closes it: install a `setInterval` sampler
+  writing into a global, drive the control, then read the global back.
+- **Programmatic `element.click()` does not always reach a component's handler**, and a synthetic
+  `KeyboardEvent` is worse: one earlier false finding came entirely from dispatching Escape on `document`.
+  Press controls through the browser tool, as a real event.
+- **`ctrl+a` does not select all in the pane.** Typed text concatenated with what was already there, and
+  once landed at position 0. Use `triple_click` to select before typing.
+- **The screenshot coordinate frame is not the CSS viewport.** Measured 800x381 against a CSS viewport of
+  1516x723, about 0.528x. Rectangles from `getBoundingClientRect` are scaled before they are handed to a
+  click, or the click lands somewhere else entirely.
+- **The pane can resize itself mid-run**, measured 1516x723 to 1666x866 with no emulation involved. Every
+  geometric finding carries the viewport it was measured at, for this reason rather than for tidiness.
+
 ## Screenshots are the expensive read
 
 The ban on full accessibility trees works: measured across an eight worker run, zero were pulled. The cost

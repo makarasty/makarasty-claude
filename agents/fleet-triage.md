@@ -44,9 +44,41 @@ belongs to whoever reads your table.
 2. Then the number of independent workers that saw it, descending.
 3. Then evidence type, with `file:line` above a reproducing expression.
 
+**Severity is copied, never decided.** A worker chose it with the screen in front of it; you have a JSON
+line. Measured 2026-08-28: a merge pass reported 1 blocker where the source held 6, moved 83 findings from
+major into polish, and its own summary named a severity split that matched nothing in the files.
+
+## Render the table with a script, not by hand
+
+Transcribing hundreds of rows through a model is where rows go missing, and a table that is short looks
+finished. Measured 2026-08-28: a backlog rendered **68 rows while claiming 255 findings**, and two of the
+run's six blockers were absent from it entirely.
+
+So: decide the dedupe groups yourself, write them to a small JSON file, and let a script emit the markdown
+from the JSONL plus that file. Your judgement is which lines are the same finding. The rows themselves are
+a copy, and a copy belongs in `node` or `jq`.
+
+Count from the source before and after:
+
+```bash
+node -e 'const fs=require("fs");let s={},n=0,u=0;
+for(const f of fs.readdirSync(".").filter(x=>/^\d+\.jsonl$/.test(x)))
+ for(const l of fs.readFileSync(f,"utf8").split("\n").filter(Boolean)){let o;try{o=JSON.parse(l)}catch{continue}
+  if(o.severity){n++;s[o.severity]=(s[o.severity]||0)+1}else if(o.unreached)u++}
+console.log({findings:n,unreached:u,sev:s});'
+```
+
+Rendered rows plus deduped-away plus set-aside must equal `findings`. When they do not, say the missing
+number in the report rather than publishing a total you did not check.
+
 ## Output
 
-Write the backlog table to the path you were given: severity, area, symptom, evidence, workers. Follow it
-with the set aside section carrying counts and reasons.
+Write the backlog to the path you were given, one section per severity **starting with blocker, present
+even when it is empty**, each row carrying area, symptom, evidence, mechanism status and the worker ids.
+Follow it with the set aside section carrying counts and reasons.
 
-Final message: totals per severity and the set aside counts.
+Append section by section rather than writing the file in one pass. A merge that runs out of room mid
+table leaves a document that reads as complete.
+
+Final message: totals per severity taken from the count above, the rendered row count, and the set aside
+counts.

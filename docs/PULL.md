@@ -33,7 +33,8 @@ the unit whose blindness matters.
 ## Claiming
 
 ```bash
-mkdir .fleet/<run-id>/tasks/claimed/task-07 2>/dev/null && echo won
+mkdir .fleet/<run-id>/tasks/claimed/task-07 2>/dev/null &&
+  printf 'chip %s\nclaimed %s\n' "$CHIP" "$(date -Iseconds)" > .fleet/<run-id>/tasks/claimed/task-07/owner
 ```
 
 `mkdir` fails when the directory exists, and it fails atomically. Verified on NTFS 2026-08-26: eight
@@ -46,8 +47,54 @@ stop.
 **Never delete or move the ready file.** The claim directory is the only truth. A worker that dies between
 moving a file and finishing its work would take the task with it.
 
-Write `owner` inside the claim directory immediately after winning: your chip id and the time. It costs
-one line and it is what makes a stuck claim diagnosable.
+**The claim and the `owner` write are one command, not two adjacent steps.** An earlier draft said to
+write `owner` "immediately after winning", which reads as satisfiable by making it the next action, and it
+is not: a turn boundary, a compaction or a slow parent can put arbitrary minutes between two calls.
+Measured 2026-08-27: a worker won `task-12`'s `mkdir` as the last action of a turn with the `owner` write
+queued next, the turn boundary landed between them, and the claim sat ownerless for twelve minutes. From
+outside that is indistinguishable from a worker that claimed and walked away, so the planner reclaimed a
+live worker's task.
+
+## Do the bookkeeping in one call
+
+`scripts/fleet.sh` in this plugin does every step above as a single command, and a worker should use it
+rather than hand rolling the shell each time:
+
+```bash
+f=$(ls -t ~/.claude/plugins/cache/*/makarasty/*/scripts/fleet.sh | head -1)
+sh "$f" next    .fleet/<run-id> 03      # claim + owner + heartbeat + print the task and its budget
+sh "$f" beat    .fleet/<run-id> 03 task-07
+sh "$f" find    .fleet/<run-id> 03 <<< '<one JSON finding>'
+sh "$f" finish  .fleet/<run-id> 03 task-07
+sh "$f" drained .fleet/<run-id> 03
+sh "$f" status  .fleet/<run-id>         # the planner's view: claims, ages, never-beat flags, open asks
+```
+
+Measured 2026-08-27 over a six worker run: **235 of 612 worker shell calls, 38 percent, were protocol
+paperwork** - 49 claims, 52 owner writes, 44 reads of `ready/`, 56 finding appends, 16 heartbeats, 13 done
+markers. Each was a model round trip that produced no observation. One call per boundary removes about
+four fifths of that.
+
+Two of its behaviours matter beyond the round trips. `next` exits **3** when the queue is drained, so
+"drained" stops being a judgement about a loop that failed every claim. And `find` **refuses** a finding
+that is missing `evidence`, carries a severity outside the four, or still uses the retired `what` field:
+the schema stops being a request and starts being a gate, which is the only kind of rule this repository
+has ever seen hold.
+
+## Never claim a task you are not going to begin in the same turn
+
+This supersedes the atomic-`owner` rule above, and it exists because that rule made the next failure
+harder to see rather than easier.
+
+The claim, the `owner` write, the task-file read and the first real action all belong in **one turn**, or
+the claim should not be made. A worker cannot guarantee it will ever be asked to continue, so a claim made
+at a point where work cannot begin is a promise it has no way to keep. See `PROTOCOL.md`, "A session with
+nothing pending is dead": measured 2026-08-27, three workers claimed a task as the closing act of a turn
+and were dead for 169, 171 and 176 minutes holding it.
+
+The second-order effect is the part worth remembering. Writing `owner` atomically was the right fix for
+the first failure, and it **removed the only signal that would have caught the second**. A claim with a
+fresh `owner` and a stale `heartbeat` looks exactly like a healthy worker doing slow work.
 
 ## Heartbeat, and losing a claim
 
@@ -68,10 +115,31 @@ will try to repair it, and two workers repairing one task is worse than either o
 successor's directory, refreshing the wrong liveness and marking work done that nobody did. Under a new
 id they land in a graveyard and change nothing.
 
-**Only the planner reclaims.** When a heartbeat is older than three times the task's budget, the planner
-renames the claim to `claimed/task-NN.dead-<timestamp>` rather than deleting it. Renaming leaves the
-evidence, and it means the original worker discovers the loss at its next heartbeat instead of finishing
-work nobody will read.
+**Only the planner reclaims**, and the test for a dead claim needs all three of these terms:
+
+> `heartbeat` still equals the `claimed` timestamp, **and** no `tasks/done/<task-id>` exists, **and** more
+> than one budget has passed.
+
+The first draft of that rule had only the heartbeat term. Tested against a real run's state 2026-08-27 it
+produced **five false positives, all against one chip**: `task-18`, `task-24`, `task-27`, `task-31` and
+`task-33`, every one with a `done` marker, 95 KB of findings and a clean `.done`. That worker completed
+all five and simply never rewrote a heartbeat. Under the one-term rule the planner would have reclaimed
+and re-run five finished tasks.
+
+The heartbeat signature alone cannot separate "died at the claim" from "finished without heartbeating",
+and those two need opposite responses. The `done` marker is the term doing the real work.
+
+**Note what that measurement says about heartbeats: they are optional in practice.** A worker completed
+five tasks without writing one. Either heartbeating becomes load bearing and something enforces it, or
+reclaim logic must not lean on it. Until then, treat a missing heartbeat as no evidence rather than as
+evidence of death.
+
+**An ownerless claim has a floor of one budget**, for the twelve minute reason above. A genuinely dead
+claim stays dead and comes back one budget later, so the floor costs nothing.
+
+When a claim does fail the three-term test, the planner renames it to `claimed/task-NN.dead-<timestamp>`
+rather than deleting it. Renaming leaves the evidence, and it means the original worker discovers the loss
+at its next heartbeat instead of finishing work nobody will read.
 
 Workers never reclaim from each other. Two workers deciding a third is dead is how a live worker gets its
 task stolen mid run.
@@ -86,10 +154,21 @@ no gain to trade against that: an extra file on disk costs nothing, and the clai
 
 Every task carries `budget: <minutes>`, the planner's estimate.
 
+**Size it from the measured distribution, not from caution.** Across 36 completed tasks on 2026-08-27 the
+median task took **23 minutes** and the mean 23, against budgets the planner wrote as 40 and 45. Only
+three tasks of 36 came within five minutes of their budget. An inflated budget is not free: the abort rail
+is twice the budget, so a 45 minute estimate means a worker may run 90 minutes before it is required to
+hand anything back, which is longer than the entire tail of a healthy run. Write 25, and let the two
+tasks that genuinely need 50 carry 50.
+
 **The planner writes the queue longest task first.** Workers that take the longest work first and the
 short work last finish within a few minutes of each other; the reverse order leaves one worker holding a
 forty minute task while the rest idle. This is the whole answer to making a fleet land together, and it
 costs nothing but the order of the files.
+
+That rule was written before the run that measured it and then not followed: the 2026-08-27 queue went
+45, 40, 35, 30, 45, 40, 35, 45 in file order, grouped by subject rather than by cost. Order the files by
+budget descending when you publish them, because the numeric prefix is fixed once a worker can see it.
 
 ## One browser spawn per task
 
@@ -111,6 +190,11 @@ is not.
 with the reason, marks the task done, and takes the next one. An unbounded task starves the queue, and a
 worker that quietly runs four times its estimate is indistinguishable from one that hung.
 
+That limit is armed, not intended: at claim time the worker backgrounds
+`sleep <2 x budget in seconds>; echo budget-elapsed`, and the notification when it fires is both the clock
+and the thing keeping the session alive. Nothing else in a fleet measures elapsed time, and a worker three
+subagent rounds into a scenario cannot tell twenty minutes from eighty.
+
 The planner then re-files the unreached remainder as a new task. That is the loop that lets a weak first
 plan repair itself instead of being wrong for the entire run.
 
@@ -128,7 +212,11 @@ that chat.
 Every other question is a file, and the worker keeps moving while it waits for the answer.
 
 The planner watches `ask/` and `tasks/done/` with one `Monitor`, so both a question and a finished task
-wake it without polling.
+wake it without polling. That watch must also emit on **silence**, because a queue where nothing is
+happening produces no files and therefore no events: see `commands/fleet-wait.md` for the loop that emits
+a stall line on a quiet interval and names the outstanding claims. A watch that reports only good news
+turns a stalled fleet into a planner asleep, measured at 65 minutes in one run before the operator
+intervened.
 
 ## What the planner does while the run is live
 
@@ -156,6 +244,43 @@ exact. The `caveman` plugin does this well when installed.
 
 Never compress an assertion or a brief's statement of what correct looks like. A dropped negation turns a
 passing screen into a defect report, and no token saving covers the hour spent chasing it.
+
+## Where the wall clock actually goes
+
+Full accounting of one six worker pull run, 2026-08-27, from first claim to last `.done`: **4 hours 57
+minutes**, so 1,782 worker-minutes were available.
+
+| | minutes | share |
+|---|---|---|
+| Inside a task, working | 748 | 42% |
+| Inside a task, dead (three claims held by stalled sessions) | 537 | 30% |
+| Between tasks | 102 | 6% |
+| Startup, pane gating, and workers idle after their own queue drained | 395 | 22% |
+
+Four things follow, and they are the whole speed story.
+
+**The stalls are the run.** Without them the queue drains around 20:30 local instead of 22:19: they cost
+roughly an hour and fifty minutes of a five hour run, and they also produced the two thinnest workers of
+the six, 19 and 18 findings against 65, 56, 50 and 46.
+
+**Between-task cost is already near zero**, 102 minutes total and 78 of those in a single end-of-run wait.
+Workers claim the next task the moment they finish. Nothing is to be won there, which is worth knowing
+before someone optimises it.
+
+**A task is one browser walk and nothing else.** Median task 23 minutes, and the delegated scenario inside
+it accounts for about 20 of those. A worker holds one pane, so its ceiling is roughly 2.6 tasks an hour
+however the queue is written. More throughput comes from more panes, or from work that does not need one.
+
+**Which is the lever nobody pulled.** In that run, 33 of 34 tasks declared `kind: verify` and every one of
+them was written to be walked in a browser, including the ones whose whole answer was in the repository: a
+vendor egress audit that read source files took 8 minutes and never needed a pane. File-bound work is not
+pane-bound, so it does not consume a worker slot at all. Separate the queue into the tasks that need a
+pane and the tasks that need a repository, and the second lane's width is whatever the machine will run.
+
+**And every task took the top tier twice.** All 34 carried `model: opus` and `verdict-model: opus`.
+`docs/MODELS.md` exists to make that a decision per stage, and its guidance for a clear-spec sweep is
+Sonnet walking with Opus ruling. Defaulting both to the same model is not wrong everywhere, but nobody
+chose it and it is the largest single line in what a run costs.
 
 ## Measured cost
 

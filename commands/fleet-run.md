@@ -43,19 +43,54 @@ reach the disk.
 `$ARGUMENTS` naming a run directory that contains `tasks/ready/` is **pull mode**. Read
 `docs/PULL.md` and then loop:
 
-1. Walk `tasks/ready/` in order and try `mkdir tasks/claimed/<task-id>` on each. The first success is
-   your task; the attempt is also the check, so failing all of them means the queue is drained.
-2. Write `owner` inside the claim directory: your chip id and the time.
+0. Locate the plugin's helper once and use it for every boundary below, because doing this by hand cost
+   one measured run 235 shell calls that produced no observation:
+
+   ```bash
+   f=$(ls -t ~/.claude/plugins/cache/*/makarasty/*/scripts/fleet.sh | head -1)
+   ```
+
+1. `sh "$f" next .fleet/<run-id> <chip>` claims the first free task, writes `owner` and the first
+   heartbeat atomically, and prints the task with its budget and abort deadline. **Exit 3 means the queue
+   is drained.** By hand: walk `tasks/ready/` in order, `mkdir tasks/claimed/<task-id>` on each, and write
+   `owner` in the same command, never as a second step.
+2. Read the task file and take the first real action on it **in the same turn as the claim**.
 3. Work the task exactly as the sections below describe a brief, rewriting
    `claimed/<task-id>/heartbeat` at every natural boundary.
 4. Past twice the task's `budget`, stop that task: write what you have, record the rest as unreached with
    the reason, and take the next one. An unbounded task starves the queue.
-5. Write `tasks/done/<task-id>`, then loop.
 
-Queue drained: write `<chip>.done` and stop. That marker means the queue is empty, not that one task
-ended.
+   **Arm that limit rather than intending it.** At the moment you claim, background
+   `sleep <2 x budget in seconds>; echo budget-elapsed`. Nothing else in this system measures elapsed time,
+   and a worker deep in a scenario has no idea whether eight minutes have passed or eighty. The wake is
+   the clock, and it is the same wake that keeps the session alive.
+5. `sh "$f" finish .fleet/<run-id> <chip> <task-id>`, then loop. It refuses to write the marker if the
+   claim is no longer yours.
+
+Queue drained: `sh "$f" drained .fleet/<run-id> <chip>` and stop. That marker means the queue is empty,
+not that one task ended.
+
+Findings go in through `sh "$f" find .fleet/<run-id> <chip>` with the JSON on stdin. It **refuses** a
+finding with no `evidence`, a severity outside the four, or the retired `what` field, which is the only
+way the schema has ever actually held.
 
 Findings accumulate in one `<chip>.jsonl` across every task you take.
+
+**Never end a turn holding a claim you have not begun, and never end one with nothing pending at all.**
+A session runs only while something invokes it, and nothing in a fleet types into your chat. Measured
+2026-08-27: three of six workers claimed their next task as the closing act of a turn, each wrote a
+confident summary saying which task it had just taken, and each then sat dead for **169, 171 and 176
+minutes** holding that claim until the planner sent a status check. None had started the work.
+
+When you cannot avoid stopping mid-run, arm your own wake first and run it with `run_in_background`:
+
+```bash
+sleep 120; echo wake
+```
+
+The notification when it exits re-invokes you. That is also the only timeout this system has: a subagent
+that never returns, an answer that never comes, a pane nobody displays. Full rule and the measurements in
+`docs/PROTOCOL.md`, "A session with nothing pending is dead".
 
 Ask the operator exactly one thing, ever: to display your Browser pane. Their eyes are on the planner's
 chat, not yours, so a second interactive question waits unanswered while you hold a claimed task. Every
@@ -63,6 +98,12 @@ other question goes in `ask/<chip>-<n>.md`, and then you keep working and read
 `answers/<chip>-<n>.md` at your next task boundary. Blocking on an answer turns a question into a stall.
 A pane that is not displayed is the exception, and that goes to the operator through `.waiting` and
 `AskUserQuestion`, because the planner cannot open a pane.
+
+**A question about a reserved action is not asked at all**, in either channel. A production write, a
+vendor call that costs money, a message to a real person: no answer makes those yours to do, so record the
+step as unreached with the reason and take the next one. Measured 2026-08-27: a worker asked the operator
+whether a writing band was sanctioned and blocked four minutes twenty six seconds holding a claim, for an
+answer that could not have changed what it was allowed to do.
 
 Your own narration during the run is read by nobody, so compress it from the first message. When the
 `caveman` plugin is installed, `/caveman full` does this for you; without it, drop articles, filler and
@@ -102,12 +143,24 @@ list live in `docs/BROWSER.md`. Run it.
 Live: continue. A reading between one and fifty-nine is blind as well, not a weak pass: report the number,
 since intermittent compositing usually means a paging machine or a pane closing under you.
 
-Blind: write `.fleet/<run-id>/<chip-id>.waiting` holding one line saying the pane is not displayed, then
-ask the operator to display it with `AskUserQuestion`, and delete the marker once they answer. A worker
-stopped on a question looks exactly like a worker still working, and the marker is the only thing that
-says otherwise. Measure again
-when they answer, because the reading is the proof rather than the reply. Hold login and navigation until
-it reads live, since both hang for minutes through a blind pane and the hang reads as a broken backend.
+Blind: write `.fleet/<run-id>/<chip-id>.waiting` holding one line saying the pane is not displayed and
+naming the viewport you measured. Then **wait by polling, not by prompting**: arm
+`sleep 90; echo regate` with `run_in_background`, and re-run the gate when it wakes you. Delete the marker
+the moment the gate reads live, and measure again rather than trusting anyone's reply, because the reading
+is the proof.
+
+The marker is what reaches the operator: the planner's watch reports every `.waiting` within one interval,
+in the chat the operator is actually reading, and one instruction there opens every pane at once. Six
+separate prompts in six worker chats do not. Measured 2026-08-27: all six workers of one run opened the
+pane prompt within forty seconds of each other and blocked between 96 and 185 seconds each, asking the
+same question in six chats nobody was looking at.
+
+Fall back to `AskUserQuestion` only after roughly three unanswered poll rounds, and keep the marker on
+disk while you do. A worker stopped on a question looks exactly like a worker still working, and the
+marker is the only thing that says otherwise.
+
+Hold login and navigation until the gate reads live, since both hang for minutes through a blind pane and
+the hang reads as a broken backend.
 
 Gate again before each later batch of visual work.
 

@@ -165,6 +165,21 @@ finished workers sitting on disk unnoticed, because the operator assumed the pla
 planner assumed the operator would run it. The watch waits in the shell, so arming it early costs nothing
 and it fires whether the chips are clicked in one minute or twenty.
 
+**Arm the loop `fleet-wait` gives you, quiet timer included, and do not write your own.** A watch that
+emits only when a file appears cannot tell a working fleet from a dead one, and a stalled fleet writes no
+files. Measured 2026-08-27: a planner armed a hand written `while true` watch with no stall line and no
+exit condition. It missed three workers dying at the same minute, left the planner asleep for 65 minutes
+until the operator intervened, and then ran on for five hours and forty two minutes after the run had
+finished.
+
+**When the stall line names a claim nobody is advancing, message that worker.** A cross-session status
+check is the only thing that revives a session which ended a turn with nothing pending, and in that run
+all three came back within seconds of one. Findings still travel by file, never by message.
+
+**Collect the run you have before planning the next one.** Measured 2026-08-27: a planner went straight
+from a finished run into planning its successor, and the first run's six finished workers sat unmerged for
+two hours forty nine minutes.
+
 Then tell the operator, in this order: the run id, how many chips are waiting, the wave order you
 recommend and why, and that each worker needing a browser wants its pane opened and kept on screen.
 

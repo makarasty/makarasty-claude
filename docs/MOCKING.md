@@ -20,6 +20,22 @@ not a mock.
 The test: could another worker notice this if it looked right now? If yes, you changed shared state. If
 no, you set up a scene.
 
+**Apply that test to what the application does next, not only to your write.** A store write dies on
+reload and no other worker can see it. The application's reaction to that write does not have to.
+
+Measured 2026-08-27: a worker pinned a presence store's map to empty to simulate a realtime delivery
+fault. With presence empty the computed role fell to `''`, and the application's own repair watch fired
+`toggleRole(user.roles[0])`, which wrote a different role out to the shared realtime database for the
+whole account. Every worker on that account measured the rest of the run under the wrong role, with a
+materially different permission set: lists returned 403 and badges read 0, and those readings look exactly
+like defects. The worker's own executor had reported the flip as a harmless no-op.
+
+So before simulating a fault in a store, ask what the application repairs, syncs or persists in response
+to the state you are about to write. A store the application treats as authoritative for shared state is
+not a safe place to stage a scene, however local the write itself looks. When it happens anyway, say so in
+`ask/` immediately with the window it contaminated: findings measured inside that window are not
+worthless, but every one of them has to name the state it was measured under.
+
 ## What to inject, in order of usefulness
 
 **Store state.** The application's own reactive stores are the highest leverage surface: reach them

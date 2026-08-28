@@ -38,6 +38,42 @@ plugin is built against.
 Read each worker's `<chip>.notes.md` for claims it raised and then refuted. Do not re-file a refuted
 claim, and carry the refutation into the backlog: the next run meets the same misleading evidence.
 
+## Count from the files, then check the backlog against the count
+
+The merge is where a run's worst findings disappear, and nothing about the output looks wrong when they
+do. Measured 2026-08-28 on a 254 finding run: the backlog rendered **68 rows while its own summary claimed
+255 findings**, reported **1 blocker where the workers had filed 6**, moved 83 findings from major into
+polish, and dropped two of the six blockers entirely, including the run's worst one, ten Firestore
+collections readable by any authenticated user. Every number in that summary was written as prose by the
+same pass that lost the rows.
+
+So take the numbers from the source before you write anything, mechanically:
+
+```bash
+cd .fleet/<run-id> && node -e '
+const fs=require("fs");let sev={},n=0,un=0;
+for(const f of fs.readdirSync(".").filter(x=>/^\d+\.jsonl$/.test(x)))
+ for(const l of fs.readFileSync(f,"utf8").split("\n").filter(Boolean)){let o;try{o=JSON.parse(l)}catch{continue}
+  if(o.severity){n++;sev[o.severity]=(sev[o.severity]||0)+1}else if(o.unreached)un++}
+console.log({findings:n,unreached:un,sev});'
+```
+
+Then, before you hand the backlog over, count the rendered rows and reconcile:
+
+- Rows in the backlog plus rows deduped away plus rows refuted must equal the source count. If they do
+  not, say the number that is missing rather than publishing a total you did not verify.
+- Every `blocker` in the source appears in the backlog **as a blocker**. Collection dedupes and ranks; it
+  does not re-grade. A severity a worker chose with evidence in front of it is not overturned by a pass
+  that never saw the screen.
+- A backlog too long to render in one pass is written incrementally, area by area, and never truncated
+  silently. Truncation reads as coverage, which is the exact defect class this plugin exists to catch.
+
+## Stop the watch as your last act
+
+`TaskStop` the run's `fleet-wait` monitor once the backlog is written. Measured 2026-08-27: a watch left
+armed after its run finished kept polling for five hours and forty two minutes, and was noticed only when
+the operator asked what the six hour task in their task list was.
+
 ## Enforce the evidence contract
 
 Keep findings whose `evidence` is a `file:line`, a reproducing expression, or three readings with spread
