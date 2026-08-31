@@ -67,9 +67,27 @@ for (const run of runs) {
   for (const id of claimed) {
     if (/\.(dead|released)-/.test(id)) continue;
     if (fs.existsSync(path.join(run, 'tasks', 'done', id))) continue;
+    const claimDir = path.join(run, 'tasks', 'claimed', id);
     let owner = '';
-    try { owner = fs.readFileSync(path.join(run, 'tasks', 'claimed', id, 'owner'), 'utf8'); } catch { continue; }
+    try { owner = fs.readFileSync(path.join(claimDir, 'owner'), 'utf8'); } catch { continue; }
     if (!new RegExp(`^chip ${chip}$`, 'm').test(owner)) continue;
+
+    // Holding a claim is not the failure. The failure is claiming as the closing act of a turn and never
+    // touching it again [M03], and it has a signature: the heartbeat still equals the claim time, and the
+    // claim is minutes old. A worker that has written a heartbeat is working, and a worker that armed a
+    // clock and stopped is doing what the protocol asks - blocking either of those costs a turn and
+    // teaches the next worker to distrust the hook.
+    let beaten = false;
+    try {
+      const claimedAt = (/^claimed (.+)$/m.exec(owner) || [])[1];
+      const beat = fs.readFileSync(path.join(claimDir, 'heartbeat'), 'utf8').trim();
+      beaten = Boolean(beat) && beat !== (claimedAt || '').trim();
+    } catch { beaten = false; }
+    if (beaten) continue;
+
+    let ageMin = 0;
+    try { ageMin = (Date.now() - fs.statSync(claimDir).mtimeMs) / 60000; } catch { ageMin = 0; }
+    if (ageMin > 10) continue;
 
     // Block this claim once. A second stop on the same claim is the worker's decision to make.
     const once = path.join(run, 'chips', `${session}.warned-${id}`);

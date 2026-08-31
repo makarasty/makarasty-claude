@@ -163,8 +163,15 @@ as health: `fleet-wait` now emits a stall line on a quiet interval for exactly t
 `chips/<session-id>` exists for one reason: a worker ending its turn while it still holds an unfinished
 claim is invisible to every script here — the disk looks identical whether that worker is thinking or gone
 — and visible to the harness, which knows a turn is ending. The plugin's `Stop` hook reads that file,
-finds the claim, and refuses the stop once with a sentence naming the task [M03]. It does nothing at all
-when the session is not a worker, when the worker has written its marker, or when it has already fired.
+finds the claim, and refuses the stop once with a sentence naming the task.
+
+**It refuses only on the signature the failure actually had** [M03]: a claim whose heartbeat still equals
+its claim time, taken within the last ten minutes. Holding a claim is not the failure — claiming as the
+closing act of a turn and never touching it again is. A worker that has written a heartbeat is working,
+and a worker that armed a clock and stopped is doing what this document asks; blocking either would cost a
+turn and teach the next worker to route around the hook. It also stands down when the session is not a
+worker at all, when the marker is already written, when the harness says it has already fired, and after
+it has blocked a given claim once.
 
 `<run-id>` is the date plus a short slug: `2026-08-26-checkout-flow`.
 

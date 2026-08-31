@@ -236,6 +236,16 @@ claimed now
   check "and told which task it still holds" "task-05" "$err"
   node "$guard" < "$hookrun/in.json" >/dev/null 2>&1; rc=$?
   code "the same claim is never blocked twice" 0 "$rc"
+  # A worker that has written a heartbeat is working, not dying: the hook must leave it alone.
+  rm -f "$hookrun/.fleet/r1/chips/sess-2.warned-task-05"
+  printf 'chip 07
+claimed 2026-08-31T10:00:00
+' > "$hookrun/.fleet/r1/tasks/claimed/task-05/owner"
+  printf '2026-08-31T10:04:00
+' > "$hookrun/.fleet/r1/tasks/claimed/task-05/heartbeat"
+  node "$guard" < "$hookrun/in.json" >/dev/null 2>&1; rc=$?
+  code "a worker that has beaten its heartbeat is left alone" 0 "$rc"
+
   printf '' > "$hookrun/.fleet/r1/07.done"
   rm -f "$hookrun/.fleet/r1/chips/sess-2.warned-task-05"
   node "$guard" < "$hookrun/in.json" >/dev/null 2>&1; rc=$?
