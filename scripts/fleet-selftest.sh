@@ -259,6 +259,28 @@ else
 fi
 
 echo
+echo "the documents point at files that exist"
+
+if command -v node >/dev/null 2>&1; then
+  broken=$(node -e '
+    const fs=require("fs"), path=require("path");
+    const root = process.argv[1];
+    const walk = d => fs.readdirSync(d, {withFileTypes:true}).flatMap(e => e.name === ".git" || e.name === "node_modules" ? [] : e.isDirectory() ? walk(path.join(d, e.name)) : [path.join(d, e.name)]);
+    let bad = [];
+    for (const f of walk(root).filter(f => f.endsWith(".md"))) {
+      const text = fs.readFileSync(f, "utf8");
+      for (const m of text.matchAll(/\]\((?!https?:)([^)#]+)\)/g)) {
+        if (!fs.existsSync(path.resolve(path.dirname(f), m[1]))) bad.push(path.basename(f) + " -> " + m[1]);
+      }
+    }
+    process.stdout.write(bad.join(", "));
+  ' "$here/.." 2>/dev/null)
+  [ -z "$broken" ] && ok "every link between the documents resolves" || bad "every link between the documents resolves" "$broken"
+else
+  echo "  skip  no node for the link check"
+fi
+
+echo
 echo "the measurement ledger"
 
 led="$here/../docs/MEASUREMENTS.md"
