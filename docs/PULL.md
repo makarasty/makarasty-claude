@@ -69,7 +69,7 @@ f=$(ls -t ~/.claude/plugins/cache/*/makarasty/*/scripts/fleet.sh | head -1)
 sh "$f" next    .fleet/<run-id> 03 repo # claim IN YOUR LANE + owner + heartbeat + the task and its budget
 sh "$f" clock   .fleet/<run-id> 03 task-07 25    # prints the self-disarming clock; background it
 sh "$f" beat    .fleet/<run-id> 03 task-07
-sh "$f" find    .fleet/<run-id> 03 <<< '<one JSON finding>'
+printf '%s' '<one JSON finding>' | sh "$f" find .fleet/<run-id> 03   # a pipe, not a herestring: `<<<` is a bashism
 sh "$f" finish  .fleet/<run-id> 03 task-07   # the clock guarding it exits on this marker
 sh "$f" drained .fleet/<run-id> 03           # exit 5 = queue empty but still open, poll instead
 sh "$f" status  .fleet/<run-id>         # the planner's view: claims, ages, never-beat flags, open asks

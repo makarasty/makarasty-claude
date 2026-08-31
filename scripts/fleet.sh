@@ -419,6 +419,22 @@ sweep)
   ;;
 
 status)
+  # How long this run has been going, against the ceiling in calibration.json. Comparable tools have
+  # documented runs that looped for days; a fleet has no way to stop itself, so the least it can do is say
+  # when continuing has become a decision rather than a default.
+  maxmin=$(cal max_run_minutes 480)
+  first=""
+  for f in "$run"/RUN_FORMAT "$run"/tasks/ready/*.md; do
+    [ -e "$f" ] || continue; first=$(mtime "$f"); [ -n "$first" ] && break
+  done
+  if [ -n "$first" ]; then
+    nowsec=$(date +%s 2>/dev/null || echo 0)
+    if [ "$nowsec" -gt 0 ]; then
+      runmin=$(( (nowsec - first) / 60 ))
+      echo "== run age ${runmin}m of a ${maxmin}m ceiling"
+      [ "$runmin" -gt "$maxmin" ] && echo "  PAST THE CEILING: continuing is a decision now. Land what exists or raise it in calibration.json."
+    fi
+  fi
   echo "== claims"
   for d in "$run"/tasks/claimed/*/; do
     [ -d "$d" ] || continue

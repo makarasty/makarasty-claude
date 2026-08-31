@@ -99,7 +99,7 @@ Read from the issue trackers of comparable orchestrators and from classic file-q
 Nine commands (`fleet`, `fleet-init`, `fleet-plan`, `fleet-run`, `fleet-login`, `fleet-wait`,
 `fleet-collect`, plus `commit`, `review`, `unslop`), three agents, twelve reference documents, and five
 scripts: the queue bookkeeping and schema gate (`fleet.sh`), the reconciling merge (`fleet-merge.mjs`), a
-67-assertion self-test that runs the whole protocol against a temporary directory in about a second
+81-assertion self-test that runs the whole protocol against a temporary directory in about a second
 (`fleet-selftest.sh`), a machine census (`fleet-load.mjs`), and a post-run forensics reader
 (`fleet-retro.mjs`).
 

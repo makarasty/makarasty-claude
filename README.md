@@ -292,7 +292,7 @@ Everything else is **calibration, not contract**: every prose rule, every agent 
 this README. Those change whenever a run measures something better, and a minor version may rewrite all of
 them.
 
-[`scripts/fleet-selftest.sh`](scripts/fleet-selftest.sh) is that contract's executable form - 67
+[`scripts/fleet-selftest.sh`](scripts/fleet-selftest.sh) is that contract's executable form - 81
 assertions, about a second, no browser and no tokens. Run it after installing, and on any machine before
 trusting a fleet on it: it is also the portability probe this plugin has instead of a test matrix.
 
