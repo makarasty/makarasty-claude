@@ -60,7 +60,7 @@ costs are paid on every read by every worker.
 
 ### What a stranger has to be able to do
 
-- [`docs/WALKTHROUGH.md`](WALKTHROUGH.md) is a fifteen-minute first run for somebody who has never used
+- [`docs/WALKTHROUGH.md`](docs/WALKTHROUGH.md) is a fifteen-minute first run for somebody who has never used
   this: prove the machine can run it in one second, set a project up, plan, click two chips, read the
   banner. It names what to do when each of the five common failures appears.
 - The README says **what the version number covers** and what is explicitly calibration rather than
