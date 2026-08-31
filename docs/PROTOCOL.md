@@ -102,22 +102,18 @@ after their own `.done` marker**, thirteen of the fourteen affected, one worker 
 minutes after it finished by four abort clocks nobody stopped. From the outside that run had no ending at
 all, and the operator could not tell a finished fleet from a working one in either direction.
 
-So every clock is **named for the obligation it guards, and its id is written on disk beside it**:
+So a clock **reads the disk that closes its obligation, and exits when it sees it**. Never a bare
+`sleep`; `fleet.sh clock` prints the loop to background, and it stops itself:
 
-| Clock | Guards | Where its id lives | Stopped at |
-|---|---|---|---|
-| `sleep <2 x budget>; echo budget-elapsed` | one claimed task | `tasks/claimed/<task-id>/clock` | `fleet.sh finish`, which prints it back |
-| `sleep 90; echo regate` | a pane that is not displayed | inside the `<chip>.waiting` marker | the gate reading live, when the marker is deleted |
-| `sleep 300; echo recheck` | a drained queue the planner may still fill | `tasks/queue-open` is the obligation | the marker's removal, at the next poll |
+| Clock | Guards | Exits when |
+|---|---|---|
+| `fleet.sh clock <run> <chip> <task> <budget>` | one claimed task | `tasks/done/<task>` or `<chip>.done` appears, checked every 30 seconds |
+| `sleep 90; echo regate` | a pane that is not displayed | the gate reads live and the `.waiting` marker goes |
+| `sleep 300; echo recheck` | a drained queue the planner may still fill | `tasks/queue-open` is gone at the next poll |
 
-`fleet.sh finish` and `fleet.sh drained` print `STOP_CLOCK <id>` for every clock they close. **`TaskStop`
-that id before your next call**, in the same turn. One clock per obligation, and never a second clock for
-an obligation that already has one.
-
-**The permitted response to a stale wake is exactly two acts: disarm everything still armed, and re-print
-the end banner.** Nothing else, no re-reading of the run, no summary of what you did. Disarming is
-discipline and discipline slips, so this bounds the slip to one cheap turn and buys the property the
-operator actually needs: **a finished worker's last visible message is always its end banner.**
+One clock per obligation, and never a second for an obligation that already has one. The first version of
+this rule asked the worker to remember to stop its clock. It was asked 87 times across two runs and obeyed
+zero times, which is why the clock now watches the disk instead of the worker's memory.
 
 ## The end banner, and the title
 

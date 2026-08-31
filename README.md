@@ -256,6 +256,30 @@ the thirty-fourth.
 - [`docs/MODELS.md`](docs/MODELS.md) which model per stage, and the delegation economics
 - [`docs/PORTING.md`](docs/PORTING.md) every assumption this makes about its host, and its substitute
 
+## What the version number covers
+
+A version is a promise about a surface, and this one is deliberately narrow. Under semver, 1.x will not
+break:
+
+- **The run directory layout** - `tasks/ready`, `tasks/claimed/<id>/owner`, `tasks/done`, `ask/`,
+  `answers/`, `pane/`, and the `<chip>.jsonl` / `.notes.md` / `.done` / `.blocked` / `.waiting` files.
+  Each run stamps `RUN_FORMAT` at its first write, and a `fleet.sh` that reads an older format refuses a
+  newer run rather than misreading it.
+- **`fleet.sh`'s subcommands and their exit codes**: 0 done, 2 usage or a refused input, 3 the queue is
+  drained for that lane, 4 the claim is no longer yours, 5 the queue is empty but still open.
+- **The four line shapes** a findings file may hold: a finding, `unreached`, `created`, `state_changed` -
+  and the fields the schema gate enforces on each.
+- **The marker semantics**: `.done` means finished, `.blocked` means it never saw, `.waiting` means it is
+  stopped on a person, `FINISHED` means the run was landed by declaration.
+
+Everything else is **calibration, not contract**: every prose rule, every agent brief, and every number in
+this README. Those change whenever a run measures something better, and a minor version may rewrite all of
+them.
+
+[`scripts/fleet-selftest.sh`](scripts/fleet-selftest.sh) is that contract's executable form - 67
+assertions, about a second, no browser and no tokens. Run it after installing, and on any machine before
+trusting a fleet on it: it is also the portability probe this plugin has instead of a test matrix.
+
 ## Known limits of 1.0.0
 
 Written down rather than fixed, because a tool that hides its sample size is asking to be trusted further

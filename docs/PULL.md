@@ -67,10 +67,10 @@ rather than hand rolling the shell each time:
 ```bash
 f=$(ls -t ~/.claude/plugins/cache/*/makarasty/*/scripts/fleet.sh | head -1)
 sh "$f" next    .fleet/<run-id> 03 repo # claim IN YOUR LANE + owner + heartbeat + the task and its budget
-sh "$f" clock   .fleet/<run-id> 03 task-07 <background-task-id>   # the abort clock guarding that claim
+sh "$f" clock   .fleet/<run-id> 03 task-07 25    # prints the self-disarming clock; background it
 sh "$f" beat    .fleet/<run-id> 03 task-07
 sh "$f" find    .fleet/<run-id> 03 <<< '<one JSON finding>'
-sh "$f" finish  .fleet/<run-id> 03 task-07   # prints STOP_CLOCK <id>: TaskStop it in the same turn
+sh "$f" finish  .fleet/<run-id> 03 task-07   # the clock guarding it exits on this marker
 sh "$f" drained .fleet/<run-id> 03           # exit 5 = queue empty but still open, poll instead
 sh "$f" status  .fleet/<run-id>         # the planner's view: claims, ages, never-beat flags, open asks
 sh "$f" answer  .fleet/<run-id> 05-1 06-1    # planner: ONE answer, filed under every question it settles
@@ -209,12 +209,11 @@ That limit is armed, not intended: at claim time the worker backgrounds
 and the thing keeping the session alive. Nothing else in a fleet measures elapsed time, and a worker three
 subagent rounds into a scenario cannot tell twenty minutes from eighty.
 
-**And it is disarmed at the same boundary that closes the task.** Record the clock's id against the claim
-(`fleet.sh clock`), and `TaskStop` the id `finish` prints back. A clock that outlives its task keeps
-waking a session that has nothing left to do: measured 2026-08-31, fourteen workers armed 52 clocks and
-stopped none, which cost 703 minutes of session life and 108 model turns after the work was over, and left
-every finished chat looking busy in the task panel. The rule and the reasoning are in `PROTOCOL.md`,
-"Pending work mirrors unwritten obligations".
+**And it disarms itself.** `fleet.sh clock` prints a loop that watches for its own task's done marker and
+exits when it appears, so the boundary that closes the task also silences the clock. The earlier shape, a
+bare `sleep` the worker was asked to stop, was armed 87 times across two runs and stopped zero times,
+costing 1,090 minutes of session life after the work was over. See `PROTOCOL.md`, "Pending work mirrors
+unwritten obligations".
 
 The planner then re-files the unreached remainder as a new task. That is the loop that lets a weak first
 plan repair itself instead of being wrong for the entire run.

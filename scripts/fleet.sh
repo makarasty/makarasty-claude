@@ -10,12 +10,13 @@
 # Usage, from anywhere:
 #   fleet.sh next    <run-dir> <chip> [lane]       claim the first free task in that lane, print it. exit 3 = drained
 #   fleet.sh beat    <run-dir> <chip> <task-id>    refresh heartbeat. exit 4 = claim lost, take another
-#   fleet.sh clock   <run-dir> <chip> <task-id> <bg-task-id>   record the abort clock guarding this claim
-#   fleet.sh finish  <run-dir> <chip> <task-id>    mark the task done, print the clock to TaskStop
+#   fleet.sh clock   <run-dir> <chip> <task-id> [budget-min]   print the self-disarming abort clock to background
+#   fleet.sh finish  <run-dir> <chip> <task-id>    mark the task done; its clock then exits on its own
 #   fleet.sh find    <run-dir> <chip>              read one JSON finding on stdin, validate, append
 #   fleet.sh ask     <run-dir> <chip>              read a question on stdin, file it, print the path
 #   fleet.sh drained <run-dir> <chip>              queue empty: write <chip>.done. exit 5 = queue still open
 #   fleet.sh status  <run-dir>                     planner view: claims, ages, markers, questions
+#   fleet.sh width   <run-dir>                     how many repo workers this queue and this machine want
 #   fleet.sh pane-ask   <run-dir> <chip>           file a browser walk for a pane host to run, on stdin
 #   fleet.sh pane-next  <run-dir> <host>           claim the oldest pending walk. exit 3 = none pending
 #   fleet.sh pane-serve <run-dir> <host> <id>      answer one walk with JSON on stdin, gate reading included
@@ -25,6 +26,9 @@
 #   fleet.sh merge   <run-dir>                     findings -> backlog.jsonl, reconciled or refused
 #   fleet.sh render  <run-dir>                     backlog.jsonl -> backlog.md and skipped.md
 #   fleet.sh fixqueue <run-dir>                    backlog.jsonl -> a queue a second fleet can claim
+#
+# The run directory carries a RUN_FORMAT file naming the layout's major version. A newer format is
+# refused rather than misread.
 #
 # POSIX sh. Works in Git Bash on Windows. Node is used only to validate a finding, and its absence
 # downgrades that to a warning rather than a failure.
@@ -36,11 +40,31 @@ cmd=${1:-}; run=${2:-}
 [ -d "$run" ] || { echo "no such run directory: $run" >&2; exit 2; }
 now() { date -Iseconds 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%SZ; }
 
+# The on-disk run layout is the thing this tool promises to keep working. Stamp its major version into the
+# run at the first write, so a reader a year from now can refuse a shape it does not know instead of
+# quietly misreading it. The schema has already had one breaking rename (`what` -> `observed`); the next
+# one should not be silent.
+RUN_FORMAT=1
+stamp() { [ -e "$run/RUN_FORMAT" ] || printf '%s
+' "$RUN_FORMAT" > "$run/RUN_FORMAT" 2>/dev/null || true; }
+readable() {
+  [ -e "$run/RUN_FORMAT" ] || return 0
+  have=$(head -1 "$run/RUN_FORMAT" 2>/dev/null | tr -dc 0-9)
+  [ -n "$have" ] || return 0
+  if [ "$have" -gt "$RUN_FORMAT" ]; then
+    echo "REFUSED: this run is format $have and this fleet.sh reads format $RUN_FORMAT" >&2
+    echo "  Update the plugin rather than reading it with the wrong shape." >&2
+    exit 2
+  fi
+}
+readable
+
 case "$cmd" in
 
 next)
   chip=${3:?chip id required}
   lane=${4:-}
+  stamp
   mkdir -p "$run/tasks/claimed" "$run/tasks/done"
   for f in "$run"/tasks/ready/*.md; do
     [ -e "$f" ] || continue
@@ -65,7 +89,7 @@ next)
       echo "LANE ${lane:-any}"
       echo "BUDGET_MIN $b"
       echo "ABORT_AFTER_SEC $((b * 120))"
-      echo "RECORD_CLOCK sh fleet.sh clock $run $chip $id <background-task-id>"
+      echo "ARM_CLOCK background what this prints: sh fleet.sh clock $run $chip $id $b"
       echo "---"
       cat "$f"
       exit 0
@@ -76,14 +100,45 @@ next)
   ;;
 
 clock)
-  # The abort clock is a background `sleep` whose exit re-invokes the worker. It has to be stopped at the
-  # boundary that closes the obligation it guards, and stopping it needs its harness task id, which only
-  # the worker knows. So the worker writes it here, beside the claim, and `finish` hands it back.
-  chip=${3:?chip id required}; id=${4:?task id required}; bg=${5:?background task id required}
-  d=$run/tasks/claimed/$id
-  [ -d "$d" ] || { echo "no claim $id to guard" >&2; exit 2; }
-  printf '%s\n' "$bg" > "$d/clock"
-  echo "CLOCK $bg guards $id"
+  # The abort clock, printed rather than described. Background exactly what this prints.
+  #
+  # It used to be a plain `sleep <2x budget>` that somebody had to remember to stop, and across two
+  # measured runs 87 of them were armed and none stopped, waking finished sessions for 1,090 minutes.
+  # A rule asked for 87 times and obeyed 0 times is not a rule. So the clock now reads the same disk the
+  # rest of the protocol writes: it wakes every 30 seconds, exits silently the moment its task is closed
+  # or its worker is finished, and only speaks if the budget really did elapse. Nothing to disarm,
+  # because nothing outlives its obligation.
+  chip=${3:?chip id required}; id=${4:?task id required}; mins=${5:-25}
+  rounds=$(( mins * 2 * 60 / 30 ))
+  printf 'i=0; while [ $i -lt %s ]; do sleep 30; i=$((i+1)); [ -e "%s/tasks/done/%s" ] && exit 0; [ -e "%s/%s.done" ] && exit 0; done; echo budget-elapsed-%s\n' \
+    "$rounds" "$run" "$id" "$run" "$chip" "$id"
+  ;;
+
+width)
+  # The repo lane's width, computed rather than retyped. Inputs: how many repo tasks are ready, and what
+  # the machine has free. A formula in prose drifts every time somebody restates it; this one has a
+  # single spelling.
+  ready=0
+  for f in "$run"/tasks/ready/*.md; do
+    [ -e "$f" ] || continue; id=$(basename "$f" .md)
+    [ -e "$run/tasks/done/$id" ] && continue
+    lane=$(sed -n 's/^needs:[[:space:]]*\([a-z][a-z]*\).*/\1/p' "$f" | head -1)
+    [ -n "$lane" ] || lane=repo
+    [ "$lane" = repo ] && ready=$((ready + 1))
+  done
+  want=$(( (ready + 2) / 3 ))
+  [ "$want" -lt 1 ] && want=1
+  cap=""
+  loader=$(ls -t "$(dirname "$0")/fleet-load.mjs" ~/.claude/plugins/cache/*/makarasty/*/scripts/fleet-load.mjs 2>/dev/null | head -1)
+  if [ -n "$loader" ] && command -v node >/dev/null 2>&1; then
+    cap=$(node "$loader" --json 2>/dev/null | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{const o=JSON.parse(s);const byRam=Math.floor(o.freeGB-2);console.log(Math.max(1,Math.min(byRam,12)));}catch{console.log("")}})')
+  fi
+  [ -n "$cap" ] || cap=6
+  n=$want; [ "$n" -gt "$cap" ] && n=$cap
+  echo "REPO_WORKERS $n"
+  echo "  ready repo tasks $ready, one worker per three -> $want"
+  echo "  machine cap $cap (free memory less the 2 GB the operator keeps, ceiling 12)"
+  echo "  the pane lane is a display question and starts at 2; the verify lane is 1"
   ;;
 
 beat)
@@ -105,15 +160,12 @@ finish)
   [ -d "$d" ] && now > "$d/heartbeat"
   mkdir -p "$run/tasks/done"; : > "$run/tasks/done/$id"
   echo "DONE $id"
-  if [ -s "$d/clock" ]; then
-    echo "STOP_CLOCK $(cat "$d/clock")"
-    echo "The task is closed, so the clock guarding it is now noise: TaskStop that id before your next call."
-    : > "$d/clock"
-  fi
+  echo "The clock guarding it sees this marker within 30 seconds and exits on its own."
   ;;
 
 find)
   chip=${3:?chip id required}
+  stamp
   tmp=$(mktemp); cat > "$tmp"
   if command -v node >/dev/null 2>&1; then
     node -e '
@@ -176,13 +228,14 @@ drained)
     echo "Nothing ready right now. Poll again rather than finishing: sleep 300; echo recheck"
     exit 5
   fi
-  for d in "$run"/tasks/claimed/*/; do
-    [ -d "$d" ] || continue
-    [ -s "$d/clock" ] && grep -q "chip $chip\$" "$d/owner" 2>/dev/null && { echo "STOP_CLOCK $(cat "$d/clock")"; : > "$d/clock"; }
-  done
   : > "$run/$chip.done"
   echo "QUEUE DRAINED, $chip.done written"
-  echo "Stop every background task of yours now: a clock that outlives the work wakes a finished session."
+  echo
+  sh "$0" summary "$run" "$chip"
+  n=0; [ -e "$run/$chip.jsonl" ] && n=$(grep -c '"severity"' "$run/$chip.jsonl" 2>/dev/null || echo 0)
+  echo
+  echo "RENAME THIS SESSION TO: fleet $(basename "$run") $chip - done ${n}f"
+  echo "That title is the only thing about you visible from the chat the operator is sitting in."
   ;;
 
 pane-ask)

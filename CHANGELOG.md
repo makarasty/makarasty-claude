@@ -33,20 +33,37 @@ workers, 32 tasks, 741 files changed, 83 commits, every cited commit verified pr
 - **Pending work mirrors unwritten obligations, in both directions.** A session runs only while something
   invokes it, so a worker with an obligation arms a clock; a worker with none must have nothing armed.
   Across the two runs 87 clocks were armed and none stopped, which cost 1,090 minutes and 282 model turns
-  of session life after the workers' own completion markers. Clocks are now named for the obligation they
-  guard, recorded beside it, and handed back by `finish` to be stopped.
+  of session life after the workers' own completion markers. A clock now watches the disk that closes its
+  obligation and exits on its own, so there is nothing left to remember.
 - **A run ends visibly.** A generated banner from disk, the session renamed so the sidebar shows it
   finished, one notification for the whole run, and a `FINISHED` file that survives every missed
   notification.
 - **Two panes, not ten.** Seven panes carried 104 minutes of browser driving in a 153-minute run; two
   carried three minutes in the run after it. The display fits five; the work has needed two.
 
+### Rules that stopped being rules
+
+Three of them were deleted rather than restated, because the measurement said asking harder would not
+work:
+
+- **The abort clock disarms itself.** `fleet.sh clock` prints a loop that watches for its own task's done
+  marker and exits when it appears. The previous shape asked the worker to stop it: asked 87 times across
+  two runs, obeyed zero times.
+- **`drained` ends the worker.** It writes the marker, prints the banner generated from disk, and prints
+  the exact session title to set. Four prose rules became one call.
+- **`fleet.sh width` sizes the repo lane** from the ready queue and free memory, so the formula has one
+  spelling instead of one per doc that quotes it.
+
+The rule behind all three: a requirement belongs in a script when the script sits on a path the worker
+already walks, in a hook when only the harness can see it, and in prose only when neither can - and prose
+costs are paid on every read by every worker.
+
 ### What ships
 
 Nine commands (`fleet`, `fleet-init`, `fleet-plan`, `fleet-run`, `fleet-login`, `fleet-wait`,
 `fleet-collect`, plus `commit`, `review`, `unslop`), three agents, twelve reference documents, and five
 scripts: the queue bookkeeping and schema gate (`fleet.sh`), the reconciling merge (`fleet-merge.mjs`), a
-55-assertion self-test that runs the whole protocol against a temporary directory in about a second
+67-assertion self-test that runs the whole protocol against a temporary directory in about a second
 (`fleet-selftest.sh`), a machine census (`fleet-load.mjs`), and a post-run forensics reader
 (`fleet-retro.mjs`).
 
@@ -60,7 +77,8 @@ scripts: the queue bookkeeping and schema gate (`fleet.sh`), the reconciling mer
   directory marketplace.
 - **Portability is documented, not exercised.** `docs/PORTING.md` names ten host assumptions; only the
   Windows plus Git Bash path has been run.
-- The self-test covers **mechanics only**. Whether a worker actually disarms its clocks, asks for its pane
-  in the first minute, or prints its banner is asked for in prose and enforced by nothing — and this
-  plugin's own measurements include two cases of a prose rule being routed around.
+- The self-test covers **mechanics only**. Whether a worker asks for its pane in the first minute, renames
+  its session, or splits its own work sensibly is asked for in prose and enforced by nothing — and this
+  plugin's own measurements include two cases of a prose rule being routed around. Where that mattered
+  most, the rule was moved into a script instead; where it could not be, it is named here.
 - `fleet-retro.mjs` reads the host's transcript layout directly and will break if that layout changes.

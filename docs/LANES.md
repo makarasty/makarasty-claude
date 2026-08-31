@@ -93,13 +93,15 @@ slower, only wider.** So the two errors are not symmetric. Too many repo workers
 few quiet chats. Too few wastes something expensive: pane hours spent walking a plan that a repo finding
 would have rewritten.
 
-Take the cheap error deliberately, and **size from supply rather than from demand**:
+Take the cheap error deliberately, and **size from supply rather than from demand**. One call answers it,
+because a formula retyped is a formula that drifts:
 
-```
-repo workers = clamp( ceil(ready repo tasks / 3), 1, machine cap )
+```bash
+sh "$f" width .fleet/<run-id>     # REPO_WORKERS n, with the queue and machine terms it came from
 ```
 
-Every term is on disk or one command away. The alternative - estimate the repo minutes, estimate the pane
+It counts the unclaimed `needs: repo` tasks, takes one worker per three, and clamps that to what free
+memory allows. Every term is on disk or one command away. The alternative - estimate the repo minutes, estimate the pane
 lane's wall clock, divide so they land together - needs two numbers the planner is provably bad at
 guessing, and it is guessing them before the run, which is the exact failure `PULL.md` exists to route
 around. Landing together is not the objective. Finishing the repo lane **early** is, because its findings

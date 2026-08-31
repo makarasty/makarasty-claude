@@ -76,6 +76,13 @@ sh "$fleet" finish "$run" "${winner:-20}" task-03 >/dev/null 2>&1
 sh "$fleet" next "$run" 09 repo >/dev/null 2>&1; rc=$?
 code "an empty lane reports drained rather than handing out foreign work" 3 "$rc"
 
+[ -e "$run/RUN_FORMAT" ] && ok "the run carries the layout version it was written under" || bad "the run carries the layout version it was written under"
+cp "$run/RUN_FORMAT" "$run/.fmt"; echo 99 > "$run/RUN_FORMAT"
+out=$(sh "$fleet" status "$run" 2>&1); rc=$?
+code "a run from a newer format is refused rather than misread" 2 "$rc"
+check "and it says which format it found" "format 99" "$out"
+cp "$run/.fmt" "$run/RUN_FORMAT"
+
 echo
 echo "the schema gate"
 
@@ -101,14 +108,36 @@ out=$(printf '%s' '{"unreached":"steps 7-9","reason":"budget exceeded"}' | sh "$
 code "an unreached line is a legitimate line" 0 "$rc"
 
 echo
-echo "clocks"
+echo "clocks that disarm themselves"
 
-sh "$fleet" clock "$run" 07 task-02 bg-abc123 >/dev/null 2>&1; rc=$?
-code "a clock can be recorded against a claim" 0 "$rc"
-out=$(sh "$fleet" finish "$run" 07 task-02 2>&1)
-check "finishing the task hands the clock back to be stopped" "STOP_CLOCK bg-abc123" "$out"
-out=$(sh "$fleet" finish "$run" 07 task-02 2>&1)
-case "$out" in *STOP_CLOCK*) bad "a clock is handed back exactly once" "$out";; *) ok "a clock is handed back exactly once";; esac
+out=$(sh "$fleet" clock "$run" 07 task-02 20 2>&1); rc=$?
+code "a clock is printed for the worker to background" 0 "$rc"
+check "it watches for its own task closing" "tasks/done/task-02" "$out"
+check "and for its worker finishing" "07.done" "$out"
+check "and it speaks only if the budget really elapsed" "echo budget-elapsed-task-02" "$out"
+rounds=$(printf '%s' "$out" | grep -o -- '-lt [0-9][0-9]*' | head -1 | tr -dc 0-9)
+[ "$rounds" = "80" ] && ok "twice a 20 minute budget, in 30 second rounds" || bad "twice a 20 minute budget, in 30 second rounds" "$rounds rounds"
+# The clock exits on the marker rather than on being stopped, so close the task first and let it run its
+# whole budget at zero sleep: a clock that still speaks here is one that would wake a finished worker.
+sh "$fleet" finish "$run" 07 task-02 >/dev/null 2>&1
+( eval "$(printf '%s' "$out" | sed 's/sleep 30/sleep 0/')" ) > "$run/.clockout" 2>&1
+if grep -q "budget-elapsed" "$run/.clockout" 2>/dev/null; then
+  bad "a closed task silences its clock" "clock still fired"
+else
+  ok "a closed task silences its clock"
+fi
+
+# And the same clock still fires when the task really is open, or it would be a clock that never rings.
+task task-09 repo 1
+sh "$fleet" next "$run" 07 repo >/dev/null 2>&1
+out9=$(sh "$fleet" clock "$run" 07 task-09 1 2>&1)
+( eval "$(printf '%s' "$out9" | sed 's/sleep 30/sleep 0/')" ) > "$run/.clockout9" 2>&1
+if grep -q "budget-elapsed-task-09" "$run/.clockout9" 2>/dev/null; then
+  ok "an open task's clock still rings at twice its budget"
+else
+  bad "an open task's clock still rings at twice its budget" "$(cat "$run/.clockout9" 2>/dev/null)"
+fi
+sh "$fleet" finish "$run" 07 task-09 >/dev/null 2>&1
 
 out=$(sh "$fleet" finish "$run" 99 task-01 2>&1); rc=$?
 code "a worker cannot close somebody else's claim" 4 "$rc"
@@ -124,8 +153,10 @@ check "and it is told to poll instead" "Poll again" "$out"
 [ -e "$run/07.done" ] && bad "no done marker while the queue is open" "07.done exists" || ok "no done marker while the queue is open"
 
 rm "$run/tasks/queue-open"
-sh "$fleet" drained "$run" 07 >/dev/null 2>&1
+out=$(sh "$fleet" drained "$run" 07 2>&1)
 [ -e "$run/07.done" ] && ok "closing the queue lets the worker finish" || bad "closing the queue lets the worker finish"
+check "and finishing prints the end banner itself" "WORKER 07 FINISHED" "$out"
+check "and the exact session title to set" "RENAME THIS SESSION TO: fleet" "$out"
 
 out=$(sh "$fleet" summary "$run" 07 2>&1)
 check "the worker banner names the worker" "WORKER 07 FINISHED" "$out"
@@ -153,6 +184,14 @@ sleep 1   # the flag compares mtimes, and both writes land in the same second ot
 printf 'the tool everybody is tripping over is fixed\n' | sh "$fleet" broadcast "$run" >/dev/null 2>&1
 out=$(sh "$fleet" status "$run" 2>&1)
 check "a question older than the broadcast is flagged rather than left silently open" "broadcast landed after it" "$out"
+
+echo
+echo "sizing the repo lane"
+
+out=$(sh "$fleet" width "$run" 2>&1); rc=$?
+code "the width of the repo lane is computed, not retyped" 0 "$rc"
+check "and it answers with a number" "REPO_WORKERS" "$out"
+check "showing the queue term it came from" "ready repo tasks" "$out"
 
 echo
 echo "the pane broker"

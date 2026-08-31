@@ -62,19 +62,14 @@ reach the disk.
 4. Past twice the task's `budget`, stop that task: write what you have, record the rest as unreached with
    the reason, and take the next one. An unbounded task starves the queue.
 
-   **Arm that limit rather than intending it.** At the moment you claim, background
-   `sleep <2 x budget in seconds>; echo budget-elapsed`. Nothing else in this system measures elapsed time,
-   and a worker deep in a scenario has no idea whether eight minutes have passed or eighty. The wake is
-   the clock, and it is the same wake that keeps the session alive.
+   **Arm that limit rather than intending it.** `sh "$f" clock .fleet/<run-id> <chip> <task-id> <budget>`
+   prints a loop; background exactly what it prints. Nothing else in this system measures elapsed time, and
+   a worker deep in a scenario has no idea whether eight minutes have passed or eighty. That loop watches
+   for its own task closing, so it rings only if the budget really elapsed.
 
-   **Then record it**, in the same turn, with the task id the harness gave you:
-   `sh "$f" clock .fleet/<run-id> <chip> <task-id> <background-task-id>`. A clock nobody can name is a
-   clock nobody can stop, and one clock per claim is the whole quota: never arm a second for a task that
-   already has one.
 5. `sh "$f" finish .fleet/<run-id> <chip> <task-id>`, then loop. It refuses to write the marker if the
-   claim is no longer yours, and it prints `STOP_CLOCK <id>` for the clock that was guarding the task.
-   **`TaskStop` that id in the same turn.** Measured 2026-08-31: fourteen workers left 52 clocks armed,
-   and the run spent 703 minutes and 108 model turns being woken after its own work was over.
+   claim is no longer yours. The clock sees that marker within thirty seconds and exits on its own, so
+   there is nothing to remember and nothing to stop.
 
 Queue drained: `sh "$f" drained .fleet/<run-id> <chip>` and stop. That marker means the queue is empty,
 not that one task ended.
@@ -260,21 +255,16 @@ could not see, and writes no findings.
 
 ## 5. End so that a person can see you ended
 
-Four acts, in this order, and none of them is optional. `PROTOCOL.md`, "Pending work mirrors unwritten
-obligations", is where the rule behind them lives.
+`sh "$f" drained .fleet/<run-id> <chip>` is the whole ending. It writes the marker, prints the banner
+generated from disk, and prints the exact session title to set. Two things are left for you:
 
-1. **Disarm.** `TaskStop` every background task you armed: the abort clocks, the regate poll, the wake.
-   The marker is written, you owe the disk nothing, so nothing may be pending. Check your own task panel
-   is empty rather than trusting your memory of what you armed.
-2. **Banner.** `sh "$f" summary .fleet/<run-id> <chip>` and let its output stand as your report. It is
-   generated from disk, so it cannot claim findings you did not file.
-3. **Rename this session**, if the host offers a session-title tool, keeping the addressing prefix:
-   `fleet <run-id> <chip> - done <n>f`, or `- BLIND` if you wrote `.blocked`. That title is the only thing
-   about you visible from the chat the operator is actually sitting in.
-4. **Stop.** No closing summary of the application, no advice about what to fix. The banner is the message.
+1. **Rename this session** to the title it printed, if the host offers a session-title tool. That title is
+   the only thing about you visible from the chat the operator is actually sitting in.
+2. **Stop.** Let the banner stand as your report: no closing summary of the application, no advice about
+   what to fix. Your clocks are already watching for the markers you just wrote, so nothing of yours is
+   still pending.
 
-If a clock you missed wakes you later, you get exactly two acts: disarm whatever is still armed, and print
-the banner again. Nothing else.
+If something wakes you afterwards, print the banner again and stop. Nothing else.
 
 ## Done when
 
