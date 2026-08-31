@@ -13,7 +13,9 @@
 #   fleet.sh clock   <run-dir> <chip> <task-id> [budget-min]   print the self-disarming abort clock to background
 #   fleet.sh finish  <run-dir> <chip> <task-id>    mark the task done; its clock then exits on its own
 #   fleet.sh find    <run-dir> <chip>              read one JSON finding on stdin, validate, append
-#   fleet.sh ask     <run-dir> <chip>              read a question on stdin, file it, print the path
+#   fleet.sh ask     <run-dir> <chip>              worker: read a question on stdin, file it, print the path
+#   fleet.sh answer  <run-dir> <id> [id...]        planner: one answer on stdin, filed under every id it settles
+#   fleet.sh broadcast <run-dir>                   planner: append something every worker reads at its next boundary
 #   fleet.sh drained <run-dir> <chip>              queue empty: write <chip>.done. exit 5 = queue still open
 #   fleet.sh status  <run-dir>                     planner view: claims, ages, markers, questions
 #   fleet.sh sweep   <run-dir> [--release]         claims nobody is advancing; --release hands them back

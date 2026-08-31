@@ -219,8 +219,9 @@ plan repair itself instead of being wrong for the entire run.
 
 ## Asking the planner
 
-A worker writes `ask/<chip>-<n>.md`, one question with enough context to answer without the transcript,
-then **keeps working**. It reads `answers/<chip>-<n>.md` at its next task boundary, and
+A worker files a question with `sh "$f" ask .fleet/<run-id> <chip>`, reading it from stdin — one question
+with enough context to answer without the transcript — and then **keeps working**. The helper numbers the
+file and prints where the answer will appear; by hand it is `ask/<chip>-<n>.md`. It reads `answers/<chip>-<n>.md` at its next task boundary, and
 `answers/00-broadcast.md` at every boundary.
 
 **The planner answers with `fleet.sh answer`, naming every question the answer settles.** One reply often
