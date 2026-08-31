@@ -84,6 +84,16 @@ if (cmd === 'merge') {
   merged.sort((a, b) => SEV.indexOf(a.severity) - SEV.indexOf(b.severity) ||
     b.workers.length - a.workers.length || String(a.area).localeCompare(String(b.area)));
 
+  // A torn line is a finding this merge cannot read, so the backlog it would write is already missing one.
+  // Refuse before writing rather than after: `landed` gates on backlog.jsonl existing, so a written
+  // backlog beside a non-zero exit code is a run that can still land over the missing finding.
+  if (torn.length) {
+    console.error(`TORN LINES       ${torn.length}: ${torn.map((t) => t.chip + ':' + t.line).join(', ')}`);
+    console.error('REFUSED: a torn line is a finding that would vanish from the backlog, so nothing was');
+    console.error('         written. Fix the line, or delete it deliberately, and run merge again.');
+    process.exit(1);
+  }
+
   const w = (f, rows) => fs.writeFileSync(path.join(runDir, f), rows.map((r) => JSON.stringify(r)).join('\n') + (rows.length ? '\n' : ''));
   w('backlog.jsonl', merged);
   w('skipped.jsonl', skipped);
@@ -101,14 +111,7 @@ if (cmd === 'merge') {
   console.log(`deduped away     ${findings.length - merged.length - skipped.length}`);
   console.log(`unreached        ${unreached.length}`);
   console.log(`auxiliary lines  ${aux.length}${windows.length ? `, ${windows.length} shared-state window(s)` : ''}`);
-  if (torn.length) {
-    // A torn line is a finding this merge cannot read, which is a finding missing from the backlog. The
-    // reconciliation refuses a run whose numbers do not add up; this is the same failure one line earlier.
-    console.error(`TORN LINES       ${torn.length}: ${torn.map((t) => t.chip + ':' + t.line).join(', ')}`);
-    console.error('REFUSED: a torn line is a finding that would vanish from the backlog. Fix the line, or');
-    console.error('         delete it deliberately, and run merge again.');
-    process.exitCode = 1;
-  }
+
   if (accounted !== findings.length) {
     console.error(`RECONCILE FAILED: ${accounted} sightings accounted for against ${findings.length} input findings`);
     process.exit(1);

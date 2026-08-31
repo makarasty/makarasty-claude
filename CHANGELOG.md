@@ -112,8 +112,8 @@ mode between prompts.
 
 - Every number here was measured on **one machine** (Windows 11, 31.2 GB, 16 cores), by **one operator**,
   against **one application**. They are real measurements and a weak sample.
-- The **pane broker** (`docs/BROKER.md`) has never run live. Its mechanics carry 12 self-test assertions
-  and nothing else.
+- The **pane broker** (`docs/BROKER.md`) has never run live. Its mechanics carry self-test assertions and
+  nothing else.
 - The **published install path is untested**: this release was developed and installed from a local
   directory marketplace.
 - **Portability is half exercised.** `docs/PORTING.md` names eleven host assumptions and only Windows has

@@ -17,7 +17,7 @@
     "pane_workers_default": "M15 - seven panes carried 104 minutes of driving in a 153 minute run",
     "frame_gate_min_fps": "M01, M02 - below 60 the pane is blind and everything it returns is fiction",
     "budget_multiplier": "PULL.md - a worker past twice its budget hands the remainder back",
-    "fanout_default": "M13 - a subagent spends ~45k tokens before it does anything, so a part must be worth a slice of work Read by a planner, not by a script: LANES.md is where it is applied.",
+    "fanout_default": "M13 - a subagent spends ~45k tokens before it does anything, so a part must be worth a slice of work. Read by a planner rather than by a script: LANES.md applies it.",
     "max_run_minutes": "A ceiling, not a measurement: comparable tools have documented runs that looped for days and cost thousands. A run past this is a decision to continue, not a default.",
     "hook_claim_window_minutes": "M03 - the workers that died had claimed within the minute; past ten a quiet claim is long work, and the planner's sweep owns it",
     "quiet_interval_seconds": "Read by a planner when it arms the watch loop in fleet-wait.md, not by any script here.",

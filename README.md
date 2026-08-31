@@ -260,7 +260,7 @@ the thirty-fourth.
 - [`scripts/fleet-merge.mjs`](scripts/fleet-merge.mjs) findings to a reconciled backlog, and a backlog to a
   queue a fix fleet can claim
 - [`scripts/fleet-selftest.sh`](scripts/fleet-selftest.sh) the whole protocol against a temporary directory
-  in about a second, with no sessions, no browser and no tokens: 38 checks over the lane filter, the atomic
+  in about a second, with no sessions, no browser and no tokens: checks over the lane filter, the atomic
   claim, the schema gate, the clocks, the completion markers and the landing test. Run it before trusting a
   change to the plugin
 - [`scripts/fleet-load.mjs`](scripts/fleet-load.mjs) what the machine is carrying right now, by class, and

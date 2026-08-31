@@ -35,11 +35,15 @@ code() { # code <name> <expected-exit> <actual-exit>
 
 # The abort deadline and the clock's round count are derived from calibration.json, so an operator who
 # edits it must not see a red self-test on a healthy install: read the same number the script reads.
-mult=2
+mult=2; poll=30
 if command -v node >/dev/null 2>&1; then
   _cal=$(ls -t "$here/../calibration.json" 2>/dev/null | head -1)
-  [ -n "$_cal" ] && mult=$(node -e 'try{const v=require(process.argv[1]).budget_multiplier;if(typeof v==="number")console.log(v)}catch{}' "$_cal" 2>/dev/null)
+  if [ -n "$_cal" ]; then
+    mult=$(node -e 'try{const v=require(process.argv[1]).budget_multiplier;if(typeof v==="number")console.log(v)}catch{}' "$_cal" 2>/dev/null)
+    poll=$(node -e 'try{const v=require(process.argv[1]).clock_poll_seconds;if(typeof v==="number")console.log(v)}catch{}' "$_cal" 2>/dev/null)
+  fi
   [ -n "$mult" ] || mult=2
+  [ -n "$poll" ] || poll=30
 fi
 
 task() { # task <id> <lane> <budget>
@@ -126,12 +130,12 @@ check "it watches for its own task closing" "tasks/done/task-02" "$out"
 check "and for its worker finishing" "07.done" "$out"
 check "and it speaks only if the budget really elapsed" "echo budget-elapsed-task-02" "$out"
 rounds=$(printf '%s' "$out" | grep -o -- '-lt [0-9][0-9]*' | head -1 | tr -dc 0-9)
-want_rounds=$(( 20 * mult * 60 / 30 ))
-[ "$rounds" = "$want_rounds" ] && ok "a 20 minute budget at the configured multiplier, in 30 second rounds" || bad "a 20 minute budget at the configured multiplier, in 30 second rounds" "$rounds rounds, wanted $want_rounds"
+want_rounds=$(( 20 * mult * 60 / poll ))
+[ "$rounds" = "$want_rounds" ] && ok "a 20 minute budget at the configured multiplier and poll interval" || bad "a 20 minute budget at the configured multiplier and poll interval" "$rounds rounds, wanted $want_rounds"
 # The clock exits on the marker rather than on being stopped, so close the task first and let it run its
 # whole budget at zero sleep: a clock that still speaks here is one that would wake a finished worker.
 sh "$fleet" finish "$run" 07 task-02 >/dev/null 2>&1
-( eval "$(printf '%s' "$out" | sed 's/sleep 30/sleep 0/')" ) > "$run/.clockout" 2>&1
+( eval "$(printf '%s' "$out" | sed "s/sleep $poll/sleep 0/")" ) > "$run/.clockout" 2>&1
 if grep -q "budget-elapsed" "$run/.clockout" 2>/dev/null; then
   bad "a closed task silences its clock" "clock still fired"
 else
@@ -142,7 +146,7 @@ fi
 task task-09 repo 1
 sh "$fleet" next "$run" 07 repo >/dev/null 2>&1
 out9=$(sh "$fleet" clock "$run" 07 task-09 1 2>&1)
-( eval "$(printf '%s' "$out9" | sed 's/sleep 30/sleep 0/')" ) > "$run/.clockout9" 2>&1
+( eval "$(printf '%s' "$out9" | sed "s/sleep $poll/sleep 0/")" ) > "$run/.clockout9" 2>&1
 if grep -q "budget-elapsed-task-09" "$run/.clockout9" 2>/dev/null; then
   ok "an open task's clock still rings at twice its budget"
 else

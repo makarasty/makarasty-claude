@@ -382,7 +382,11 @@ pane-status)
   echo "pane walks: $pend pending, oldest waiting ${oldest}m, $served served${median:+, median lease ${median}m}"
   # One host is enough until a walk waits longer than a walk takes. Falls back to a flat twenty minutes
   # only while no walk has been served yet and there is no lease to compare against.
-  behind=$median; [ -n "$behind" ] || behind=20
+  behind=$median
+  if [ -z "$behind" ]; then
+    behind=20
+    [ "$pend" -gt 0 ] && echo "  no walk has been served yet, so this compares against a flat 20 minutes"
+  fi
   if [ "$pend" -gt 0 ] && [ "$oldest" -gt "$behind" ]; then
     echo "  the pane lane is behind: the oldest walk has waited longer than a lease takes. Offer one more host chip"
   fi
