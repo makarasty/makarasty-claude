@@ -6,11 +6,6 @@
     "name": "makarasty",
     "url": "https://github.com/makarasty"
   },
-  "agents": [
-    "./agents/fleet-scenario.md",
-    "./agents/fleet-profiler.md",
-    "./agents/fleet-triage.md"
-  ],
   "hooks": {
     "UserPromptSubmit": [
       {
