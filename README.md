@@ -330,8 +330,10 @@ than it has been tested. Full list in [`CHANGELOG.md`](CHANGELOG.md).
   over four runs in six days. Real measurements, weak sample.
 - The **pane broker** in [`docs/BROKER.md`](docs/BROKER.md) has never run live.
 - The **published install path is untested** - this release installs from a local directory marketplace.
-- **Portability is documented, not exercised**: ten host assumptions in
-  [`docs/PORTING.md`](docs/PORTING.md), one host actually run.
+- **Portability is half exercised**: eleven host assumptions in [`docs/PORTING.md`](docs/PORTING.md), one
+  operating system actually run. The shell half is better than that — the self-test passes under both
+  `bash` and `dash`, which is what `sh` is on Debian and Ubuntu — but no macOS or Linux fleet has ever
+  run.
 - The self-test covers mechanics. Whether a worker claims in its lane, files through the gate, or lets the
   generated banner stand is what [`evals/`](evals/) is for — and those cases have never been run, because
   `claude plugin eval` is in early access and was refused on the account this was built on.

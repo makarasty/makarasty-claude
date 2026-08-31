@@ -235,19 +235,24 @@ echo "the hook that sees what no script can"
 guard="$here/../hooks/fleet-guard.mjs"
 if [ -f "$guard" ] && command -v node >/dev/null 2>&1; then
   mkdir -p "$run/chips"
-  printf '{"session_id":"sess-1","cwd":"%s"}' "$(dirname "$run")" > "$run/.hookin"
+  node -e 'require("fs").writeFileSync(process.argv[2], JSON.stringify({session_id:"sess-1", cwd:process.argv[1]}))' "$(dirname "$run")" "$run/.hookin"
   node "$guard" < "$run/.hookin" >/dev/null 2>&1; rc=$?
   code "a session with no chip registered is left alone" 0 "$rc"
 
   # A worker holding an unfinished claim, ending its turn: the failure that cost 516 minutes.
   hookrun="${TMPDIR:-/tmp}/fleet-hook-$$"; mkdir -p "$hookrun/.fleet/r1/chips" "$hookrun/.fleet/r1/tasks/claimed/task-05" "$hookrun/.fleet/r1/tasks/done"
-  # The hook is handed whatever spelling the harness uses; on Git Bash that is not the shell's own.
-  hookcwd=$(cd "$hookrun" && pwd -W 2>/dev/null || printf '%s' "$hookrun")
+  # The hook is handed whatever spelling the harness uses, and on Windows that is not the shell's. Ask
+  # node, which reports the operating system's own idea of the directory on every platform - `pwd -W` is
+  # a Git Bash extension that a stricter POSIX shell does not have.
+  hookcwd=$(cd "$hookrun" && { node -e 'process.stdout.write(process.cwd())' 2>/dev/null || pwd; })
   printf '07' > "$hookrun/.fleet/r1/chips/sess-2"
   printf 'chip 07
 claimed now
 ' > "$hookrun/.fleet/r1/tasks/claimed/task-05/owner"
-  printf '{"session_id":"sess-2","cwd":"%s"}' "$hookcwd" > "$hookrun/in.json"
+  # A Windows path carries backslashes, which have to be escaped inside JSON. Let node write the payload
+  # rather than printf, or the hook parses nothing and bails - which would make this test pass for the
+  # wrong reason.
+  node -e 'require("fs").writeFileSync(process.argv[2], JSON.stringify({session_id:"sess-2", cwd:process.argv[1]}))' "$hookcwd" "$hookrun/in.json"
   err=$(node "$guard" < "$hookrun/in.json" 2>&1 >/dev/null); rc=$?
   code "a worker ending its turn on an unfinished claim is stopped" 2 "$rc"
   check "and told which task it still holds" "task-05" "$err"
@@ -276,7 +281,7 @@ claimed 2026-08-31T10:00:00
   rm -f "$hookrun/.fleet/r1/chips/sess-2.warned-task-05"
   node "$guard" < "$hookrun/in.json" >/dev/null 2>&1; rc=$?
   code "a finished worker is never stopped" 0 "$rc"
-  printf '{"session_id":"sess-2","cwd":"%s","stop_hook_active":true}' "$hookcwd" > "$hookrun/in2.json"
+  node -e 'require("fs").writeFileSync(process.argv[2], JSON.stringify({session_id:"sess-2", cwd:process.argv[1], stop_hook_active:true}))' "$hookcwd" "$hookrun/in2.json"
   node "$guard" < "$hookrun/in2.json" >/dev/null 2>&1; rc=$?
   code "and it stands down when the harness says it already fired" 0 "$rc"
   rm -rf "$hookrun"

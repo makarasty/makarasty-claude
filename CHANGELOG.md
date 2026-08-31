@@ -116,8 +116,10 @@ mode between prompts.
   and nothing else.
 - The **published install path is untested**: this release was developed and installed from a local
   directory marketplace.
-- **Portability is documented, not exercised.** `docs/PORTING.md` names ten host assumptions; only the
-  Windows plus Git Bash path has been run.
+- **Portability is half exercised.** `docs/PORTING.md` names eleven host assumptions and only Windows has
+  run a fleet. The scripts are better tested than that: the self-test passes under `dash` as well as
+  `bash`, so the POSIX claim is checked rather than asserted — but a real run on macOS or Linux has not
+  happened.
 - The self-test covers **mechanics only**. Whether a worker asks for its pane in the first minute, renames
   its session, or splits its own work sensibly is asked for in prose and enforced by nothing — and this
   plugin's own measurements include two cases of a prose rule being routed around. Where that mattered

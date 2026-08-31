@@ -20,10 +20,11 @@ sh "$(dirname "$f")/fleet-selftest.sh"
 From a checkout rather than an install, both lines are simply `sh scripts/fleet-selftest.sh` and
 `f=scripts/fleet.sh`. `$f` is used by every later step on this page.
 
-Expect the last line to read `N passed, 0 failed`. This runs the whole protocol — claims, lanes, the schema gate, the clocks,
-the markers, the landing check — against a temporary directory, with no sessions, no browser and no
-tokens. It is also the portability probe: if it passes on your operating system, the mechanical half of
-this plugin works there.
+Expect the last line to read `N passed, 0 failed`. This runs the whole protocol — claims, lanes, the
+schema gate, the clocks, the markers, the landing check — against a temporary directory, with no sessions,
+no browser and no tokens. It is also the portability probe: if it passes on your operating system, the
+mechanical half of this plugin works there. It is checked under `bash` and under `dash`, so a strict POSIX
+`sh` is a supported shell rather than a hope.
 
 A failure here is a bug in the plugin or an unsupported shell, and it is worth reporting with the failing
 line. Nothing below will work until it passes.
