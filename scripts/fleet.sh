@@ -18,7 +18,8 @@
 #   fleet.sh broadcast <run-dir>                   planner: append something every worker reads at its next boundary
 #   fleet.sh drained <run-dir> <chip>              queue empty: write <chip>.done. exit 5 = queue still open
 #   fleet.sh status  <run-dir>                     planner view: claims, ages, markers, questions
-#   fleet.sh sweep   <run-dir> [--release]         claims nobody is advancing; --release hands them back
+#   fleet.sh sweep   <run-dir> [--release]         claims nobody is advancing; --release moves claim and
+#                                                  task aside so the planner re-files under a new id
 #   fleet.sh width   <run-dir>                     how many repo workers this queue and this machine want
 #   fleet.sh pane-ask   <run-dir> <chip>           file a browser walk for a pane host to run, on stdin
 #   fleet.sh pane-next  <run-dir> <host>           claim the oldest pending walk. exit 3 = none pending
@@ -125,8 +126,8 @@ next)
       echo "CLAIMED $id"
       echo "LANE ${lane:-any}"
       echo "BUDGET_MIN $b"
-      echo "ABORT_AFTER_SEC $((b * 120))"
-      echo "ARM_CLOCK background what this prints: sh fleet.sh clock $run $chip $id $b"
+      echo "ABORT_AFTER_SEC $(( b * $(cal budget_multiplier 2) * 60 ))"
+      echo "ARM_CLOCK background what this prints: sh \"$0\" clock $run $chip $id $b"
       echo "---"
       cat "$f"
       exit 0
@@ -195,7 +196,12 @@ beat)
 finish)
   chip=${3:?chip id required}; id=${4:?task id required}
   d=$run/tasks/claimed/$id
-  if [ -d "$d" ] && ! grep -q "chip $chip\$" "$d/owner" 2>/dev/null; then
+  # A claim that is gone was released or reclaimed while this worker was busy, and the work behind it was
+  # never checked. Closing the task here would let `landed` pass over it, so refuse exactly as `beat` does.
+  if [ ! -d "$d" ]; then
+    echo "CLAIM LOST $id, done marker NOT written"; exit 4
+  fi
+  if ! grep -q "chip $chip\$" "$d/owner" 2>/dev/null; then
     echo "CLAIM LOST $id, done marker NOT written"; exit 4
   fi
   [ -d "$d" ] && now > "$d/heartbeat"
@@ -273,7 +279,8 @@ drained)
   echo "QUEUE DRAINED, $chip.done written"
   echo
   sh "$0" summary "$run" "$chip"
-  n=0; [ -e "$run/$chip.jsonl" ] && n=$(grep -c '"severity"' "$run/$chip.jsonl" 2>/dev/null || echo 0)
+  n=0; [ -e "$run/$chip.jsonl" ] && n=$(grep -c '"severity"' "$run/$chip.jsonl" 2>/dev/null || true)
+  [ -n "$n" ] || n=0
   echo
   echo "RENAME THIS SESSION TO: fleet $(basename "$run") $chip - done ${n}f"
   echo "That title is the only thing about you visible from the chat the operator is sitting in."
@@ -313,24 +320,31 @@ pane-serve)
   host=${3:?host chip id required}; id=${4:?walk id required}
   [ -d "$run/pane/running/$id" ] || { echo "no claimed walk $id" >&2; exit 2; }
   grep -q "host $host\$" "$run/pane/running/$id/owner" 2>/dev/null || { echo "WALK LOST $id" >&2; exit 4; }
+  gate_min=$(cal frame_gate_min_fps 60)
+  claimed_at=$(sed -n 's/^claimed //p' "$run/pane/running/$id/owner" 2>/dev/null | head -1)
   tmp=$(tmpfile); cat > "$tmp"
   if command -v node >/dev/null 2>&1; then
-    node -e '
+    GATE_MIN="$gate_min" CLAIMED_AT="$claimed_at" node -e '
       const fs=require("fs");
       let o; try { o = JSON.parse(fs.readFileSync(process.argv[1],"utf8")); }
       catch (e) { console.error("REFUSED: not one JSON object: "+e.message); process.exit(1); }
       const p=[];
       // The requester never saw the pane, so the result has to carry the proof the pane was real. This is
       // the one thing a session driving its own pane could never check about itself.
+      const floor = Number(process.env.GATE_MIN || 60);
       if (typeof o.gate !== "number") p.push("gate: the frame count this walk was measured under, as a number");
-      else if (o.gate < 60) p.push("gate reads "+o.gate+", which is blind: do not serve a blind walk");
+      else if (o.gate < floor) p.push("gate reads "+o.gate+", which is blind below "+floor+": do not serve a blind walk");
       if (!o.conditions || !/\d/.test(String(o.conditions))) p.push("conditions naming viewport and zoom");
       if (!Array.isArray(o.observations)) p.push("observations: an array, empty is a real answer");
       if (p.length) { console.error("REFUSED: "+p.join("; ")); process.exit(1); }
       o.served_at = new Date().toISOString(); o.host = process.argv[2];
+      // The claim time travels into the result because the claim directory is about to be deleted, and
+      // without it nobody can say afterwards how long a walk actually took.
+      if (process.env.CLAIMED_AT) o.claimed_at = process.env.CLAIMED_AT;
       process.stdout.write(JSON.stringify(o)+"\n");
     ' "$tmp" "$host" > "$run/pane/results/$id.json" || { rm -f "$tmp" "$run/pane/results/$id.json"; exit 1; }
   else
+    echo "warning: node absent, this walk is served WITHOUT its gate reading being checked" >&2
     cat "$tmp" > "$run/pane/results/$id.json"
   fi
   rm -f "$tmp"
@@ -349,9 +363,28 @@ pane-status)
     age=$(( (nowsec - t) / 60 )); [ "$age" -gt "$oldest" ] && oldest=$age
   done
   served=$(ls "$run"/pane/results/*.json 2>/dev/null | wc -l | tr -d ' ')
-  echo "pane walks: $pend pending, oldest waiting ${oldest}m, $served served"
-  if [ "$pend" -gt 0 ] && [ "$oldest" -gt 20 ]; then
-    echo "  the pane lane is behind: offer one more host chip"
+  median=""
+  if command -v node >/dev/null 2>&1; then
+    median=$(node -e '
+      const fs=require("fs"), path=require("path"), d=process.argv[1];
+      let mins=[];
+      try { for (const f of fs.readdirSync(d)) {
+        if (!f.endsWith(".json")) continue;
+        const o=JSON.parse(fs.readFileSync(path.join(d,f),"utf8"));
+        if (o.claimed_at && o.served_at) {
+          const m=(Date.parse(o.served_at)-Date.parse(o.claimed_at))/60000;
+          if (Number.isFinite(m) && m >= 0) mins.push(m);
+        }
+      } } catch {}
+      if (mins.length) { mins.sort((a,b)=>a-b); process.stdout.write(String(Math.round(mins[Math.floor(mins.length/2)]))); }
+    ' "$run/pane/results" 2>/dev/null)
+  fi
+  echo "pane walks: $pend pending, oldest waiting ${oldest}m, $served served${median:+, median lease ${median}m}"
+  # One host is enough until a walk waits longer than a walk takes. Falls back to a flat twenty minutes
+  # only while no walk has been served yet and there is no lease to compare against.
+  behind=$median; [ -n "$behind" ] || behind=20
+  if [ "$pend" -gt 0 ] && [ "$oldest" -gt "$behind" ]; then
+    echo "  the pane lane is behind: the oldest walk has waited longer than a lease takes. Offer one more host chip"
   fi
   exit 0
   ;;
@@ -411,8 +444,16 @@ sweep)
       found=$((found + 1))
       echo "ABANDONED? $id  $owner  quiet ${age}m against a ${budget}m budget"
       if [ -n "$release" ]; then
-        mv "$d" "$run/tasks/claimed/$id.released-$(date +%Y%m%dT%H%M%S 2>/dev/null || echo swept)"
-        echo "  released; re-file it under a NEW id, never the same one"
+        stampsuffix=$(date +%Y%m%dT%H%M%S 2>/dev/null || echo swept)
+        mv "$d" "$run/tasks/claimed/$id.released-$stampsuffix"
+        # The ready file leaves the queue with the claim. Leaving it would hand the same id straight back
+        # to the next `next`, and a slow worker's late write would then land on live work rather than in
+        # the graveyard - which is the whole reason a reclaimed task returns under a new id.
+        if [ -e "$run/tasks/ready/$id.md" ]; then
+          mkdir -p "$run/tasks/released"
+          mv "$run/tasks/ready/$id.md" "$run/tasks/released/$id.md"
+        fi
+        echo "  released; the task file is in tasks/released/ - re-file it under a NEW id, never this one"
       fi
     fi
   done
@@ -474,7 +515,8 @@ summary)
   sev() { grep -c "\"severity\"[[:space:]]*:[[:space:]]*\"$2\"" "$1" 2>/dev/null || true; }
   row() {
     c=$1; f=$run/$c.jsonl
-    n=0; [ -e "$f" ] && n=$(grep -c . "$f" 2>/dev/null || echo 0)
+    n=0; [ -e "$f" ] && n=$(grep -c . "$f" 2>/dev/null || true)
+    [ -n "$n" ] || n=0
     b=$(sev "$f" blocker); m=$(sev "$f" major); mi=$(sev "$f" minor); po=$(sev "$f" polish)
     u=$(grep -c '"unreached"' "$f" 2>/dev/null || true)
     t=0; for o in "$run"/tasks/claimed/*/owner; do

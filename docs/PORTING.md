@@ -7,7 +7,7 @@ The tool changes. The pattern should not have to. This page names every assumpti
 the thing running it, what breaks when that assumption fails, and what to put in its place. Porting to a
 different harness is then a checklist rather than a rewrite.
 
-## The ten assumptions
+## The eleven assumptions
 
 **1. Several sessions run at once, each with its own context window.**
 
@@ -75,7 +75,17 @@ a stop primitive, the substitute is a clock that checks a marker and exits silen
 session once, so a host without `TaskStop` pays one turn per armed clock and the worker's stale-wake rule
 becomes load bearing rather than a safety net.
 
-**10. Something about a session is visible from outside it.**
+**10. A hook can fire when a turn ends, and can see which session is ending.**
+
+Optional, and the only thing that catches a worker ending a turn while holding a claim it never began -
+invisible to every script here, since the disk looks the same either way. It needs two things from the
+host: a `Stop` hook handed JSON carrying `session_id` and `cwd`, and a session id exported into the
+worker's shell (`CLAUDE_CODE_SESSION_ID`) so the claim can be stamped with it. Missing either, the guard
+silently never fires - which is the confident nothing this plugin exists to hunt, so a port should test it
+rather than assume it. It also never fires for a worker isolated in its own worktree, whose working
+directory contains no `.fleet/`.
+
+**11. Something about a session is visible from outside it.**
 
 Optional, and it decides whether an operator can see a fleet without opening fourteen chats. Here it is the
 sidebar title, which a session can rewrite for itself. A host without one loses the glance test: the fleet

@@ -141,8 +141,8 @@ put a pane worker at about **2.6 tasks an hour**.
 **2026-08-31**: two repo-heavy runs measured **2.87** and **4.25** tasks an hour per worker, from
 done-marker timestamps across the span between the first and the last.
 **Rule:** size the repo lane from the ready queue, not from a browser constant.
-**Status:** M16's 2.6 figure describes a browser-heavy run only; superseded for repo-only work by the two
-later numbers in the same entry.
+**Status:** current. The 2.6 figure describes a browser-heavy pane worker and nothing else; for repo work
+the two 2026-08-31 numbers in this entry are the current ones.
 
 ## M17 — A watch that reports only good news
 **2026-08-27**: three of six workers stalled at the same minute, no file changed for nearly three hours,

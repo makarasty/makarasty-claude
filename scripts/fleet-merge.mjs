@@ -101,7 +101,14 @@ if (cmd === 'merge') {
   console.log(`deduped away     ${findings.length - merged.length - skipped.length}`);
   console.log(`unreached        ${unreached.length}`);
   console.log(`auxiliary lines  ${aux.length}${windows.length ? `, ${windows.length} shared-state window(s)` : ''}`);
-  if (torn.length) console.log(`TORN LINES       ${torn.length}: ${torn.map((t) => t.chip + ':' + t.line).join(', ')}`);
+  if (torn.length) {
+    // A torn line is a finding this merge cannot read, which is a finding missing from the backlog. The
+    // reconciliation refuses a run whose numbers do not add up; this is the same failure one line earlier.
+    console.error(`TORN LINES       ${torn.length}: ${torn.map((t) => t.chip + ':' + t.line).join(', ')}`);
+    console.error('REFUSED: a torn line is a finding that would vanish from the backlog. Fix the line, or');
+    console.error('         delete it deliberately, and run merge again.');
+    process.exitCode = 1;
+  }
   if (accounted !== findings.length) {
     console.error(`RECONCILE FAILED: ${accounted} sightings accounted for against ${findings.length} input findings`);
     process.exit(1);

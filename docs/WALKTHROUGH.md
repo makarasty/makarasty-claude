@@ -10,8 +10,15 @@ If you only want to know whether the plugin works on your machine, stop after st
 ## 1. Prove the machine can run it — one second
 
 ```bash
-sh "$(ls -t ~/.claude/plugins/cache/*/makarasty/*/scripts/fleet-selftest.sh | head -1)"
+f=$(ls -t ~/.claude/plugins/cache/*/makarasty/*/scripts/fleet.sh | head -1)
 ```
+
+```bash
+sh "$(dirname "$f")/fleet-selftest.sh"
+```
+
+From a checkout rather than an install, both lines are simply `sh scripts/fleet-selftest.sh` and
+`f=scripts/fleet.sh`. `$f` is used by every later step on this page.
 
 Expect the last line to read `N passed, 0 failed`. This runs the whole protocol — claims, lanes, the schema gate, the clocks,
 the markers, the landing check — against a temporary directory, with no sessions, no browser and no

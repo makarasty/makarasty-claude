@@ -33,6 +33,15 @@ code() { # code <name> <expected-exit> <actual-exit>
   [ "$2" = "$3" ] && ok "$1" || bad "$1" "exit $3, wanted $2"
 }
 
+# The abort deadline and the clock's round count are derived from calibration.json, so an operator who
+# edits it must not see a red self-test on a healthy install: read the same number the script reads.
+mult=2
+if command -v node >/dev/null 2>&1; then
+  _cal=$(ls -t "$here/../calibration.json" 2>/dev/null | head -1)
+  [ -n "$_cal" ] && mult=$(node -e 'try{const v=require(process.argv[1]).budget_multiplier;if(typeof v==="number")console.log(v)}catch{}' "$_cal" 2>/dev/null)
+  [ -n "$mult" ] || mult=2
+fi
+
 task() { # task <id> <lane> <budget>
   cat > "$run/tasks/ready/$1.md" <<EOF
 ---
@@ -57,7 +66,7 @@ out=$(sh "$fleet" next "$run" 07 repo); rc=$?
 code "a repo worker claims something" 0 "$rc"
 check "and it is not the pane task" "CLAIMED task-02" "$out"
 check "the claim prints its lane" "LANE repo" "$out"
-check "and its abort deadline in seconds" "ABORT_AFTER_SEC 1800" "$out"
+check "and its abort deadline in seconds" "ABORT_AFTER_SEC $((15 * mult * 60))" "$out"
 
 out=$(sh "$fleet" next "$run" 08 pane); rc=$?
 check "a pane worker gets the pane task the repo worker skipped" "CLAIMED task-01" "$out"
@@ -117,7 +126,8 @@ check "it watches for its own task closing" "tasks/done/task-02" "$out"
 check "and for its worker finishing" "07.done" "$out"
 check "and it speaks only if the budget really elapsed" "echo budget-elapsed-task-02" "$out"
 rounds=$(printf '%s' "$out" | grep -o -- '-lt [0-9][0-9]*' | head -1 | tr -dc 0-9)
-[ "$rounds" = "80" ] && ok "twice a 20 minute budget, in 30 second rounds" || bad "twice a 20 minute budget, in 30 second rounds" "$rounds rounds"
+want_rounds=$(( 20 * mult * 60 / 30 ))
+[ "$rounds" = "$want_rounds" ] && ok "a 20 minute budget at the configured multiplier, in 30 second rounds" || bad "a 20 minute budget at the configured multiplier, in 30 second rounds" "$rounds rounds, wanted $want_rounds"
 # The clock exits on the marker rather than on being stopped, so close the task first and let it run its
 # whole budget at zero sleep: a clock that still speaks here is one that would wake a finished worker.
 sh "$fleet" finish "$run" 07 task-02 >/dev/null 2>&1
@@ -211,6 +221,10 @@ sh "$fleet" sweep "$run" --release >/dev/null 2>&1
 [ -d "$run/tasks/claimed/task-77" ] && bad "--release hands the task back" "still claimed" || ok "--release hands the task back"
 out=$(sh "$fleet" sweep "$run" 2>&1)
 check "and a released claim is not swept twice" "no abandoned claims" "$out"
+[ -e "$run/tasks/released/task-77.md" ] && ok "the released task leaves the queue with its claim" || bad "the released task leaves the queue with its claim"
+[ -e "$run/tasks/ready/task-77.md" ] && bad "and cannot be handed straight back under the same id" "still in ready/" || ok "and cannot be handed straight back under the same id"
+out=$(sh "$fleet" finish "$run" 99 task-77 2>&1); rc=$?
+code "the worker whose claim was released cannot close the task" 4 "$rc"
 
 echo
 echo "the hook that sees what no script can"
@@ -245,6 +259,15 @@ claimed 2026-08-31T10:00:00
 ' > "$hookrun/.fleet/r1/tasks/claimed/task-05/heartbeat"
   node "$guard" < "$hookrun/in.json" >/dev/null 2>&1; rc=$?
   code "a worker that has beaten its heartbeat is left alone" 0 "$rc"
+
+  # A claim older than the window is a worker doing long work, not one that claimed and walked away.
+  rm -f "$hookrun/.fleet/r1/chips/sess-2.warned-task-05" "$hookrun/.fleet/r1/tasks/claimed/task-05/heartbeat"
+  printf 'chip 07
+claimed 2026-08-31T10:00:00
+' > "$hookrun/.fleet/r1/tasks/claimed/task-05/owner"
+  touch -t 202001010000 "$hookrun/.fleet/r1/tasks/claimed/task-05" 2>/dev/null
+  node "$guard" < "$hookrun/in.json" >/dev/null 2>&1; rc=$?
+  code "a claim older than the window is left alone" 0 "$rc"
 
   printf '' > "$hookrun/.fleet/r1/07.done"
   rm -f "$hookrun/.fleet/r1/chips/sess-2.warned-task-05"
@@ -349,6 +372,14 @@ if command -v node >/dev/null 2>&1; then
   [ -s "$run/backlog.jsonl" ] && ok "merge writes a backlog from the findings" || bad "merge writes a backlog from the findings"
   sh "$fleet" render "$run" >/dev/null 2>&1
   [ -s "$run/backlog.md" ] && ok "render writes the markdown backlog" || bad "render writes the markdown backlog"
+
+  # A line the merge cannot parse is a finding that would vanish from the backlog.
+  printf '{"area":"x","severity":"minor","observed":"y","evidence":"file.ts:1 something long"
+' >> "$run/07.jsonl"
+  sh "$fleet" merge "$run" >/dev/null 2>&1; rc=$?
+  code "a torn line refuses the merge rather than vanishing" 1 "$rc"
+  sed -i '$d' "$run/07.jsonl" 2>/dev/null || true
+  sh "$fleet" merge "$run" >/dev/null 2>&1
 else
   echo "  skip  merge and render, node is absent"
 fi

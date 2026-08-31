@@ -203,9 +203,9 @@ is not.
 with the reason, marks the task done, and takes the next one. An unbounded task starves the queue, and a
 worker that quietly runs four times its estimate is indistinguishable from one that hung.
 
-That limit is armed, not intended: at claim time the worker backgrounds
-`sleep <2 x budget in seconds>; echo budget-elapsed`, and the notification when it fires is both the clock
-and the thing keeping the session alive. Nothing else in a fleet measures elapsed time, and a worker three
+That limit is armed, not intended: at claim time the worker backgrounds what
+`sh "$f" clock .fleet/<run-id> <chip> <task-id> <budget>` prints, and the notification when it fires is
+both the clock and the thing keeping the session alive. Nothing else in a fleet measures elapsed time, and a worker three
 subagent rounds into a scenario cannot tell twenty minutes from eighty.
 
 **And it disarms itself.** `fleet.sh clock` prints a loop that watches for its own task's done marker and

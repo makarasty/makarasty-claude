@@ -20,6 +20,19 @@ import path from 'node:path';
 
 const bail = () => process.exit(0);
 
+// How long after a claim this hook still treats silence as death. Past it, a quiet claim is long work and
+// belongs to the planner's sweep. Read from calibration.json so it has one spelling, like every other
+// constant here.
+const windowMin = (() => {
+  for (const dir of [path.join(import.meta.dirname ?? '.', '..'), process.cwd()]) {
+    try {
+      const v = JSON.parse(fs.readFileSync(path.join(dir, 'calibration.json'), 'utf8')).hook_claim_window_minutes;
+      if (typeof v === 'number') return v;
+    } catch { /* fall through to the default */ }
+  }
+  return 10;
+})();
+
 let payload = {};
 try {
   const raw = fs.readFileSync(0, 'utf8');
@@ -87,12 +100,14 @@ for (const run of runs) {
 
     let ageMin = 0;
     try { ageMin = (Date.now() - fs.statSync(claimDir).mtimeMs) / 60000; } catch { ageMin = 0; }
-    if (ageMin > 10) continue;
+    if (ageMin > windowMin) continue;
 
     // Block this claim once. A second stop on the same claim is the worker's decision to make.
     const once = path.join(run, 'chips', `${session}.warned-${id}`);
     if (fs.existsSync(once)) continue;
-    try { fs.writeFileSync(once, new Date().toISOString()); } catch { /* a read-only run directory is not worth a block */ }
+    // If the marker cannot be written, this block would repeat on every turn end. A hook that cannot
+    // remember what it has already said is worse than one that says nothing.
+    try { fs.writeFileSync(once, new Date().toISOString()); } catch { continue; }
 
     process.stderr.write(
       `You still hold ${id} in run ${path.basename(run)} and it has no done marker. ` +

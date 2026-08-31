@@ -87,8 +87,10 @@ Read from the issue trackers of comparable orchestrators and from classic file-q
 
 - **`fleet.sh sweep`** names claims nobody is advancing and, with `--release`, hands them back. Atomic
   claiming prevents two workers taking one task and does nothing about a worker that died holding one.
-- **A `Stop` hook** refuses, once, to let a worker end its turn while it still holds an unfinished claim —
-  the failure that cost one run 516 minutes, and the one thing here that no script can see.
+- **A `Stop` hook** refuses, once, to let a worker end its turn on a claim it took in the last ten minutes
+  and never touched again — the signature of the failure that cost one run 516 minutes, and the one thing
+  here that no script can see. A worker that has written a heartbeat, or whose claim is older than that
+  window, is left alone: that case belongs to the planner's stall report and `fleet.sh sweep`.
 - **Portability**: one locale pinned, temp files with explicit templates, no `date -r` on a file (it means
   two different things on GNU and BSD), `.gitattributes` pinning shell scripts to LF so a Windows clone
   cannot produce a CRLF shebang.
@@ -96,12 +98,15 @@ Read from the issue trackers of comparable orchestrators and from classic file-q
 
 ### What ships
 
-Nine commands (`fleet`, `fleet-init`, `fleet-plan`, `fleet-run`, `fleet-login`, `fleet-wait`,
-`fleet-collect`, plus `commit`, `review`, `unslop`), three agents, twelve reference documents, and five
-scripts: the queue bookkeeping and schema gate (`fleet.sh`), the reconciling merge (`fleet-merge.mjs`), a
-82-assertion self-test that runs the whole protocol against a temporary directory in about a second
-(`fleet-selftest.sh`), a machine census (`fleet-load.mjs`), and a post-run forensics reader
-(`fleet-retro.mjs`).
+The fleet plugin: seven commands (`fleet`, `fleet-init`, `fleet-plan`, `fleet-run`, `fleet-login`,
+`fleet-wait`, `fleet-collect`), three agents, the reference documents under `docs/`, and the scripts —
+the queue bookkeeping and schema gate (`fleet.sh`), the reconciling merge (`fleet-merge.mjs`), the
+self-test that runs the whole protocol against a temporary directory in about a second
+(`fleet-selftest.sh`), a machine census (`fleet-load.mjs`), a post-run forensics reader
+(`fleet-retro.mjs`), and the geometry probe (`visual-probe.js`).
+
+The `makarasty-tools` plugin: `commit`, `review`, `unslop`, and the hook that carries the humanised reply
+mode between prompts.
 
 ### Known limits, written down rather than fixed
 

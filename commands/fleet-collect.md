@@ -172,9 +172,11 @@ mechanical.
 
 1. Severity: blocker, major, minor, polish.
 2. Then the number of independent workers that saw it, descending.
-3. Then `mechanism_status`, with `established` above `hypothesis` above `unknown`, since a finding whose
-   cause is proven is closer to a fix than one whose cause is guessed.
-4. Then evidence type, with `file:line` above a reproducing expression.
+The script sorts on the first two. The next two are **your** pass over its output, not its own:
+
+3. `mechanism_status`, with `established` above `hypothesis` above `unknown`, since a finding whose cause
+   is proven is closer to a fix than one whose cause is guessed.
+4. Evidence type, with `file:line` above a reproducing expression.
 
 Carry `mechanism_status` into the backlog table. A hypothesis presented as a diagnosis is how a fix
 mission spends its time disproving the report instead of repairing the product: measured 2026-08-26,
@@ -182,8 +184,10 @@ three of eight blockers and majors changed diagnosis the moment somebody tried t
 
 ## Write
 
-`.fleet/<run-id>/backlog.md`, holding a table of severity, area, symptom, evidence and workers, then the
-set aside section with its counts and reasons.
+`render` writes `.fleet/<run-id>/backlog.md` from the JSONL — severity, area, symptom, evidence, workers —
+and that file is the backlog. **Your annotations go beside it, never over it**: what you would fix first,
+which entries are twins, which mechanisms you distrust. Retyping its rows is the failure this command
+already measured once.
 
 ## Done when
 

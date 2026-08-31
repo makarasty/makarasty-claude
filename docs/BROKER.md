@@ -102,14 +102,18 @@ a host logs in once, and two hosts can hold two roles.
 
 ## Sizing, from three file stats rather than a guess
 
+`sh "$f" pane-status .fleet/<run-id>` prints all three:
+
 - backlog: how many requests have no result
 - oldest wait: the age of the oldest unanswered request
-- median lease: claim time to result time, across `results/`
+- median lease: claim to result, across `results/` — each served walk carries the time it was claimed, so
+  the lease survives the claim directory being removed
 
-**Start with one host. When the oldest unanswered walk has been waiting longer than one median lease,
-offer the operator one more host chip.** Cap at what the display holds. Every term is on disk, which is
-the whole point: under session binding the planner sizes against a memory of the last run, and here it
-sizes against a directory.
+**Start with one host. When the oldest unanswered walk has waited longer than one median lease, offer the
+operator one more host chip.** Until a first walk has been served there is no lease to compare against, so
+`pane-status` falls back to a flat twenty minutes and says so. Cap at what the display holds. Every term is
+on disk, which is the whole point: under session binding the planner sizes against a memory of the last
+run, and here it sizes against a directory.
 
 The 2026-08-31 run resolves to **two hosts** against the seven panes it opened.
 

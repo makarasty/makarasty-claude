@@ -281,8 +281,10 @@ break:
   `answers/`, `pane/`, and the `<chip>.jsonl` / `.notes.md` / `.done` / `.blocked` / `.waiting` files.
   Each run stamps `RUN_FORMAT` at its first write, and a `fleet.sh` that reads an older format refuses a
   newer run rather than misreading it.
-- **`fleet.sh`'s subcommands and their exit codes**: 0 done, 2 usage or a refused input, 3 the queue is
-  drained for that lane, 4 the claim is no longer yours, 5 the queue is empty but still open.
+- **`fleet.sh`'s subcommands and their exit codes**: 0 done; 1 a line the schema gate refused, a walk
+  served from a blind pane, or a run that has not landed; 2 wrong usage or a run this version cannot read;
+  3 the queue is drained for that lane; 4 the claim is no longer yours; 5 the queue is empty but the
+  planner has not closed it.
 - **The four line shapes** a findings file may hold: a finding, `unreached`, `created`, `state_changed` -
   and the fields the schema gate enforces on each.
 - **The marker semantics**: `.done` means finished, `.blocked` means it never saw, `.waiting` means it is
@@ -292,9 +294,10 @@ Everything else is **calibration, not contract**: every prose rule, every agent 
 this README. Those change whenever a run measures something better, and a minor version may rewrite all of
 them.
 
-[`scripts/fleet-selftest.sh`](scripts/fleet-selftest.sh) is that contract's executable form - 82
-assertions, about a second, no browser and no tokens. Run it after installing, and on any machine before
-trusting a fleet on it: it is also the portability probe this plugin has instead of a test matrix.
+[`scripts/fleet-selftest.sh`](scripts/fleet-selftest.sh) is that contract's executable form: it runs the
+whole protocol against a temporary directory in about a second, with no browser and no tokens, and ends by
+printing `N passed, 0 failed`. Run it after installing, and on any machine before trusting a fleet on it —
+it is also the portability probe this plugin has instead of a test matrix.
 
 ## When something looks broken
 
@@ -332,6 +335,10 @@ than it has been tested. Full list in [`CHANGELOG.md`](CHANGELOG.md).
 - The self-test covers mechanics. Whether a worker claims in its lane, files through the gate, or lets the
   generated banner stand is what [`evals/`](evals/) is for — and those cases have never been run, because
   `claude plugin eval` is in early access and was refused on the account this was built on.
+- The `Stop` hook catches one shape of one failure: a claim taken within the last ten minutes whose
+  heartbeat has never moved. A worker that dies an hour into a task, or after one heartbeat, is the
+  planner's stall report and `fleet.sh sweep` to find, not the hook's. It also never fires for a worker in
+  its own worktree, whose working directory has no `.fleet/` in it.
 
 ## What it deliberately leaves out
 
