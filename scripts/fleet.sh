@@ -591,8 +591,8 @@ landed)
   # released file, or the run is landing over abandoned work.
   for f in "$run"/tasks/released/*.md; do
     [ -e "$f" ] || continue; id=$(basename "$f" .md)
-    echo "NOT LANDED: $id was released and never accounted for. Re-file it under a new id, or delete"
-    echo "            tasks/released/$id.md to write it off deliberately."
+    echo "NOT LANDED: $id was released and never accounted for. Either re-file its work under a NEW id"
+    echo "            and delete tasks/released/$id.md, or delete that file alone to write the task off."
     fail=1
   done
   [ -s "$run/backlog.jsonl" ] || { echo "NOT LANDED: backlog.jsonl is missing or empty"; fail=1; }

@@ -126,7 +126,13 @@ successor's directory, refreshing the wrong liveness and marking work done that 
 id they land in a graveyard and change nothing.
 
 `sh "$f" sweep .fleet/<run-id>` lists the claims that look abandoned and changes nothing; `--release`
-hands them back. Atomic claiming stops two workers taking one task and does nothing about a worker that
+moves the claim **and its task file** aside, into `tasks/claimed/<id>.released-<time>` and
+`tasks/released/<id>.md`, so the same id cannot be handed straight back to the next claimer.
+
+**A released task is then yours to close.** `fleet.sh landed` refuses a run while anything sits in
+`tasks/released/`, and there are two honest ways out: re-file the work under a new id and delete the
+released file, or delete the released file alone, which says the task was written off on purpose. A run
+that lands over abandoned work is the failure this whole plugin is built against. Atomic claiming stops two workers taking one task and does nothing about a worker that
 died holding one, which is the same gap a maildir has in `tmp/`: without a sweeper, a dead claim is a task
 the run never finishes and nobody notices.
 
