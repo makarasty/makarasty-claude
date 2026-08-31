@@ -586,6 +586,15 @@ landed)
     done
     [ -n "$taken" ] || { echo "NOT LANDED: task nobody ever claimed: $id"; fail=1; }
   done
+  # A task the sweep released left the queue, so the loop above cannot see it. It is still work somebody
+  # started and nobody finished: either the planner re-filed it under a new id, in which case delete the
+  # released file, or the run is landing over abandoned work.
+  for f in "$run"/tasks/released/*.md; do
+    [ -e "$f" ] || continue; id=$(basename "$f" .md)
+    echo "NOT LANDED: $id was released and never accounted for. Re-file it under a new id, or delete"
+    echo "            tasks/released/$id.md to write it off deliberately."
+    fail=1
+  done
   [ -s "$run/backlog.jsonl" ] || { echo "NOT LANDED: backlog.jsonl is missing or empty"; fail=1; }
   if ls "$run"/*.waiting >/dev/null 2>&1; then echo "NOT LANDED: a worker is waiting on the operator"; fail=1; fi
   if [ -e "$run/tasks/queue-open" ]; then echo "NOT LANDED: the planner has not closed the queue"; fail=1; fi

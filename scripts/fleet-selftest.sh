@@ -225,6 +225,9 @@ check "and a released claim is not swept twice" "no abandoned claims" "$out"
 [ -e "$run/tasks/ready/task-77.md" ] && bad "and cannot be handed straight back under the same id" "still in ready/" || ok "and cannot be handed straight back under the same id"
 out=$(sh "$fleet" finish "$run" 99 task-77 2>&1); rc=$?
 code "the worker whose claim was released cannot close the task" 4 "$rc"
+out=$(sh "$fleet" landed "$run" 2 2>&1)
+check "and the run cannot land over it until somebody accounts for it" "released and never accounted for" "$out"
+rm -f "$run/tasks/released/task-77.md"
 
 echo
 echo "the hook that sees what no script can"
@@ -353,6 +356,8 @@ grep -q '"host":"02"' "$run/pane/results/07-1.json" 2>/dev/null && ok "the resul
 
 out=$(sh "$fleet" pane-status "$run" 2>&1)
 check "the broker reports its backlog" "0 pending" "$out"
+check "and the lease it sizes hosts on, which survives the claim being removed" "median lease" "$out"
+grep -q '"claimed_at"' "$run/pane/results/07-1.json" 2>/dev/null && ok "the served walk carries the time it was claimed" || bad "the served walk carries the time it was claimed"
 
 echo
 echo "landing the run"
