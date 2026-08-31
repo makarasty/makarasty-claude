@@ -329,8 +329,9 @@ than it has been tested. Full list in [`CHANGELOG.md`](CHANGELOG.md).
 - The **published install path is untested** - this release installs from a local directory marketplace.
 - **Portability is documented, not exercised**: ten host assumptions in
   [`docs/PORTING.md`](docs/PORTING.md), one host actually run.
-- The self-test covers mechanics. Whether a worker disarms its clocks, asks for its pane early, or prints
-  its banner is prose, enforced by nothing, and prose rules have been routed around twice in measured runs.
+- The self-test covers mechanics. Whether a worker claims in its lane, files through the gate, or lets the
+  generated banner stand is what [`evals/`](evals/) is for — and those cases have never been run, because
+  `claude plugin eval` is in early access and was refused on the account this was built on.
 
 ## What it deliberately leaves out
 

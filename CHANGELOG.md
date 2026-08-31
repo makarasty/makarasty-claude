@@ -118,3 +118,6 @@ scripts: the queue bookkeeping and schema gate (`fleet.sh`), the reconciling mer
   plugin's own measurements include two cases of a prose rule being routed around. Where that mattered
   most, the rule was moved into a script instead; where it could not be, it is named here.
 - `fleet-retro.mjs` reads the host's transcript layout directly and will break if that layout changes.
+- The **eval suite in `evals/` has never been run**: `claude plugin eval` is in early access and was
+  refused on the account this release was built on. Three cases are written against its documented shape,
+  and they are the plugin's only test of whether a worker reading these documents does what they ask.
