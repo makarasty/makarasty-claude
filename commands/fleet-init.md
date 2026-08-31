@@ -75,8 +75,19 @@ Create `.fleet/` and add it to the project's ignore file. Runs are scratch, not 
 Read total and free memory, core count, and whether the toolchain the project needs is present. Use the
 command for this operating system from `docs/PROTOCOL.md`.
 
-Then say a number: how many concurrent workers this machine supports, and how many the operator should
-actually run.
+Then say **two** numbers, one per lane, and write both on `FLEET.md`'s concurrency line:
+
+- **The pane lane**, which is a display question and not a memory one: how many Browser panes fit the
+  operator's screen at a readable size. Five, or ten. Ask them; you cannot measure a monitor.
+- **The repo lane**, which is a machine question: workers that never open a pane, sized from free physical
+  memory and cores by `docs/LANES.md`. This number is usually larger than the pane number and there is no
+  reason for it to be the same.
+
+Ask once, here, and record the answers so no planner has to ask again: the display width, and whether the
+operator's subscription tier makes rate limits a binding constraint. Both change what a plan may spend and
+neither is discoverable from the repository.
+
+Then say the third number: how many the operator should actually run.
 
 **Those are two different numbers, and the second one is what matters.** A machine with memory compression
 enabled will carry ten workers without complaint while leaving nothing for the person who owns it.
@@ -84,8 +95,9 @@ Measured 2026-08-26 on 32 GB with compression: ten workers ran, and five is what
 they could keep using the computer. Recommend the number that leaves them their machine.
 
 Also report the ceiling that is not about memory at all: five browser panes tile side by side at a
-readable width, further ones stack below at half height, and ten is where panes stop being usable. Five or
-ten, never six.
+readable width, further ones stack below at half height, and ten is where panes stop being usable. Say it
+as a ceiling, and say the default beside it: two panes carried every measured run's browser work, so a
+project that has never run a fleet starts at two, not at five.
 
 ## 5b. Inventory the accelerators
 

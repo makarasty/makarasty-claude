@@ -42,6 +42,7 @@ agent starts them on its own initiative. The other three are reachable by an age
 - `docs/PROTOCOL.md`: run layout, brief format, finding schema, project configuration.
 - `docs/MISSIONS.md`: the five mission kinds and how each one splits.
 - `docs/BROWSER.md`: the pane gate and why a hidden pane invents findings.
+- `docs/BROKER.md`: one or two sessions hold the panes, everyone else files a browser walk as a file.
 - `docs/SWEEPS.md`: the interaction posture, and the checks that catch a class of defect rather than one bug.
 - `docs/MOCKING.md`: reaching the states real data will not produce, and the line between a scene and a mutation.
 - `docs/PULL.md`: the task queue shape, where workers claim work when free and the planner keeps adding it.

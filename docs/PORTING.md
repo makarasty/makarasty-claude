@@ -7,7 +7,7 @@ The tool changes. The pattern should not have to. This page names every assumpti
 the thing running it, what breaks when that assumption fails, and what to put in its place. Porting to a
 different harness is then a checklist rather than a rewrite.
 
-## The eight assumptions
+## The ten assumptions
 
 **1. Several sessions run at once, each with its own context window.**
 
@@ -67,6 +67,21 @@ Needed exactly once per worker, for a pane that was never displayed. Everything 
 planner by file. A harness without an interactive question needs the operator watching for `.waiting`
 markers instead.
 
+**9. A session can stop a background task it started.**
+
+Needed, and cheap to substitute badly. Every clock in this design is a backgrounded `sleep` whose exit
+re-invokes the session, so a clock that cannot be stopped keeps waking a session that has finished. Without
+a stop primitive, the substitute is a clock that checks a marker and exits silently - which still wakes the
+session once, so a host without `TaskStop` pays one turn per armed clock and the worker's stale-wake rule
+becomes load bearing rather than a safety net.
+
+**10. Something about a session is visible from outside it.**
+
+Optional, and it decides whether an operator can see a fleet without opening fourteen chats. Here it is the
+sidebar title, which a session can rewrite for itself. A host without one loses the glance test: the fleet
+still ends correctly, on disk and in the planner's chat, but the operator has to go and look. A file per
+worker under a `state/` directory, rendered by the planner's watch, is the closest substitute.
+
 ## Messaging between sessions
 
 Claude Code has direct session to session messaging, and an Agent Teams feature where instances share a
@@ -96,7 +111,8 @@ only copy of a result.
 3. Choose the atomic claim primitive and prove it under concurrency, the way `PULL.md` records: many
    claimers, exactly one winner, later attempts refused.
 4. Re-measure the delegation ratio in `MODELS.md`. It is a number from one host, not a law.
-5. Re-measure the concurrency ceiling. On this one it was the operator's screen rather than the machine.
+5. Re-measure the concurrency ceiling **per lane**. On this one the pane lane's ceiling was the operator's
+   screen and the repo lane's was the machine, and the two numbers are years apart in size.
 6. Keep the finding schema and the evidence contract unchanged. They are the part with no host dependency
    at all, and they are why a run from a year ago can still be read.
 

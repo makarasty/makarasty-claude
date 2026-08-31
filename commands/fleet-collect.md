@@ -1,7 +1,7 @@
 ---
 description: Merge a fleet run's findings into one ranked backlog. Use after a run's workers have finished, or when asked what a run found.
 argument-hint: <run-id>
-allowed-tools: Bash, Read, Write, Glob, Grep, Agent, PushNotification
+allowed-tools: Bash, Read, Write, Glob, Grep, Agent, PushNotification, TaskStop, mcp__ccd_session_mgmt__set_session_title
 ---
 
 The reference files named below (`docs/PROTOCOL.md` and its siblings) live in this plugin's own directory,
@@ -100,14 +100,36 @@ It passes when every chip has a `.done` or `.blocked`, every claim has a done ma
 disk. "The workers went quiet" is not the same state, and the whole reason this plugin has a stall rule is
 that silence is ambiguous between finished and dead.
 
-Then, in this order:
+It writes `FINISHED` into the run directory when it passes. That file, not anybody's memory of a
+notification, is the durable answer to "did this run end".
 
-1. **`PushNotification`** with the headline: run id, findings by severity, blockers, and where the backlog
-   is. It reaches the operator's phone when Remote Control is connected, and it is skipped automatically if
-   they are sitting at the terminal, which is the behaviour you want. One notification per run.
-2. **`TaskStop`** the run's `fleet-wait` monitor. Measured 2026-08-27: a watch left armed after its run
-   finished kept polling for five hours and forty two minutes, and was noticed only when the operator asked
-   what the six hour task in their task list was.
+Then, in this order. The order is the point: a notification is an event and events get missed, so
+everything durable is already on disk before one is sent.
+
+1. **Print the run banner**, generated rather than written:
+
+   ```bash
+   sh "$f" summary .fleet/<run-id>
+   ```
+
+   One row per worker with its findings by severity, its unreached count and whether it went blind, then
+   the run totals and the backlog path, then one `fleet-summary: {...}` JSON line a later script can read.
+   This block is the last thing in the planner's chat, and it is what the operator sees when they come
+   back to a screen full of chats they left hours ago. Do not retype it into prose underneath.
+2. **`PushNotification`**, carrying the verdict rather than the event: `run <id> FINISHED: 246 findings,
+   32 blockers, worker 05 blind, backlog at .fleet/<id>/backlog.md`. It reaches the operator's phone when
+   Remote Control is connected, and it is skipped automatically if they are sitting at the terminal, which
+   is the behaviour you want. **Exactly one per run, and it means finished** - that is the whole operator
+   contract, and it only holds if nothing else in the run ever pushes.
+3. **`TaskStop`** the run's `fleet-wait` monitor, and every other background task this session armed.
+   Measured 2026-08-27: a watch left armed after its run finished kept polling for five hours and forty two
+   minutes, and was noticed only when the operator asked what the six hour task in their task list was.
+   Measured 2026-08-31 across the workers: 52 abort clocks nobody stopped, 703 minutes of session life and
+   108 model turns spent after the work was over, and an operator who could not tell whether the fleet had
+   stopped.
+4. **Rename this session** to `fleet <run-id> - FINISHED <n>f/<b>b`, if the host offers a session-title
+   tool (`mcp__ccd_session_mgmt__set_session_title` here, `self`). The sidebar is the only surface visible
+   from a chat the operator is not sitting in, and by now every worker has renamed itself the same way.
 
 Exactly two other things are worth waking someone for, and both belong to the planner rather than here: a
 fleet still stalled after a revive attempt failed, and nothing else. A worker asking for its pane must
@@ -166,8 +188,10 @@ set aside section, and `backlog.md` exists.
 
 ## Report
 
-Totals per severity, the set aside counts, and the top three by severity. Fixing is a separate session's
-job, and in most projects a fix ships with a reproduction that failed before it.
+The banner from `fleet.sh summary`, then the set aside counts and the top three findings by severity under
+it. Nothing else: this is the last message of the run, and a wall of prose is how the one table that
+matters gets scrolled past. Fixing is a separate session's job, and in most projects a fix ships with a
+reproduction that failed before it.
 
 ## A thin review is a signal
 

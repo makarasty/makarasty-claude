@@ -84,6 +84,69 @@ Exactly two boundaries are safe to end a turn on, because after each of them the
 job: after writing `<chip-id>.done`, and after writing `<chip-id>.blocked`. Everywhere else, arm the wake
 first.
 
+## Pending work mirrors unwritten obligations, in both directions
+
+The rule above has a second half, and leaving it unwritten cost the 2026-08-31 run more session life than
+every stall in this document put together.
+
+> **A session's pending background tasks correspond one to one with its unwritten obligations on disk.**
+
+Forward: you owe the disk a write - a claimed task unfinished, a finding not yet appended, a `.waiting`
+you must re-gate, a marker not yet written - so something must be pending, and that is the rule above.
+
+Backward: **you owe the disk nothing, so nothing may be pending.** A clock still armed after the
+obligation it guarded is closed is not harmless idling. It fires, the notification re-invokes a session
+that has nothing to do, and the operator sees a chat whose task panel says *running* an hour after the
+work ended. Measured 2026-08-31 across fourteen workers: **703 minutes of session life and 108 model turns
+after their own `.done` marker**, thirteen of the fourteen affected, one worker still being woken 74
+minutes after it finished by four abort clocks nobody stopped. From the outside that run had no ending at
+all, and the operator could not tell a finished fleet from a working one in either direction.
+
+So every clock is **named for the obligation it guards, and its id is written on disk beside it**:
+
+| Clock | Guards | Where its id lives | Stopped at |
+|---|---|---|---|
+| `sleep <2 x budget>; echo budget-elapsed` | one claimed task | `tasks/claimed/<task-id>/clock` | `fleet.sh finish`, which prints it back |
+| `sleep 90; echo regate` | a pane that is not displayed | inside the `<chip>.waiting` marker | the gate reading live, when the marker is deleted |
+| `sleep 300; echo recheck` | a drained queue the planner may still fill | `tasks/queue-open` is the obligation | the marker's removal, at the next poll |
+
+`fleet.sh finish` and `fleet.sh drained` print `STOP_CLOCK <id>` for every clock they close. **`TaskStop`
+that id before your next call**, in the same turn. One clock per obligation, and never a second clock for
+an obligation that already has one.
+
+**The permitted response to a stale wake is exactly two acts: disarm everything still armed, and re-print
+the end banner.** Nothing else, no re-reading of the run, no summary of what you did. Disarming is
+discipline and discipline slips, so this bounds the slip to one cheap turn and buys the property the
+operator actually needs: **a finished worker's last visible message is always its end banner.**
+
+## The end banner, and the title
+
+A chat is finished when two things are true at once, and both are readable without scrolling: **its task
+panel is empty, and its last message is the banner.** Generate the banner rather than writing it, so it
+cannot drift from what is on disk:
+
+```bash
+sh "$f" summary .fleet/<run-id> <chip>     # one worker
+sh "$f" summary .fleet/<run-id>            # the whole run, for the planner
+```
+
+The last line it prints is `fleet-summary: {...}`, one JSON object, so a later script reads the run's
+outcome without parsing the table above it.
+
+**Then rename the session.** The sidebar of chat titles is the only surface visible from a chat the
+operator is not in, and in a fleet the operator is in one chat out of fourteen. Keep the addressing prefix
+and append the state, through the host's session-title tool if the session has one:
+
+```
+fleet 2026-08-31-api-security-calls 11  ->  fleet 2026-08-31-api-security-calls 11 - done 23f
+                                            fleet 2026-08-31-api-security-calls 11 - BLIND
+planner                                 ->  fleet 2026-08-31-api-security-calls - FINISHED 246f/32b
+```
+
+Address workers by title **prefix** from then on, never by exact match. The title is best effort and the
+disk stays the authority: a session that dies between its marker and its rename leaves a lying title, and
+the stall report is what catches that.
+
 **The planner is a session too.** Its wake is usually a file watcher over the run directory, which emits
 only when a file appears. When every live worker is stalled, no file appears, so the watcher stays silent
 and the planner sleeps with it. In the same run the planner sat idle for 65 minutes and was restarted by
@@ -101,6 +164,8 @@ as health: `fleet-wait` now emits a stall line on a quiet interval for exactly t
   01.waiting           present while the worker is blocked on an answer from the operator
   01.blocked           written instead of .done when the worker could not see
   backlog.md           written by collection
+  FINISHED             written by `fleet.sh landed`: the run ended, by declaration
+  tasks/queue-open     present while the planner still intends to file work
 ```
 
 `<run-id>` is the date plus a short slug: `2026-08-26-checkout-flow`.
@@ -329,7 +394,15 @@ every command reads it when present:
 - Actions reserved for the operator: anything that dials, charges, ships, or messages a real person
 - Verification cost: full test suite 63s, full typecheck 30s, both memory heavy
 - Accelerators present: rg, sg, bun. Absent: fd, jq. Project query tool: graphify query "..."
+- Concurrency: pane lane max 10 (display), repo lane max 10 (16 GB / 16 cores), verify lane 1
+- Subscription: max tier, rate limits are not the binding constraint on this machine
 ```
+
+**The concurrency line is per lane, and the two numbers come from different places.** The pane number is
+how many Browser panes the operator's display holds; the repo number is what the machine holds. Writing
+one number for both is how a run caps its file work at the width of a monitor. `fleet-init` measures the
+machine and asks the operator for the display and the subscription tier once, so no planner has to guess
+and no worker has to ask.
 
 Absent that file, each command discovers what it can and says plainly what it could not find. Guessing at
 an origin or a login form wastes an hour and produces nothing.

@@ -30,6 +30,7 @@ the worker holding it, which is the only thing that revives a dead session.
 ```bash
 run=RUNID; n=N; quiet=600
 d=.fleet/$run; seen=$d/.watch-seen; : > "$seen"; last=$(date +%s)
+FS=$(ls -t ~/.claude/plugins/cache/*/makarasty/*/scripts/fleet.sh 2>/dev/null | head -1)
 while true; do
   for f in $d/tasks/claimed/*/owner $d/tasks/done/* $d/ask/*.md $d/*.done $d/*.blocked $d/*.waiting; do
     [ -e "$f" ] || continue; grep -Fxq "$f" "$seen" && continue; echo "$f" >> "$seen"; last=$(date +%s)
@@ -48,6 +49,9 @@ while true; do
       [ -d "$c" ] || continue; t=$(basename "$c"); [ -e "$d/tasks/done/$t" ] && continue
       echo "  held: $t by $(head -1 "$c/owner" 2>/dev/null || echo 'NO OWNER')"
     done
+    rdy=$(ls $d/tasks/ready/*.md 2>/dev/null | wc -l); dne=$(ls $d/tasks/done 2>/dev/null | wc -l)
+    echo "  progress: $dne of $rdy tasks done, $(ls $d/*.done 2>/dev/null | wc -l) of $n workers landed"
+    if [ -d "$d/pane/requests" ] && [ -n "$FS" ]; then sh "$FS" pane-status "$d" | sed 's/^/  /'; fi
     last=$now
   fi
   c=$(ls $d/*.done $d/*.blocked 2>/dev/null | wc -l)
@@ -73,6 +77,38 @@ silently suppressed every event for `task-22`, and a reclaimed task always produ
 the file lives inside the run directory rather than in a temp path, so a restarted watch on a different
 machine or shell finds it.
 
+## The stall line is also the progress line
+
+Every stall report now carries how many tasks are done of how many are ready, and how many workers have
+landed of how many were expected. Two reasons, and the second is the one that matters.
+
+It tells the operator, in the one chat they are reading, roughly how much run is left - divide done by
+elapsed and you have the fleet's realised throughput, which beats every estimate anybody wrote before the
+run started.
+
+And it separates *stalled* from *slow* without opening a worker chat. A quiet interval whose counts moved
+since the last one is a fleet doing long tasks. A quiet interval whose counts are identical for the third
+time is a fleet that has stopped, and that is the case the next section is about.
+
+## The run ends by declaration, not by a count that may never arrive
+
+The loop's exit condition is `.done` plus `.blocked` reaching the expected count. That condition has a
+hole: a worker that dies without writing either marker never lands, so the count never completes, the
+watch never breaks, collection never runs, no notification ever fires, and the run ends in fact while
+never ending on paper. From the operator's side that is indistinguishable from a run still working, which
+is exactly the state the 2026-08-31 run left its operator in for an hour.
+
+So keep the count as the happy path and give yourself a fallback with a threshold rather than a feeling:
+
+> **After three consecutive stall reports naming the same unmoving claims and the same counts**, the run
+> is over whether or not every marker landed. Message the workers holding those claims once, since a
+> cross-session status check is the only thing that revives a dead session. If the next stall report is
+> identical again, end the run by decision: name the missing workers, reclaim or write off their tasks,
+> collect what is on disk, and report the missing ones as unaccounted rather than as clean.
+
+A `.done` that lands after that is orphaned unless collection is re-run. Say so in the summary; do not
+pretend the count closed.
+
 ## The watch must end
 
 Measured 2026-08-27: a planner armed a `while true` watch with `persistent: true` and no exit condition.
@@ -87,7 +123,14 @@ the watch's task id. `fleet-collect` stops it as its last act.
 
 The wait is free only if you spend it on something. In pull mode there is real work: answer the questions
 in `ask/`, re-file the remainders workers hand back, add tasks when a finding points somewhere new, check
-claims against the three-term dead test in `docs/PULL.md`. With fixed briefs, read the briefs whose workers
+claims against the three-term dead test in `docs/PULL.md`.
+
+**Answer with `fleet.sh answer <run> <id> [id...]`, and put anything the whole fleet needs in
+`fleet.sh broadcast`.** One reply usually settles several questions, and a combined file named after none
+of them reaches none of them: measured 2026-08-31, four answered questions were still listed as open an
+hour later because the answer lived in `answers/05-1-2-3.md`. Four workers had also filed the same broken
+tool in nine minutes, two of them after the planner had already fixed it - a broadcast is what stops the
+fifth. With fixed briefs, read the briefs whose workers
 have landed and start ranking their findings.
 
 Do not start a second run before the first one is collected. Measured 2026-08-27: a planner moved straight

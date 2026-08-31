@@ -58,11 +58,25 @@ The mission's kind decides how it splits, and the wrong axis is what makes a fle
 axis from `MISSIONS.md`: screen ownership for verify, hypothesis for investigate, seam for implement, file
 cluster for fix, source for research.
 
-Count the independent slices the axis produces. That is your worker count, capped hard at ten and
-practically at three to five per wave. Ten is where browser panes stop fitting a single display; the
-memory ceiling usually arrives first. Cap it by what the
-machine and the operator can run. Two workers on one slice cost twice and then agree with each other,
-which reads as corroboration and is not.
+Count the independent slices the axis produces. That is your worker count, and **it is capped per lane,
+never once for the whole fleet.** Ten is where browser panes stop fitting a single display, so ten caps
+the **pane** lane and nothing else; the repo lane is capped by the machine and sized from the queue, by
+the rule in `docs/LANES.md`; the verify lane is one. Read the project's `FLEET.md` concurrency line for
+both numbers rather than deriving them again.
+
+A single cap of ten across both lanes is how a run ends up eight browser workers wide and two files wide.
+Measured 2026-08-31: fourteen workers ran on a box sized for it, six on panes and eight on files, and the
+plan that produced them had to argue its way past this paragraph to do it.
+
+**Then size the pane lane down, hard.** Ten is a ceiling, not a target, and the same run measured seven
+open panes carrying under one pane's worth of actual browser driving - 104 minutes of it - with one pane
+driven for zero minutes over sixty-one. **Two pane workers is the default.** Each pane you open past what the work needs costs the
+operator a question, a piece of their screen, and the standing obligation to keep it displayed - and buys
+nothing while nobody is driving it. If the mission is large enough that two panes will queue, read
+`docs/BROKER.md` and file browser walks against one or two hosts instead of opening more.
+
+Two workers on one slice cost twice and then agree with each other, which reads as corroboration and is
+not.
 
 **Then give every slice a lane**, from `docs/LANES.md`: `pane` for work that needs the running interface,
 `verify` for work that runs the suite or the typechecker, `repo` for everything answerable from files. Do
@@ -154,13 +168,21 @@ Eight briefs freeze one guess about where the defects are for the whole run. Ove
 the plan, write a **queue** instead: read `docs/PULL.md` and put tasks in `tasks/ready/` rather than briefs
 in the run root.
 
-Pull mode changes three things for you. Order the queue **longest task first**, because workers taking long
+Pull mode changes four things for you. Order the queue **longest task first**, because workers taking long
 work first and short work last land within minutes of each other while the reverse leaves one worker alone
 with a forty minute task. Give every task a `budget` in minutes, since a worker past twice its budget stops
 and hands the remainder back. And expect to stay awake: you answer `ask/`, re-file unreached remainders,
 add tasks when a finding points somewhere new, and reclaim claims whose heartbeat went stale.
 
-The fleet size stops being yours to choose. It is however many panes the operator has open.
+Fourth: **`touch .fleet/<run-id>/tasks/queue-open` before you offer a single chip**, holding one line
+saying what you still intend to file. While it exists a worker whose lane runs dry polls instead of
+finishing, which is what lets the repo lane start at full width without losing a chat every time the queue
+runs momentarily dry. **Delete it the moment you will file nothing more** - that deletion is what ends the
+repo lane, and forgetting it leaves workers polling all night. `fleet.sh landed` refuses a run whose queue
+is still open, so this cannot be quietly skipped.
+
+The **pane** fleet size stops being yours to choose: it is however many panes the operator has open. The
+repo lane is still yours, sized from the ready queue by `docs/LANES.md`.
 
 ## 4. Guard the actions that leave the machine
 
@@ -213,11 +235,17 @@ Each chip's prompt is one line:
 
     Run the brief at .fleet/<run-id>/brief-NN.md by following the makarasty fleet-run command. Invoke it as /makarasty:fleet-run .fleet/<run-id>/brief-NN.md, and if that name does not resolve in this session, read the command file directly: ls -t ~/.claude/plugins/cache/*/makarasty/*/commands/fleet-run.md | head -1
 
-In pull mode there are no briefs, so the chip prompt carries the worker's identity instead. Without it a
-worker has to invent one, two workers pick the same number, and their findings interleave into one file
-that collection reads as a single worker, corrupting the count of independent sightings:
+In pull mode there are no briefs, so the chip prompt carries the worker's identity **and its lane**.
+Without the identity a worker invents one, two workers pick the same number, and their findings interleave
+into one file that collection reads as a single worker, corrupting the count of independent sightings.
+Without the lane a paneless worker claims a browser task, discovers it cannot do it, and pays a reclaim:
 
-    You are worker NN of run <run-id>. Work the queue by following the makarasty fleet-run command. Invoke it as /makarasty:fleet-run .fleet/<run-id>/, and if that name does not resolve in this session, read the command file directly: ls -t ~/.claude/plugins/cache/*/makarasty/*/commands/fleet-run.md | head -1
+    You are worker NN of run <run-id>, lane repo. Work the queue by following the makarasty fleet-run command. Invoke it as /makarasty:fleet-run .fleet/<run-id>/, and if that name does not resolve in this session, read the command file directly: ls -t ~/.claude/plugins/cache/*/makarasty/*/commands/fleet-run.md | head -1
+
+Say `lane pane` for the workers whose panes the operator will open, and `lane repo` for the rest. The lane
+is the third argument to every claim: `sh "$f" next .fleet/<run-id> NN repo`. Do not write the lane rule
+into the chip prompt as prose instead - that is what 2026-08-31 did, in nine of fourteen prompts, and a
+rule that gets retyped per run is one somebody eventually types differently.
 
 The chip number is the worker id everywhere after that: `NN.jsonl`, `NN.notes.md`, `NN.done`, the `owner`
 line inside a claim, and `ask/NN-1.md`.
@@ -251,12 +279,23 @@ no person. So an overnight run is either paneless, which the lane split now make
 it needs is open and stays open before the operator leaves. Say which one this run is, out loud, while
 they can still act on it.
 
-Then tell the operator, in this order: the run id, how many chips are waiting, the wave order you
-recommend and why, and that each worker needing a browser wants its pane opened and kept on screen.
+Then tell the operator, in this order: the run id, how many chips are waiting **split by lane**, the wave
+order you recommend and why, and that each pane worker wants its pane opened and kept on screen.
 
-Say the pane arithmetic out loud, because the operator is about to discover it the hard way: five sessions
-tile side by side at a readable width, further ones stack below at half height, and ten is where panes
-stop being usable. Five or ten, never six. Pass on the three ergonomics from `docs/BROWSER.md` as well:
+**Say how this run will announce itself, because that is what they will be waiting for.** Three sentences,
+once, at hand over:
+
+- Every pane worker asks for its pane within a minute of its chip being clicked, so open the chips in a
+  wave and walk the row once rather than answering them one at a time over half an hour.
+- A finished chat renames itself in the sidebar (`... - done 23f`) and its background task panel goes
+  empty. That is the glance test, and it works from whatever chat they happen to be sitting in.
+- The run ends exactly once, here, with one notification and one summary table in this chat. No
+  notification means it has not finished.
+
+Say the pane arithmetic out loud, because the operator is about to discover it the hard way. Two numbers,
+and do not blur them: **two panes is what the work has needed** in both measured runs, and five is what a
+display fits before panes stack below at half height. The second number is a ceiling for a mission that
+genuinely queues, not a target. Pass on the three ergonomics from `docs/BROWSER.md` as well:
 drag the planning chat out into its own floating window, zoom the application window out to buy a column,
 and on Windows a window can be sized past the monitors by pushing it off one edge and pulling the opposite
 one. Nobody thinks of any of that with eight chats already open.

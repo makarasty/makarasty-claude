@@ -50,10 +50,12 @@ reach the disk.
    f=$(ls -t ~/.claude/plugins/cache/*/makarasty/*/scripts/fleet.sh | head -1)
    ```
 
-1. `sh "$f" next .fleet/<run-id> <chip>` claims the first free task, writes `owner` and the first
-   heartbeat atomically, and prints the task with its budget and abort deadline. **Exit 3 means the queue
-   is drained.** By hand: walk `tasks/ready/` in order, `mkdir tasks/claimed/<task-id>` on each, and write
-   `owner` in the same command, never as a second step.
+1. `sh "$f" next .fleet/<run-id> <chip> <lane>` claims the first free task **in your lane**, writes
+   `owner` and the first heartbeat atomically, and prints the task with its budget and abort deadline.
+   **Pass the lane** - `repo` if this session has no Browser pane, `pane` if it does - or you will claim
+   work you cannot do. **Exit 3 means the queue is drained** for that lane. By hand: walk `tasks/ready/`
+   in order, read each file's `needs:` line, `mkdir tasks/claimed/<task-id>` on the first one that matches
+   your lane, and write `owner` in the same command, never as a second step.
 2. Read the task file and take the first real action on it **in the same turn as the claim**.
 3. Work the task exactly as the sections below describe a brief, rewriting
    `claimed/<task-id>/heartbeat` at every natural boundary.
@@ -64,11 +66,23 @@ reach the disk.
    `sleep <2 x budget in seconds>; echo budget-elapsed`. Nothing else in this system measures elapsed time,
    and a worker deep in a scenario has no idea whether eight minutes have passed or eighty. The wake is
    the clock, and it is the same wake that keeps the session alive.
+
+   **Then record it**, in the same turn, with the task id the harness gave you:
+   `sh "$f" clock .fleet/<run-id> <chip> <task-id> <background-task-id>`. A clock nobody can name is a
+   clock nobody can stop, and one clock per claim is the whole quota: never arm a second for a task that
+   already has one.
 5. `sh "$f" finish .fleet/<run-id> <chip> <task-id>`, then loop. It refuses to write the marker if the
-   claim is no longer yours.
+   claim is no longer yours, and it prints `STOP_CLOCK <id>` for the clock that was guarding the task.
+   **`TaskStop` that id in the same turn.** Measured 2026-08-31: fourteen workers left 52 clocks armed,
+   and the run spent 703 minutes and 108 model turns being woken after its own work was over.
 
 Queue drained: `sh "$f" drained .fleet/<run-id> <chip>` and stop. That marker means the queue is empty,
 not that one task ended.
+
+**Exit 5 from `drained` means the queue is empty but still open**: the planner has not finished filing
+work, so you are not finished either. Arm `sleep 300; echo recheck`, end the turn, and try again when it
+wakes you. Do not write `.done` and do not close the chat: a session that ends cannot be reopened, and the
+planner adding a task an hour from now has no way to reach a worker that stopped.
 
 Findings go in through `sh "$f" find .fleet/<run-id> <chip>` with the JSON on stdin. It **refuses** a
 finding with no `evidence`, a severity outside the four, or the retired `what` field, which is the only
@@ -132,15 +146,31 @@ A pending subagent is not a wake. Arm the sleep anyway.
 
 **Kinds that need the running application** (verify, and any other kind whose steps name a screen):
 
-1. Read the project's `FLEET.md` for the origin and the services that must already be up. Confirm they are
-   listening. Those processes belong to the operator, so a missing one is a report rather than something
-   to start.
-2. `preview_start` at that origin, honouring its literal host. Keep the `tabId`.
-3. Gate the pane, next section.
-4. `/makarasty:fleet-login`, or the project's runbook directly.
+**The pane comes first, before anything else you would read.** Your brief's frontmatter tells you which
+lane you are in, and that is all you need to know to start the gate. Reading `FLEET.md`, the project's
+documentation and the brief's steps all take turns during which the operator is still standing in front of
+your chat, and every one of those turns is a minute added to how long they wait to be asked. So:
+
+1. `preview_start` at the origin from `FLEET.md`'s first lines, honouring its literal host. Keep the
+   `tabId`. One `sed -n` for the origin is enough here; the rest of that file can wait.
+2. Gate the pane, next section, and if it reads blind ask **in that same turn**. Target: the question is
+   on screen inside a minute of the chip being clicked.
+3. Read `FLEET.md` properly and confirm the services it names are listening. Those processes belong to the
+   operator, so a missing one is a report rather than something to start. Do this while you wait for the
+   pane, not before asking for it.
+4. `/makarasty:fleet-login`, or the project's runbook directly, once the gate reads live.
 
 **Kinds that only read or write files** (investigate without instrumentation, research, and the file half
 of implement and fix): skip the browser entirely and go to step 3.
+
+**When you need browser evidence and have no pane**, and the run has a `pane/` directory, file the walk
+instead of asking for a pane: `sh "$f" pane-ask .fleet/<run-id> <chip>` with the whole walk on stdin, then
+claim a repo task and read `pane/results/<id>.json` at your next boundary. One request is one whole walk,
+never a single click. `docs/BROKER.md` has the contract.
+
+**If your chip made you a pane host**, your loop is `pane-next` / run the walk / `pane-serve`, and every
+answer carries the frame count it was measured under: `pane-serve` refuses a walk served from a blind pane,
+which is the only thing standing between a requester and confident fiction it cannot check.
 
 **Kinds that write code**: your brief carries `isolation: worktree`, so you are in your own checkout.
 Verify scoped, and leave the full sweep to the operator.
@@ -154,21 +184,24 @@ list live in `docs/BROWSER.md`. Run it.
 Live: continue. A reading between one and fifty-nine is blind as well, not a weak pass: report the number,
 since intermittent compositing usually means a paging machine or a pane closing under you.
 
-Blind: write `.fleet/<run-id>/<chip-id>.waiting` holding one line saying the pane is not displayed and
-naming the viewport you measured. Then **wait by polling, not by prompting**: arm
-`sleep 90; echo regate` with `run_in_background`, and re-run the gate when it wakes you. Delete the marker
-the moment the gate reads live, and measure again rather than trusting anyone's reply, because the reading
-is the proof.
+Blind: in **one turn**, write `.fleet/<run-id>/<chip-id>.waiting` holding one line saying the pane is not
+displayed and naming the viewport you measured, **ask the operator right there with `AskUserQuestion`**,
+and arm `sleep 90; echo regate` with `run_in_background` so an unanswered question becomes another
+measurement rather than a stall. Delete the marker the moment the gate reads live, and measure again
+rather than trusting anyone's reply, because the reading is the proof.
 
-The marker is what reaches the operator: the planner's watch reports every `.waiting` within one interval,
-in the chat the operator is actually reading, and one instruction there opens every pane at once. Six
-separate prompts in six worker chats do not. Measured 2026-08-27: all six workers of one run opened the
-pane prompt within forty seconds of each other and blocked between 96 and 185 seconds each, asking the
-same question in six chats nobody was looking at.
+**Ask immediately, not after three polite poll rounds.** The operator clicks chips in a wave and then
+walks chat to chat opening panes; a prompt that arrives four minutes after the chip is a second visit to a
+chat they have already left. Measured 2026-08-31 over six pane workers: the first gate ran between 1 and 7
+minutes after the chip and the pane question landed between **1 and 34 minutes** after it, so the operator
+answered them one at a time across half an hour instead of in one pass. The earlier rule optimised for the
+wrong thing: the question is cheap **because** the operator is already standing in front of that chat, and
+it is only expensive when it arrives after they have moved on.
 
-Fall back to `AskUserQuestion` only after roughly three unanswered poll rounds, and keep the marker on
-disk while you do. A worker stopped on a question looks exactly like a worker still working, and the
-marker is the only thing that says otherwise.
+The marker is the other half, not the fallback: the planner's watch reports every `.waiting` within one
+interval, in the chat the operator is actually reading, so a question asked in a chat nobody opens is still
+visible where they are. Write both, every time. A worker stopped on a question looks exactly like a worker
+still working, and the marker is the only thing that says otherwise.
 
 Hold login and navigation until the gate reads live, since both hang for minutes through a blind pane and
 the hang reads as a broken backend.
@@ -225,6 +258,24 @@ marker.
 A worker that stayed blind writes `.fleet/<run-id>/<chip-id>.blocked` holding one line naming what it
 could not see, and writes no findings.
 
+## 5. End so that a person can see you ended
+
+Four acts, in this order, and none of them is optional. `PROTOCOL.md`, "Pending work mirrors unwritten
+obligations", is where the rule behind them lives.
+
+1. **Disarm.** `TaskStop` every background task you armed: the abort clocks, the regate poll, the wake.
+   The marker is written, you owe the disk nothing, so nothing may be pending. Check your own task panel
+   is empty rather than trusting your memory of what you armed.
+2. **Banner.** `sh "$f" summary .fleet/<run-id> <chip>` and let its output stand as your report. It is
+   generated from disk, so it cannot claim findings you did not file.
+3. **Rename this session**, if the host offers a session-title tool, keeping the addressing prefix:
+   `fleet <run-id> <chip> - done <n>f`, or `- BLIND` if you wrote `.blocked`. That title is the only thing
+   about you visible from the chat the operator is actually sitting in.
+4. **Stop.** No closing summary of the application, no advice about what to fix. The banner is the message.
+
+If a clock you missed wakes you later, you get exactly two acts: disarm whatever is still armed, and print
+the banner again. Nothing else.
+
 ## Done when
 
 Before writing your findings, re-read your brief's Steps and its Correct-looks-like section. You read them
@@ -240,7 +291,10 @@ Then walk this list:
   observations. A run with no findings is otherwise ambiguous between checked-and-clean and never-checked,
   and this file is the only thing that separates them.
 - `<chip-id>.done` written last, after the findings file is closed.
+- Every background task of yours stopped, and your task panel empty. This is checkable, so check it.
+- The banner printed and the session renamed.
+
 ## Report
 
-Five lines at most: findings by severity, and what you could not reach. The app already has documentation;
-your summary of it helps nobody.
+The banner from `fleet.sh summary`, and at most two lines under it naming what you could not reach. The
+app already has documentation; your summary of it helps nobody.

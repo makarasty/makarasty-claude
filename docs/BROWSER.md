@@ -78,8 +78,20 @@ tool's output.
 
 ## Wave sizing
 
-**Five is the comfortable number.** Five sessions tile side by side at a readable width with nothing
-stacked below, and that is the shape to plan for by default.
+**Everything in this section sizes the pane lane and nothing else.** A worker that never opens a pane is
+not competing for a display, and capping the file half of a fleet at the width of a monitor is how a run
+ends up with eight browser workers queued behind each other and nobody reading the source tree. The repo
+lane's width comes from the machine, in `LANES.md`.
+
+**Five is what fits. Two is usually what is needed.** Those are different questions and the second one is
+the one to ask first. Measured 2026-08-31: seven open panes carried 103 minutes of actual browser driving
+across a 153 minute run, no pane was busy for half of it, and the peak was three. Opening a pane costs the
+operator a question, a piece of screen and the obligation to keep it displayed, and it buys nothing while
+nobody is driving it. Start at two, and add one when the browser work is visibly queueing - `LANES.md` for
+how to see that, `BROKER.md` for the shape that makes adding one cheap.
+
+Five sessions tile side by side at a readable width with nothing stacked below, and that is the ceiling to
+plan against rather than the number to start from.
 
 **Ten is the ceiling, and the step from five to ten is a decision rather than a slope.** Past five, panes
 stack in a second row at roughly half height: still composited, still usable, noticeably cramped. Once the

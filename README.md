@@ -15,10 +15,19 @@ it trusts.
 
 ## Install
 
+From a local checkout, which is the path this release was developed and tested on:
+
 ```
-/plugin marketplace add makarasty/makarasty-claude
+/plugin marketplace add /path/to/makarasty-claude
+```
+
+```
 /plugin install makarasty@makarasty
 ```
+
+Once the repository is published, the same two commands take its GitHub coordinates
+(`/plugin marketplace add makarasty/makarasty-claude`) instead of a path. That path has not been exercised
+yet - see "Known limits of 1.0.0" below.
 
 Restart Claude Code afterwards. Plugins load at session start.
 
@@ -123,8 +132,14 @@ A fleet queues for whatever the machine has exactly one of, and a worker is the 
 a **lane**: `pane` for the browser, `verify` for the test suite and the typechecker, `repo` for work that
 only reads files and is therefore not scarce at all.
 
-Every task declares its lane. A pane task is strictly serial per worker, because browser subagents drive
-the parent session's pane. A repo task fans out. A verify task takes the machine.
+Every task declares its lane, and every worker claims in one. A pane task is strictly serial per worker,
+because browser subagents drive the parent session's pane. A repo task fans out. A verify task takes the
+machine.
+
+**The lanes are capped separately, which is the point of naming them.** The pane lane is capped by the
+operator's display, ten at the outside. The repo lane is capped by the machine and sized from the queue,
+and there is no reason for the two numbers to match: capping file work at the width of a monitor is how a
+run ends up eight browsers wide and two files wide.
 
 That one field is what makes the tool general. A run with no pane tasks is an ordinary run whose pane lane
 happens to be empty: a refactor across a hundred files, a migration, a research sweep, a codebase somebody
@@ -179,8 +194,38 @@ A six worker pull mode run over the same application, 2026-08-27, is the counter
 | Watch left running after the run finished | 5 hours 42 minutes |
 
 Every row below the findings is a defect in this plugin rather than in the application, and every one of
-them is fixed in 2.4.0, and 2.5.0 adds the lanes. The queue itself worked: 34 tasks off a queue that did not exist when the run
-started is the shape a fixed set of briefs cannot produce.
+them was fixed before this release, and the lanes landed on 2026-08-28. The queue itself worked: 34 tasks
+off a queue that did not exist when the run started is the shape a fixed set of briefs cannot produce.
+
+A fourteen worker pull mode run over the same application, 2026-08-31, is what 1.0.0 is answering:
+
+| | |
+|---|---|
+| Findings | 246, of which 32 blockers and 120 major, over 54 tasks |
+| Workers | 14, six on panes and eight on files, all landed, none blind |
+| Turns | 4,580 assistant turns, 3.8 M output tokens, 1.2 B cached reads |
+| Session life after the worker's own `.done` | 703 minutes and 108 turns, across 13 of the 14 workers |
+| Abort clocks armed | 52, of which zero were ever stopped |
+| Longest tail | one worker still being woken 74 minutes after it finished |
+| Pane question, chip clicked to question on screen | 1 to 34 minutes, answered one chat at a time |
+| Claims made by hand around a missing `next` lane filter | 73, beside 113 through the helper |
+
+The last row is the instructive one. `fleet.sh next` had no lane argument, so a paneless worker could
+claim a browser task; the planner worked around that by telling nine workers to walk the queue by hand,
+and the hand rolled path skips the one place the finding schema is enforced. A missing argument took the
+contract down with it, and nothing went red.
+
+The same day's second run - eight workers repairing what the first one found, 32 tasks, 132 findings,
+741 files changed - reproduced both defects independently, which is what makes them design faults rather
+than one bad afternoon: **387 minutes and 174 turns of session life after the workers' own `.done`
+markers**, 35 clocks armed and none stopped, and **two panes opened for three minutes of browser driving**.
+It also finished without being collected: 132 findings sat in eight JSONL files with no backlog until
+somebody ran `merge` by hand two hours later.
+
+1.0.0 gives `next` its lane, makes every clock name the obligation it guards so `finish` can stop it,
+ends a run with a generated banner plus one notification plus a `FINISHED` file, has each chat rename
+itself in the sidebar when it lands, and asks for a pane in the first minute after the chip rather than
+the thirty-fourth.
 
 ## Reference
 
@@ -192,15 +237,38 @@ started is the shape a fixed set of briefs cannot produce.
 - [`docs/MOCKING.md`](docs/MOCKING.md) reaching states the sandbox data will not produce, and the line
   between a scene and a shared write
 - [`docs/LANES.md`](docs/LANES.md) what a fleet is really queueing for, fan-out, and a run with no browser
+- [`docs/BROKER.md`](docs/BROKER.md) the pane as a shared instrument work is filed against, and the
+  measurement that says seven open panes carried less than one pane's worth of demand
 - [`scripts/fleet.sh`](scripts/fleet.sh) the queue's bookkeeping in one call per boundary, and the only
   place the finding schema is enforced rather than requested
 - [`scripts/fleet-merge.mjs`](scripts/fleet-merge.mjs) findings to a reconciled backlog, and a backlog to a
   queue a fix fleet can claim
+- [`scripts/fleet-selftest.sh`](scripts/fleet-selftest.sh) the whole protocol against a temporary directory
+  in about a second, with no sessions, no browser and no tokens: 38 checks over the lane filter, the atomic
+  claim, the schema gate, the clocks, the completion markers and the landing test. Run it before trusting a
+  change to the plugin
+- [`scripts/fleet-load.mjs`](scripts/fleet-load.mjs) what the machine is carrying right now, by class, and
+  `--watch` to record it through a run. The sizing rules are derived from these numbers; this is how they
+  get re-measured instead of remembered
 - [`scripts/visual-probe.js`](scripts/visual-probe.js) visual defects found by geometry, so a screenshot
   confirms rather than invents
 - [`docs/PERF.md`](docs/PERF.md) measuring speed on a machine the fleet is loading
 - [`docs/MODELS.md`](docs/MODELS.md) which model per stage, and the delegation economics
 - [`docs/PORTING.md`](docs/PORTING.md) every assumption this makes about its host, and its substitute
+
+## Known limits of 1.0.0
+
+Written down rather than fixed, because a tool that hides its sample size is asking to be trusted further
+than it has been tested. Full list in [`CHANGELOG.md`](CHANGELOG.md).
+
+- Every number in this README was measured on **one machine, by one operator, against one application**,
+  over four runs in six days. Real measurements, weak sample.
+- The **pane broker** in [`docs/BROKER.md`](docs/BROKER.md) has never run live.
+- The **published install path is untested** - this release installs from a local directory marketplace.
+- **Portability is documented, not exercised**: ten host assumptions in
+  [`docs/PORTING.md`](docs/PORTING.md), one host actually run.
+- The self-test covers mechanics. Whether a worker disarms its clocks, asks for its pane early, or prints
+  its banner is prose, enforced by nothing, and prose rules have been routed around twice in measured runs.
 
 ## What it deliberately leaves out
 

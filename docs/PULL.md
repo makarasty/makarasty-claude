@@ -40,9 +40,13 @@ mkdir .fleet/<run-id>/tasks/claimed/task-07 2>/dev/null &&
 `mkdir` fails when the directory exists, and it fails atomically. Verified on NTFS 2026-08-26: eight
 concurrent claimers on one task, exactly one succeeded, and every later attempt was refused.
 
-**The claim attempt is also the check.** Walk `tasks/ready/` in order and try to claim each one. The first
-success is your task. Failing every one of them means the queue is drained, so write `<chip>.done` and
-stop.
+**The claim attempt is also the check.** Walk `tasks/ready/` in order, skipping anything whose `needs:`
+line names a lane you are not in, and try to claim each one that remains. The first success is your task.
+
+Failing every one of them means your lane is drained, which is **not** the same as the run being over.
+While `tasks/queue-open` exists the planner still intends to file work, so poll (`sleep 300; echo recheck`)
+rather than finishing. Write `<chip>.done` only once that marker is gone: a session that ends cannot be
+reopened, and a queue that grows after its workers have closed has nobody left to work it.
 
 **Never delete or move the ready file.** The claim directory is the only truth. A worker that dies between
 moving a file and finishing its work would take the task with it.
@@ -62,13 +66,23 @@ rather than hand rolling the shell each time:
 
 ```bash
 f=$(ls -t ~/.claude/plugins/cache/*/makarasty/*/scripts/fleet.sh | head -1)
-sh "$f" next    .fleet/<run-id> 03      # claim + owner + heartbeat + print the task and its budget
+sh "$f" next    .fleet/<run-id> 03 repo # claim IN YOUR LANE + owner + heartbeat + the task and its budget
+sh "$f" clock   .fleet/<run-id> 03 task-07 <background-task-id>   # the abort clock guarding that claim
 sh "$f" beat    .fleet/<run-id> 03 task-07
 sh "$f" find    .fleet/<run-id> 03 <<< '<one JSON finding>'
-sh "$f" finish  .fleet/<run-id> 03 task-07
-sh "$f" drained .fleet/<run-id> 03
+sh "$f" finish  .fleet/<run-id> 03 task-07   # prints STOP_CLOCK <id>: TaskStop it in the same turn
+sh "$f" drained .fleet/<run-id> 03           # exit 5 = queue empty but still open, poll instead
 sh "$f" status  .fleet/<run-id>         # the planner's view: claims, ages, never-beat flags, open asks
+sh "$f" answer  .fleet/<run-id> 05-1 06-1    # planner: ONE answer, filed under every question it settles
+sh "$f" broadcast .fleet/<run-id>            # planner: something every worker reads at its next boundary
+sh "$f" summary .fleet/<run-id> 03      # the end banner, generated from disk
 ```
+
+**The lane argument is not optional.** Without it `next` hands a paneless worker a browser task. Measured
+2026-08-31: three workers claimed work they could not do, and the planner's workaround was a paragraph in
+nine of the fourteen chip prompts telling the worker to walk `ready/` and read the `needs:` lines itself.
+The run survived on that - 73 hand rolled claims beside 113 helper ones - but a rule that has to be
+retyped into a prompt every run is not a rule, and the next planner writes it slightly differently.
 
 Measured 2026-08-27 over a six worker run: **235 of 612 worker shell calls, 38 percent, were protocol
 paperwork** - 49 claims, 52 owner writes, 44 reads of `ready/`, 56 finding appends, 16 heartbeats, 13 done
@@ -195,13 +209,31 @@ That limit is armed, not intended: at claim time the worker backgrounds
 and the thing keeping the session alive. Nothing else in a fleet measures elapsed time, and a worker three
 subagent rounds into a scenario cannot tell twenty minutes from eighty.
 
+**And it is disarmed at the same boundary that closes the task.** Record the clock's id against the claim
+(`fleet.sh clock`), and `TaskStop` the id `finish` prints back. A clock that outlives its task keeps
+waking a session that has nothing left to do: measured 2026-08-31, fourteen workers armed 52 clocks and
+stopped none, which cost 703 minutes of session life and 108 model turns after the work was over, and left
+every finished chat looking busy in the task panel. The rule and the reasoning are in `PROTOCOL.md`,
+"Pending work mirrors unwritten obligations".
+
 The planner then re-files the unreached remainder as a new task. That is the loop that lets a weak first
 plan repair itself instead of being wrong for the entire run.
 
 ## Asking the planner
 
 A worker writes `ask/<chip>-<n>.md`, one question with enough context to answer without the transcript,
-then **keeps working**. It reads `answers/<chip>-<n>.md` at its next task boundary.
+then **keeps working**. It reads `answers/<chip>-<n>.md` at its next task boundary, and
+`answers/00-broadcast.md` at every boundary.
+
+**The planner answers with `fleet.sh answer`, naming every question the answer settles.** One reply often
+closes several, and writing it to a filename of its own invention is how it reaches nobody: measured
+2026-08-31, a planner answered four questions in a combined `answers/05-1-2-3.md` plus a broadcast, and
+an hour later all four were still listed as unanswered by `status`, because a worker looks for
+`answers/05-1.md` and finds nothing. `answer` writes one text under every id it was addressed to.
+
+Something every worker needs goes in `fleet.sh broadcast`, not into one worker's answer. Four workers of
+that run filed the same broken tool between 16:55 and 17:04, two of them after it had already been fixed,
+because the fix was recorded where only one of them would look.
 
 Blocking on an answer turns a question into a stall, and in a fleet the operator is reading one chat out
 of five. So a worker may ask the operator exactly one thing, which is to display its pane, and that one is

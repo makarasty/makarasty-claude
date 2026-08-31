@@ -10,14 +10,35 @@ hours or five, and it is the only thing in this plugin that generalises past bro
 
 | Lane | The scarce thing | How many at once | Task declares |
 |---|---|---|---|
-| **pane** | one Browser pane per session | one per worker, strictly serial | `needs: pane` |
+| **pane** | one Browser pane per session | one per worker, strictly serial, and at most as many workers as the display holds | `needs: pane` |
 | **verify** | the machine's RAM and cores | one across the whole fleet | `needs: verify` |
-| **repo** | nothing scarce, files are read only | as many as the work splits into | `needs: repo` |
+| **repo** | nothing scarce, files are read only | as many as the machine holds, sized from the queue | `needs: repo` |
+
+**The pane lane has a second shape**, new in 1.0.0 and described in [`BROKER.md`](BROKER.md): one or two
+sessions own the panes and everyone else files a browser walk as a file. Measured 2026-08-31, seven open
+panes carried 104 minutes of driving, under one pane's worth on either denominator, and one of them was
+driven for zero minutes over 61 - the pane
+is bound to a session when the thing that is scarce is the walk. Size the pane lane at **two** by default
+whatever shape you use.
+
+**The lane is also what a worker claims by**, not only what a task declares:
+`sh fleet.sh next <run-dir> <chip> repo` refuses to hand a paneless worker a browser task. Measured
+2026-08-31: `next` had no lane argument, so three workers claimed pane tasks they could not do, and the
+planner's fix was prose - nine of the fourteen chip prompts carried a hand written paragraph telling that
+worker to walk `tasks/ready/` itself and read each `needs:` line. It worked, and it left 73 hand rolled
+claims beside 113 helper ones. The defect is not that the run broke; it is that lane discipline lived in a
+paragraph somebody retypes per run instead of in the one call every worker already makes.
 
 Measured 2026-08-27: the median task took 23 minutes and roughly 20 of those were one delegated browser
 scenario. Browser subagents drive the **parent session's** pane, so two of them in one worker run strictly
 one after the other while the worker sits idle. That puts a pane-lane worker's ceiling at about 2.6 tasks
 an hour no matter how the queue is written.
+
+**That number describes a pane worker in a browser-heavy run, and nothing else.** Two later runs, both
+repo-heavy, came in above it - 54 tasks over 14 workers at **2.87 tasks an hour per worker**, and 32 over
+8 at **4.25** - measured from done-marker timestamps across the span between the first and the last. A
+planner sizing a file-only run from the 2.6 figure is using a browser constant on work that never opens a
+browser, and will open twice the sessions it needs.
 
 The repo lane has no such ceiling, and in that run it went unused: 33 of 34 tasks were written to be walked
 in a browser, including a vendor egress audit whose entire answer was in the source tree. It took 8
@@ -63,6 +84,67 @@ task, plus at most one repo task, plus the repo task's own fan-out.
 pending, which happens to keep the session alive, and a worker that learns to lean on that will eventually
 have three subagents all waiting on each other and no clock anywhere. Arm the wake exactly as
 `PROTOCOL.md` says, subagents in flight or not.
+
+## Sizing the repo lane: from supply, and early
+
+The pane lane is the bottleneck by construction. At 2.6 tasks an hour per worker it decides the run's wall
+clock whatever the repo lane does, which has one useful consequence: **repo width can never make a run
+slower, only wider.** So the two errors are not symmetric. Too many repo workers wastes something cheap, a
+few quiet chats. Too few wastes something expensive: pane hours spent walking a plan that a repo finding
+would have rewritten.
+
+Take the cheap error deliberately, and **size from supply rather than from demand**:
+
+```
+repo workers = clamp( ceil(ready repo tasks / 3), 1, machine cap )
+```
+
+Every term is on disk or one command away. The alternative - estimate the repo minutes, estimate the pane
+lane's wall clock, divide so they land together - needs two numbers the planner is provably bad at
+guessing, and it is guessing them before the run, which is the exact failure `PULL.md` exists to route
+around. Landing together is not the objective. Finishing the repo lane **early** is, because its findings
+are the cheapest instrument for retargeting the pane lane's remaining queue.
+
+The machine cap is the same shape as the fan-out rule below: free physical memory at chip time, ceiling
+`cores - 2`, and never above what the project's `FLEET.md` records on its concurrency line. Measure it
+rather than reasoning about it - `node scripts/fleet-load.mjs` prints the census by class:
+
+| what | measured 2026-08-31, one desktop, 31.2 GB | how it was measured |
+|---|---|---|
+| an agent session, no pane | **~330 MB** resident, largest 389 MB | 14 live sessions, grouped by process type |
+| one displayed pane on a local single page app | **+344 MB**, one renderer process | opened one, sampled, closed it |
+| closing the tab | returns all of it within seconds, process gone | same A/B |
+| fourteen sessions and six panes | 4.4 GB plus 1.9 GB, no page file growth | during the run |
+
+So a repo worker is roughly a third of a gigabyte and a pane worker is two to three times that, not the
+order of magnitude it feels like, and nowhere near a constraint on a machine with
+double digit free gigabytes. **The repo lane is not memory bound on any modern machine.** What binds it is
+how many claims the queue can keep fed, which is why the width above is computed from the ready queue.
+
+**Start the repo lane at full width in the first wave**, not after the browser workers have settled. The
+one exception is a wave that measures speed: a performance task and a wide repo fan-out on the same box
+measure each other, so those schedule after the repo lane drains, and the planner says so out loud because
+it can see the perf tasks sitting in `ready/`.
+
+## A drained queue is not a finished worker
+
+`tasks/queue-open` is a marker the **planner** owns. While it exists, the planner still intends to file
+work, and a repo worker that finds its lane empty arms `sleep 300; echo recheck` and polls instead of
+writing `.done`. The planner deletes it when it will file nothing more, and the next poll turns every
+lingering worker quiet.
+
+This is what makes early width safe. A chat that has ended cannot be reopened, so a worker that finishes
+the moment the queue runs dry is a slot the run has permanently lost - and in pull mode the queue grows,
+by design, every time a finding points somewhere new. The marker is the outstanding obligation that keeps
+those sessions legitimately alive under the protocol's pending-work rule, and deleting it is what closes
+them.
+
+It costs a handful of poll turns per worker per hour. That is the price of not losing the lane.
+
+**A pane worker whose lane drains demotes itself rather than stopping.** It already claims repo tasks in
+its idle window, so at end of lane it simply keeps doing that, with `next <run> <chip> repo`. The reverse
+is impossible - a repo session has no pane and cannot grow one - which is why pane width stays the
+operator's display decision and repo width stays the machine's.
 
 ## Fan out in the repo lane, never in the pane lane
 
