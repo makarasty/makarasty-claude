@@ -1,0 +1,23 @@
+{
+  "name": "makarasty-tools",
+  "description": "Three small commands that travel with the fleet plugin but are versioned apart from it: commit under your own name, review a diff and report only findings with evidence, and strip assistant tics out of writing.",
+  "version": "1.0.0",
+  "author": {
+    "name": "makarasty",
+    "url": "https://github.com/makarasty"
+  },
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/unslop.mjs\"",
+            "timeout": 5,
+            "statusMessage": "Checking unslop mode"
+          }
+        ]
+      }
+    ]
+  }
+}

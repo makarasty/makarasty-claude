@@ -1,7 +1,7 @@
 # Driving a browser from an agent session
 
-Measured against Claude Code's in-app Browser pane on Windows, 2026-08-24, across three sessions and one
-spawned worker.
+Measured against Claude Code's in-app Browser pane on Windows, across three sessions and one spawned
+worker [M01].
 
 ## Blind
 
@@ -40,7 +40,9 @@ machine or a pane being collapsed while you read it, and timing taken from it lo
 Run it before the first visual step, and again before each batch of visual work. A pane collapsed mid run
 takes the worker blind silently, and every observation after that point is worthless.
 
-A blind worker asks the operator to display the pane, then **measures again**. The reading is the proof.
+A blind worker asks the operator to display the pane, then **measures again**: before this gate existed,
+eight workers of eight ran blind and filed 94 findings nobody could have observed [M02]. The reading is the
+proof.
 An operator can open a different pane, or open one and collapse it, and both answers sound like yes.
 
 Page text length is not a gate. Measured at 157 characters on the same page in both the live and the blind
@@ -84,8 +86,8 @@ ends up with eight browser workers queued behind each other and nobody reading t
 lane's width comes from the machine, in `LANES.md`.
 
 **Five is what fits. Two is usually what is needed.** Those are different questions and the second one is
-the one to ask first. Measured 2026-08-31: seven open panes carried 103 minutes of actual browser driving
-across a 153 minute run, no pane was busy for half of it, and the peak was three. Opening a pane costs the
+the one to ask first. Seven open panes carried 104 minutes of actual browser driving across a 153 minute
+run, no pane busy for 38 percent of it, peak three [M15]. Opening a pane costs the
 operator a question, a piece of screen and the obligation to keep it displayed, and it buys nothing while
 nobody is driving it. Start at two, and add one when the browser work is visibly queueing - `LANES.md` for
 how to see that, `BROKER.md` for the shape that makes adding one cheap.
@@ -256,11 +258,9 @@ most expensive made 194 and took 51.
 ## Spend round trips, not seconds
 
 Every tool call is a model round trip, and round trips dominate the wall clock of a browser walk far more
-than the page does. Measured 2026-08-26: two workers, 33 tool calls each, 219 s and 322 s.
-
-Measured across one eight worker run: **259 of 1,350 tool calls were avoidable on a conservative count,
-473 on a generous one**, so between a fifth and a third of every call made. Three shapes accounted for
-almost all of it, and each is recognisable while you are about to make the mistake:
+than the page does. **259 of 1,350 tool calls in one run were avoidable** — a fifth to a third of every
+call made [M22]. Three shapes account for almost all of it, and each is recognisable while you are about
+to make the mistake:
 
 - **103 pairs of adjacent read-only probes.** Two `javascript_tool` calls in a row, neither changing
   anything, each returning one value. One expression returns both.

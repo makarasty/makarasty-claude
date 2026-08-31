@@ -15,30 +15,26 @@ hours or five, and it is the only thing in this plugin that generalises past bro
 | **repo** | nothing scarce, files are read only | as many as the machine holds, sized from the queue | `needs: repo` |
 
 **The pane lane has a second shape**, new in 1.0.0 and described in [`BROKER.md`](BROKER.md): one or two
-sessions own the panes and everyone else files a browser walk as a file. Measured 2026-08-31, seven open
-panes carried 104 minutes of driving, under one pane's worth on either denominator, and one of them was
-driven for zero minutes over 61 - the pane
+sessions own the panes and everyone else files a browser walk as a file. Seven open panes carried 104
+minutes of driving, under one pane's worth, and one of them was driven for zero minutes over 61 [M15] - the
+pane
 is bound to a session when the thing that is scarce is the walk. Size the pane lane at **two** by default
 whatever shape you use.
 
 **The lane is also what a worker claims by**, not only what a task declares:
-`sh fleet.sh next <run-dir> <chip> repo` refuses to hand a paneless worker a browser task. Measured
-2026-08-31: `next` had no lane argument, so three workers claimed pane tasks they could not do, and the
-planner's fix was prose - nine of the fourteen chip prompts carried a hand written paragraph telling that
-worker to walk `tasks/ready/` itself and read each `needs:` line. It worked, and it left 73 hand rolled
-claims beside 113 helper ones. The defect is not that the run broke; it is that lane discipline lived in a
-paragraph somebody retypes per run instead of in the one call every worker already makes.
+`sh fleet.sh next <run-dir> <chip> repo` refuses to hand a paneless worker a browser task. When it could
+not, the rule moved into prose pasted across nine chip prompts and produced **73 hand-rolled claims beside
+113 helper ones** [M06]. A gate is a package deal: when the helper lacks something workers need, they
+abandon the helper and every gate inside it.
 
 Measured 2026-08-27: the median task took 23 minutes and roughly 20 of those were one delegated browser
 scenario. Browser subagents drive the **parent session's** pane, so two of them in one worker run strictly
 one after the other while the worker sits idle. That puts a pane-lane worker's ceiling at about 2.6 tasks
 an hour no matter how the queue is written.
 
-**That number describes a pane worker in a browser-heavy run, and nothing else.** Two later runs, both
-repo-heavy, came in above it - 54 tasks over 14 workers at **2.87 tasks an hour per worker**, and 32 over
-8 at **4.25** - measured from done-marker timestamps across the span between the first and the last. A
-planner sizing a file-only run from the 2.6 figure is using a browser constant on work that never opens a
-browser, and will open twice the sessions it needs.
+**That number describes a pane worker in a browser-heavy run, and nothing else.** Two later repo-heavy runs
+came in above it, at **2.87** and **4.25** tasks an hour per worker [M16]. A planner sizing a file-only run
+from the 2.6 figure is using a browser constant on work that never opens a browser.
 
 The repo lane has no such ceiling, and in that run it went unused: 33 of 34 tasks were written to be walked
 in a browser, including a vendor egress audit whose entire answer was in the source tree. It took 8
@@ -111,7 +107,7 @@ The machine cap is the same shape as the fan-out rule below: free physical memor
 `cores - 2`, and never above what the project's `FLEET.md` records on its concurrency line. Measure it
 rather than reasoning about it - `node scripts/fleet-load.mjs` prints the census by class:
 
-| what | measured 2026-08-31, one desktop, 31.2 GB | how it was measured |
+| what | measured on one desktop, 31.2 GB [M21] | how it was measured |
 |---|---|---|
 | an agent session, no pane | **~330 MB** resident, largest 389 MB | 14 live sessions, grouped by process type |
 | one displayed pane on a local single page app | **+344 MB**, one renderer process | opened one, sampled, closed it |
@@ -162,12 +158,14 @@ The gate for fanning out, all three terms:
 
 **Three is the default width, and the reason is the fixed cost of a spawn rather than the machine.** A
 subagent pays its system prompt and tool schemas before it does anything: measured 2026-08-24, a Haiku
-subagent driving three tool calls spent 45,775 tokens, nearly all of it startup. So a fanned-out part has
+subagent driving three tool calls spent 45,775 tokens, nearly all of it startup [M13]. So a fanned-out part has
 to be worth a whole slice of work, not one lookup. Two greps belong in one message to your own shell; four
 independent file clusters belong to four agents.
 
 `fanout: N` on the task raises or lowers that. Above five, split the task instead: five returns are already
 more than one worker can rule on without losing the thread.
+
+`sh "$f" width .fleet/<run-id>` answers this for the whole lane; the paragraph below is what it computes.
 
 **The repo lane's width comes from free memory, the same way the project's own test runner picks its
 workers.** Read free physical memory before a wide fan-out and take the smaller of `fanout` and what the

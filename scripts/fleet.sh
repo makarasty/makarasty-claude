@@ -16,6 +16,7 @@
 #   fleet.sh ask     <run-dir> <chip>              read a question on stdin, file it, print the path
 #   fleet.sh drained <run-dir> <chip>              queue empty: write <chip>.done. exit 5 = queue still open
 #   fleet.sh status  <run-dir>                     planner view: claims, ages, markers, questions
+#   fleet.sh sweep   <run-dir> [--release]         claims nobody is advancing; --release hands them back
 #   fleet.sh width   <run-dir>                     how many repo workers this queue and this machine want
 #   fleet.sh pane-ask   <run-dir> <chip>           file a browser walk for a pane host to run, on stdin
 #   fleet.sh pane-next  <run-dir> <host>           claim the oldest pending walk. exit 3 = none pending
@@ -35,6 +36,23 @@
 
 set -eu
 
+# Sorting, matching and character classes change under a non-C locale, and a run directory is compared
+# across machines. Pin it rather than inherit whatever the operator's shell has.
+LC_ALL=C
+export LC_ALL
+
+# A bare `mktemp` is not portable between GNU and BSD, and the template keeps the file recognisable when
+# something goes wrong mid-run.
+tmpfile() { mktemp "${TMPDIR:-/tmp}/fleet.XXXXXX"; }
+
+# `date -r FILE` reads a file's mtime on GNU and reinterprets the argument as epoch seconds on BSD, so the
+# same line returns a plausible wrong number on macOS. Ask node, which this script already needs.
+mtime() {
+  if command -v node >/dev/null 2>&1; then
+    node -e 'try{process.stdout.write(String(Math.floor(require("fs").statSync(process.argv[1]).mtimeMs/1000)))}catch{}' "$1" 2>/dev/null
+  fi
+}
+
 cmd=${1:-}; run=${2:-}
 [ -n "$cmd" ] && [ -n "$run" ] || { echo "usage: fleet.sh <command> <run-dir> [args]" >&2; exit 2; }
 [ -d "$run" ] || { echo "no such run directory: $run" >&2; exit 2; }
@@ -45,6 +63,18 @@ now() { date -Iseconds 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%SZ; }
 # quietly misreading it. The schema has already had one breaking rename (`what` -> `observed`); the next
 # one should not be silent.
 RUN_FORMAT=1
+
+# Constants live in calibration.json, never in a script and never in prose: a number that a planner reads
+# and a script reads must have one spelling. Falls back to the built-in default when node or the file is
+# absent, so nothing here depends on it existing.
+cal() { # cal <key> <default>
+  _c=$(ls -t "$(dirname "$0")/../calibration.json" ~/.claude/plugins/cache/*/makarasty/*/calibration.json 2>/dev/null | head -1)
+  if [ -n "$_c" ] && command -v node >/dev/null 2>&1; then
+    _v=$(node -e 'try{const o=require(process.argv[1]);const v=o[process.argv[2]];if(typeof v==="number")console.log(v)}catch{}' "$_c" "$1" 2>/dev/null)
+    [ -n "$_v" ] && { echo "$_v"; return; }
+  fi
+  echo "$2"
+}
 stamp() { [ -e "$run/RUN_FORMAT" ] || printf '%s
 ' "$RUN_FORMAT" > "$run/RUN_FORMAT" 2>/dev/null || true; }
 readable() {
@@ -82,6 +112,11 @@ next)
     if mkdir "$run/tasks/claimed/$id" 2>/dev/null; then
       t=$(now)
       printf 'chip %s\nclaimed %s\n' "$chip" "$t" > "$run/tasks/claimed/$id/owner"
+      # Who this session is, so the Stop hook can tell a worker holding an open claim from any other
+      # chat on the machine. The harness exports the id; without it the hook simply never fires.
+      if [ -n "${CLAUDE_CODE_SESSION_ID:-}" ]; then
+        mkdir -p "$run/chips" && printf '%s' "$chip" > "$run/chips/$CLAUDE_CODE_SESSION_ID" || true
+      fi
       printf '%s\n' "$t" > "$run/tasks/claimed/$id/heartbeat"
       b=$(sed -n 's/^budget:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$f" | head -1)
       [ -n "$b" ] || b=25
@@ -109,8 +144,9 @@ clock)
   # or its worker is finished, and only speaks if the budget really did elapse. Nothing to disarm,
   # because nothing outlives its obligation.
   chip=${3:?chip id required}; id=${4:?task id required}; mins=${5:-25}
-  rounds=$(( mins * 2 * 60 / 30 ))
-  printf 'i=0; while [ $i -lt %s ]; do sleep 30; i=$((i+1)); [ -e "%s/tasks/done/%s" ] && exit 0; [ -e "%s/%s.done" ] && exit 0; done; echo budget-elapsed-%s\n' \
+  mult=$(cal budget_multiplier 2); poll=$(cal clock_poll_seconds 30)
+  rounds=$(( mins * mult * 60 / poll ))
+  printf 'i=0; while [ $i -lt %s ]; do sleep '"$poll"'; i=$((i+1)); [ -e "%s/tasks/done/%s" ] && exit 0; [ -e "%s/%s.done" ] && exit 0; done; echo budget-elapsed-%s\n' \
     "$rounds" "$run" "$id" "$run" "$chip" "$id"
   ;;
 
@@ -126,19 +162,22 @@ width)
     [ -n "$lane" ] || lane=repo
     [ "$lane" = repo ] && ready=$((ready + 1))
   done
-  want=$(( (ready + 2) / 3 ))
+  per=$(cal repo_tasks_per_worker 3)
+  want=$(( (ready + per - 1) / per ))
   [ "$want" -lt 1 ] && want=1
   cap=""
   loader=$(ls -t "$(dirname "$0")/fleet-load.mjs" ~/.claude/plugins/cache/*/makarasty/*/scripts/fleet-load.mjs 2>/dev/null | head -1)
   if [ -n "$loader" ] && command -v node >/dev/null 2>&1; then
-    cap=$(node "$loader" --json 2>/dev/null | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{const o=JSON.parse(s);const byRam=Math.floor(o.freeGB-2);console.log(Math.max(1,Math.min(byRam,12)));}catch{console.log("")}})')
+    reserve=$(cal operator_reserve_gb 2); ceil=$(cal repo_worker_ceiling 12)
+    cap=$(node "$loader" --json 2>/dev/null | RESERVE_GB="$reserve" CEIL_N="$ceil" node -e 'const RESERVE=+process.env.RESERVE_GB||2, CEIL=+process.env.CEIL_N||12; let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{const o=JSON.parse(s);const byRam=Math.floor(o.freeGB-RESERVE);console.log(Math.max(1,Math.min(byRam,CEIL)));}catch{console.log("")}})')
   fi
   [ -n "$cap" ] || cap=6
   n=$want; [ "$n" -gt "$cap" ] && n=$cap
   echo "REPO_WORKERS $n"
   echo "  ready repo tasks $ready, one worker per three -> $want"
-  echo "  machine cap $cap (free memory less the 2 GB the operator keeps, ceiling 12)"
-  echo "  the pane lane is a display question and starts at 2; the verify lane is 1"
+  echo "  machine cap $cap (free memory less the ${reserve:-2} GB the operator keeps, ceiling ${ceil:-12})"
+  echo "  the pane lane is a display question and starts at $(cal pane_workers_default 2); the verify lane is 1"
+  echo "  every constant above comes from calibration.json"
   ;;
 
 beat)
@@ -166,7 +205,7 @@ finish)
 find)
   chip=${3:?chip id required}
   stamp
-  tmp=$(mktemp); cat > "$tmp"
+  tmp=$(tmpfile); cat > "$tmp"
   if command -v node >/dev/null 2>&1; then
     node -e '
       const fs=require("fs");
@@ -272,7 +311,7 @@ pane-serve)
   host=${3:?host chip id required}; id=${4:?walk id required}
   [ -d "$run/pane/running/$id" ] || { echo "no claimed walk $id" >&2; exit 2; }
   grep -q "host $host\$" "$run/pane/running/$id/owner" 2>/dev/null || { echo "WALK LOST $id" >&2; exit 4; }
-  tmp=$(mktemp); cat > "$tmp"
+  tmp=$(tmpfile); cat > "$tmp"
   if command -v node >/dev/null 2>&1; then
     node -e '
       const fs=require("fs");
@@ -304,7 +343,7 @@ pane-status)
     [ -e "$f" ] || continue; id=$(basename "$f" .md)
     [ -e "$run/pane/results/$id.json" ] && continue
     pend=$((pend + 1))
-    t=$(date -r "$f" +%s 2>/dev/null || echo "$nowsec")
+    t=$(mtime "$f"); [ -n "$t" ] || t=$nowsec
     age=$(( (nowsec - t) / 60 )); [ "$age" -gt "$oldest" ] && oldest=$age
   done
   served=$(ls "$run"/pane/results/*.json 2>/dev/null | wc -l | tr -d ' ')
@@ -323,7 +362,7 @@ answer)
   shift 2
   [ $# -gt 0 ] || { echo "usage: fleet.sh answer <run-dir> <question-id> [question-id...]" >&2; exit 2; }
   mkdir -p "$run/answers"
-  tmp=$(mktemp); cat > "$tmp"
+  tmp=$(tmpfile); cat > "$tmp"
   [ -s "$tmp" ] || { rm -f "$tmp"; echo "refusing to write an empty answer" >&2; exit 2; }
   for id in "$@"; do
     id=${id%.md}
@@ -340,6 +379,43 @@ broadcast)
   mkdir -p "$run/answers"
   cat >> "$run/answers/00-broadcast.md"
   echo "BROADCAST appended to $run/answers/00-broadcast.md"
+  ;;
+
+sweep)
+  # Abandoned claims. A worker that dies holding a task leaves a claim directory that no atomic primitive
+  # will ever clean up - the maildir lesson: `tmp/` needs a sweeper or it accumulates forever. This is the
+  # planner's tool and it is deliberately conservative: it names candidates, and only releases them when
+  # told to, because the three-term dead test exists for a reason.
+  #
+  #   fleet.sh sweep <run-dir>            list claims that look abandoned
+  #   fleet.sh sweep <run-dir> --release  rename them aside so the task can be re-filed
+  release=""
+  [ "${3:-}" = "--release" ] && release=1
+  nowsec=$(date +%s 2>/dev/null || echo 0)
+  found=0
+  for d in "$run"/tasks/claimed/*/; do
+    [ -d "$d" ] || continue
+    id=$(basename "$d")
+    case "$id" in *.dead-*|*.released-*) continue;; esac
+    [ -e "$run/tasks/done/$id" ] && continue
+    owner=$(head -1 "$d/owner" 2>/dev/null || echo "NO OWNER")
+    hb=$(mtime "$d/heartbeat"); [ -n "$hb" ] || hb=$(mtime "$d/owner")
+    age=0; [ -n "$hb" ] && [ "$nowsec" -gt 0 ] && age=$(( (nowsec - hb) / 60 ))
+    budget=$(sed -n 's/^budget:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$run/tasks/ready/$id.md" 2>/dev/null | head -1)
+    [ -n "$budget" ] || budget=25
+    # All three terms, as PULL.md requires: no done marker, nothing written for longer than one budget,
+    # and the claim still standing. Anything younger is a worker doing slow work.
+    if [ "$age" -gt "$budget" ]; then
+      found=$((found + 1))
+      echo "ABANDONED? $id  $owner  quiet ${age}m against a ${budget}m budget"
+      if [ -n "$release" ]; then
+        mv "$d" "$run/tasks/claimed/$id.released-$(date +%Y%m%dT%H%M%S 2>/dev/null || echo swept)"
+        echo "  released; re-file it under a NEW id, never the same one"
+      fi
+    fi
+  done
+  [ "$found" = 0 ] && echo "no abandoned claims"
+  [ -n "$release" ] || { [ "$found" = 0 ] || echo "Nothing was changed. Add --release once you have checked the workers are really gone."; }
   ;;
 
 status)
@@ -441,7 +517,14 @@ landed)
   done
   for f in "$run"/tasks/ready/*.md; do
     [ -e "$f" ] || continue; id=$(basename "$f" .md)
-    [ -d "$run/tasks/claimed/$id" ] || { echo "NOT LANDED: task nobody ever claimed: $id"; fail=1; }
+    # A claim that was released or declared dead still proves somebody took the task; what it does not
+    # prove is that the work happened, which is why the planner re-files it under a new id.
+    taken=""
+    [ -d "$run/tasks/claimed/$id" ] && taken=1
+    for g in "$run"/tasks/claimed/"$id".released-* "$run"/tasks/claimed/"$id".dead-*; do
+      [ -d "$g" ] && taken=1
+    done
+    [ -n "$taken" ] || { echo "NOT LANDED: task nobody ever claimed: $id"; fail=1; }
   done
   [ -s "$run/backlog.jsonl" ] || { echo "NOT LANDED: backlog.jsonl is missing or empty"; fail=1; }
   if ls "$run"/*.waiting >/dev/null 2>&1; then echo "NOT LANDED: a worker is waiting on the operator"; fail=1; fi

@@ -58,6 +58,42 @@ The rule behind all three: a requirement belongs in a script when the script sit
 already walks, in a hook when only the harness can see it, and in prose only when neither can - and prose
 costs are paid on every read by every worker.
 
+### What a stranger has to be able to do
+
+- [`docs/WALKTHROUGH.md`](WALKTHROUGH.md) is a fifteen-minute first run for somebody who has never used
+  this: prove the machine can run it in one second, set a project up, plan, click two chips, read the
+  banner. It names what to do when each of the five common failures appears.
+- The README says **what the version number covers** and what is explicitly calibration rather than
+  contract, and carries a troubleshooting section for the four failures that are not in this plugin: a
+  stale plugin cache, a run directory inside a sync client, CRLF line endings on Windows, and Git Bash
+  not being found.
+- **The three side commands moved to their own plugin**, `makarasty-tools`, from the same marketplace.
+  They travel with a fleet and have nothing to do with its contract, so they version apart from it.
+
+### Measurements live in one place now
+
+`docs/MEASUREMENTS.md` holds 23 entries: what was run, what was counted, how, and which rule it produced.
+Rules carry the number and cite the entry (`[M04]`), so a reader deciding whether to remove a rule sees the
+cost of removing it without paying for the story on every read. The self-test fails on a citation with no
+entry and on an entry nothing cites.
+
+`calibration.json` holds every constant a script or a planner reads — lane widths, the frame-gate
+threshold, the budget multiplier, the fan-out width — with the measurement each came from. A number that a
+script reads cannot go stale the way a number retyped into prose does.
+
+### Hardened against what other people's runs already hit
+
+Read from the issue trackers of comparable orchestrators and from classic file-queue designs:
+
+- **`fleet.sh sweep`** names claims nobody is advancing and, with `--release`, hands them back. Atomic
+  claiming prevents two workers taking one task and does nothing about a worker that died holding one.
+- **A `Stop` hook** refuses, once, to let a worker end its turn while it still holds an unfinished claim —
+  the failure that cost one run 516 minutes, and the one thing here that no script can see.
+- **Portability**: one locale pinned, temp files with explicit templates, no `date -r` on a file (it means
+  two different things on GNU and BSD), `.gitattributes` pinning shell scripts to LF so a Windows clone
+  cannot produce a CRLF shebang.
+- **A run directory on a sync client is documented as unsupported** rather than left to fail strangely.
+
 ### What ships
 
 Nine commands (`fleet`, `fleet-init`, `fleet-plan`, `fleet-run`, `fleet-login`, `fleet-wait`,

@@ -58,11 +58,9 @@ background task finishes, that session never runs again. Nothing in a fleet type
 So a worker that ends a turn with no background work armed has stopped, permanently, whatever it said it
 was about to do next.
 
-Measured 2026-08-27, run `2026-08-27-create`: three of six workers ended a turn immediately after claiming
-their next task and sat dead for **169, 171 and 176 minutes**, each holding a claim, until the planner
-noticed and sent a cross-session message. All three had written a confident summary saying which task they
-had just taken. None of them had begun it. From the outside they were indistinguishable from workers doing
-slow work, which is why nobody looked for three hours.
+Three of six workers did exactly this and sat dead for **169, 171 and 176 minutes**, each holding a claim,
+each having written a confident summary of the task it was about to start [M03]. From outside they looked
+like workers doing slow work, which is why nobody looked for three hours.
 
 **So: while a run is live, never end a turn without something pending.** Either a subagent is running, or
 you arm a wake yourself before you stop:
@@ -94,13 +92,10 @@ every stall in this document put together.
 Forward: you owe the disk a write - a claimed task unfinished, a finding not yet appended, a `.waiting`
 you must re-gate, a marker not yet written - so something must be pending, and that is the rule above.
 
-Backward: **you owe the disk nothing, so nothing may be pending.** A clock still armed after the
-obligation it guarded is closed is not harmless idling. It fires, the notification re-invokes a session
-that has nothing to do, and the operator sees a chat whose task panel says *running* an hour after the
-work ended. Measured 2026-08-31 across fourteen workers: **703 minutes of session life and 108 model turns
-after their own `.done` marker**, thirteen of the fourteen affected, one worker still being woken 74
-minutes after it finished by four abort clocks nobody stopped. From the outside that run had no ending at
-all, and the operator could not tell a finished fleet from a working one in either direction.
+Backward: **you owe the disk nothing, so nothing may be pending.** A clock still armed after its
+obligation closed is not harmless idling: it fires, the notification re-invokes a session with nothing to
+do, and the operator sees a chat whose task panel says *running* an hour after the work ended. Two runs
+spent **1,090 minutes and 282 model turns** that way, on 87 clocks of which none were stopped [M04].
 
 So a clock **reads the disk that closes its obligation, and exits when it sees it**. Never a bare
 `sleep`; `fleet.sh clock` prints the loop to background, and it stops itself:
@@ -162,7 +157,14 @@ as health: `fleet-wait` now emits a stall line on a quiet interval for exactly t
   backlog.md           written by collection
   FINISHED             written by `fleet.sh landed`: the run ended, by declaration
   tasks/queue-open     present while the planner still intends to file work
+  chips/<session-id>   which chip a session is, written by `next` for the Stop hook
 ```
+
+`chips/<session-id>` exists for one reason: a worker ending its turn while it still holds an unfinished
+claim is invisible to every script here — the disk looks identical whether that worker is thinking or gone
+— and visible to the harness, which knows a turn is ending. The plugin's `Stop` hook reads that file,
+finds the claim, and refuses the stop once with a sentence naming the task [M03]. It does nothing at all
+when the session is not a worker, when the worker has written its marker, or when it has already fired.
 
 `<run-id>` is the date plus a short slug: `2026-08-26-checkout-flow`.
 
@@ -280,8 +282,8 @@ The evidence contract catches a finding with nothing behind it. It does not catc
 actually happens, which is a finding whose evidence proves the **symptom** and is then used to license a
 claim about the **cause**.
 
-Measured 2026-08-26: a fix mission working 100 findings refuted roughly 15 of them, and the refuted ones
-all carried evidence that looked exactly like the evidence on the true ones.
+A fix mission working 100 findings refuted roughly 15, and the refuted ones all carried evidence that
+looked exactly like the evidence on the true ones [M09].
 
 - A blocker reported a count branch and a select branch disagreeing, citing a seed report's hypothesis.
   The symptom was real and reproduced. The mechanism was invented: one predicate was built and both halves
@@ -354,8 +356,8 @@ The marker turns a silent stall into a named one, and it is the only thing on di
 Every worker signs into the same sandbox account. Anything that account persists on the server is
 therefore shared by all of them, and changing it reshapes what the others are measuring.
 
-Measured 2026-08-27 in one application: the visible-column selection, the analytics dashboard's card set
-and the general settings group are all stored per account. One worker saving a column selection changed
+In one application the visible-column selection, the analytics dashboard's card set and the general
+settings group are all stored per account [M10]. One worker saving a column selection changed
 which columns five other workers were looking at, and their measurements of that table were taken under a
 layout nobody chose. The browser profile is shared too, so `localStorage` is common ground: filters one
 worker saved were read by the next.
@@ -370,10 +372,8 @@ empty" and "this badge is 0" are as likely to be another worker's write as a def
 A worker session works one run and then stops. Reusing it for the next mission looks free and is not.
 
 The chip title is the run's addressing scheme, so a session titled for run A that is working run B cannot
-be found by anyone reading the titles. Measured 2026-08-27: six sessions titled for a visual run worked a
-second, unrelated queue for another five hours under those titles, and the planner had to identify them by
-what they had recently written instead. Their contexts also carried the whole first run, which is paid for
-again on every turn of the second.
+be found by anyone reading the titles — six of them did exactly that for five hours [M11]. Its context also
+carries the whole first run, paid for again on every turn of the second.
 
 ## Project configuration
 
@@ -439,7 +439,7 @@ behaviour alike, and it is the reason the claim is a directory rather than a fil
 
 ## Shell traps that cost this design real time
 
-Measured across one eight worker run: 47 errors, of which the same two shapes hit almost everybody.
+One eight-worker run produced 47 errors, and the same two shapes hit almost everybody [M12].
 
 **A heredoc that never returns.** Writing a file by piping a heredoc into an interpreter hangs when that
 interpreter waits on standard input, and the call sits until it times out. Hit seven workers of eight.

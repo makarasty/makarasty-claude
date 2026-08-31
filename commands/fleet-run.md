@@ -1,5 +1,5 @@
 ---
-description: Execute one fleet brief in this session and report by writing files. Use when this session was started to work a brief under .fleet/, or when asked to run a brief file.
+description: Work one fleet brief, or a run's task queue, in this session and report by writing files. Use when this session was started on a brief under .fleet/.
 argument-hint: <path to brief file>
 ---
 
@@ -86,10 +86,9 @@ way the schema has ever actually held.
 Findings accumulate in one `<chip>.jsonl` across every task you take.
 
 **Never end a turn holding a claim you have not begun, and never end one with nothing pending at all.**
-A session runs only while something invokes it, and nothing in a fleet types into your chat. Measured
-2026-08-27: three of six workers claimed their next task as the closing act of a turn, each wrote a
-confident summary saying which task it had just taken, and each then sat dead for **169, 171 and 176
-minutes** holding that claim until the planner sent a status check. None had started the work.
+A session runs only while something invokes it, and nothing in a fleet types into your chat. Three workers
+that claimed as the closing act of a turn sat dead for **169, 171 and 176 minutes** holding those claims
+[M03].
 
 When you cannot avoid stopping mid-run, arm your own wake first and run it with `run_in_background`:
 
@@ -187,9 +186,8 @@ rather than trusting anyone's reply, because the reading is the proof.
 
 **Ask immediately, not after three polite poll rounds.** The operator clicks chips in a wave and then
 walks chat to chat opening panes; a prompt that arrives four minutes after the chip is a second visit to a
-chat they have already left. Measured 2026-08-31 over six pane workers: the first gate ran between 1 and 7
-minutes after the chip and the pane question landed between **1 and 34 minutes** after it, so the operator
-answered them one at a time across half an hour instead of in one pass. The earlier rule optimised for the
+chat they have already left. Over six pane workers the question landed between **1 and 34 minutes** after
+the chip, so the operator answered them one at a time across half an hour instead of in one pass [M20]. The earlier rule optimised for the
 wrong thing: the question is cheap **because** the operator is already standing in front of that chat, and
 it is only expensive when it arrives after they have moved on.
 
@@ -214,8 +212,8 @@ marker says you finished, never the existence of the file.
 
 Delegate the scenario to one subagent, using the brief's `model:`. One spawn per brief, and if the brief
 needs a second the brief was too big: browser subagents share this session's single pane, so a second
-spawn runs strictly after the first while you sit idle. One worker measured 2026-08-26 spent 74 percent of
-its life queued behind three of them. One spawn for the whole scenario
+spawn runs strictly after the first while you sit idle: one worker spent **74 percent** of its life queued
+behind three of them [M14]. One spawn for the whole scenario
 rather than one per step: the fixed overhead per spawn makes small delegations cost more than doing the
 work inline. The economics and the exact numbers are in
 `docs/MODELS.md`; the subagent's required brief lines, tool

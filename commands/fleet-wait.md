@@ -1,5 +1,5 @@
 ---
-description: Wait for a fleet run's workers to finish, spending no model turns on the waiting. Use when workers are running, when asked whether a run has finished, or before collecting a run.
+description: Wait for a run's workers to finish without spending model turns, then collect. Use while workers are running, or to ask whether a run has finished.
 argument-hint: <run-id> [expected worker count]
 allowed-tools: Bash, Read, Write, Glob, Grep, Monitor, Agent, TaskStop, PushNotification
 ---
@@ -13,9 +13,9 @@ between them.
 A watch that fires only when a file appears cannot tell a busy fleet from a dead one. Both look like an
 empty inbox.
 
-Measured 2026-08-27: three of six workers stalled at the same minute, no file in the run directory changed
-for nearly three hours, the watch stayed silent because silence was all it had to say, and the planner
-slept for 65 minutes until the operator typed "I think the chat has hung". The `Monitor` tool's own
+Three of six workers once stalled at the same minute; no file changed for nearly three hours, the watch
+stayed silent because silence was all it had to say, and the planner slept 65 minutes until the operator
+typed "I think the chat has hung" [M17]. The `Monitor` tool's own
 guidance names this failure: if the thing you are watching died right now, would your filter emit
 anything?
 
@@ -68,8 +68,8 @@ else, the stall timer included, still applies.
 
 **A claim is tracked but not announced.** It is entered in `seen`, which resets the quiet timer, and it
 shows up by name in the stall report, but it does not wake you on its own: a claim needs nothing from the
-planner. Measured 2026-08-27: of 62 notifications one planner received, 13 were claims it took no action
-on, each costing a full model turn to read and dismiss.
+planner: of 62 notifications one planner received, 13 were claims it took no action on, each costing a full
+model turn to read and dismiss [M18].
 
 **Two details in that loop are load bearing.** The `seen` file is matched with `grep -Fxq`, whole line, not
 by substring: the previous version tested `case "$seen" in *"$f"*`, under which the presence of `task-22b`
@@ -127,10 +127,9 @@ claims against the three-term dead test in `docs/PULL.md`.
 
 **Answer with `fleet.sh answer <run> <id> [id...]`, and put anything the whole fleet needs in
 `fleet.sh broadcast`.** One reply usually settles several questions, and a combined file named after none
-of them reaches none of them: measured 2026-08-31, four answered questions were still listed as open an
-hour later because the answer lived in `answers/05-1-2-3.md`. Four workers had also filed the same broken
-tool in nine minutes, two of them after the planner had already fixed it - a broadcast is what stops the
-fifth. With fixed briefs, read the briefs whose workers
+of them reaches none of them: four answered questions still read as open an hour later, and four workers
+filed the same broken tool inside nine minutes, two of them after it was fixed [M19]. A broadcast is what
+stops the fifth. With fixed briefs, read the briefs whose workers
 have landed and start ranking their findings.
 
 Do not start a second run before the first one is collected. Measured 2026-08-27: a planner moved straight

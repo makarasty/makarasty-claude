@@ -78,16 +78,12 @@ sh "$f" broadcast .fleet/<run-id>            # planner: something every worker r
 sh "$f" summary .fleet/<run-id> 03      # the end banner, generated from disk
 ```
 
-**The lane argument is not optional.** Without it `next` hands a paneless worker a browser task. Measured
-2026-08-31: three workers claimed work they could not do, and the planner's workaround was a paragraph in
-nine of the fourteen chip prompts telling the worker to walk `ready/` and read the `needs:` lines itself.
-The run survived on that - 73 hand rolled claims beside 113 helper ones - but a rule that has to be
-retyped into a prompt every run is not a rule, and the next planner writes it slightly differently.
+**The lane argument is not optional.** Without it `next` hands a paneless worker a browser task, and the
+rule ends up retyped into chip prompts instead — 73 hand-rolled claims beside 113 helper ones [M06]. A rule
+that has to be retyped every run is not a rule; the next planner writes it slightly differently.
 
-Measured 2026-08-27 over a six worker run: **235 of 612 worker shell calls, 38 percent, were protocol
-paperwork** - 49 claims, 52 owner writes, 44 reads of `ready/`, 56 finding appends, 16 heartbeats, 13 done
-markers. Each was a model round trip that produced no observation. One call per boundary removes about
-four fifths of that.
+**235 of 612 worker shell calls in one run — 38 percent — were protocol paperwork** that produced no
+observation [M05]. One call per boundary removes about four fifths of it.
 
 Two of its behaviours matter beyond the round trips. `next` exits **3** when the queue is drained, so
 "drained" stops being a judgement about a loop that failed every claim. And `find` **refuses** a finding
@@ -129,15 +125,18 @@ will try to repair it, and two workers repairing one task is worse than either o
 successor's directory, refreshing the wrong liveness and marking work done that nobody did. Under a new
 id they land in a graveyard and change nothing.
 
+`sh "$f" sweep .fleet/<run-id>` lists the claims that look abandoned and changes nothing; `--release`
+hands them back. Atomic claiming stops two workers taking one task and does nothing about a worker that
+died holding one, which is the same gap a maildir has in `tmp/`: without a sweeper, a dead claim is a task
+the run never finishes and nobody notices.
+
 **Only the planner reclaims**, and the test for a dead claim needs all three of these terms:
 
 > `heartbeat` still equals the `claimed` timestamp, **and** no `tasks/done/<task-id>` exists, **and** more
 > than one budget has passed.
 
-The first draft of that rule had only the heartbeat term. Tested against a real run's state 2026-08-27 it
-produced **five false positives, all against one chip**: `task-18`, `task-24`, `task-27`, `task-31` and
-`task-33`, every one with a `done` marker, 95 KB of findings and a clean `.done`. That worker completed
-all five and simply never rewrote a heartbeat. Under the one-term rule the planner would have reclaimed
+The first draft of that rule had only the heartbeat term, and against a real run's state it produced
+**five false positives on one chip**, every one of them a task that had finished [M08]. Under the one-term rule the planner would have reclaimed
 and re-run five finished tasks.
 
 The heartbeat signature alone cannot separate "died at the claim" from "finished without heartbeating",

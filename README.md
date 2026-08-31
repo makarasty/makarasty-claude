@@ -25,6 +25,12 @@ From a local checkout, which is the path this release was developed and tested o
 /plugin install makarasty@makarasty
 ```
 
+The three side commands are a second, optional plugin from the same marketplace:
+
+```
+/plugin install makarasty-tools@makarasty
+```
+
 Once the repository is published, the same two commands take its GitHub coordinates
 (`/plugin marketplace add makarasty/makarasty-claude`) instead of a path. That path has not been exercised
 yet - see "Known limits of 1.0.0" below.
@@ -46,15 +52,21 @@ machine will carry. The other commands run it themselves when they find a projec
 | `/makarasty:fleet-login` | you or Claude | Opens and authenticates the project's local app |
 | `/makarasty:fleet-wait <run-id> [n]` | you or Claude | Waits without spending model turns, then collects |
 | `/makarasty:fleet-collect <run-id>` | you or Claude | Merges, enforces the evidence contract, dedupes, ranks |
-| `/makarasty:commit` | you or Claude | Commits under your own name, short message, no tool signature |
-| `/makarasty:review` | you or Claude | One line per finding, and only findings that name a failing input |
-| `/makarasty:unslop [on\|off\|text]` | you or Claude | Toggles humanised replies, or rewrites a given text |
+
+Three more commands ship as a **separate plugin**, `makarasty-tools`, from the same marketplace: they are
+useful beside a fleet and have nothing to do with its contract, so they version apart from it.
+
+| Command | Who reaches it | What it does |
+|---|---|---|
+| `/makarasty-tools:commit` | you or Claude | Commits under your own name, short message, no tool signature |
+| `/makarasty-tools:review` | you or Claude | One line per finding, and only findings that name a failing input |
+| `/makarasty-tools:unslop [on\|off\|text]` | you or Claude | Toggles humanised replies, or rewrites a given text |
 
 `fleet`, `fleet-plan` and `fleet-run` answer only to you: they spawn paid work and depend on your clicks,
 so no agent starts them on its own initiative.
 
-`/makarasty:commit` fires on plain phrasing rather than a slash, so "commit as me" or "commit from my name"
-reaches it, in whatever language you asked in.
+`/makarasty-tools:commit` fires on plain phrasing rather than a slash, so "commit as me" or "commit from my
+name" reaches it, in whatever language you asked in.
 
 ## Agents
 
@@ -112,8 +124,8 @@ stop anywhere else, and the planner's watch reports silence as well as progress.
 
 ## Mission kinds
 
-A fleet is not only for testing. Each task declares its `kind`, which decides the working style and, more
-importantly, the axis the mission splits along.
+A fleet is not only for testing. Each task declares its `kind`, which decides the working style and
+the axis the mission splits along.
 
 | Kind | Splits by | Isolation |
 |---|---|---|
@@ -229,6 +241,8 @@ the thirty-fourth.
 
 ## Reference
 
+- [`docs/WALKTHROUGH.md`](docs/WALKTHROUGH.md) your first fleet in fifteen minutes, for somebody who has
+  never run one
 - [`docs/PROTOCOL.md`](docs/PROTOCOL.md) run layout, brief format, finding schema, portability, shell traps
 - [`docs/PULL.md`](docs/PULL.md) the task queue, claiming, heartbeats, budgets, asking the planner
 - [`docs/MISSIONS.md`](docs/MISSIONS.md) the five kinds and the axis each splits along
@@ -237,6 +251,8 @@ the thirty-fourth.
 - [`docs/MOCKING.md`](docs/MOCKING.md) reaching states the sandbox data will not produce, and the line
   between a scene and a shared write
 - [`docs/LANES.md`](docs/LANES.md) what a fleet is really queueing for, fan-out, and a run with no browser
+- [`docs/MEASUREMENTS.md`](docs/MEASUREMENTS.md) the ledger every rule cites: what was run, what was
+  counted, and which rule it produced
 - [`docs/BROKER.md`](docs/BROKER.md) the pane as a shared instrument work is filed against, and the
   measurement that says seven open panes carried less than one pane's worth of demand
 - [`scripts/fleet.sh`](scripts/fleet.sh) the queue's bookkeeping in one call per boundary, and the only
@@ -279,6 +295,28 @@ them.
 [`scripts/fleet-selftest.sh`](scripts/fleet-selftest.sh) is that contract's executable form - 67
 assertions, about a second, no browser and no tokens. Run it after installing, and on any machine before
 trusting a fleet on it: it is also the portability probe this plugin has instead of a test matrix.
+
+## When something looks broken
+
+Four failures that are not in this plugin, in the order they actually happen.
+
+**A change to the plugin did not take effect.** The install is a cache, and `claude plugin update` can
+report "already at latest version" while the source has moved — this is a repeatedly reported Claude Code
+behaviour, not a fleet one. `claude plugin uninstall makarasty@makarasty` then `install` rebuilds it. If
+the version number did not change, that is the only thing that will.
+
+**A run directory inside Dropbox, OneDrive or iCloud.** The atomic claim is `mkdir`, which is honest on a
+local filesystem and meaningless once a sync client is rewriting the directory behind you: sync conflict
+resolution invents copies and renames on its own schedule. Keep `.fleet/` on local disk. A network share
+is the same answer for the same reason.
+
+**"bad interpreter" on Windows.** A `.sh` file checked out with CRLF endings makes the shell look for an
+interpreter whose name ends in a carriage return. This repository pins `*.sh text eol=lf` in
+`.gitattributes`, so it should not happen here; if it does, your clone predates that file.
+
+**Git Bash not found.** Claude Code's detection of it has broken and been fixed several times, and
+`CLAUDE_CODE_GIT_BASH_PATH` is the escape hatch. Nothing in the fleet can work around a shell the harness
+cannot find.
 
 ## Known limits of 1.0.0
 

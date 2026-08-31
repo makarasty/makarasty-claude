@@ -7,14 +7,14 @@
     "url": "https://github.com/makarasty"
   },
   "hooks": {
-    "UserPromptSubmit": [
+    "Stop": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/unslop.mjs\"",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/fleet-guard.mjs\"",
             "timeout": 5,
-            "statusMessage": "Checking unslop mode"
+            "statusMessage": "Checking for an unfinished claim"
           }
         ]
       }

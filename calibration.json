@@ -1,0 +1,26 @@
+{
+  "_readme": "Numbers the scripts read, so a planning decision never depends on a constant retyped into prose. Every value here was measured; docs/MEASUREMENTS.md says where. Edit this file to calibrate a different machine or a different application, and re-measure with scripts/fleet-load.mjs and scripts/fleet-retro.mjs rather than guessing.",
+
+  "repo_tasks_per_worker": 3,
+  "repo_worker_ceiling": 12,
+  "operator_reserve_gb": 2,
+
+  "pane_workers_default": 2,
+  "pane_workers_display_ceiling": 5,
+
+  "frame_gate_min_fps": 60,
+  "budget_multiplier": 2,
+  "clock_poll_seconds": 30,
+
+  "fanout_default": 3,
+  "quiet_interval_seconds": 600,
+
+  "_provenance": {
+    "repo_tasks_per_worker": "M16 - measured throughput 2.87 and 4.25 tasks per hour per worker on repo-heavy runs",
+    "repo_worker_ceiling": "M21 - a session with no pane is ~330 MB, so the ceiling is attention rather than memory",
+    "pane_workers_default": "M15 - seven panes carried 104 minutes of driving in a 153 minute run",
+    "frame_gate_min_fps": "M01, M02 - below 60 the pane is blind and everything it returns is fiction",
+    "budget_multiplier": "PULL.md - a worker past twice its budget hands the remainder back",
+    "fanout_default": "M13 - a subagent spends ~45k tokens before it does anything, so a part must be worth a slice of work"
+  }
+}

@@ -12,6 +12,12 @@
       "description": "Split a mission across worker sessions. Gated browser checks, per stage model selection, file based reporting, five mission kinds.",
       "source": "./",
       "category": "workflow"
+    },
+    {
+      "name": "makarasty-tools",
+      "description": "Commit under your own name, review a diff with evidence, and strip assistant tics out of writing. Versioned apart from the fleet.",
+      "source": "./tools",
+      "category": "productivity"
     }
   ]
 }

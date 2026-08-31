@@ -19,6 +19,7 @@ here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 fleet="$here/fleet.sh"
 [ -f "$fleet" ] || { echo "fleet.sh not found beside this script" >&2; exit 2; }
 
+LC_ALL=C; export LC_ALL
 run=${TMPDIR:-/tmp}/fleet-selftest-$$
 mkdir -p "$run/tasks/ready"
 pass=0; fail=0
@@ -192,6 +193,79 @@ out=$(sh "$fleet" width "$run" 2>&1); rc=$?
 code "the width of the repo lane is computed, not retyped" 0 "$rc"
 check "and it answers with a number" "REPO_WORKERS" "$out"
 check "showing the queue term it came from" "ready repo tasks" "$out"
+
+echo
+echo "abandoned claims"
+
+mkdir -p "$run/tasks/claimed/task-77"
+printf 'chip 99
+claimed old
+' > "$run/tasks/claimed/task-77/owner"
+task task-77 repo 1
+touch -t 202001010000 "$run/tasks/claimed/task-77/owner" 2>/dev/null
+out=$(sh "$fleet" sweep "$run" 2>&1)
+check "a claim nobody has advanced past its budget is named" "ABANDONED? task-77" "$out"
+check "and nothing is changed until asked" "Nothing was changed" "$out"
+[ -d "$run/tasks/claimed/task-77" ] && ok "the claim is still there after a listing sweep" || bad "the claim is still there after a listing sweep"
+sh "$fleet" sweep "$run" --release >/dev/null 2>&1
+[ -d "$run/tasks/claimed/task-77" ] && bad "--release hands the task back" "still claimed" || ok "--release hands the task back"
+out=$(sh "$fleet" sweep "$run" 2>&1)
+check "and a released claim is not swept twice" "no abandoned claims" "$out"
+
+echo
+echo "the hook that sees what no script can"
+
+guard="$here/../hooks/fleet-guard.mjs"
+if [ -f "$guard" ] && command -v node >/dev/null 2>&1; then
+  mkdir -p "$run/chips"
+  printf '{"session_id":"sess-1","cwd":"%s"}' "$(dirname "$run")" > "$run/.hookin"
+  node "$guard" < "$run/.hookin" >/dev/null 2>&1; rc=$?
+  code "a session with no chip registered is left alone" 0 "$rc"
+
+  # A worker holding an unfinished claim, ending its turn: the failure that cost 516 minutes.
+  hookrun="${TMPDIR:-/tmp}/fleet-hook-$$"; mkdir -p "$hookrun/.fleet/r1/chips" "$hookrun/.fleet/r1/tasks/claimed/task-05" "$hookrun/.fleet/r1/tasks/done"
+  # The hook is handed whatever spelling the harness uses; on Git Bash that is not the shell's own.
+  hookcwd=$(cd "$hookrun" && pwd -W 2>/dev/null || printf '%s' "$hookrun")
+  printf '07' > "$hookrun/.fleet/r1/chips/sess-2"
+  printf 'chip 07
+claimed now
+' > "$hookrun/.fleet/r1/tasks/claimed/task-05/owner"
+  printf '{"session_id":"sess-2","cwd":"%s"}' "$hookcwd" > "$hookrun/in.json"
+  err=$(node "$guard" < "$hookrun/in.json" 2>&1 >/dev/null); rc=$?
+  code "a worker ending its turn on an unfinished claim is stopped" 2 "$rc"
+  check "and told which task it still holds" "task-05" "$err"
+  node "$guard" < "$hookrun/in.json" >/dev/null 2>&1; rc=$?
+  code "the same claim is never blocked twice" 0 "$rc"
+  printf '' > "$hookrun/.fleet/r1/07.done"
+  rm -f "$hookrun/.fleet/r1/chips/sess-2.warned-task-05"
+  node "$guard" < "$hookrun/in.json" >/dev/null 2>&1; rc=$?
+  code "a finished worker is never stopped" 0 "$rc"
+  printf '{"session_id":"sess-2","cwd":"%s","stop_hook_active":true}' "$hookcwd" > "$hookrun/in2.json"
+  node "$guard" < "$hookrun/in2.json" >/dev/null 2>&1; rc=$?
+  code "and it stands down when the harness says it already fired" 0 "$rc"
+  rm -rf "$hookrun"
+else
+  echo "  skip  no hook script or no node"
+fi
+
+echo
+echo "the measurement ledger"
+
+led="$here/../docs/MEASUREMENTS.md"
+if [ -f "$led" ]; then
+  missing=""
+  for id in $(grep -rho '\[M[0-9][0-9]\]' "$here/../docs" "$here/../commands" 2>/dev/null | tr -d '[]' | sort -u); do
+    grep -q "^## $id " "$led" || missing="$missing $id"
+  done
+  [ -z "$missing" ] && ok "every measurement a rule cites exists in the ledger" || bad "every measurement a rule cites exists in the ledger" "missing:$missing"
+  uncited=""
+  for id in $(grep -o '^## M[0-9][0-9]' "$led" | awk '{print $2}'); do
+    grep -rq "\[$id\]" "$here/../docs" "$here/../commands" 2>/dev/null || uncited="$uncited $id"
+  done
+  [ -z "$uncited" ] && ok "every ledger entry is cited by a rule" || bad "every ledger entry is cited by a rule" "uncited:$uncited"
+else
+  echo "  skip  no ledger beside this checkout"
+fi
 
 echo
 echo "the pane broker"

@@ -82,6 +82,10 @@ plugin is built against.
 Read each worker's `<chip>.notes.md` for claims it raised and then refuted. Do not re-file a refuted
 claim, and carry the refutation into the backlog: the next run meets the same misleading evidence.
 
+**A fix is not landed until its commit is reachable.** Check every commit a finding cites with
+`git branch -a --contains`: one run ended with a blocker whose whole content was that four fixes sat on an
+unmerged branch while their findings read FIXED [M23].
+
 **Severity is copied, never decided.** A worker chose it with the screen in front of it; you have a JSON
 line. The script preserves it, and the reconciliation refuses a run where a blocker went missing, which is
 the failure it was written for.

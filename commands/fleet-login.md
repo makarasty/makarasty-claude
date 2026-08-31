@@ -1,5 +1,5 @@
 ---
-description: Open and authenticate the project's local app in this session's browser pane. Use when a task needs the running app, when a pane shows a login screen, when a page read comes back empty or a request hangs, or before any visual check.
+description: Open and authenticate this project's app in this session's browser pane. Use before any visual check, or when a pane shows a login screen or reads empty.
 allowed-tools: Bash, Read, Glob, Grep, AskUserQuestion, mcp__Claude_Browser__preview_start, mcp__Claude_Browser__preview_logs, mcp__Claude_Browser__javascript_tool, mcp__Claude_Browser__navigate
 ---
 

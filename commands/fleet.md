@@ -39,7 +39,9 @@ agent starts them on its own initiative. The other three are reachable by an age
 
 ## Reference
 
+- `docs/WALKTHROUGH.md`: the fifteen-minute first run, for an operator who has never done one.
 - `docs/PROTOCOL.md`: run layout, brief format, finding schema, project configuration.
+- `docs/MEASUREMENTS.md`: the measurement behind every rule, by id.
 - `docs/MISSIONS.md`: the five mission kinds and how each one splits.
 - `docs/BROWSER.md`: the pane gate and why a hidden pane invents findings.
 - `docs/BROKER.md`: one or two sessions hold the panes, everyone else files a browser walk as a file.

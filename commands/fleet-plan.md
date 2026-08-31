@@ -31,8 +31,8 @@ Stop for exactly two things, because neither can be produced by working harder: 
 only the operator can provide**, and a **reserved control** that would cost money or reach a real person.
 Everything else is repairable, and repairing it quietly is the difference between a tool and a form.
 
-A person reads this chat and only this chat, so start by turning on the humanised reply mode:
-`/makarasty:unslop on`. The workers write for a parser; you write for the operator.
+A person reads this chat and only this chat, so write for them rather than for a parser. If the
+`makarasty-tools` plugin is installed, `/makarasty-tools:unslop on` does it for you.
 
 Split the mission in `$ARGUMENTS` into briefs, one per worker session, then offer a chip for each and
 stop. You write briefs. You do not do the mission.

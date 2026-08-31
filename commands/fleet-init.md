@@ -1,5 +1,5 @@
 ---
-description: Prepare a project to run fleets: discover the app origin and services, establish the agent login path, write FLEET.md, size the machine. Use before a first fleet run, when FLEET.md is missing, or when a fleet command finds the project uninitialised.
+description: Prepare a project to run fleets: app origin, services, an agent login path, FLEET.md, and the machine's two lane widths. Use before a first run, or when FLEET.md is missing.
 ---
 
 The reference files named below (`docs/PROTOCOL.md` and its siblings) live in this plugin's own directory,
