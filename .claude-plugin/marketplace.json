@@ -9,7 +9,7 @@
   "plugins": [
     {
       "name": "makarasty",
-      "description": "Split a mission across worker sessions. Gated browser checks, per stage model selection, file based reporting, five mission kinds.",
+      "description": "Split a mission across worker sessions. Gated browser checks, per stage model selection, file based reporting, six mission kinds.",
       "source": "./",
       "category": "workflow"
     },

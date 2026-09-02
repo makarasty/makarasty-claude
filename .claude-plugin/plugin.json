@@ -1,7 +1,7 @@
 {
   "name": "makarasty",
   "description": "Run one mission across several Claude Code sessions at once, plus the commands for the work around it. Workers hold their own context and browser, gate what they can actually see, and report by writing files.",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": {
     "name": "makarasty",
     "url": "https://github.com/makarasty"

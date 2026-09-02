@@ -20,6 +20,8 @@
 #   fleet.sh status  <run-dir>                     planner view: claims, ages, markers, questions
 #   fleet.sh sweep   <run-dir> [--release]         claims nobody is advancing; --release moves claim and
 #                                                  task aside so the planner re-files under a new id
+#   fleet.sh recover <run-dir> [--release]         cold start after a crash: which chips reopen with
+#                                                  `claude -r`, which must be respawned, what is unheld
 #   fleet.sh width   <run-dir>                     how many repo workers this queue and this machine want
 #   fleet.sh pane-ask   <run-dir> <chip>           file a browser walk for a pane host to run, on stdin
 #   fleet.sh pane-next  <run-dir> <host>           claim the oldest pending walk. exit 3 = none pending
@@ -463,6 +465,163 @@ sweep)
   done
   [ "$found" = 0 ] && echo "no abandoned claims"
   [ -n "$release" ] || { [ "$found" = 0 ] || echo "Nothing was changed. Add --release once you have checked the workers are really gone."; }
+  ;;
+
+recover)
+  # A cold start, after the machine died rather than after a worker stalled.
+  #
+  # `sweep` and the revive message both assume the sessions are still there: one names a claim nobody is
+  # advancing, the other pokes the chat holding it. Neither survives a power cut, because a message needs a
+  # live receiver and after a reboot there are none. Measured 2026-09-01: 26 worker sessions of two runs
+  # were gone from `ListAgents` (five unrelated chats, started minutes earlier) and from the app's own
+  # session list (twenty rows, not one of them a fleet chip) - so a planner asked to bring the run back
+  # correctly answered that it could not, and the operator was left choosing between a fresh run and
+  # walking the queue by hand.
+  #
+  # What did survive is on disk and is enough: `chips/<session-id>` was written at the first claim, the
+  # claims are still standing, and Claude Code keeps every session's transcript under
+  # ~/.claude/projects/<slug>/<session-id>.jsonl. A session with a transcript can be reopened with its
+  # context intact (`claude -r <session-id>`), which is worth far more than a fresh chip on the same task.
+  #
+  # So this prints three lists and nothing else, unless asked:
+  #   RESUME   the worker has a transcript and unfinished business - reopen it, do not respawn it
+  #   RESPAWN  no transcript, or it landed nothing - the task goes back in the queue under a new id
+  #   LANDED   done or blocked, no open claim - leave it alone
+  #
+  #   fleet.sh recover <run-dir>            report only
+  #   fleet.sh recover <run-dir> --release  also release the claims of chips that cannot be resumed
+  release=""
+  [ "${3:-}" = "--release" ] && release=1
+  nowsec=$(date +%s 2>/dev/null || echo 0)
+  proj=${CLAUDE_PROJECTS_DIR:-$HOME/.claude/projects}
+
+  # Where a chip's transcript lives. The project directory is the working directory with every separator
+  # replaced, and one run can span worktrees, so search rather than reconstruct the slug.
+  transcript() { # transcript <session-id>
+    ls "$proj"/*/"$1".jsonl 2>/dev/null | head -1
+  }
+
+  # A run that already declared itself finished is not automatically nothing to do: `landed` counts markers
+  # and a worker that died before writing one is invisible to that count. Say both facts rather than either.
+  if [ -e "$run/FINISHED" ]; then
+    echo "== this run declared itself finished"
+    sed 's/^/  /' "$run/FINISHED"
+    echo "  Anything listed as RESUME or RESPAWN below was open when that was written."
+  fi
+
+  echo "== chips this run registered"
+  any=0
+  for f in "$run"/chips/*; do
+    [ -e "$f" ] || continue
+    sid=$(basename "$f")
+    # `<session>.warned-<task>` is the Stop hook's own bookkeeping, not a chip.
+    case "$sid" in *.warned-*) continue;; esac
+    chip=$(cat "$f" 2>/dev/null | tr -d ' \n')
+    [ -n "$chip" ] || continue
+    any=$((any + 1))
+
+    marker=""
+    [ -e "$run/$chip.done" ] && marker="done"
+    [ -e "$run/$chip.blocked" ] && marker="${marker:+$marker+}blocked"
+    [ -e "$run/$chip.waiting" ] && marker="${marker:+$marker+}waiting"
+
+    # Claims this chip is still holding. A released or dead claim is already accounted for.
+    open=""
+    for d in "$run"/tasks/claimed/*/; do
+      [ -d "$d" ] || continue
+      id=$(basename "$d")
+      case "$id" in *.dead-*|*.released-*) continue;; esac
+      [ -e "$run/tasks/done/$id" ] && continue
+      grep -q "chip $chip\$" "$d/owner" 2>/dev/null && open="${open:+$open }$id"
+    done
+
+    t=$(transcript "$sid")
+    quiet=""
+    if [ -n "$t" ] && [ "$nowsec" -gt 0 ]; then
+      m=$(mtime "$t"); [ -n "$m" ] && quiet=$(( (nowsec - m) / 60 ))
+    fi
+    findings=0
+    [ -e "$run/$chip.jsonl" ] && findings=$(grep -c . "$run/$chip.jsonl" 2>/dev/null || echo 0)
+
+    if [ -z "$open" ] && [ -n "$marker" ]; then
+      echo "  LANDED  chip $chip  $marker, $findings findings"
+    elif [ -n "$t" ]; then
+      echo "  RESUME  chip $chip  ${marker:-no marker}, $findings findings, holding: ${open:-nothing}${quiet:+, quiet ${quiet}m}"
+      echo "          claude -r $sid"
+    else
+      echo "  RESPAWN chip $chip  ${marker:-no marker}, $findings findings, holding: ${open:-nothing}"
+      echo "          no transcript under $proj - its context is gone, so re-file the task and spawn a fresh chip"
+    fi
+  done
+  if [ "$any" = 0 ]; then echo "  none: no chip ever claimed through fleet.sh in this run"; fi
+
+  # Work nobody is holding. After a cold start this is what decides how many chips to open, and it is not
+  # the same number as the chips that died: a worker usually finished several tasks before the lights went.
+  free=0
+  for f in "$run"/tasks/ready/*.md; do
+    [ -e "$f" ] || continue
+    id=$(basename "$f" .md)
+    [ -e "$run/tasks/done/$id" ] && continue
+    [ -d "$run/tasks/claimed/$id" ] && continue
+    free=$((free + 1))
+  done
+  echo "== queue"
+  echo "  $free ready tasks nobody holds"
+  if [ -d "$run/tasks/released" ]; then
+    echo "  $(ls "$run"/tasks/released/*.md 2>/dev/null | wc -l | tr -d ' ') released tasks waiting to be re-filed under a new id"
+  fi
+
+  if [ -n "$release" ]; then
+    echo "== releasing claims held by chips that cannot be resumed"
+    freed=0; openclaims=0
+    for d in "$run"/tasks/claimed/*/; do
+      [ -d "$d" ] || continue
+      id=$(basename "$d")
+      case "$id" in *.dead-*|*.released-*) continue;; esac
+      [ -e "$run/tasks/done/$id" ] && continue
+      openclaims=$((openclaims + 1))
+      # The chip that owns this claim, and whether its session can still be reopened. A resumable worker
+      # keeps its claim: taking it away is how a live worker's finished work lands in the graveyard.
+      ochip=$(sed -n 's/^chip //p' "$d/owner" 2>/dev/null | head -1)
+      keep=""; known=""
+      for f in "$run"/chips/*; do
+        [ -e "$f" ] || continue
+        s=$(basename "$f"); case "$s" in *.warned-*) continue;; esac
+        [ "$(cat "$f" 2>/dev/null | tr -d ' \n')" = "$ochip" ] || continue
+        known=1
+        [ -n "$(transcript "$s")" ] && keep=1
+      done
+      [ -n "$keep" ] && continue
+      # A chip that never registered a session id is not evidence of death, it is evidence of nothing:
+      # registration needs CLAUDE_CODE_SESSION_ID, and a claim made without it looks identical to one made
+      # by a worker that is alive and working. `sweep` is the instrument for that case, because it asks the
+      # three-term question about heartbeats; this command only speaks about sessions it can look up.
+      if [ -z "$known" ]; then
+        echo "  UNKNOWN $id (chip ${ochip:-unknown}) - no session id was ever registered for that chip, so"
+        echo "          this cannot tell a dead worker from a live one. Use 'fleet.sh sweep --release'."
+        continue
+      fi
+      stampsuffix=$(date +%Y%m%dT%H%M%S 2>/dev/null || echo recovered)
+      mv "$d" "$run/tasks/claimed/$id.released-$stampsuffix"
+      if [ -e "$run/tasks/ready/$id.md" ]; then
+        mkdir -p "$run/tasks/released"
+        mv "$run/tasks/ready/$id.md" "$run/tasks/released/$id.md"
+      fi
+      freed=$((freed + 1))
+      echo "  released $id (chip ${ochip:-unknown}) - re-file it under a NEW id, never this one"
+    done
+    if [ "$freed" = 0 ]; then
+      if [ "$openclaims" = 0 ]; then
+        echo "  nothing to release: no claim is open"
+      else
+        echo "  nothing to release: all $openclaims open claims belong to chips that can be resumed"
+      fi
+    fi
+  else
+    echo "== nothing was changed"
+    echo "  Resume what you can first. Add --release once you have reopened the resumable chips, so a"
+    echo "  worker that comes back does not find its own task handed to somebody else."
+  fi
   ;;
 
 status)

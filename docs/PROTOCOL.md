@@ -19,6 +19,17 @@ pending. Measured 2026-08-27: three workers dead for nearly three hours came bac
 cross-session message and finished their tasks. Nothing else in the system can do that, so keep the
 handles usable, and never let a finding or an answer ride that channel.
 
+**That channel dies with the machine, and the disk does not** [M27]. Measured 2026-09-01: after a
+restart the 26 worker sessions of two runs were gone from `ListAgents`, which listed five unrelated
+chats started minutes earlier, and absent from the app's own session list whether or not archived rows
+were included. A planner
+asked to revive them was right to say it could not: there was nothing left to message. What survived was
+`chips/<session-id>`, the standing claims, and every session's transcript under
+`~/.claude/projects/<slug>/<session-id>.jsonl` — which is enough to reopen a worker with its context
+intact (`claude -r <session-id>`), and a reopened worker is worth several fresh ones. `fleet.sh recover`
+turns that into three lists and `/makarasty:fleet-resume` walks them. **Revive is for a session that
+stopped; recover is for one that no longer exists.**
+
 ## A worker gets exactly one interactive question
 
 **The only thing a worker may ask the operator directly is to display its Browser pane.** Nothing else.
@@ -160,6 +171,12 @@ as health: `fleet-wait` now emits a stall line on a quiet interval for exactly t
   chips/<session-id>   which chip a session is, written by `next` for the Stop hook
 ```
 
+`chips/<session-id>` has a second reader now: `fleet.sh recover`. After a crash it is the only thing that
+says which dead chat was which chip, and therefore which transcript to reopen. That makes registration
+worth more than it was when the hook was its only client — a claim made without `CLAUDE_CODE_SESSION_ID`
+set cannot be recovered by session at all, only swept by heartbeat, and `recover` reports it as UNKNOWN
+rather than guessing.
+
 `chips/<session-id>` exists for one reason: a worker ending its turn while it still holds an unfinished
 claim is invisible to every script here — the disk looks identical whether that worker is thinking or gone
 — and visible to the harness, which knows a turn is ending. The plugin's `Stop` hook reads that file,
@@ -183,7 +200,7 @@ Add `.fleet/` to the project's ignore file. Runs are scratch, not history.
 ---
 run-id: 2026-08-26-checkout-flow
 chip-id: "01"
-kind: verify           # verify | investigate | implement | fix | research
+kind: verify           # verify | investigate | implement | fix | research | design
 model: sonnet          # the model that does the work
 verdict-model: opus    # the model that decides what counts as a finding
 owns: [routes, files, or areas this worker may touch]

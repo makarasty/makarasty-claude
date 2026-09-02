@@ -26,6 +26,7 @@ holds its own context, works one brief, and reports by writing a file. Nothing m
 | `/makarasty:fleet-login` | A session needs the project's app open and authenticated |
 | `/makarasty:fleet-wait <run-id> [n]` | Workers are running and you want each finish to announce itself |
 | `/makarasty:fleet-collect <run-id>` | Workers have finished and you want one ranked backlog |
+| `/makarasty:fleet-resume <run-id>` | The machine restarted mid-run: reopen the workers whose context survived, respawn the rest |
 
 `fleet-plan` and `fleet-run` answer only to you. They spawn paid work and depend on your clicks, so no
 agent starts them on its own initiative. The other three are reachable by an agent that needs them.
@@ -42,7 +43,8 @@ agent starts them on its own initiative. The other three are reachable by an age
 - `docs/WALKTHROUGH.md`: the fifteen-minute first run, for an operator who has never done one.
 - `docs/PROTOCOL.md`: run layout, brief format, finding schema, project configuration.
 - `docs/MEASUREMENTS.md`: the measurement behind every rule, by id.
-- `docs/MISSIONS.md`: the five mission kinds and how each one splits.
+- `docs/MISSIONS.md`: the six mission kinds and how each one splits.
+- `docs/LANES.md`: what a lane is, how wide each one goes, and why the repo lane is not capped by a monitor.
 - `docs/BROWSER.md`: the pane gate and why a hidden pane invents findings.
 - `docs/BROKER.md`: one or two sessions hold the panes, everyone else files a browser walk as a file.
 - `docs/SWEEPS.md`: the interaction posture, and the checks that catch a class of defect rather than one bug.

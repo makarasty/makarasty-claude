@@ -88,6 +88,46 @@ is a change, not a fix.
 The regression that mission shipped closest to production was invisible to every worker and every review,
 and only the full run caught it: a new import in one store pulled a realtime graph into a test whose mock
 had never needed it.
+## design
+
+Rework a screen so it is right to look at, not merely correct to click.
+
+Split by **screen**, one per worker, and never by control: a per-control task pays a whole session's
+attachments for a decision worth a line.
+
+Isolation: worktree, always. Same reason as `implement`, plus one of its own — a design task edits shared
+primitives, and two workers restyling one primitive produce a merge nobody can arbitrate on taste.
+
+**One model owns the screen end to end, and it is the design model.** Reading the code, writing the markup
+and the copy, driving the browser, running the instrument, deciding it is done. A worker session may start
+the dev server, log in, take the first screenshot, run the scoped suite and commit; it may not adjust a
+class, a spacing token, a skeleton, a transition or a user-visible string. When verification fails, the
+fix is another design round with the failure attached, never a hand-patch by whoever ran the check.
+
+That rule exists because of what the split produced. Measured 2026-09-01 on one application: every visual
+defect a six-worker sweep found lived in a state or a moment **nobody designed** — a skeleton drawing
+fewer rows than the first page returns, a header that loads at a different height and shifts the content
+pane, a filter bar that opens 60-130 ms into a navigation on the OUTGOING page and pushes it down 70.9 px,
+a KPI ghost shorter than the number it stands for, size utilities silently discarded by an icon font. The
+design model had designed the loaded screen; the loading state, the transition and the cascade went to a
+cheaper model that had never held the design. **The relay is the defect**, and a single end-of-run
+screenshot cannot show any of those.
+
+**Three waves, in this order, because a screen cannot fix the primitive it exposed.**
+
+1. **Recon.** Cheaper workers run the instrument over every screen in scope and file numbers. No edits.
+2. **Primitives.** ONE task owns the shared component directory, gated on wave 1. Nothing from wave 3
+   enters `tasks/ready/` until it lands.
+3. **Screens.** N design tasks, with the primitive paths off limits. A primitive defect found here is a
+   finding for the next primitive pass, never an edit.
+
+Demand: numbers before and after, from the same instrument, filed with the change. And the honest caveat
+stated in the finding — a screen can satisfy every number and still be ugly, because hierarchy, colour,
+rhythm and copy are the design model's judgement and nothing else's.
+
+What this gives up: the primitive wave is one session on the critical path, and each verification round
+re-reads the same attachments because a fresh subagent has no memory of the last one.
+
 ## research
 
 Read sources and produce an answer.

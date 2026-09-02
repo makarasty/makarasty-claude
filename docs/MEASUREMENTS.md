@@ -199,3 +199,79 @@ branch nobody had merged while their `conditions` field read FIXED. The fix run 
 cited commit with `git branch --contains`: **35 of 35 were on the branch**, and the check took minutes.
 **Rule:** a run that claims a fix names the commit, and collection verifies it is reachable.
 **Status:** current.
+
+## M24 — The bill is turns multiplied by context
+**2026-08-26 to 2026-09-01**, seven runs, 57 worker sessions, read from the session transcripts:
+**19,535 turns**, 11,450 tool calls, output **20.4 M** tokens (thinking 5.7 M, 28%), cache write 93.4 M,
+cache read **6,421 M**. The average turn carried ~330 k cache-read tokens; per-worker context averaged
+240-530 k with a peak of 882 k. Output is 0.3% of the tokens that moved. Of everything the models emitted,
+chat prose was **5% by characters** and tool input 95% — so compressing narration cannot be the lever, and
+the emitted bulk was the work itself: 2,647 KB of `Write` into repository source, 2,045 KB of `Bash`
+heredocs over 2 KB, 1,022 KB of `Write` into docs, 709 KB of `Edit` into source.
+**Rule:** cut turns and keep context flat; move bulk with the shell into files and read it back as a count
+or a slice. Do not spend effort compressing what a worker says.
+**Status:** current.
+
+## M25 — Reading a file through the shell, and the ratio that is not what one day said
+**2026-09-01**, 26 workers, 9,924 tool calls: latency p50 `Read` 9 ms, `Grep` 60 ms, `Bash` **1,892 ms**
+(p90 6,836 ms); 209 `cd && cat` calls cost **3,284 s**; **78 `Edit` calls failed with "File has not been
+read yet"** because the file had been read through the shell, each costing three round trips instead of
+one. Tool execution was 7.32 h against 22.39 h of model-turn time, so tools were **24.7%** of active time.
+
+**Re-measured on a second machine over the whole corpus** — 899 sessions, 261,308 paired calls,
+2026-06-10 to 2026-09-02 — and the one-day ratio does not survive. `Bash` p50 is **173 ms** there, not
+1,892; that day's figure was inflated by the classifier stall in [M28], which is a session mode rather
+than a property of the tool. Tool against shell equivalent, by p50: `Read` 6 ms against `cat`/`head`/`sed`
+80 ms (**13x**), `Grep` 57 ms against shell grep 113 ms (**2x**), `Edit` 74 ms against in-place `sed` 86 ms
+(**1.2x**), and `Glob` 358 ms against `find`/`ls` 116 ms — **the shell is three times faster**, the one
+inversion. The same corpus confirms the refusals: 187 "File has not been read yet" of 371 `Edit` errors,
+78 of them on that single day.
+
+**Rule:** `Read` a file you are going to `Edit` — that is a precondition of the harness, not a speed
+argument, and it is the only one of these differences big enough to change behaviour on its own. `Grep`
+over shell grep for a search whose result the model must read. Use the shell for `find`-shaped listing,
+for running things, and for moving bulk between files without the model in the middle. Do not repeat "the
+shell is two orders of magnitude slower": on one machine over one day it was, and across a corpus it is
+not.
+**Status:** current, and the corrected half is the one to quote.
+
+## M26 — The permission classifier is a width limit
+**2026-09-01**: **39 tool calls hard-failed** with `claude-sonnet-5[1m] is temporarily unavailable
+(rate-limited), so auto mode cannot determine…`, plus 16 refused by the same classifier, all inside one
+hour while **25 workers** ran. The failures land on shell calls, which are what the classifier judges.
+Confirmed on a second machine over 261,308 calls: **5,601 errored (2.1%), of which 1,060 are
+infrastructure** — 460 classifier denials, 412 timeouts, 94 model-unavailable, 94 rate-limit — and the
+rate-limit messages all name the same cause, the auto-mode classifier being unreachable. On that day they
+land in 24 distinct minutes between 19:27Z and 20:28Z.
+**Rule:** fewer shell calls per worker raises the width the machine will carry; if a run must be wide, take
+it off the auto permission mode rather than retrying into the same limit. See [M28] for the larger, quieter
+half of the same mechanism.
+**Status:** current.
+
+## M28 — The classifier's slow mode costs more than every other tool habit combined
+**Measured on a second machine**, 899 sessions, 261,308 paired calls: some sessions pay a fixed extra
+**~1.5-2 s on every call that needs a permission decision**, and the tools that need none are untouched,
+which is what rules out the machine simply being loaded. Gated calls in the slow population (108 of 500
+sessions): p10 75 ms, **p50 2,081 ms**, p90 6,164 ms. Gated calls in the normal population: p10 58 ms,
+**p50 102 ms**, p90 3,542 ms. Ungated `Read`/`Grep`/`Glob` across both: p50 **9 ms**. The p10 barely moves
+between the two populations, so the floor never rose — a fixed cost is being added per decision. It
+switches on and off inside one day: cheap shell commands ran at a 1,571 ms p10 during 16Z-18Z and at
+60 ms during 19Z-20Z, with MORE sessions running in the later hours, so it is not concurrency either.
+Arithmetic: 30,110 gated calls in slow-mode sessions at a median excess of 1,979 ms is **16.55 h of a
+211 h tool wall**; on 2026-09-01 alone it is **3.47 h of 15.99 h, 22%** — roughly seven times what
+eliminating every `Edit` retry in [M25] would buy.
+**Rule:** the first thing to fix on a slow fleet is not the tool mix, it is how often the classifier is
+consulted at all: allowlist the shapes a run actually runs, or take the run off auto mode. Re-check the
+gated/ungated p50 split before blaming latency on the machine.
+**Status:** current. Cause is the harness's permission path, not this plugin, so this ledger entry is a
+constraint to design around rather than a defect to fix here.
+
+## M27 — After a crash there is nothing left to message
+**2026-09-01**: following a restart, the **26 worker sessions** of two runs were absent from `ListAgents`
+(which listed five unrelated chats started minutes earlier) and from the app's own session list, archived
+rows included. The revive message — the only recovery this plugin had — had no receiver. What survived:
+`chips/<session-id>`, the standing claims, and every transcript under `~/.claude/projects/`, which is
+enough to reopen a worker with its context intact.
+**Rule:** revive is for a session that stopped, `fleet.sh recover` is for one that no longer exists. A
+claim whose chip never registered a session id is UNKNOWN, not dead — that is what `sweep` is for.
+**Status:** current.

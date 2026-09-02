@@ -21,11 +21,12 @@ about. Read it before you pass that flag: it is bash written by whoever wrote th
 | `claims-in-its-lane` | a paneless worker taking a browser task, then paying a reclaim [M06] |
 | `ends-with-the-banner` | a worker inventing its own closing summary instead of the generated one |
 | `files-through-the-gate` | a worker appending a finding by hand, around the only schema check there is |
+| `reopens-before-releasing` | a planner replacing a crashed worker whose context could have been reopened, or releasing a claim that can still come back [M27] |
 
 A case that starts failing is worth more than a case that passes: it means a document drifted away from
 the behaviour it was written to produce.
 
 **These have never been run.** `claude plugin eval` is in early access and refused on the account this
-release was built on, so the three cases are written against the harness's documented shape and are
+release was built on, so the four cases are written against the harness's documented shape and are
 unproven — including whether the graders read the way their author intended. Treat a first run as
 debugging the cases, not the plugin.

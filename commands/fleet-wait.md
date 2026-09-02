@@ -109,6 +109,12 @@ So keep the count as the happy path and give yourself a fallback with a threshol
 A `.done` that lands after that is orphaned unless collection is re-run. Say so in the summary; do not
 pretend the count closed.
 
+**If the chats are gone rather than quiet, none of the above applies.** A stall report and a crash look the
+same from the run directory — no file changes in either — and the difference is whether the workers still
+exist. When `ListAgents` no longer lists them, or the operator says the machine restarted, stop messaging
+and run `/makarasty:fleet-resume <run-id>`: the sessions with transcripts are reopened with their context,
+and only the rest are written off.
+
 ## The watch must end
 
 Measured 2026-08-27: a planner armed a `while true` watch with `persistent: true` and no exit condition.

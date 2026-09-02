@@ -56,7 +56,12 @@ searches in one message, since each round trip costs a full model turn.
 
 The mission's kind decides how it splits, and the wrong axis is what makes a fleet run worthless. Take the
 axis from `MISSIONS.md`: screen ownership for verify, hypothesis for investigate, seam for implement, file
-cluster for fix, source for research.
+cluster for fix, source for research, one screen for design.
+
+A `design` mission also has a wave order the others do not: recon, then the single task that owns the
+shared primitives, then the screens. File wave three only once wave two has landed - a screen task that
+starts before the primitives are settled either restyles a primitive under another worker's feet or
+inherits a defect it is not allowed to fix.
 
 Count the independent slices the axis produces. That is your worker count, and **it is capped per lane,
 never once for the whole fleet.** Ten is where browser panes stop fitting a single display, so ten caps

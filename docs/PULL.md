@@ -282,6 +282,60 @@ exact. The `caveman` plugin does this well when installed.
 Never compress an assertion or a brief's statement of what correct looks like. A dropped negation turns a
 passing screen into a defect report, and no token saving covers the hour spent chasing it.
 
+### What a run actually spends, measured
+
+Seven runs, 57 worker sessions, 2026-08-26 to 2026-09-01, read from the session transcripts:
+
+| line | tokens |
+|---|---|
+| cache read | 6 421 M |
+| cache write | 93.4 M |
+| output, of which thinking 5.7 M | 20.4 M |
+| turns | 19 535 |
+| tool calls | 11 450 |
+
+**The bill is turns multiplied by context, and nothing else is close** [M24]. The average turn carried ~330 k
+cache-read tokens; per worker the average context ran 240 k to 530 k with a peak of 882 k. Output is 0.3%
+of the tokens that moved.
+
+Three things that follow, and one that does not:
+
+**Compressing what a worker says is not the lever.** Of everything the models emitted, chat prose was
+**5% by characters**; the other 95% was tool input. The paragraph above is still right — nobody reads that
+narration — but it is worth roughly nothing, so do not trade clarity for it.
+
+**Bulk belongs around the model, not through it.** In the 26 workers of 2026-09-01 the emitted bytes were:
+2 647 KB `Write` into repository source, 2 045 KB of `Bash` heredocs over 2 KB each, 1 022 KB `Write` into
+docs, 709 KB `Edit` into source, 301 KB of scripts. Most of that is the work itself and cannot be avoided.
+What can: anything the model does not need to read should be produced by the shell into a file and read
+back as a count or a slice — `cmd > out.txt; wc -l out.txt` — because a payload that passes through the
+model is paid once as output and then again in every later turn that carries it.
+
+**Every finding already goes through the gate.** 1 516 of 1 516 findings in one run and 327 of 327 in
+another carried the stamp only `fleet.sh find` writes, so batching findings is not what those `Write`
+payloads were. Do not "fix" a problem the disk says you do not have.
+
+**Read a file you are going to edit with `Read`, and stop repeating the rest.** One day of one fleet
+measured `Bash` p50 at 1,892 ms against `Read`'s 9 ms, and that ratio got written down as a property of
+the tools. It is not: across 899 sessions and 261,308 calls on a second machine, `Bash` p50 is **173 ms**,
+`Grep` beats shell grep only **2x**, `Edit` beats in-place `sed` **1.2x**, and `Glob` is **three times
+SLOWER** than shelling out to `find` [M25]. The one difference that is not a matter of milliseconds is a
+precondition: the harness refuses an `Edit` to a file that was never `Read`, `cat` cannot satisfy it, and
+**187 `Edit` calls across that corpus failed exactly there** — three round trips instead of one, every
+time. So: `Read` before `Edit`, `Grep` for a search whose output the model must read, the shell for
+listing, for running things, and for moving bulk between files without the model in the middle.
+
+**And look at the permission classifier before blaming any of that.** Every shell call needs a permission
+decision; `Read`, `Grep` and `Glob` need none. On the same corpus, 108 of 500 sessions were in a mode
+where each gated call carried a fixed extra 1.5-2 s: gated p50 **2,081 ms** in that population against
+**102 ms** in the normal one, with the p10 unmoved (75 against 58 ms), and it switched on and off within a
+single day independently of how many sessions were running. That is **16.55 h of a 211 h tool wall**, and
+on the heaviest day **22% of it** — around seven times what removing every `Edit` retry above would buy
+[M28]. It is also where the hard failures come from: 39 calls in one hour of one run died with
+`claude-sonnet-5[1m] is temporarily unavailable (rate-limited), so auto mode cannot determine…` while 25
+workers ran [M26]. Fewer shell calls helps because it means fewer decisions; allowlisting the shapes a run
+actually runs, or taking a wide run off auto mode, helps far more.
+
 ## Where the wall clock actually goes
 
 Full accounting of one six worker pull run, 2026-08-27, from first claim to last `.done`: **4 hours 57

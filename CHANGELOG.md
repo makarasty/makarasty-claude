@@ -1,5 +1,54 @@
 # Changelog
 
+## 1.1.0 — 2026-09-02
+
+Three runs on 2026-09-01 (12, 13 and 6 workers; 1,500, 256 and 43 backlog rows) and a restart in the
+middle of them are what this release answers.
+
+- **A run survives the machine dying.** `fleet.sh recover` and `/makarasty:fleet-resume` read the chip
+  register, the standing claims and the session transcripts under `~/.claude/projects/`, then print which
+  chips can be reopened with `claude -r` (context intact), which have to be respawned, and which claims are
+  free to release. Measured 2026-09-01: after a restart, the 26 worker sessions of two runs were absent
+  from `ListAgents` and from the app's session list, archived rows included, so the revive message — the
+  only recovery this plugin had — could not reach anything. `recover` releases nothing on its own, keeps
+  the claims of chips that can come back, and reports a claim whose chip never registered a session id as
+  UNKNOWN rather than sweeping it: registration needs `CLAUDE_CODE_SESSION_ID`, and its absence is not
+  evidence of death.
+
+- **`kind: design`**, the sixth mission kind. One screen per worker, and the design model owns the screen
+  end to end - reading the code, the markup, the copy, driving the browser, the verification. No cheaper
+  model touches the markup afterwards, and where a design model is not warranted the builder is the strong
+  general model rather than a cheap one. Three waves: recon, then ONE task owning the shared primitives,
+  then the screens. It exists because of what the split produced: every visual defect a six-worker sweep
+  found on 2026-09-01 lived in a state or a moment nobody designed - a skeleton drawing fewer rows than the
+  first page returns, a header that loads at a different height, a filter bar opening 60-130 ms into a
+  navigation ON THE OUTGOING page and pushing it down 70.9 px, a ghost shorter than the number it stands
+  for, size utilities discarded by an icon font. The design model had designed the loaded screen; the
+  loading state, the transition and the cascade went to somebody who had never held the design.
+
+- **What a run costs, measured and written down as rules** - `docs/PULL.md` "Worker economy", ledger
+  entries M24-M28. Across 7 runs and 57 worker sessions: 19,535 turns, output 20.4 M tokens (thinking
+  5.7 M), cache **read 6,421 M**; average context 330 k per turn, peak 882 k. The bill is turns multiplied
+  by context and nothing else is close, output being 0.3% of the tokens that moved. Chat prose is 5% of
+  what the models emit by characters, so compressing narration is not the lever it was assumed to be.
+
+- **A correction, from a second machine.** The first draft of M25 generalised one day's latency into a
+  rule: "the shell is two orders of magnitude slower than the file tools". Re-measured over 899 sessions
+  and 261,308 calls, `Bash` p50 is 173 ms rather than that day's 1,892 ms, `Grep` beats shell grep only
+  2x, `Edit` beats in-place `sed` 1.2x, and **`Glob` is three times slower than `find`**. What survives is
+  a precondition, not a speed argument: the harness refuses an `Edit` to a file that was never `Read`, and
+  187 edits across that corpus failed exactly there. M28 records the larger finding the same data turned
+  up - a session mode in which every permission-gated call carries a fixed extra 1.5-2 s (gated p50 2,081
+  ms against 102 ms, p10 unmoved), worth 16.55 h of a 211 h tool wall and 22% of the heaviest day.
+
+- **A fourth eval case, `reopens-before-releasing`**: a crashed run where two chips look identical from
+  the run directory and only one session can be reopened. It scores a planner that replaces a worker whose
+  context was recoverable, or releases a claim that can still come back. Unrun, like the other three.
+
+- **`fleet-retro.mjs` reports those costs per run**: average context per turn, shell against file-tool
+  calls, reads done through the shell, `Edit` calls refused for an unread file, and calls that failed on a
+  rate limit rather than on the command.
+
 ## 1.0.0 — 2026-08-31
 
 First release. The version numbers before this one were development markers in an unpublished manifest,

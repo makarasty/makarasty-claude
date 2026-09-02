@@ -71,6 +71,10 @@ for (const name of fs.readdirSync(dir).filter((f) => f.endsWith('.jsonl'))) {
 
   let turns = 0, out = 0, cacheRead = 0, clocks = 0, helper = 0, handClaims = 0, asks = 0;
   let firstGate = null, firstAsk = null;
+  // The three costs M24-M26 named, which this tool could see all along and was not reading: the context
+  // each turn carries, whether file work went through the shell or the file tools, and the calls that
+  // failed for a reason that was not the command's fault.
+  let ctxTotal = 0, shellCalls = 0, fileCalls = 0, shellReads = 0, editRefusals = 0, limitFails = 0;
   const use = new Map(); const spans = []; const turnTimes = [];
 
   for (const o of objs) {
@@ -85,6 +89,15 @@ for (const name of fs.readdirSync(dir).filter((f) => f.endsWith('.jsonl'))) {
           if (c.type === 'tool_result' && use.has(c.tool_use_id)) {
             const u = use.get(c.tool_use_id);
             if (BROWSER.test(u.name)) spans.push([u.t, Date.parse(o.timestamp)]);
+            if (c.is_error) {
+              const body = typeof c.content === 'string' ? c.content : JSON.stringify(c.content || '');
+              // Three round trips instead of one: the harness requires a `Read` before an `Edit`, and a
+              // file read through the shell can never satisfy it [M25].
+              if (/File has not been read yet/.test(body)) editRefusals++;
+              // Not the command's fault, and it lands on shell calls because those are what the
+              // permission classifier judges [M26].
+              if (/rate-limited|temporarily unavailable|usage limit|overloaded/i.test(body)) limitFails++;
+            }
           }
         }
       }
@@ -94,10 +107,13 @@ for (const name of fs.readdirSync(dir).filter((f) => f.endsWith('.jsonl'))) {
     turns++;
     const u = o.message.usage || {};
     out += u.output_tokens || 0; cacheRead += u.cache_read_input_tokens || 0;
+    ctxTotal += (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0) + (u.input_tokens || 0);
     const t = Date.parse(o.timestamp); turnTimes.push(t);
     for (const c of o.message.content || []) {
       if (c.type !== 'tool_use') continue;
       use.set(c.id, { name: c.name, t });
+      if (c.name === 'Bash' || c.name === 'PowerShell') shellCalls++;
+      if (['Read', 'Grep', 'Glob', 'Edit', 'Write'].includes(c.name)) fileCalls++;
       const input = JSON.stringify(c.input || {});
       if (/requestAnimationFrame/.test(input) && firstGate === null) firstGate = t;
       if (c.name === 'AskUserQuestion') { asks++; if (firstAsk === null) firstAsk = t; }
@@ -105,6 +121,11 @@ for (const name of fs.readdirSync(dir).filter((f) => f.endsWith('.jsonl'))) {
       if (/budget-elapsed/.test(cmd)) clocks++;
       if (/(fleet\.sh|"\$f"|\$f)\s+(next|find|finish|drained|beat|clock|summary)/.test(cmd)) helper++;
       if (/mkdir\s+[^|;]*tasks\/claimed/.test(cmd)) handClaims++;
+      // Reading a file through the shell. The cost is not the milliseconds - across a whole corpus the
+      // shell is 13x slower for a plain read and FASTER for a `find` [M25] - it is that `cat` cannot
+      // satisfy `Edit`'s precondition, so an edit that follows one pays three round trips. `grep`/`sed -n`
+      // count too; `cat file | something` is a pipeline, not a read, so the pattern stops at the pipe.
+      if (/(^|[;&]\s*)(cat|head|tail|sed -n|grep)\s+[^|]*$/.test(cmd.replace(/^cd [^&]*&&\s*/, ''))) shellReads++;
     }
   }
 
@@ -129,6 +150,8 @@ for (const name of fs.readdirSync(dir).filter((f) => f.endsWith('.jsonl'))) {
     afterDoneMin: d ? Math.round(Math.max(0, (t1 - d) / 60000)) : null,
     afterDoneTurns: d ? turnTimes.filter((t) => t > d + 60000).length : null,
     clocks, helperCalls: helper, handClaims,
+    ctxK: turns ? Math.round(ctxTotal / turns / 1000) : 0,
+    shellCalls, fileCalls, shellReads, editRefusals, limitFails,
     gateAfterMin: firstGate === null ? null : Math.round((firstGate - t0) / 60000),
     askAfterMin: firstAsk === null ? null : Math.round((firstAsk - t0) / 60000),
     spans: merged,
@@ -157,6 +180,16 @@ console.log('');
 console.log(`${rows.length} sessions, ${sum('turns')} turns, ${sum('outK')} K output tokens, ${sum('cacheM')} M cached reads`);
 console.log(`after their own completion marker: ${sum('afterDoneMin')} minutes and ${sum('afterDoneTurns')} turns of session life`);
 console.log(`clocks armed ${sum('clocks')}; helper calls ${sum('helperCalls')} against ${sum('handClaims')} hand rolled claims`);
+
+// The bill is turns multiplied by context [M24], and the two habits that move it are visible from here.
+const avgCtx = Math.round(rows.reduce((a, r) => a + r.ctxK * r.turns, 0) / Math.max(1, sum('turns')));
+console.log(`context ${avgCtx} K per turn on average; ${sum('turns')} turns x that is what the run reads back`);
+console.log(`shell calls ${sum('shellCalls')} against ${sum('fileCalls')} file-tool calls, of which ${sum('shellReads')} read a file through the shell`);
+if (sum('editRefusals')) console.log(`  ${sum('editRefusals')} Edit calls refused for a file read through the shell - three round trips each, and avoidable [M25]`);
+// Shell calls are the ones a permission decision is made about, and a session in the classifier's slow
+// mode pays 1.5-2 s on every one of them [M28]. The count is the exposure; the latency split that proves
+// the mode is on lives in the host's own transcripts, not here.
+if (sum('limitFails')) console.log(`${sum('limitFails')} tool calls failed on a rate limit or an unavailable model rather than on the command [M26]`);
 
 // How many panes were being driven at once, minute by minute. This is the number that decides how many
 // panes the next run should open, and it cannot be guessed from the task list.

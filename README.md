@@ -33,7 +33,7 @@ The three side commands are a second, optional plugin from the same marketplace:
 
 Once the repository is published, the same two commands take its GitHub coordinates
 (`/plugin marketplace add makarasty/makarasty-claude`) instead of a path. That path has not been exercised
-yet - see "Known limits of 1.0.0" below.
+yet - see "Known limits" below.
 
 Restart Claude Code afterwards. Plugins load at session start.
 
@@ -52,6 +52,7 @@ machine will carry. The other commands run it themselves when they find a projec
 | `/makarasty:fleet-login` | you or Claude | Opens and authenticates the project's local app |
 | `/makarasty:fleet-wait <run-id> [n]` | you or Claude | Waits without spending model turns, then collects |
 | `/makarasty:fleet-collect <run-id>` | you or Claude | Merges, enforces the evidence contract, dedupes, ranks |
+| `/makarasty:fleet-resume <run-id>` | you or Claude | Cold start after a crash: reopens the workers whose context survived, respawns the rest |
 
 Three more commands ship as a **separate plugin**, `makarasty-tools`, from the same marketplace: they are
 useful beside a fleet and have nothing to do with its contract, so they version apart from it.
@@ -134,6 +135,7 @@ the axis the mission splits along.
 | `investigate` | hypothesis | worktree when instrumenting |
 | `implement` | seam | worktree |
 | `research` | source | none |
+| `design` | one screen, in three waves: recon, then the primitives, then the screens | worktree |
 
 Splitting along the wrong axis is what makes a fleet run worthless. Two workers on one slice cost twice
 and then agree with each other, which reads as corroboration and is not.
@@ -239,13 +241,23 @@ ends a run with a generated banner plus one notification plus a `FINISHED` file,
 itself in the sidebar when it lands, and asks for a pane in the first minute after the chip rather than
 the thirty-fourth.
 
+**1.1.0 answers three runs on 2026-09-01 - 12, 13 and 6 workers, 1,500 / 256 / 43 backlog rows - and the
+restart that killed them.** After it, the 26 worker sessions were listed nowhere the host could still
+address: a message needs a live receiver, so the only recovery this plugin had could not reach anything.
+`fleet.sh recover` reads the chip register, the claims and the host's transcripts instead, and says which
+workers can be reopened with their context (`claude -r`) rather than replaced. The same runs paid for the
+cost accounting now in `docs/PULL.md`: the bill is turns multiplied by context - 19,535 turns against
+6,421 M cached reads - and output is 0.3% of the tokens that move. And the sixth mission kind, `design`,
+exists because every visual defect that sweep found lived in a state nobody designed: the loaded screen
+had a designer, the loading state and the transition did not.
+
 ## Reference
 
 - [`docs/WALKTHROUGH.md`](docs/WALKTHROUGH.md) your first fleet in fifteen minutes, for somebody who has
   never run one
 - [`docs/PROTOCOL.md`](docs/PROTOCOL.md) run layout, brief format, finding schema, portability, shell traps
 - [`docs/PULL.md`](docs/PULL.md) the task queue, claiming, heartbeats, budgets, asking the planner
-- [`docs/MISSIONS.md`](docs/MISSIONS.md) the five kinds and the axis each splits along
+- [`docs/MISSIONS.md`](docs/MISSIONS.md) the six kinds and the axis each splits along
 - [`docs/BROWSER.md`](docs/BROWSER.md) blindness, the gate, panes, viewports, round trips
 - [`docs/SWEEPS.md`](docs/SWEEPS.md) checks that catch a class of defect rather than one bug
 - [`docs/MOCKING.md`](docs/MOCKING.md) reaching states the sandbox data will not produce, and the line
@@ -321,7 +333,7 @@ interpreter whose name ends in a carriage return. This repository pins `*.sh tex
 `CLAUDE_CODE_GIT_BASH_PATH` is the escape hatch. Nothing in the fleet can work around a shell the harness
 cannot find.
 
-## Known limits of 1.0.0
+## Known limits of 1.1.0
 
 Written down rather than fixed, because a tool that hides its sample size is asking to be trusted further
 than it has been tested. Full list in [`CHANGELOG.md`](CHANGELOG.md).
@@ -337,6 +349,17 @@ than it has been tested. Full list in [`CHANGELOG.md`](CHANGELOG.md).
 - The self-test covers mechanics. Whether a worker claims in its lane, files through the gate, or lets the
   generated banner stand is what [`evals/`](evals/) is for — and those cases have never been run, because
   `claude plugin eval` is in early access and was refused on the account this was built on.
+- **`recover` cannot confirm a resume happened.** It prints the `claude -r` lines; the operator runs
+  them, in a terminal, and nothing writes a heartbeat on their behalf. A planner can believe a chip is
+  back when nobody reopened it. The next heartbeat, or its absence, is the only proof.
+- **The `design` kind is documented and not enforced.** Nothing stops a screen task editing a shared
+  primitive during the third wave, and nothing stops a cheaper model editing markup. This repository's own
+  history is unkind to unenforced rules - see "Rules that stopped being rules" in
+  [`CHANGELOG.md`](CHANGELOG.md).
+- **The largest cost this release measured is not this plugin's to fix.** A session mode in which every
+  permission-gated call carries a fixed extra 1.5-2 s accounts for 16.55 h of a 211 h tool wall, and 22%
+  of the heaviest day (M28). It lives in the harness's permission path. Fewer shell calls reduce the
+  exposure; only an allowlist or a different permission mode removes it.
 - The `Stop` hook catches one shape of one failure: a claim taken within the last ten minutes whose
   heartbeat has never moved. A worker that dies an hour into a task, or after one heartbeat, is the
   planner's stall report and `fleet.sh sweep` to find, not the hook's. It also never fires for a worker in

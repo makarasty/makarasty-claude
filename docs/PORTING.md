@@ -112,6 +112,19 @@ file path is an address that means the same thing to everyone.
 Treat messaging as an optimisation layered on top: use it to wake a session sooner, never to carry the
 only copy of a result.
 
+**And an optimisation that disappears entirely when the machine does.** Measured 2026-09-01 [M27]: after a
+restart the 26 worker sessions of two runs were listed nowhere the host could still address - not in the
+session list, not among the messageable peers, archived rows included. The files were untouched. So the
+recovery path is a disk one: `fleet.sh recover` reads the chip register, the standing claims and the
+host's session transcripts, and prints which workers can be reopened.
+
+That last input is host specific, in the same way `fleet-retro.mjs` is. `recover` assumes transcripts live
+one JSONL per session under `~/.claude/projects/<slug>/<session-id>.jsonl` and that the host can reopen one
+by id (`claude -r <session-id>`). A host with neither loses only the RESUME list: the chip register, the
+claims and the release path are plain files and keep working, so recovery degrades to respawning workers
+with fresh context rather than failing. `CLAUDE_PROJECTS_DIR` points it somewhere else when a host keeps
+them elsewhere.
+
 ## Porting checklist
 
 1. Confirm assumption 1. Without it, stop.

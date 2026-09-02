@@ -234,6 +234,36 @@ check "and the run cannot land over it until somebody accounts for it" "released
 rm -f "$run/tasks/released/task-77.md"
 
 echo
+echo "a cold start, after the machine died"
+
+# `recover` reads two things a crash leaves behind: the chip register written at the first claim, and
+# whether that session still has a transcript to reopen. Point it at a project directory of our own so the
+# test never depends on what is in the operator's ~/.claude/projects.
+proj="${TMPDIR:-/tmp}/fleet-selftest-proj-$$"
+mkdir -p "$proj/some-cwd-slug" "$run/chips"
+printf '55' > "$run/chips/sess-alive"
+printf '56' > "$run/chips/sess-gone"
+printf '{}\n' > "$proj/some-cwd-slug/sess-alive.jsonl"
+mkdir -p "$run/tasks/claimed/task-88" "$run/tasks/claimed/task-89"
+printf 'chip 55\nclaimed old\n' > "$run/tasks/claimed/task-88/owner"
+printf 'chip 56\nclaimed old\n' > "$run/tasks/claimed/task-89/owner"
+task task-88 repo 10
+task task-89 repo 10
+out=$(CLAUDE_PROJECTS_DIR="$proj" sh "$fleet" recover "$run" 2>&1)
+check "a chip whose session still has a transcript is offered back" "RESUME  chip 55" "$out"
+check "with the command that reopens it" "claude -r sess-alive" "$out"
+check "a chip with no transcript is a respawn, not a resume" "RESPAWN chip 56" "$out"
+check "and the report says what each chip is still holding" "holding: task-88" "$out"
+check "nothing is released by a report" "nothing was changed" "$out"
+out=$(CLAUDE_PROJECTS_DIR="$proj" sh "$fleet" recover "$run" --release 2>&1)
+check "--release frees the dead chip's claim" "released task-89" "$out"
+[ -d "$run/tasks/claimed/task-88" ] && ok "and leaves the resumable chip's claim alone" || bad "and leaves the resumable chip's claim alone" "task-88 was released"
+rm -f "$run/tasks/released/task-89.md" "$run/chips/sess-alive" "$run/chips/sess-gone"
+rm -rf "$proj"
+rm -rf "$run/tasks/claimed/task-88" "$run/tasks/claimed"/task-89.released-*
+rm -f "$run/tasks/ready/task-88.md"
+
+echo
 echo "the hook that sees what no script can"
 
 guard="$here/../hooks/fleet-guard.mjs"
