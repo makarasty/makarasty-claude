@@ -204,6 +204,7 @@ kind: verify           # verify | investigate | implement | fix | research | des
 model: sonnet          # the model that does the work
 verdict-model: opus    # the model that decides what counts as a finding
 owns: [routes, files, or areas this worker may touch]
+after: task-02-primitives   # optional: `next` holds this task until that one is done
 isolation: none        # none | worktree, see below
 ---
 

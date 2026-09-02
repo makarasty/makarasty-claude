@@ -45,7 +45,12 @@ line names a lane you are not in, and try to claim each one that remains. The fi
 
 Failing every one of them means your lane is drained, which is **not** the same as the run being over.
 While `tasks/queue-open` exists the planner still intends to file work, so poll (`sleep 300; echo recheck`)
-rather than finishing. Write `<chip>.done` only once that marker is gone: a session that ends cannot be
+rather than finishing.
+
+A task can also be **gated**: `after: <task-id>` in its frontmatter holds it until that task's done marker
+exists, which is how a mission with waves keeps wave three out of wave two's files without asking anybody
+to remember the order. `next` says `QUEUE WAITING` rather than `QUEUE DRAINED` when that is why it handed
+you nothing, and the two mean opposite things - a gated queue opens again on its own, so poll it. Write `<chip>.done` only once that marker is gone: a session that ends cannot be
 reopened, and a queue that grows after its workers have closed has nobody left to work it.
 
 **Never delete or move the ready file.** The claim directory is the only truth. A worker that dies between

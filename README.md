@@ -333,7 +333,7 @@ interpreter whose name ends in a carriage return. This repository pins `*.sh tex
 `CLAUDE_CODE_GIT_BASH_PATH` is the escape hatch. Nothing in the fleet can work around a shell the harness
 cannot find.
 
-## Known limits of 1.1.0
+## Known limits of 1.1.1
 
 Written down rather than fixed, because a tool that hides its sample size is asking to be trusted further
 than it has been tested. Full list in [`CHANGELOG.md`](CHANGELOG.md).
@@ -349,13 +349,17 @@ than it has been tested. Full list in [`CHANGELOG.md`](CHANGELOG.md).
 - The self-test covers mechanics. Whether a worker claims in its lane, files through the gate, or lets the
   generated banner stand is what [`evals/`](evals/) is for — and those cases have never been run, because
   `claude plugin eval` is in early access and was refused on the account this was built on.
-- **`recover` cannot confirm a resume happened.** It prints the `claude -r` lines; the operator runs
-  them, in a terminal, and nothing writes a heartbeat on their behalf. A planner can believe a chip is
-  back when nobody reopened it. The next heartbeat, or its absence, is the only proof.
-- **The `design` kind is documented and not enforced.** Nothing stops a screen task editing a shared
-  primitive during the third wave, and nothing stops a cheaper model editing markup. This repository's own
-  history is unkind to unenforced rules - see "Rules that stopped being rules" in
-  [`CHANGELOG.md`](CHANGELOG.md).
+- **`recover` cannot confirm a resume happened.** It prints the command, including the instruction that
+  makes the reopened worker write its heartbeat first, but the operator runs it in a terminal and nothing
+  writes anything on their behalf. That heartbeat moving in `fleet.sh status` is the only proof; until it
+  does, a chip reported as reopened may be a command nobody ran.
+- **A resumed session is a terminal, not the app.** It has no Browser pane and no chip tooling, and its
+  transcript is full of calls that no longer resolve. Repo-lane workers come back; pane-lane workers do
+  not, and nothing in `recover` says so yet.
+- **The `design` kind is half enforced.** The wave order is: `after:` holds a task until its dependency
+  lands, in the queue, where nobody has to remember it. Which paths a screen task may not touch, and which
+  model may write markup, are prose - and this repository's own history is unkind to prose rules, see
+  "Rules that stopped being rules" in [`CHANGELOG.md`](CHANGELOG.md).
 - **The largest cost this release measured is not this plugin's to fix.** A session mode in which every
   permission-gated call carries a fixed extra 1.5-2 s accounts for 16.55 h of a 211 h tool wall, and 22%
   of the heaviest day (M28). It lives in the harness's permission path. Fewer shell calls reduce the

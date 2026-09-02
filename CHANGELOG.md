@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.1.1 — 2026-09-02
+
+An adversarial read of 1.1.0 by a second model, verified against the tree and the two crashed runs.
+
+- **`recover` no longer treats its own blindness as a fact about the workers.** It reads the host's
+  `CLAUDE_CONFIG_DIR` (`CLAUDE_PROJECTS_DIR` still overrides), says so when the transcript directory holds
+  nothing, and **refuses `--release` in that state** — releasing on no evidence would free the claims of
+  workers that are alive. That machine wants `sweep --release`, which asks the heartbeat question instead.
+- **A live session is no longer offered for reopening.** A transcript written to inside the hook's claim
+  window prints as `LIVE?` with no command: reopening a running session puts a second writer on its file.
+  On the real `2026-09-01-recon-all` run the old behaviour printed a `claude -r` line for a chip whose
+  transcript was four minutes old.
+- **The printed line is now the command the operator needs**: the directory that session was started in,
+  read from the transcript (a worktree worker's is not the planner's), and a first instruction telling the
+  worker to write its heartbeat before continuing. A session reopened with no prompt sits there until
+  somebody types into it, and that is also the cheapest answer to "nothing confirms a resume happened" —
+  the heartbeat is the confirmation, and `status` sees it move.
+- **LANDED lines carry their session id.** A finished worker is the one whose context a follow-up run wants
+  most; "leave it alone" was advice about this run only.
+- **`after: <task-id>` in a task's frontmatter, honoured by `next`.** A gated task is not handed out until
+  its dependency's done marker exists, and the worker is told `QUEUE WAITING` rather than `QUEUE DRAINED`
+  so it polls instead of writing `.done` and ending its session. This is what makes the `design` kind's
+  three waves a mechanism rather than a paragraph. Which paths a screen task may not touch is still prose.
+
 ## 1.1.0 — 2026-09-02
 
 Three runs on 2026-09-01 (12, 13 and 6 workers; 1,500, 256 and 43 backlog rows) and a restart in the

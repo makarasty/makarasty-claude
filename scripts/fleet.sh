@@ -8,7 +8,8 @@
 # rather than requested.
 #
 # Usage, from anywhere:
-#   fleet.sh next    <run-dir> <chip> [lane]       claim the first free task in that lane, print it. exit 3 = drained
+#   fleet.sh next    <run-dir> <chip> [lane]       claim the first free task in that lane, print it. exit 3 =
+#                                                  drained, or waiting on an `after:` dependency (it says which)
 #   fleet.sh beat    <run-dir> <chip> <task-id>    refresh heartbeat. exit 4 = claim lost, take another
 #   fleet.sh clock   <run-dir> <chip> <task-id> [budget-min]   print the self-disarming abort clock to background
 #   fleet.sh finish  <run-dir> <chip> <task-id>    mark the task done; its clock then exits on its own
@@ -99,6 +100,7 @@ case "$cmd" in
 next)
   chip=${3:?chip id required}
   lane=${4:-}
+  waiting=0
   stamp
   mkdir -p "$run/tasks/claimed" "$run/tasks/done"
   for f in "$run"/tasks/ready/*.md; do
@@ -113,6 +115,24 @@ next)
       want=$(sed -n 's/^needs:[[:space:]]*\([a-z][a-z]*\).*/\1/p' "$f" | head -1)
       [ -n "$want" ] || want=repo
       [ "$want" = "$lane" ] || continue
+    fi
+    # A task can wait for another to finish: `after: task-02-primitives` in the frontmatter, one id or
+    # several separated by spaces or commas. The queue is the only place a wave order can be enforced
+    # without asking anybody to remember it, and a mission with waves - `kind: design` is the one this was
+    # written for - is otherwise a rule in prose, which this repository has watched fail before. A worker
+    # that claims a screen while the shared primitives are still being restyled either collides with that
+    # work or inherits a defect it is not allowed to fix.
+    deps=$(sed -n 's/^after:[[:space:]]*\(.*\)/\1/p' "$f" | head -1 | tr ',' ' ')
+    if [ -n "$deps" ]; then
+      blocked=""
+      for d in $deps; do
+        [ -n "$d" ] || continue
+        [ -e "$run/tasks/done/$d" ] || blocked=1
+      done
+      if [ -n "$blocked" ]; then
+        waiting=$((waiting + 1))
+        continue
+      fi
     fi
     if mkdir "$run/tasks/claimed/$id" 2>/dev/null; then
       t=$(now)
@@ -135,6 +155,13 @@ next)
       exit 0
     fi
   done
+  # "Drained" and "waiting on a wave that has not landed" are different states, and a worker told the
+  # first when the second is true writes its `.done` and ends a session that still had work coming.
+  if [ "$waiting" -gt 0 ]; then
+    echo "QUEUE WAITING${lane:+ for lane $lane}: $waiting task(s) held by an unfinished \`after:\` dependency"
+    echo "  Poll rather than finishing: this queue opens again when those tasks land."
+    exit 3
+  fi
   echo "QUEUE DRAINED${lane:+ for lane $lane}"
   exit 3
   ;;
@@ -493,13 +520,42 @@ recover)
   release=""
   [ "${3:-}" = "--release" ] && release=1
   nowsec=$(date +%s 2>/dev/null || echo 0)
-  proj=${CLAUDE_PROJECTS_DIR:-$HOME/.claude/projects}
+  # The host lets an operator move its whole configuration directory, transcripts included. Reading only
+  # `$HOME/.claude` on such a machine reports every chip as RESPAWN, and `--release` would then free every
+  # open claim including live workers' - the one destructive path here, driven by an absence that means
+  # nothing. Honour the host's own variable, and keep the plugin-private one as the override.
+  proj=${CLAUDE_PROJECTS_DIR:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects}
 
   # Where a chip's transcript lives. The project directory is the working directory with every separator
   # replaced, and one run can span worktrees, so search rather than reconstruct the slug.
   transcript() { # transcript <session-id>
     ls "$proj"/*/"$1".jsonl 2>/dev/null | head -1
   }
+
+  # The directory a session was started in, read from its own first line. A worker in a worktree has a
+  # different one from the planner, and reopening a session from the wrong directory either refuses on an
+  # older CLI or resumes against the wrong tree.
+  # Not line 1: the first record is often a queued prompt, which carries no `cwd`. Read the first few and
+  # take the first one that has it.
+  sessioncwd() { # sessioncwd <transcript-path>
+    head -20 "$1" 2>/dev/null | sed -n 's/.*"cwd":"\([^"]*\)".*/\1/p' | head -1 | sed 's/\\\\/\\/g'
+  }
+
+  # A transcript corpus that holds nothing is not evidence that the workers are gone; it is evidence that
+  # this is not the machine, or not the directory, that ran them.
+  havecorpus=""
+  ls "$proj"/*/*.jsonl >/dev/null 2>&1 && havecorpus=1
+  if [ -z "$havecorpus" ]; then
+    echo "== no session transcripts under $proj"
+    echo "  Every chip below will read as RESPAWN, and that is this command's blindness rather than a fact"
+    echo "  about the workers. Set CLAUDE_CONFIG_DIR or CLAUDE_PROJECTS_DIR if they live elsewhere."
+    if [ -n "$release" ]; then
+      echo "REFUSED: --release with no transcripts to judge by would free live workers' claims." >&2
+      echo "  Use 'fleet.sh sweep --release', which asks the heartbeat question instead." >&2
+      exit 2
+    fi
+  fi
+  livemin=$(cal hook_claim_window_minutes 10)
 
   # A run that already declared itself finished is not automatically nothing to do: `landed` counts markers
   # and a worker that died before writing one is invisible to that count. Say both facts rather than either.
@@ -544,10 +600,27 @@ recover)
     [ -e "$run/$chip.jsonl" ] && findings=$(grep -c . "$run/$chip.jsonl" 2>/dev/null || echo 0)
 
     if [ -z "$open" ] && [ -n "$marker" ]; then
-      echo "  LANDED  chip $chip  $marker, $findings findings"
+      # The session id belongs on this line too. A landed worker is the one whose context a follow-up run
+      # wants most - it read the code that produced the findings - and "leave it alone" is advice about
+      # this run, not about the next one.
+      echo "  LANDED  chip $chip  $marker, $findings findings  ($sid)"
+    elif [ -n "$t" ] && [ -n "$quiet" ] && [ "$quiet" -lt "$livemin" ]; then
+      # A transcript exists for a session that is still running, too. Reopening one of those puts a second
+      # writer on an open file, so say what the evidence actually supports and print no command.
+      echo "  LIVE?   chip $chip  ${marker:-no marker}, $findings findings, holding: ${open:-nothing}, written ${quiet}m ago"
+      echo "          Wrote to its transcript inside the last ${livemin}m, so it may still be alive. Message it, or wait."
     elif [ -n "$t" ]; then
       echo "  RESUME  chip $chip  ${marker:-no marker}, $findings findings, holding: ${open:-nothing}${quiet:+, quiet ${quiet}m}"
-      echo "          claude -r $sid"
+      # The command as the operator needs it: the right directory, and a first instruction, because a
+      # session reopened with no prompt sits there until somebody types into it - which is twenty-six
+      # sessions of silence in a run this size. The heartbeat is the first thing it should write: that is
+      # what turns "I ran the command" into something `fleet.sh status` can see.
+      cwd=$(sessioncwd "$t")
+      first=$(printf '%s' "$open" | cut -d' ' -f1)
+      echo "          ${cwd:+cd \"$cwd\" && }claude -r $sid \"Resumed after a crash. ${first:+Run fleet.sh beat on $first, then }continue the run.\""
+      if [ -z "$cwd" ]; then
+        echo "          (its working directory is not in the transcript - run this from the directory the chip was started in)"
+      fi
     else
       echo "  RESPAWN chip $chip  ${marker:-no marker}, $findings findings, holding: ${open:-nothing}"
       echo "          no transcript under $proj - its context is gone, so re-file the task and spawn a fresh chip"

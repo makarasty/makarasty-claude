@@ -116,10 +116,15 @@ screenshot cannot show any of those.
 **Three waves, in this order, because a screen cannot fix the primitive it exposed.**
 
 1. **Recon.** Cheaper workers run the instrument over every screen in scope and file numbers. No edits.
-2. **Primitives.** ONE task owns the shared component directory, gated on wave 1. Nothing from wave 3
-   enters `tasks/ready/` until it lands.
+2. **Primitives.** ONE task owns the shared component directory, gated on wave 1.
 3. **Screens.** N design tasks, with the primitive paths off limits. A primitive defect found here is a
    finding for the next primitive pass, never an edit.
+
+**The order is enforced by the queue, not by anybody remembering it.** A task carries
+`after: <task-id>` in its frontmatter, and `fleet.sh next` will not hand it out until that task's done
+marker exists; a worker that finds only gated work is told `QUEUE WAITING` and polls rather than writing
+its `.done`. Which paths a screen task may not touch is still prose, and this repository's record on prose
+rules is poor - see the known limits in the README.
 
 Demand: numbers before and after, from the same instrument, filed with the change. And the honest caveat
 stated in the finding — a screen can satisfy every number and still be ugly, because hierarchy, colour,

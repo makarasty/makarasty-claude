@@ -234,6 +234,44 @@ check "and the run cannot land over it until somebody accounts for it" "released
 rm -f "$run/tasks/released/task-77.md"
 
 echo
+echo "a wave that has not landed yet"
+
+# `after:` in a task's frontmatter holds it until the task it names is done. Built in its own directory,
+# because the queue in $run is already half claimed by the checks above.
+depsrun="${TMPDIR:-/tmp}/fleet-deps-$$"
+mkdir -p "$depsrun/tasks/ready" "$depsrun/tasks/done"
+cat > "$depsrun/tasks/ready/task-01-primitives.md" <<'DEP'
+---
+task-id: task-01-primitives
+needs: repo
+budget: 20
+---
+## Steps
+1. Own the shared components for this wave.
+DEP
+cat > "$depsrun/tasks/ready/task-02-screen.md" <<'DEP'
+---
+task-id: task-02-screen
+needs: repo
+budget: 20
+after: task-01-primitives
+---
+## Steps
+1. Rework one screen, once the primitives have landed.
+DEP
+out=$(sh "$fleet" next "$depsrun" 31 repo); rc=$?
+check "the first wave's task is claimable" "CLAIMED task-01-primitives" "$out"
+out=$(sh "$fleet" next "$depsrun" 32 repo 2>&1); rc=$?
+code "a task waiting on an unfinished dependency is not handed out" 3 "$rc"
+check "and the worker is told to poll rather than that the queue is empty" "QUEUE WAITING" "$out"
+check "naming how many tasks are held" "1 task(s) held" "$out"
+sh "$fleet" finish "$depsrun" 31 task-01-primitives >/dev/null 2>&1
+out=$(sh "$fleet" next "$depsrun" 32 repo); rc=$?
+code "once the dependency lands the task is claimable" 0 "$rc"
+check "and it is the task that was waiting" "CLAIMED task-02-screen" "$out"
+rm -rf "$depsrun"
+
+echo
 echo "a cold start, after the machine died"
 
 # `recover` reads two things a crash leaves behind: the chip register written at the first claim, and
@@ -243,23 +281,50 @@ proj="${TMPDIR:-/tmp}/fleet-selftest-proj-$$"
 mkdir -p "$proj/some-cwd-slug" "$run/chips"
 printf '55' > "$run/chips/sess-alive"
 printf '56' > "$run/chips/sess-gone"
-printf '{}\n' > "$proj/some-cwd-slug/sess-alive.jsonl"
-mkdir -p "$run/tasks/claimed/task-88" "$run/tasks/claimed/task-89"
-printf 'chip 55\nclaimed old\n' > "$run/tasks/claimed/task-88/owner"
-printf 'chip 56\nclaimed old\n' > "$run/tasks/claimed/task-89/owner"
+printf '57' > "$run/chips/sess-still-running"
+printf '{"type":"user","cwd":"/tmp/some-worktree","timestamp":"2020-01-01T00:00:00Z"}
+' > "$proj/some-cwd-slug/sess-alive.jsonl"
+printf '{"type":"user","cwd":"/tmp/some-worktree","timestamp":"2020-01-01T00:00:00Z"}
+' > "$proj/some-cwd-slug/sess-still-running.jsonl"
+# A crashed session's transcript stopped being written when the machine did; a live one was written a
+# moment ago. That difference is the only thing separating "reopen this" from "do not touch this".
+touch -t 202001010000 "$proj/some-cwd-slug/sess-alive.jsonl" 2>/dev/null
+mkdir -p "$run/tasks/claimed/task-88" "$run/tasks/claimed/task-89" "$run/tasks/claimed/task-90"
+printf 'chip 55
+claimed old
+' > "$run/tasks/claimed/task-88/owner"
+printf 'chip 56
+claimed old
+' > "$run/tasks/claimed/task-89/owner"
+printf 'chip 57
+claimed old
+' > "$run/tasks/claimed/task-90/owner"
 task task-88 repo 10
 task task-89 repo 10
+task task-90 repo 10
 out=$(CLAUDE_PROJECTS_DIR="$proj" sh "$fleet" recover "$run" 2>&1)
-check "a chip whose session still has a transcript is offered back" "RESUME  chip 55" "$out"
+check "a chip whose session stopped being written is offered back" "RESUME  chip 55" "$out"
 check "with the command that reopens it" "claude -r sess-alive" "$out"
+check "in the directory that session was started in" 'cd "/tmp/some-worktree"' "$out"
+check "and a first instruction, so it does not sit there waiting to be typed at" "fleet.sh beat on task-88" "$out"
 check "a chip with no transcript is a respawn, not a resume" "RESPAWN chip 56" "$out"
+check "a session written to a moment ago is not offered for reopening" "LIVE?   chip 57" "$out"
 check "and the report says what each chip is still holding" "holding: task-88" "$out"
 check "nothing is released by a report" "nothing was changed" "$out"
 out=$(CLAUDE_PROJECTS_DIR="$proj" sh "$fleet" recover "$run" --release 2>&1)
 check "--release frees the dead chip's claim" "released task-89" "$out"
 [ -d "$run/tasks/claimed/task-88" ] && ok "and leaves the resumable chip's claim alone" || bad "and leaves the resumable chip's claim alone" "task-88 was released"
-rm -f "$run/tasks/released/task-89.md" "$run/chips/sess-alive" "$run/chips/sess-gone"
+[ -d "$run/tasks/claimed/task-90" ] && ok "and the live chip's claim alone" || bad "and the live chip's claim alone" "task-90 was released"
+# A corpus that holds nothing is not evidence the workers are gone, and the one destructive path here must
+# not run on that absence.
+empty="${TMPDIR:-/tmp}/fleet-selftest-empty-$$"; mkdir -p "$empty"
+CLAUDE_PROJECTS_DIR="$empty" sh "$fleet" recover "$run" --release >/dev/null 2>&1; rc=$?
+code "--release refuses when there are no transcripts to judge by" 2 "$rc"
+rm -rf "$empty"
+rm -f "$run/tasks/released/task-89.md" "$run/chips/sess-alive" "$run/chips/sess-gone" "$run/chips/sess-still-running"
 rm -rf "$proj"
+rm -f "$run/tasks/ready/task-89.md" "$run/tasks/ready/task-90.md"
+rm -rf "$run/tasks/claimed/task-90"
 rm -rf "$run/tasks/claimed/task-88" "$run/tasks/claimed"/task-89.released-*
 rm -f "$run/tasks/ready/task-88.md"
 

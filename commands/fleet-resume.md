@@ -43,19 +43,30 @@ sh "$f" status  .fleet/<run-id>
 `recover` prints one line per chip:
 
 - **LANDED** - a `.done` or `.blocked` marker and no open claim. Leave it alone.
-- **RESUME** - its transcript is on disk. It gets reopened, not replaced, and the line carries the exact
-  `claude -r <session-id>` to do it.
+- **RESUME** - its transcript stopped being written, so the session is gone and its context is not. The
+  line carries the whole command: the directory that session was started in (a worktree worker's is not
+  the planner's), the `claude -r <session-id>`, and a first instruction telling it to write its heartbeat
+  before it continues. **Hand that line over as printed.** A session reopened with no prompt sits there
+  until somebody types into it, and twenty-six of those is a recovery that recovered nothing.
+- **LIVE?** - a transcript written to within the last few minutes. It may still be running, and reopening
+  a live session puts a second writer on its file. No command is printed for it: message it, or wait.
 - **RESPAWN** - no transcript. Its context is gone; its tasks go back in the queue.
 - **UNKNOWN** (only under `--release`) - a claim whose chip never registered a session id. That is not
   evidence of death: registration needs `CLAUDE_CODE_SESSION_ID`, and a claim made without it looks exactly
   like a live worker's. Those belong to `sweep`, which asks the three-term heartbeat question instead.
 
+LANDED lines carry their session id too. A worker that finished is the one whose context a follow-up run
+wants most - it read the code that produced the findings - so "leave it alone" is advice about this run,
+not about the next one.
+
 Then the queue: how many ready tasks nobody holds, and how many released tasks are still waiting to be
 re-filed under a new id.
 
-If the host keeps transcripts somewhere other than `~/.claude/projects`, point at it:
-`CLAUDE_PROJECTS_DIR=/path sh "$f" recover .fleet/<run-id>`. Without them the RESUME list is empty and
-everything else still works - recovery degrades to respawning with fresh context, it does not fail.
+`recover` reads the host's own `CLAUDE_CONFIG_DIR` when it is set, and `CLAUDE_PROJECTS_DIR` overrides
+both. If it finds no transcripts at all it says so, because that absence is its own blindness rather than
+a fact about the workers - and it **refuses `--release` outright** in that state, since releasing on no
+evidence would free the claims of workers that are alive. `fleet.sh sweep --release` is the instrument for
+a machine with no transcripts: it asks the heartbeat question instead.
 
 ### 2. Reopen what can be reopened, first
 
