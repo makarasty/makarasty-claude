@@ -506,6 +506,283 @@ out=$(sh "$fleet" summary "$run" 2>&1)
 check "the run banner carries a machine readable line" "fleet-summary: {" "$out"
 
 echo
+echo "the design canvas"
+
+# The canvas gate is a script for the same reason the finding gate is: an artboard that names no source,
+# or claims a measurement through a blind pane, has to be refused somewhere a worker cannot route around.
+cv="$here/fleet-canvas.mjs"
+if [ -f "$cv" ] && command -v node >/dev/null 2>&1; then
+  node --check "$here/design-probe.js" >/dev/null 2>&1 && ok "design-probe.js parses" || bad "design-probe.js parses"
+  node --check "$here/visual-probe.js" >/dev/null 2>&1 && ok "visual-probe.js parses" || bad "visual-probe.js parses"
+  cdir="${TMPDIR:-/tmp}/fleet-canvas-$$"; mkdir -p "$cdir/src" "$cdir/design"
+  printf 'x' > "$cdir/src/Cases.vue"
+  artboard() { cat > "$1" <<'ART'
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet><style>body { margin: 0; } a { color: #000; } a:hover { color: #333; }</style></helmet>
+<div style="width: 1440px; height: 900px; background: #fff">Cases</div>
+</x-dc>
+</body>
+</html>
+ART
+  }
+  artboard "$cdir/design/Cases.dc.html"
+  out=$(cd "$cdir" && node "$cv" check design 2>&1); rc=$?
+  code "an artboard with no provenance is refused" 1 "$rc"
+  check "and told what is missing" "no provenance block" "$out"
+  # No `/route` here: Git Bash rewrites an argument that starts with `/` into a path under its own
+  # install, and the variable that stops it would also stop the script's own path resolving. The guard
+  # against that rewrite is tested on its own below, with an argument that never had the slash.
+  out=$(cd "$cdir" && node "$cv" stamp design/Cases.dc.html --source src/Cases.vue --viewport 1440x900 --frames 301 --frame 1440x900 2>&1); rc=$?
+  code "stamp writes the provenance block" 0 "$rc"
+  out=$(cd "$cdir" && node "$cv" stamp design/Cases.dc.html --frames 12 2>&1); rc=$?
+  code "a frame count under the gate is refused at the stamp" 1 "$rc"
+  out=$(cd "$cdir" && node "$cv" stamp design/Cases.dc.html --route cases 2>&1); rc=$?
+  code "a route that lost its leading slash is refused at the stamp" 1 "$rc"
+  check "and the refusal names the Git Bash rewrite" "MSYS_NO_PATHCONV" "$out"
+  out=$(cd "$cdir" && node "$cv" check design 2>&1); rc=$?
+  code "a stamped artboard passes the gate" 0 "$rc"
+  check "and the check says what it was measured at" "measured 1440x900" "$out"
+  artboard "$cdir/design/Ghost.dc.html"
+  (cd "$cdir" && node "$cv" stamp design/Ghost.dc.html --source src/Nope.vue >/dev/null 2>&1)
+  out=$(cd "$cdir" && node "$cv" check design 2>&1); rc=$?
+  code "an artboard naming a source file that does not exist is refused" 1 "$rc"
+  check "by name" "src/Nope.vue does not exist" "$out"
+  rm -f "$cdir/design/Ghost.dc.html"
+  # `stamp` will not write a blind reading, so plant one by hand: the check has to refuse it on its own.
+  cat > "$cdir/design/Blind.dc.html" <<'ART'
+<!doctype html>
+<!-- fleet-canvas
+source: src/Cases.vue
+route: /cases
+viewport: 1440x900
+frames: 0
+-->
+<html><head><meta charset="utf-8"><script src="./support.js"></script></head>
+<body><x-dc><div>x</div></x-dc></body></html>
+ART
+  out=$(cd "$cdir" && node "$cv" check design 2>&1); rc=$?
+  code "a measurement claimed through a blind pane is refused" 1 "$rc"
+  check "with the reading that refused it" "frames 0 is under the gate" "$out"
+  rm -f "$cdir/design/Blind.dc.html"
+  cp "$cdir/design/Cases.dc.html" "$cdir/design/Cases.Proposed.dc.html"
+  out=$(cd "$cdir" && node "$cv" layout design --title "Fixture" 2>&1); rc=$?
+  code "layout writes a canvas.json" 0 "$rc"
+  [ -e "$cdir/design/Main.dc.html" ] && ok "and a cover Main.dc.html when there is none" || bad "and a cover Main.dc.html when there is none"
+  check "proposals land on their own page" "Proposed: Cases.Proposed" "$out"
+  node -e '
+    const c = require(process.argv[1]); const a = c.artboards;
+    for (let i = 0; i < a.length; i++) for (let j = i + 1; j < a.length; j++) {
+      const p = a[i], q = a[j]; if ((p.page || "") !== (q.page || "")) continue;
+      const gx = Math.max(p.x, q.x) - Math.min(p.x + p.w, q.x + q.w), gy = Math.max(p.y, q.y) - Math.min(p.y + p.h, q.y + q.h);
+      if (gx < 80 && gy < 120) process.exit(1);
+    }
+    if (!c.pages || c.pages.length !== 2) process.exit(2);
+  ' "$cdir/design/canvas.json" >/dev/null 2>&1; rc=$?
+  code "frames on one page keep the gaps the editor needs, and both pages exist" 0 "$rc"
+  node -e 'const fs=require("fs"),p=process.argv[1];const c=JSON.parse(fs.readFileSync(p,"utf8"));c.artboards.find(a=>a.file==="Cases.dc.html").x=4321;fs.writeFileSync(p,JSON.stringify(c))' "$cdir/design/canvas.json"
+  (cd "$cdir" && node "$cv" layout design --title "Fixture" >/dev/null 2>&1)
+  grep -q '"x": 4321' "$cdir/design/canvas.json" && ok "a second layout keeps a position the operator moved" || bad "a second layout keeps a position the operator moved"
+  out=$(cd "$cdir" && node "$cv" plain design/Cases.dc.html --out "$cdir/plain.html" 2>&1); rc=$?
+  code "plain renders a static artboard standalone" 0 "$rc"
+  grep -q 'support.js' "$cdir/plain.html" && bad "and the runtime line is gone from it" || ok "and the runtime line is gone from it"
+  printf '<x-dc><div>{{ hole }}</div></x-dc>' > "$cdir/design/Hole.dc.html"
+  out=$(cd "$cdir" && node "$cv" plain design/Hole.dc.html 2>&1); rc=$?
+  code "an artboard that needs the runtime cannot be rendered plain" 1 "$rc"
+  rm -f "$cdir/design/Hole.dc.html"
+  # The seed needs the design skill's helper, which is on a machine only after that skill has run once.
+  # Either outcome is asserted: the real helper seeds and checks the page, or the refusal names the reason.
+  out=$(cd "$cdir" && node "$cv" seed design --title "Fixture screens" --out "$cdir/fixture-screens.html" 2>&1); rc=$?
+  case "$out" in
+    *SEEDED*) ok "seed drives the design skill's helper and its check (the skill is on this machine)"
+              [ -s "$cdir/fixture-screens.html" ] && ok "and the seeded page exists" || bad "and the seeded page exists";;
+    *"is not on this machine"*) ok "seed refuses with the reason when the design skill is absent (run /design once to exercise the rest)";;
+    *) bad "seed either seeds or says why it cannot" "$(printf '%s' "$out" | tail -3 | tr '\n' '|' | cut -c1-160)";;
+  esac
+  rm -rf "$cdir"
+else
+  echo "  skip  no fleet-canvas.mjs or no node"
+fi
+
+echo
+echo "the call script"
+
+# The call gate is a script for the reason the canvas gate is: a page that speaks a number no fact
+# carries, or a digit in a line meant to be read aloud, has to be refused where a worker cannot route
+# around it.
+cl="$here/fleet-call.mjs"
+if [ -f "$cl" ] && command -v node >/dev/null 2>&1; then
+  ldir="${TMPDIR:-/tmp}/fleet-call-$$"; mkdir -p "$ldir/call/facts"
+  printf '# Call\n- Read: ru\n- Speak: en\n' > "$ldir/call/CALL.md"
+  printf '## F02-1 · Northwind refuses a third of the second checks\n- how known: measured\n- evidence: select count(*) over 2026-07-24..08-12\n- when: 2020-01-01\n\n## F02-2 · the retry helps\n- how known: guess\n- evidence: nobody checked\n- when: 2026-08-20\n' > "$ldir/call/facts/02-northwind.md"
+  page() { # page <data-facts> <spoken line>
+    printf '<article class="q" data-facts="%s"><div class="say"><span class="lbl">Say</span><p>%s</p></div></article>\n<table><tr><td class="say-cell">about eight hundred</td></tr></table>\n' "$1" "$2" > "$ldir/call/script.html"
+  }
+  page "F02-1" "About one Northwind check in three comes back with error forty three."
+  out=$(node "$cl" check "$ldir" 2>&1); rc=$?
+  code "a page whose every fact resolves and whose lines carry no digit passes" 0 "$rc"
+  check "and the report counts the facts by how they are known" "1 measured" "$out"
+  out=$(node "$cl" check "$ldir" --stale 14 2>&1); rc=$?
+  check "a measured fact older than the window is listed as stale" "STALE" "$out"
+  code "and is not a refusal" 0 "$rc"
+  page "F02-1" "About 1 Northwind check in 3 comes back with error 43."
+  out=$(node "$cl" check "$ldir" 2>&1); rc=$?
+  code "a digit in a spoken line is refused" 1 "$rc"
+  check "and the line is quoted" "error 43" "$out"
+  page "F02-9" "About one Northwind check in three comes back with error forty three."
+  out=$(node "$cl" check "$ldir" 2>&1); rc=$?
+  code "a page citing a fact no file defines is refused" 1 "$rc"
+  check "by id" "cites F02-9" "$out"
+  page "" "About one Northwind check in three comes back with error forty three."
+  out=$(node "$cl" check "$ldir" 2>&1); rc=$?
+  code "a page citing no fact at all is refused" 1 "$rc"
+  page "F02-1" "About one Northwind check in three comes back with error forty three."
+  printf '## F03-1 · nothing behind it\n- how known: read\n- when: 2026-08-20\n' > "$ldir/call/facts/03-bare.md"
+  out=$(node "$cl" check "$ldir" 2>&1); rc=$?
+  code "a fact with no evidence is refused" 1 "$rc"
+  check "by name" "F03-1 has no evidence" "$out"
+  rm -f "$ldir/call/facts/03-bare.md" "$ldir/call/CALL.md"
+  out=$(node "$cl" check "$ldir" 2>&1); rc=$?
+  code "a run with no CALL.md is refused, because the live chat reads nothing else first" 1 "$rc"
+  rm -rf "$ldir"
+else
+  echo "  skip  no fleet-call.mjs or no node"
+fi
+
+echo
+echo
+echo "worktree cleanup"
+
+# The one destructive path in the plugin outside its own scratch. A junction left inside a worktree is a
+# hole a recursive delete follows into the main checkout (docs/WORKTREES.md [M32]), so these assert the
+# gate: registration refuses a non-worktree path, dry run changes nothing, unpushed work is kept, and a
+# clean worktree with a node_modules junction is removed with the main checkout left whole.
+if command -v git >/dev/null 2>&1; then
+  wl="${TMPDIR:-/tmp}/fleet-wt-$$"; mkdir -p "$wl"
+  ( cd "$wl" && git init -q main && cd main && git config user.email a@b && git config user.name t && git config core.autocrlf false \
+    && printf 'node_modules\n' > .gitignore && git add .gitignore && git commit -qm init ) >/dev/null 2>&1
+  # A .claude/worktrees path is the only shape the gate accepts. Make one and put a node_modules junction
+  # (or a plain symlink off Windows) into the main checkout's node_modules, which carries a marker file.
+  mkdir -p "$wl/main/node_modules"; echo KEEP > "$wl/main/node_modules/marker.txt"
+  mkdir -p "$wl/main/.claude/worktrees"
+  wt="$wl/main/.claude/worktrees/wtA"
+  ( cd "$wl/main" && git worktree add -q "$wt" -b wtA ) >/dev/null 2>&1
+  linkmade=""
+  if command -v cmd >/dev/null 2>&1; then
+    printf '@echo off\r\nmklink /J "%s" "%s"\r\n' "$(cygpath -w "$wt/node_modules")" "$(cygpath -w "$wl/main/node_modules")" > "$wl/mk.cmd"
+    cmd //c "$(cygpath -w "$wl/mk.cmd")" >/dev/null 2>&1 && linkmade=1
+  else
+    ln -s "$wl/main/node_modules" "$wt/node_modules" 2>/dev/null && linkmade=1
+  fi
+  wrun="$wl/main/.fleet/run"; mkdir -p "$wrun"
+
+  # The path gate. Depth is the margin for error: each of these is a shape that a future careless edit
+  # could turn into its own parent, and the floor is what stops that landing on a drive root.
+  out=$(sh "$fleet" worktree "$wrun" 01 "C:/wtmerge" 2>&1); rc=$?
+  code "registering a worktree at a drive root is refused" 2 "$rc"
+  check "and the reason is its depth" "too shallow to delete safely" "$out"
+  check "and it names the floor" "the floor is" "$out"
+  out=$(sh "$fleet" worktree "$wrun" 01 "some/relative/path/here" 2>&1); rc=$?
+  code "registering a relative path is refused" 2 "$rc"
+  check "because what it points at depends on the cwd" "is not absolute" "$out"
+  out=$(sh "$fleet" worktree "$wrun" 01 "/a/b/../../../etc" 2>&1); rc=$?
+  code "registering a path with .. is refused" 2 "$rc"
+
+  # registration refuses a deep path that is not in the directory this plugin owns
+  out=$(sh "$fleet" worktree "$wrun" 01 "$wl/main" 2>&1); rc=$?
+  code "registering a non-worktree path is refused" 2 "$rc"
+  check "and says why" "is not inside a .claude/worktrees directory" "$out"
+
+  # registration accepts the worktree
+  out=$(sh "$fleet" worktree "$wrun" 01 "$wt" 2>&1); rc=$?
+  code "registering a worktree path is accepted" 0 "$rc"
+  [ -f "$wrun/worktrees/01" ] && ok "and the registration file is written" || bad "and the registration file is written"
+
+  # dry run lists and changes nothing
+  out=$(cd "$wl/main" && sh "$fleet" clean "$wrun" 2>&1)
+  check "dry run says it would remove the worktree" "would remove" "$out"
+  [ -e "$wt" ] && ok "dry run left the worktree in place" || bad "dry run left the worktree in place"
+
+  # a worktree with unpushed commits (no remote at all) is kept, not removed
+  ( cd "$wt" && echo x > x && git add x && git commit -qm x ) >/dev/null 2>&1
+  out=$(cd "$wl/main" && sh "$fleet" clean "$wrun" --remove 2>&1)
+  check "a worktree with unpushed work is kept" "KEEP" "$out"
+  [ -e "$wt" ] && ok "and it is still on disk" || bad "and it is still on disk"
+
+  # drop the commit so the branch is merged, then --remove really removes, main node_modules survives
+  ( cd "$wt" && git reset -q --hard HEAD~1 ) >/dev/null 2>&1
+  out=$(cd "$wl/main" && sh "$fleet" clean "$wrun" --remove 2>&1)
+  check "a clean worktree is removed" "removed" "$out"
+  if [ -e "$wt" ]; then bad "and its directory is gone"; else ok "and its directory is gone"; fi
+  if [ -n "$linkmade" ]; then
+    [ -f "$wl/main/node_modules/marker.txt" ] && ok "the main checkout's node_modules survived the junction" \
+      || bad "the main checkout's node_modules survived the junction" "marker.txt was deleted through the link"
+  else
+    echo "  skip  could not create a junction/symlink on this host"
+  fi
+  # A junction one level down is followed by `git worktree remove` exactly as a top-level one is [M32],
+  # and the first version of the unlink walked only the top level. This is that bug's regression check.
+  wtN="$wl/main/.claude/worktrees/wtN"
+  ( cd "$wl/main" && git worktree add -q "$wtN" -b wtN ) >/dev/null 2>&1
+  mkdir -p "$wtN/sub" "$wl/main/victimNested"; echo KEEP > "$wl/main/victimNested/keep.txt"
+  printf 'node_modules\nsub/\n' > "$wl/main/.gitignore"
+  ( cd "$wl/main" && git add .gitignore && git commit -qm ignore ) >/dev/null 2>&1
+  nested=""
+  if command -v cmd >/dev/null 2>&1; then
+    printf '@echo off\r\nmklink /J "%s" "%s"\r\n' "$(cygpath -w "$wtN/sub/node_modules")" "$(cygpath -w "$wl/main/victimNested")" > "$wl/mk2.cmd"
+    cmd //c "$(cygpath -w "$wl/mk2.cmd")" >/dev/null 2>&1 && nested=1
+  else
+    ln -s "$wl/main/victimNested" "$wtN/sub/node_modules" 2>/dev/null && nested=1
+  fi
+  if [ -n "$nested" ]; then
+    ( cd "$wl/main" && sh "$fleet" worktree "$wrun" 03 "$wtN" ) >/dev/null 2>&1
+    out=$(cd "$wl/main" && sh "$fleet" clean "$wrun" --remove 2>&1)
+    if [ -f "$wl/main/victimNested/keep.txt" ]; then ok "a junction nested below the top level is unlinked, not followed"
+    else bad "a junction nested below the top level is unlinked, not followed" "the target was deleted through it"; fi
+  else
+    echo "  skip  could not create a nested junction on this host"
+  fi
+
+  # A detached-HEAD worktree has commits that belong to no branch, so `git branch -d` cannot object for
+  # them. Removing the tree makes them unreachable; the guard has to keep it.
+  wtD="$wl/main/.claude/worktrees/wtD"
+  ( cd "$wl/main" && git worktree add -q --detach "$wtD" ) >/dev/null 2>&1
+  ( cd "$wtD" && echo d > d.txt && git add d.txt && git commit -qm detached ) >/dev/null 2>&1
+  ( cd "$wl/main" && sh "$fleet" worktree "$wrun" 04 "$wtD" ) >/dev/null 2>&1
+  out=$(cd "$wl/main" && sh "$fleet" clean "$wrun" --remove 2>&1)
+  case "$out" in
+    *"detached HEAD"*) ok "a detached-HEAD worktree is kept, because nothing can vouch for its commits";;
+    *) bad "a detached-HEAD worktree is kept, because nothing can vouch for its commits" "$(printf '%s' "$out" | tr '\n' '|' | cut -c1-140)";;
+  esac
+  [ -d "$wtD" ] && ok "and it is still on disk" || bad "and it is still on disk"
+  ( cd "$wl/main" && git worktree remove --force "$wtD" ) >/dev/null 2>&1
+
+  # The unlink is a command a worker can run, and it is gated by the same path rule as everything else.
+  out=$(sh "$fleet" unlink "C:/wtmerge" 2>&1); rc=$?
+  code "unlink refuses a path too shallow to be a worktree" 2 "$rc"
+
+  # A worktree cleanup can never reach is named rather than ignored, because it sits there forever and
+  # only the operator can move it. Build one that is too shallow and check it is reported, never touched.
+  ( cd "$wl/main" && git worktree add -q "$wl/stray" -b strayB ) >/dev/null 2>&1
+  ( cd "$wl/main" && sh "$fleet" worktree "$wrun" 02 "$wl/main/.claude/worktrees/wtA" ) >/dev/null 2>&1
+  out=$(cd "$wl/main" && sh "$fleet" clean "$wrun" 2>&1)
+  case "$out" in
+    *STRAY*) ok "a worktree outside .claude/worktrees is reported as a stray";;
+    *) bad "a worktree outside .claude/worktrees is reported as a stray" "$(printf '%s' "$out" | tr '\n' '|' | cut -c1-140)";;
+  esac
+  [ -e "$wl/stray" ] && ok "and the stray is left untouched" || bad "and the stray is left untouched"
+  ( cd "$wl/main" && git worktree remove --force "$wl/stray" ) >/dev/null 2>&1
+  git -C "$wl/main" worktree prune >/dev/null 2>&1
+  rm -rf "$wl"
+else
+  echo "  skip  no git"
+fi
 echo "$pass passed, $fail failed"
 if [ "${1:-}" = "--keep" ]; then echo "run directory kept: $run"; else rm -rf "$run"; fi
 [ "$fail" = 0 ] || exit 1

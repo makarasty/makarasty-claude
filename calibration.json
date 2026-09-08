@@ -10,6 +10,7 @@
   "clock_poll_seconds": 30,
   "fanout_default": 3,
   "quiet_interval_seconds": 600,
+  "delegate_past_tasks": 3,
   "max_run_minutes": 480,
   "_provenance": {
     "repo_tasks_per_worker": "M16 - measured throughput 2.87 and 4.25 tasks per hour per worker on repo-heavy runs",
@@ -21,7 +22,10 @@
     "max_run_minutes": "A ceiling, not a measurement: comparable tools have documented runs that looped for days and cost thousands. A run past this is a decision to continue, not a default.",
     "hook_claim_window_minutes": "M03 - the workers that died had claimed within the minute; past ten a quiet claim is long work, and the planner's sweep owns it",
     "quiet_interval_seconds": "Read by a planner when it arms the watch loop in fleet-wait.md, not by any script here.",
-    "pane_workers_display_ceiling": "Read by a planner, not by a script: BROWSER.md is where the display ceiling is applied."
+    "delegate_past_tasks": "M30 - a repo worker's context grows 20-30 k per task worked inline and four workers were compacted near their thirtieth; the first three buy the worktree and the traps, after that fleet.sh next says DELEGATE",
+    "pane_workers_display_ceiling": "Read by a planner, not by a script: BROWSER.md is where the display ceiling is applied.",
+    "min_path_segments": "A path is got wrong at its end - an empty variable, a dirname too many - which turns it into its own parent. Depth is therefore the margin for error, counted in mistakes: C:/wtmerge is one slip from the drive root, <project>/.claude/worktrees/wtA is seven. Four is the floor fleet.sh will delete below. Not a measurement: a chosen floor."
   },
-  "hook_claim_window_minutes": 10
+  "hook_claim_window_minutes": 10,
+  "min_path_segments": 4
 }

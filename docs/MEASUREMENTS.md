@@ -275,3 +275,91 @@ enough to reopen a worker with its context intact.
 **Rule:** revive is for a session that stopped, `fleet.sh recover` is for one that no longer exists. A
 claim whose chip never registered a session id is UNKNOWN, not dead — that is what `sweep` is for.
 **Status:** current.
+
+## M29 — The design probe against a fixture of planted defects
+**2026-09-03**, one browser (the in-app pane, live at 302 frames), one fixture,
+`scripts/fixtures/design-probe.html`: nine planted defects — a button 3 px below its centred row, gaps of
+8/8/14, a 32 px input beside a 36 px button, `#999` text on white (2.8:1), a 16 px icon button, a 200x100
+image drawn at 200x150, an empty bordered box, a 1,400 px paragraph at 14 px, a 13 px padding on a page
+whose scale is 8/16/24 — beside ten controls built to look like defects and not be: a centred row of
+mixed heights, a gap-driven row, an auto-margin push, 7:1 secondary text, an inline link, a 40 px icon
+button, an image at its natural ratio, a bordered box with content, a self-centred child in a column, a
+wrapped row. **Nine of nine found, zero of ten reported**, one candidate beyond the nine (the page's only
+20 px heading, listed under `offScale`). The first draft counted the 13 px padding once per side, four
+votes from one element, which put it on the scale; the probe counts a value once per element now. It also
+listed an empty `<input>` as a ghost box; form controls are exempt now.
+**Rule:** the probe proposes and the agent disposes. `offScale` and `ghostBoxes` are candidates for a
+zoomed screenshot, never findings on their own; the seven other categories are findings at the numbers the
+probe reports.
+**Status:** current. One browser, one fixture. Re-verify by serving the repository over http, opening the
+fixture in a live pane, and pasting the probe.
+
+## M30 — A worker's context grows about 25 k per task, and every long worker hit the ceiling
+**2026-09-04**, run `fix-2026-09-04-code`: four paneless workers, 175 tasks in 3 h 50 min, read from the
+five transcripts (worker 04 has two; the app restarted under it). Context at the first claim: **105-108 k**.
+Context at each later claim climbed **20-30 k per task**, near linearly: worker 01 stood at 982 k at its
+30th claim, 02 at 970 k at its 28th, 03 at 992 k at its 43rd, 04 at 991 k at its 35th. **All four then
+compacted** - the harness summarised the conversation and restarted it at 106-141 k - and the climb
+resumed at the same slope (01: 141 k to 467 k over the next 12 tasks). Cache read for the run: **2,414 M**
+tokens over 5,157 turns, **471 k per turn**, the highest of any run in this ledger; the 200 turns before
+each compaction ran at 830-990 k each. **Agent spawns across the four workers: zero**, over 184 claims,
+with `fanout: 3` written into every task's reach. Turns per task: 26-38.
+**Arithmetic, not a measurement:** a task worked inline by a worker already holding n tasks' worth of
+context costs about 30 x (105 k + 25 k x n) of reads; the same task in a fresh subagent costs about
+30 x 60 k plus a few parent turns, near 2.5 M whatever n is. At n = 3 the inline task is already dearer;
+at n = 25 it is eight times dearer. What the first tasks buy inline is the worktree, the junctions and the
+traps, which is why the notes file exists.
+**Rule:** a repo worker works its first `delegate_past_tasks` tasks inline (calibration.json, 3), writes
+the traps into its notes, then hands each further task to ONE subagent and keeps its own context flat.
+`fleet.sh next` prints `DELEGATE` at that point, because the rule sits on a path the worker already walks
+and a prose rule about fan-out was obeyed zero times in 184.
+**Status:** current. The saving is derived and not yet measured on a run; `fleet-retro.mjs` now prints
+context per turn, peak context and compactions per worker, so the next run measures it.
+
+## M31 — The shell reads came from the harness's own instruction, not from the workers
+**2026-09-04**, the same run: worker 01 made **1,095 `Bash` calls against 6 `Read`, 10 `Edit` and 62
+`Write`**; across the four workers 704 of 3,365 shell calls read a file, and **12 `Edit` calls were refused**
+with "File has not been read yet" - the [M25] shape, on its third run in a row (9 on 2026-09-03, 78 on
+2026-09-01). The cause is in the session prompt: in the auto permission mode the harness tells the model
+to read with `cat`, `head` and `sed -n` and to change files with `sed` and heredocs rather than with the
+`Read`, `Edit` and `Write` tools, and every fleet worker on this machine runs in that mode. A prose rule
+in `PULL.md` saying "Read before Edit" was arguing with the system prompt, and lost every time.
+**Rule:** edit with what you read with. A file the shell read is changed with `sed -i`, a heredoc or a
+short script; `Edit` is for a file this session `Read`. Mixing the two on one file is what pays three
+round trips.
+**Status:** current.
+
+## M32 — `git worktree remove` follows a junction and deletes what it points at
+**2026-09-08**, Git 2.53.0.windows.2 under Git Bash on Windows 11, in a scratch repository built for the question. A
+worktree under `.claude/worktrees/` with a `node_modules` **junction** into the main checkout's
+`node_modules`, which held a marker file. Then, per case, one removal method, with the marker checked
+afterwards:
+
+| method | runs | main checkout's `node_modules` |
+|---|---|---|
+| `git worktree remove <wt>` with the junction in place | 8 | **contents deleted**, every run |
+| `git worktree remove --force <wt>` with the junction in place | 1 | **contents deleted** |
+| `rm "<wt>/node_modules"` first, then `git worktree remove` | 1 | intact |
+| `cmd rmdir "<wt>\node_modules"` (no `/S`) first, then `git worktree remove` | 1 | intact |
+
+The eight are one repeated trial of seven - five without a remote configured, two with - plus the single
+run in the method comparison. Exit code 0 every time, so nothing about the failure is visible to a caller.
+The remote is not the variable. The recursive delete inside `git worktree remove` walks into the reparse
+point and removes the target's contents; `--force` does the same. Unlinking first removes the link and
+never what it points at.
+
+The unlink-first rows are one run each, which is thin. `fleet-selftest.sh` re-asserts them on every run:
+it builds a real junction, runs `clean`, and fails if the main checkout's marker file is gone.
+
+Two earlier answers to this question were both worthless, in the same direction and for different reasons.
+A harness bug meant the main `node_modules` was never created, so four cases reported a loss that could not
+have happened; an incidental run before it reported the opposite from a junction that had silently failed
+to be created. Neither counted. The number above is from a test rebuilt to create fresh state per case and
+to repeat.
+
+**Rule:** unlink every reparse point inside a worktree before anything recursively deletes that worktree -
+`git worktree remove`, the harness's `ExitWorktree`, `rm -rf` and `rmdir /S` alike. `fleet.sh clean` does
+it in that order and is the only path in this plugin that removes a worktree; it is a dry run unless given
+`--remove`, it keeps any tree with uncommitted or unmerged-and-unpushed work, and it deletes a branch only
+with `git branch -d`. Full procedure in [`WORKTREES.md`](WORKTREES.md).
+**Status:** current.

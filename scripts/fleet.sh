@@ -29,6 +29,9 @@
 #   fleet.sh pane-serve <run-dir> <host> <id>      answer one walk with JSON on stdin, gate reading included
 #   fleet.sh pane-status <run-dir>                 backlog depth, oldest wait, median lease
 #   fleet.sh summary <run-dir> [chip]              the end banner: counts from disk, plus one JSON line
+#   fleet.sh worktree <run-dir> <chip> [path]      a worktree worker registers its tree (default cwd)
+#   fleet.sh unlink  <worktree-path>               unlink every junction/symlink in it, targets untouched
+#   fleet.sh clean   <run-dir> [--remove]          remove THIS run's worktrees safely; dry run without --remove
 #   fleet.sh landed  <run-dir> <expected-chips>    is the run genuinely finished? exit 0 yes, 1 no
 #   fleet.sh merge   <run-dir>                     findings -> backlog.jsonl, reconciled or refused
 #   fleet.sh render  <run-dir>                     backlog.jsonl -> backlog.md and skipped.md
@@ -95,6 +98,99 @@ readable() {
 }
 readable
 
+# WHY THIS EXISTS, before what it does - because the reason is what makes the rule survive an edit:
+#
+# A path is almost never got wrong in the middle. It is got wrong at the END, and always the same way: a
+# variable that was empty, a `dirname` taken once too often, a split on the wrong character, a prefix
+# stripped twice. Every one of those turns a path into its own PARENT. So the depth of a path is exactly
+# its margin for error, counted in mistakes:
+#
+#   C:/wtmerge                        one slip from C:/ - the whole drive
+#   <project>/.claude/worktrees/wtA   seven slips from C:/, and the first four land in directories this
+#                                     plugin owns and would refuse
+#
+# A worktree at the root of a drive has no margin at all. Nothing about it is wrong today; it becomes
+# wrong the first time somebody edits the deletion code and is slightly careless, and by then it takes the
+# disk with it. Depth is the cheapest defence there is against a mistake nobody has made yet.
+#
+# Therefore: this plugin deletes nothing that is not absolute, deep, free of `..`, inside a directory it
+# owns, and outside its own working directory.
+#
+# Callers set MIN_PATH_SEGMENTS once with `min_floor` before their loop, because `unsafe_path` usually
+# runs inside a command substitution and a value cached inside it would not survive the subshell.
+min_floor() {
+  _m=$(cal min_path_segments 4)
+  # A floor that is not a whole number silently disables the comparison: `[ 3 -lt 2.5 ]` errors out
+  # rather than answering, so a malformed calibration file would remove the guard instead of tightening it.
+  case ${_m:-} in ''|*[!0-9]*) _m=4 ;; esac
+  [ "$_m" -lt 2 ] && _m=2
+  echo "$_m"
+}
+
+unsafe_path() { # unsafe_path <path> <required-segment>; prints the reason and returns 0 when UNSAFE
+  _p=${1:-}; _need=${2:-}
+  [ -n "$_p" ] || { echo "the path is empty"; return 0; }
+  _p=${_p%/}   # a trailing slash must not change any answer below
+  case "$_p" in
+    //*) echo "$_p is a network path, which this does not delete"; return 0 ;;
+    /*|[A-Za-z]:/*) ;;
+    *) echo "$_p is not absolute, so what it points at depends on where this ran"; return 0 ;;
+  esac
+  case "/$_p/" in
+    */../*) echo "$_p contains .., so where it lands cannot be read off the path"; return 0 ;;
+    */./*)  echo "$_p contains a . segment, which hides how deep it really is"; return 0 ;;
+  esac
+  # Count named components with any drive letter dropped first, so Windows and POSIX are measured on one
+  # scale: C:/a/b/c and /a/b/c are both three.
+  _bare=${_p#[A-Za-z]:}
+  _depth=$(printf '%s\n' "$_bare" | tr '/' '\n' | grep -c . || true)
+  _min=${MIN_PATH_SEGMENTS:-4}
+  if [ "${_depth:-0}" -lt "$_min" ]; then
+    echo "$_p is ${_depth:-0} level(s) below the root and the floor is $_min: too shallow to delete safely"
+    return 0
+  fi
+  if [ -n "$_need" ]; then
+    # Something must FOLLOW the segment: the `worktrees` directory itself is not a worktree, and deleting
+    # it would take every other run's trees with it.
+    case "/$_p/" in
+      *"/$_need/"?*) ;;
+      *) echo "$_p is not inside a $_need directory, the only place this may delete"; return 0 ;;
+    esac
+  fi
+  # Deleting the directory this shell is standing in, or one above it, is how a script removes its own
+  # footing and then keeps going. Read the working directory in git's own spelling: under Git Bash `pwd`
+  # says /c/Users/... while git says C:/Users/..., so the plain form never matched and this guard was
+  # inert on the platform it was written for.
+  _here=$(pwd -W 2>/dev/null || pwd 2>/dev/null || echo "")
+  if [ -n "$_here" ]; then
+    _lh=$(printf '%s' "${_here%/}" | tr 'A-Z' 'a-z')
+    _lp=$(printf '%s' "$_p" | tr 'A-Z' 'a-z')
+    case "$_lh/" in "$_lp"/*) echo "$_p contains this shell's working directory"; return 0 ;; esac
+  fi
+  return 1
+}
+
+# Unlink every reparse point inside a tree, at any depth, leaving what they point at alone. This is the
+# step that makes a later recursive delete safe: `git worktree remove` follows a junction and removes the
+# target's contents, at the top level and nested [M32]. `find -type l` sees junctions on Windows and does
+# not descend into them.
+unlink_links() { # unlink_links <dir>; prints how many it removed
+  _d=$1; _t=$(tmpfile); _n=0
+  find "$_d" -type l -print > "$_t" 2>/dev/null || true
+  while IFS= read -r _e; do
+    [ -n "$_e" ] || continue
+    rm "$_e" 2>/dev/null || true
+    # Windows: coreutils sometimes will not drop a junction. `rmdir` removes the link, never its target.
+    if [ -e "$_e" ] && command -v cmd >/dev/null 2>&1; then
+      _dd=$(dirname "$_e"); _bb=$(basename "$_e")
+      ( cd "$_dd" && MSYS_NO_PATHCONV=1 cmd //c "rmdir \"$_bb\"" >/dev/null 2>&1 ) || true
+    fi
+    _n=$((_n + 1))
+  done < "$_t"
+  rm -f "$_t"
+  echo "$_n"
+}
+
 case "$cmd" in
 
 next)
@@ -149,6 +245,22 @@ next)
       echo "LANE ${lane:-any}"
       echo "BUDGET_MIN $b"
       echo "ABORT_AFTER_SEC $(( b * $(cal budget_multiplier 2) * 60 ))"
+      # Each task worked inline leaves 20-30 k of context behind it, and four workers who never spawned a
+      # subagent were all compacted near their thirtieth task [M30]. Past the first few, a task belongs in
+      # its own subagent. Said here, on a path every worker walks, because the same rule in prose was
+      # obeyed zero times in 184 claims.
+      need=$(sed -n 's/^needs:[[:space:]]*\([a-z][a-z]*\).*/\1/p' "$f" | head -1)
+      if [ "${need:-repo}" != pane ]; then
+        dn=0
+        for o in "$run"/tasks/claimed/*/owner; do
+          [ -e "$o" ] || continue
+          if grep -q "^chip $chip\$" "$o" 2>/dev/null && [ -e "$run/tasks/done/$(basename "$(dirname "$o")")" ]; then dn=$((dn + 1)); fi
+        done
+        if [ "$dn" -ge "$(cal delegate_past_tasks 3)" ]; then
+          echo "DELEGATE: you have finished $dn tasks in this session and each left 20-30 k of context behind [M30]."
+          echo "  Hand this task to ONE subagent at the task's model - task file, RULES.md, your notes - with findings filed through find. Keep your own context flat."
+        fi
+      fi
       echo "ARM_CLOCK background what this prints: sh \"$0\" clock $run $chip $id $b"
       echo "---"
       cat "$f"
@@ -831,17 +943,214 @@ landed)
     echo "            and delete tasks/released/$id.md, or delete that file alone to write the task off."
     fail=1
   done
-  [ -s "$run/backlog.jsonl" ] || { echo "NOT LANDED: backlog.jsonl is missing or empty"; fail=1; }
+  # Exists, not non-empty: merge writes an empty backlog when the workers filed nothing, and a run that
+  # refuted nothing - a call run, a canvas run without a compare stage - has still ended.
+  [ -e "$run/backlog.jsonl" ] || { echo "NOT LANDED: backlog.jsonl is missing: run merge first"; fail=1; }
   if ls "$run"/*.waiting >/dev/null 2>&1; then echo "NOT LANDED: a worker is waiting on the operator"; fail=1; fi
   if [ -e "$run/tasks/queue-open" ]; then echo "NOT LANDED: the planner has not closed the queue"; fail=1; fi
   if [ "$fail" = 0 ]; then
     # The run ends by declaration, not by a count somebody read once. This file is the durable answer to
     # "did it finish", readable from any chat and after every notification has been missed.
+    first=""; [ -e "$run/FINISHED" ] || first=1
     printf 'finished %s\nworkers %s\n' "$(now)" "$have" > "$run/FINISHED"
     echo "LANDED: $have workers, every claim closed, backlog written, FINISHED written"
+    # Then the phone, through the tools plugin's notifier when it is installed: the headline only, never a
+    # finding, and only the first time FINISHED is written, so a second landing check does not page twice.
+    # FINISHED is already on disk, so a message that never arrives loses nothing.
+    nf=$(ls -t "$(dirname "$0")/../tools/hooks/notify.mjs" ~/.claude/plugins/cache/*/makarasty-tools/*/hooks/notify.mjs 2>/dev/null | head -1)
+    if [ -n "$first" ] && [ -n "$nf" ]; then
+      tot=$(cat "$run"/[0-9]*.jsonl 2>/dev/null | grep -c '"severity"' || true)
+      tb=$(cat "$run"/[0-9]*.jsonl 2>/dev/null | grep -c '"severity"[[:space:]]*:[[:space:]]*"blocker"' || true)
+      bl=$(ls "$run"/*.blocked 2>/dev/null | wc -l | tr -d ' ')
+      node "$nf" send "fleet $(basename "$run") FINISHED: $tot findings, $tb blockers, $bl blind, backlog at $run/backlog.md" || true
+    fi
   fi
   exit "$fail"
   ;;
+
+worktree)
+  # A worktree worker records its tree at its first claim, so `clean` later acts on THIS run's worktrees
+  # and no other run's. Refuse a path that is not under a `.claude/worktrees/` segment: a worker not
+  # actually in a worktree has nothing to register, and recording its cwd would point `clean` at the
+  # project root. See docs/WORKTREES.md.
+  chip=${3:?chip id required}
+  wt=${4:-$(pwd)}
+  # Store the path in git's own spelling, so `clean` can match it against `git worktree list` exactly.
+  # `/tmp/x` and `C:/.../x` are the same tree, and only git's form compares reliably across Git Bash.
+  canon=$(git -C "$wt" rev-parse --show-toplevel 2>/dev/null || echo "")
+  [ -n "$canon" ] && wt=$canon
+  MIN_PATH_SEGMENTS=$(min_floor)
+  # Catch a tree that can never be cleaned at the moment it is CREATED rather than at the end of the run,
+  # because that is the moment somebody can still move it: a worktree at `C:/wtmerge` is one slip from the
+  # drive root, so cleanup will refuse it forever and it accumulates instead.
+  if why=$(unsafe_path "$wt" ".claude/worktrees"); then
+    echo "REFUSED to register this worktree: $why" >&2
+    echo "  A worktree this plugin can clean up lives under <project>/.claude/worktrees/, which is where" >&2
+    echo "  the harness's own EnterWorktree puts it. Move it with:  git worktree move \"$wt\" <project>/.claude/worktrees/<name>" >&2
+    exit 2
+  fi
+  br=$(git -C "$wt" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+  mkdir -p "$run/worktrees"
+  printf 'path %s\nbranch %s\nchip %s\n' "$wt" "$br" "$chip" > "$run/worktrees/$chip"
+  echo "registered worktree $wt (branch ${br:-unknown}) for chip $chip"
+  ;;
+
+unlink)
+  # A worker leaving its worktree needs the unlink as a command rather than as a sentence in a document.
+  # It is the step most likely to be skipped, and this repository's own ledger says a rule that is only
+  # written down does not hold. Safe to run twice and safe to run on a tree with no links.
+  # The path is this command's second argument, which every other command spends on the run directory.
+  wt=$run
+  c=$(git -C "$wt" rev-parse --show-toplevel 2>/dev/null || echo ""); [ -n "$c" ] && wt=$c
+  MIN_PATH_SEGMENTS=$(min_floor)
+  if why=$(unsafe_path "$wt" ".claude/worktrees"); then
+    echo "REFUSED: $why" >&2; exit 2
+  fi
+  n=$(unlink_links "$wt")
+  echo "unlinked $n reparse point(s) under $wt"
+  ;;
+
+clean)
+  # Remove the worktrees this run created. Dry run unless --remove. The procedure and the measurement
+  # behind the unlink-first step are in docs/WORKTREES.md [M32]; the reasoning behind the guards is in
+  # docs/SAFETY.md. There is deliberately no flag that deletes a tree holding work: the operator does
+  # that in git, having seen the reason printed here.
+  do_remove=""
+  for a in "$@"; do
+    case "$a" in --remove) do_remove=1 ;; esac
+  done
+  MIN_PATH_SEGMENTS=$(min_floor)
+  main=$(git rev-parse --show-toplevel 2>/dev/null || echo "")
+  # One listing for the whole command: it is asked once per worktree otherwise, and the pipeline also put
+  # the stray scan in a subshell.
+  wtlist=$(git worktree list --porcelain 2>/dev/null || echo "")
+  # A worktree this run cannot clean is named rather than ignored: it sits there forever and only the
+  # operator can move it. Reported before anything else, because a run that registered nothing is exactly
+  # the run where a stray would otherwise go unmentioned. Never touched.
+  printf '%s\n' "$wtlist" | sed -n 's/^worktree //p' | while IFS= read -r w; do
+    [ -n "$w" ] || continue
+    [ "$w" = "$main" ] && continue
+    if why=$(unsafe_path "$w" ".claude/worktrees"); then
+      echo "STRAY $why"
+      echo "      nothing here will delete it. Move it under <project>/.claude/worktrees/ with 'git worktree move', or remove it yourself."
+    fi
+  done
+  reg="$run/worktrees"
+  if [ ! -d "$reg" ] || [ -z "$(ls -A "$reg" 2>/dev/null)" ]; then
+    echo "no worktrees registered for this run; nothing to clean"
+    echo "(a worktree worker registers itself with 'fleet.sh worktree $run <chip>'; a run with none is not swept)"
+    exit 0
+  fi
+  removed=0; kept=0
+  for entry in "$reg"/*; do
+    [ -e "$entry" ] || continue
+    wt=$(sed -n 's/^path //p' "$entry" | head -1)
+    chip=$(basename "$entry")
+    # Normalise to git's own spelling when the tree is still on disk, so the membership test matches
+    # whatever form `git worktree list` prints regardless of how the path was registered.
+    if [ -e "$wt" ]; then c=$(git -C "$wt" rev-parse --show-toplevel 2>/dev/null || echo ""); [ -n "$c" ] && wt=$c; fi
+    # The branch is read from the worktree NOW, never from the registration: a worker that switched
+    # branches after registering would otherwise have the wrong branch checked and the wrong one deleted.
+    br=$(git -C "$wt" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+    [ -n "$br" ] || br=$(sed -n 's/^branch //p' "$entry" | head -1)
+
+    # 1. The path gate, before anything reads the tree.
+    if why=$(unsafe_path "$wt" ".claude/worktrees"); then
+      echo "SKIP  $chip: $why"; kept=$((kept+1)); continue
+    fi
+    if [ -n "$main" ] && [ "$wt" = "$main" ]; then
+      echo "SKIP  $chip: $wt is the main checkout"; kept=$((kept+1)); continue
+    fi
+    if ! printf '%s\n' "$wtlist" | grep -Fxq "worktree $wt"; then
+      if [ -e "$wt" ]; then
+        echo "SKIP  $chip: $wt exists but git does not call it a worktree - leaving it for a human"; kept=$((kept+1))
+      else
+        echo "gone  $chip: $wt already removed"
+        [ -n "$do_remove" ] && git worktree prune >/dev/null 2>&1
+      fi
+      continue
+    fi
+    # 2. A locked worktree is one git will refuse. Find that out BEFORE unlinking anything, or the unlink
+    #    happens, the removal fails, and the tree is left in a worse state than it was found in while the
+    #    message claims nothing changed.
+    if printf '%s\n' "$wtlist" | awk -v w="worktree $wt" 'BEGIN{f=0} $0==w{f=1;next} /^worktree /{f=0} f&&/^locked/{print;exit}' | grep -q .; then
+      echo "SKIP  $chip: $wt is locked. Unlock it with 'git worktree unlock' if you meant to remove it"
+      kept=$((kept+1)); continue
+    fi
+    # 3. Keep anything holding work. Uncommitted changes, or commits that are neither in the main
+    #    checkout's branch nor on this branch's upstream.
+    dirty=""; unpushed=""
+    [ -n "$(git -C "$wt" status --porcelain 2>/dev/null)" ] && dirty=1
+    if [ -z "$br" ] || [ "$br" = "HEAD" ]; then
+      # Detached HEAD: the commits belong to no branch, so removing the tree makes them unreachable and
+      # `git branch -d` cannot object on their behalf. Nothing here can prove they are safe, so keep.
+      unpushed=1; brdesc="a detached HEAD"
+    else
+      brdesc="$br"
+      # The question `git branch -d` asks, answered BEFORE the tree is removed so the whole tree is kept
+      # and not merely the branch. Fail safe: anything not provably merged or pushed counts as work.
+      merged=""
+      mb=""
+      if [ -n "$main" ]; then mb=$(git -C "$main" rev-parse --abbrev-ref HEAD 2>/dev/null || echo ""); fi
+      # A detached main checkout - mid-rebase, mid-bisect - reports the literal "HEAD", which resolves
+      # inside the worktree to the worktree's own tip and would call every branch merged.
+      [ "$mb" = "HEAD" ] && mb=""
+      if [ -n "$mb" ] && git -C "$wt" merge-base --is-ancestor "$br" "$mb" 2>/dev/null; then merged=1; fi
+      if [ -z "$merged" ]; then
+        up=$(git -C "$wt" rev-parse --abbrev-ref "$br@{upstream}" 2>/dev/null || echo "")
+        if [ -n "$up" ] && git -C "$wt" merge-base --is-ancestor "$br" "$up" 2>/dev/null; then merged=1; fi
+      fi
+      [ -z "$merged" ] && unpushed=1
+    fi
+    if [ -n "$dirty" ] || [ -n "$unpushed" ]; then
+      why=""
+      [ -n "$dirty" ] && why="uncommitted changes"
+      [ -n "$unpushed" ] && why="${why:+$why, }commits on $brdesc neither merged nor pushed"
+      echo "KEEP  $chip: $wt has $why"
+      echo "      it stays. If you have written it off: git worktree remove --force \"$wt\" (after 'fleet.sh unlink' on it), then git branch -D $br"
+      kept=$((kept+1)); continue
+    fi
+    # 4. Ignored files are invisible to every check above and go with the tree. Say what they are, because
+    #    a .env or a local config is exactly the thing a person did not mean to lose.
+    ign=$(git -C "$wt" status --porcelain --ignored 2>/dev/null | sed -n 's/^!! //p' | head -5 | tr '\n' ' ')
+    if [ -z "$do_remove" ]; then
+      links=$(find "$wt" -type l 2>/dev/null | wc -l | tr -d ' ')
+      echo "would remove  $chip: $wt${br:+  then branch -d $br}"
+      [ "${links:-0}" != 0 ] && echo "              unlinks $links reparse point(s) first"
+      [ -n "$ign" ] && echo "              ignored files that go with it: $ign"
+      continue
+    fi
+    [ -n "$ign" ] && echo "      ignored files removed with the tree: $ign"
+    # 5. Unlink every reparse point, at any depth, before anything recursive runs [M32].
+    unlink_links "$wt" >/dev/null
+    # 6. Remove the worktree. No --force: a tree holding work was kept above, so a refusal here is
+    #    something this code did not anticipate and the tree stays as it is.
+    if git worktree remove "$wt" 2>/dev/null; then
+      git worktree prune >/dev/null 2>&1
+      # 7. The branch, by the merge-checking form only. -D is never used here.
+      if [ -n "$br" ] && [ "$br" != "HEAD" ]; then
+        if git branch -d "$br" >/dev/null 2>&1; then
+          echo "removed  $chip: $wt and branch $br"
+        else
+          echo "removed  $chip: $wt (branch $br kept: git will not delete it, so it still holds something)"
+        fi
+      else
+        echo "removed  $chip: $wt"
+      fi
+      rm -f "$entry"; removed=$((removed+1))
+    else
+      echo "SKIP  $chip: git refused to remove $wt. Its links were unlinked first, so re-run once the"
+      echo "      reason is cleared; nothing else about the tree was changed"
+      kept=$((kept+1))
+    fi
+  done
+  if [ -z "$do_remove" ]; then
+    echo "dry run: nothing was changed. Add --remove to act."
+  else
+    echo "clean: $removed removed, $kept kept"
+  fi
+  ;;
+
 
 merge|render|fixqueue)
   m=$(ls -t "$(dirname "$0")/fleet-merge.mjs" ~/.claude/plugins/cache/*/makarasty/*/scripts/fleet-merge.mjs 2>/dev/null | head -1)
