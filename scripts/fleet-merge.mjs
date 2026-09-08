@@ -74,6 +74,10 @@ if (cmd === 'merge') {
       sightings: g.map((x) => x.id),
       confirmation: head.confirmation || 'unconfirmed',
     };
+    // A design finding carries the geometry that proved it and the probe that found it; both decide
+    // which kind of task the fix queue writes for it, so they travel.
+    if (head.rects) entry.rects = head.rects;
+    if (head.probe) entry.probe = head.probe;
     const w = entry.when ? Date.parse(entry.when) : NaN;
     const contaminated = windows.filter((x) => !Number.isNaN(w) && w >= x.from).map((x) => x.what);
     if (contaminated.length) entry.contaminated_by = contaminated;
@@ -172,7 +176,7 @@ if (cmd === 'fixqueue') {
     const n = String(i + 1).padStart(3, '0');
     fs.writeFileSync(path.join(dir, `task-${n}-${slug}.md`), `---
 task-id: task-${n}-${slug}
-kind: fix
+kind: ${m.rects || m.probe ? 'design' : 'fix'}
 finding-id: ${m.id}
 severity: ${m.severity}
 needs: ${/\b(click|type|hover|scroll|drag|screenshot|overlaps?|zoom)\b/i.test(m.repro || '') ? 'pane' : 'repo'}
@@ -190,7 +194,7 @@ twins: [${twins.join(', ')}]
 
 **Suspected mechanism, ${m.mechanism_status}.** ${m.mechanism || 'Not established.'} Treat this as a lead rather than a diagnosis: measured across one run, roughly 15 of every 100 findings were refuted when somebody tried to fix them, and the refutations were of the mechanism rather than the symptom.
 
-**Conditions the observation depended on.** ${m.conditions || 'None recorded.'}${m.contaminated_by ? `\n\n**Measured after a shared-state change:** ${m.contaminated_by.join('; ')}. Re-read the observation under clean state before trusting it.` : ''}
+**Conditions the observation depended on.** ${m.conditions || 'None recorded.'}${m.contaminated_by ? `\n\n**Measured after a shared-state change:** ${m.contaminated_by.join('; ')}. Re-read the observation under clean state before trusting it.` : ''}${m.rects || m.probe ? `\n\n**This is a design finding**${m.probe ? ` from \`${m.probe}\`` : ''}. The design model owns the screen end to end (docs/MISSIONS.md, design): the number the probe reported is the number to move, and the same probe run on the repaired screen is the proof.${m.rects ? ` Rectangles at the time: ${JSON.stringify(m.rects)}.` : ''}` : ''}
 
 ## Done when
 

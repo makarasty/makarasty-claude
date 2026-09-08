@@ -1,0 +1,141 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>design-probe fixture</title>
+<style>
+  body { margin: 0; font-family: Arial, sans-serif; font-size: 14px; color: #333; background: #fff; }
+  .pad8 { padding: 8px; } .pad16 { padding: 16px; } .pad24 { padding: 24px; }
+  .btn { height: 36px; padding: 0 16px; border: 1px solid #999; border-radius: 4px; background: #f4f4f4; color: #222; font: inherit; }
+  .row { display: flex; align-items: center; gap: 8px; }
+  .card { border: 1px solid #ccc; border-radius: 4px; padding: 16px; margin: 16px; }
+  section { margin: 16px; }
+  h2 { font-size: 16px; margin: 0 0 8px; }
+</style>
+</head>
+<body>
+<header class="pad16" style="display:flex;align-items:center;gap:16px;border-bottom:1px solid #ddd">
+  <h1 style="font-size:20px;margin:0">Fixture</h1>
+  <nav class="row"><a href="#" class="pad8">Home</a><a href="#" class="pad8">Cases</a><a href="#" class="pad8">Settings</a></nav>
+</header>
+<main>
+
+<!-- P1: one button 3px lower than its siblings in a centred toolbar -->
+<section id="p1"><h2>P1 misaligned</h2>
+  <div class="row" id="p1-toolbar">
+    <button class="btn">Save</button>
+    <button class="btn" style="position:relative;top:3px">Cancel</button>
+    <button class="btn">Delete</button>
+  </div>
+</section>
+
+<!-- P2: gaps 8, 8, 14 -->
+<section id="p2"><h2>P2 uneven gaps</h2>
+  <div style="display:flex;align-items:center" id="p2-row">
+    <span class="btn" style="display:inline-flex;align-items:center;margin-right:8px">A</span>
+    <span class="btn" style="display:inline-flex;align-items:center;margin-right:8px">B</span>
+    <span class="btn" style="display:inline-flex;align-items:center;margin-right:14px">C</span>
+    <span class="btn" style="display:inline-flex;align-items:center">D</span>
+  </div>
+</section>
+
+<!-- P3: a 32px input beside a 36px button -->
+<section id="p3"><h2>P3 uneven heights</h2>
+  <div class="row" id="p3-row">
+    <input type="text" placeholder="Search" style="height:32px;box-sizing:border-box;padding:0 8px;border:1px solid #999;border-radius:4px">
+    <button class="btn">Go</button>
+  </div>
+</section>
+
+<!-- P4: #999 on white is 2.85:1 -->
+<section id="p4"><h2>P4 low contrast</h2>
+  <p id="p4-text" style="color:#999;margin:0">Secondary text that is too light to read comfortably.</p>
+</section>
+
+<!-- P5: a 16x16 icon button -->
+<section id="p5"><h2>P5 small target</h2>
+  <div class="row">
+    <button id="p5-icon" aria-label="Close" style="width:16px;height:16px;padding:0;border:1px solid #999;background:#fff"></button>
+    <span>beside a label</span>
+  </div>
+</section>
+
+<!-- P6: a 200x100 image drawn at 200x150 -->
+<section id="p6"><h2>P6 stretched image</h2>
+  <img id="p6-img" width="200" height="150" src="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='100'%3E%3Crect width='200' height='100' fill='%2388a'/%3E%3C/svg%3E" alt="stretched">
+</section>
+
+<!-- P7: an empty bordered box -->
+<section id="p7"><h2>P7 ghost box</h2>
+  <div id="p7-ghost" style="width:120px;height:40px;border:1px solid #999"></div>
+</section>
+
+<!-- P8: a 1400px-wide paragraph at 14px -->
+<section id="p8"><h2>P8 long line</h2>
+  <p id="p8-text" style="width:1400px;margin:0">Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.</p>
+</section>
+
+<!-- P9: a 13px padding on a page whose scale is 8/16/24 -->
+<section id="p9"><h2>P9 off scale</h2>
+  <div class="card pad16">sixteen</div><div class="card pad16">sixteen</div><div class="card pad8">eight</div><div class="card pad8">eight</div><div class="card pad24">twenty four</div><div class="card pad24">twenty four</div>
+  <div id="p9-odd" class="card" style="padding:13px">thirteen</div>
+</section>
+
+<hr>
+
+<!-- N1: centred items of different heights are aligned by centre, not by top -->
+<section id="n1"><h2>N1 centred row, different heights</h2>
+  <div class="row"><span style="height:20px;display:inline-block;background:#eee">short</span><button class="btn">tall</button><span style="height:28px;display:inline-block;background:#eee">mid</span></div>
+</section>
+
+<!-- N2: a gap-driven row -->
+<section id="n2"><h2>N2 even gaps</h2>
+  <div class="row"><button class="btn">1</button><button class="btn">2</button><button class="btn">3</button><button class="btn">4</button></div>
+</section>
+
+<!-- N3: an auto-margin push -->
+<section id="n3"><h2>N3 auto push</h2>
+  <div class="row"><button class="btn">Left</button><button class="btn">Left 2</button><button class="btn" style="margin-left:auto">Right</button></div>
+</section>
+
+<!-- N4: readable secondary text -->
+<section id="n4"><h2>N4 readable</h2>
+  <p style="color:#595959;margin:0">Secondary text at 7:1.</p>
+  <p style="margin:0">Body <a href="#">inline link inside text</a> is exempt from the target rule.</p>
+</section>
+
+<!-- N5: a proper icon button -->
+<section id="n5"><h2>N5 proper target</h2>
+  <button aria-label="Menu" style="width:40px;height:40px;padding:0;border:1px solid #999;background:#fff"></button>
+</section>
+
+<!-- N6: image at its natural ratio -->
+<section id="n6"><h2>N6 natural image</h2>
+  <img width="200" height="100" src="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='100'%3E%3Crect width='200' height='100' fill='%238a8'/%3E%3C/svg%3E" alt="natural">
+</section>
+
+<!-- N7: a bordered box with text is not a ghost -->
+<section id="n7"><h2>N7 real box</h2>
+  <div style="width:120px;height:40px;border:1px solid #999">content</div>
+</section>
+
+<!-- N8: a self-centred child in a column is excused -->
+<section id="n8"><h2>N8 excused</h2>
+  <div style="display:flex;flex-direction:column;align-items:flex-start;gap:8px;width:300px">
+    <div style="background:#eee">one</div><div style="background:#eee;align-self:center">centred on purpose</div><div style="background:#eee">three</div>
+  </div>
+</section>
+
+<!-- N9: disabled control is exempt from contrast -->
+<section id="n9"><h2>N9 disabled</h2>
+  <button class="btn" disabled style="color:#aaa">Disabled</button>
+</section>
+
+<!-- N10: a wrapped row has two lines, neither misaligned -->
+<section id="n10"><h2>N10 wrapped</h2>
+  <div class="row" style="flex-wrap:wrap;width:260px"><button class="btn">alpha</button><button class="btn">beta</button><button class="btn">gamma</button><button class="btn">delta</button></div>
+</section>
+
+</main>
+</body>
+</html>
