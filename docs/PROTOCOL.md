@@ -200,7 +200,7 @@ Add `.fleet/` to the project's ignore file. Runs are scratch, not history.
 ---
 run-id: 2026-08-26-checkout-flow
 chip-id: "01"
-kind: verify           # verify | investigate | implement | fix | research | design
+kind: verify           # verify | investigate | implement | fix | research | design | critique | canvas | redesign | call
 model: sonnet          # the model that does the work
 verdict-model: opus    # the model that decides what counts as a finding
 owns: [routes, files, or areas this worker may touch]
@@ -224,7 +224,9 @@ Named explicitly, including the areas other workers own, by number.
 `kind` selects the working style, described in [`MISSIONS.md`](MISSIONS.md).
 
 `isolation: worktree` gives the worker its own checkout. Any brief that writes code uses it. Two sessions
-editing one tree produce a merge nobody asked for.
+editing one tree produce a merge nobody asked for. Creating and removing those trees safely is
+[`WORKTREES.md`](WORKTREES.md): a junction left inside a worktree is a hole a recursive delete follows into
+the main checkout [M32], and `fleet.sh clean` is the only path here that removes one.
 
 ## Finding schema
 
@@ -417,6 +419,9 @@ every command reads it when present:
 - Accelerators present: rg, sg, bun. Absent: fd, jq. Project query tool: graphify query "..."
 - Concurrency: pane lane max 10 (display), repo lane max 10 (16 GB / 16 cores), verify lane 1
 - Subscription: max tier, rate limits are not the binding constraint on this machine
+- Canvas: design/canvas (optional; where a canvas run writes its artboards, this is the default)
+- Canvas viewport: 1440x900 (optional; the frame a canvas run captures at, this is the default)
+- Design tokens: src/styles/tokens.css (optional; read into the design probe's scale by critique and recon)
 ```
 
 **The concurrency line is per lane, and the two numbers come from different places.** The pane number is

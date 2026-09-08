@@ -113,14 +113,22 @@ step as unreached with the reason and take the next one. Measured 2026-08-27: a 
 whether a writing band was sanctioned and blocked four minutes twenty six seconds holding a claim, for an
 answer that could not have changed what it was allowed to do.
 
-Your own narration during the run is read by nobody, so compress it from the first message. When the
-`caveman` plugin is installed, `/caveman full` does this for you; without it, drop articles, filler and
-pleasantries by hand and keep every number, unit, negation and identifier exact. Findings prose is read by
-whoever fixes
-the defect, so that stays full length.
+Your own narration during the run is read by nobody, so compress it from the first message: drop
+articles, filler and pleasantries, keep every number, unit, negation and identifier exact. The `caveman`
+plugin does this when installed, and it is fine to leave on, but do not reach for it as a saving: M24
+measured chat prose at 5% of what a worker emits and output at 0.3% of the tokens that move, so the
+narration is worth roughly nothing either way. What does move the bill in a writing kind (implement, fix,
+design, redesign) is the volume of code and the turns spent producing it, which is the layer the
+`ponytail` plugin works on; where it is installed its ladder applies to the code, never to the project's
+own rules on tests and docs. Findings prose is read by whoever fixes the defect, so that stays full length.
 
 Read `docs/PROTOCOL.md` for the finding schema and the
 completion markers.
+
+**Edit with what you read with.** In the auto permission mode the harness asks you to read with `cat` and
+`sed -n`; `Edit` then refuses that file with "File has not been read yet", three round trips instead of
+one, on every run so far [M31]. A file the shell read is changed with `sed -i`, a heredoc or a short
+script. `Edit` is for a file this session `Read`. Never both on one file.
 
 ## 1. Set up for your kind and your lane
 
@@ -132,11 +140,26 @@ The brief's `kind` decides what happens next. Working styles per kind are in
   **While that subagent runs, claim one `repo` task and work it.** That wait is about 20 of the task's 23
   minutes, and filling it roughly doubles what this session produces without a second pane.
 - `needs: repo` - fan out. Three subagents in one message is the default width, `fanout:` overrides it,
-  and the parts must not read each other's output.
+  and the parts must not read each other's output. **On a long queue, delegate whole tasks, not parts:**
+  each task you work inline leaves 20-30 k of context behind, and four workers who never spawned anything
+  were all compacted around their thirtieth task [M30]. When `next` prints `DELEGATE`, hand the task to
+  one subagent - task file, `RULES.md`, your notes - and keep your own context flat.
 - `needs: verify` - the full suite or the full typecheck is the whole machine. One worker holds it at a
   time and the others verify scoped.
 
 A pending subagent is not a wake. Arm the sleep anyway.
+
+**Kinds that review or capture design** (`critique`, `canvas`, `redesign`): read the kind's section of
+`docs/DESIGN.md` before the first step, and nothing else from it. A `critique` task is a pane task that
+spawns `fleet-design-eye` instead of `fleet-scenario`, with the plugin's `scripts/` directory, the
+`tabId`, the route, the token file and the task's "correct looks like" lines in its prompt; what comes
+back goes through `fleet.sh find`, `rects` included. A `canvas` recon task is a pane task with no spawn
+at all: one probe at the task's viewport, written to the recon path the task names, then the tab reset to
+`desktop`. A `canvas` screen task or a `redesign` task is a repo task that writes exactly one new artboard
+under the canvas directory and edits nothing else - no worktree, because nothing is shared - and runs
+`node <plugin>/scripts/fleet-canvas.mjs check <file>` before `finish`; a refused artboard is a task not
+finished. An assemble task runs the `fleet-canvas.mjs` calls its task names and files an `ask/` when
+`seed` cannot find the design skill's helper. Publishing the canvas is the planner's step, never yours.
 
 **Kinds that need the running application** (verify, and any other kind whose steps name a screen):
 
@@ -168,6 +191,29 @@ which is the only thing standing between a requester and confident fiction it ca
 
 **Kinds that write code**: your brief carries `isolation: worktree`, so you are in your own checkout.
 Verify scoped, and leave the full sweep to the operator.
+
+**Register your worktree at your first claim**, so the run can clean it up afterwards and no sweep ever
+guesses which tree belonged to whom:
+
+```bash
+sh "$f" worktree .fleet/<run-id> <chip>
+```
+
+It records this session's checkout and its branch, and refuses a path that is not under
+`.claude/worktrees/`, which is how a worker that is not actually in a worktree registers nothing.
+
+**When your brief is done, commit and push your slice, then unlink before anything deletes.** A
+`node_modules` junction inside your worktree is a hole a recursive delete follows into the main checkout:
+measured seven times out of seven, `git worktree remove` with the junction in place emptied the main
+checkout's `node_modules` [M32]. So remove the links first, with the command rather than by hand:
+
+```bash
+sh "$f" unlink "$(pwd -W 2>/dev/null || pwd)"
+```
+
+It walks the whole tree, not just the top level, because a junction at `sub/node_modules` is followed too.
+Only then call `ExitWorktree` with `remove`, or leave the tree for the planner's `fleet.sh clean`. Full procedure in
+`docs/WORKTREES.md`. Never delete your worktree with a recursive force-delete of your own.
 
 ## 2. Gate the pane before trusting it
 

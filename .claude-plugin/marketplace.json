@@ -9,13 +9,13 @@
   "plugins": [
     {
       "name": "makarasty",
-      "description": "Split a mission across worker sessions. Gated browser checks, per stage model selection, file based reporting, six mission kinds.",
+      "description": "Split a mission across worker sessions. Gated browser checks, per stage model selection, file based reporting, ten mission kinds including a design critique, a file based design canvas and a call script for a non-native speaker.",
       "source": "./",
       "category": "workflow"
     },
     {
       "name": "makarasty-tools",
-      "description": "Commit under your own name, review a diff with evidence, and strip assistant tics out of writing. Versioned apart from the fleet.",
+      "description": "Commit under your own name, review a diff with evidence, strip assistant tics out of writing, say what you mean in simple English for a call or a vendor, and get a Telegram, Discord or ntfy message when a chat or a fleet run finishes. Versioned apart from the fleet.",
       "source": "./tools",
       "category": "productivity"
     }

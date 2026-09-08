@@ -10,6 +10,7 @@ and says that too.
 | Opus | Judgement. Deciding whether an observation is a defect, ranking severity, writing a brief another model will execute without supervision. |
 | Sonnet | Execution carrying judgement. Walking a scenario, noticing that something is wrong rather than merely different, following a spec that has gaps in it. |
 | Haiku | Mechanical work under an exact contract. Fetching a value, running a fixed probe, reformatting, counting. |
+| The design model | Proposing how a screen should look, writing markup and copy meant to be seen, ruling on taste. The top tier the account offers - `fable` where it exists, otherwise Opus - and nothing cheaper touches the result afterwards: `MISSIONS.md`, design. |
 
 ## The delegation measurement
 
@@ -59,6 +60,14 @@ Guidance:
   fail loudly here. They fail by not noticing, and silence looks like a pass.
 - **Clear spec, obvious pass or fail**: Sonnet walks it, Opus rules on the findings.
 - **Fixed probe, extraction, counting, reformatting**: Haiku under an exact output contract.
+- **A screen that has to look right, or a proposal for how it should**: the design model, end to end, and
+  it is the one place where the top tier is the cheap choice - a proposal from a weaker model is a redesign
+  the operator has to redesign. Capturing a screen from source is not that job; the strong general model
+  copies exact values well. Reviewing a screen for design defects is a Sonnet walk with an Opus verdict,
+  because the probes carry the judgement the walk would otherwise need.
+- **A page somebody will read aloud to a vendor**: the design model for the page, for the copy reason above;
+  Opus for the facts behind it, because "every number about this topic" is not a clear spec and a weaker
+  model finishes it early and quietly. `CALL.md` has the stages.
 - **Uncertain**: go one tier up. A missed defect costs a release and a tier costs cents.
 
 ## Reasoning effort
@@ -85,8 +94,11 @@ Most waste is not the tier. In order of size:
 ## Writing for the models you dispatch
 
 A prompt sent to a subagent is read by a model, not a person. Compress it: drop articles, filler and
-pleasantries, keep every technical term, number, unit and negation exact. The `caveman` plugin does this
-well when installed, and the same discipline applies by hand when it is not.
+pleasantries, keep every technical term, number, unit and negation exact. The `caveman` plugin shapes
+what this session says, not what it dispatches, so the discipline is applied by hand in the brief. Expect
+little from it in tokens: M24 puts output at 0.3% of what a run moves. The `ponytail` plugin, where
+installed, injects its code-volume ladder into every subagent through `SubagentStart`, which is the one
+plugin that reaches the workers a fleet spawns.
 
 Keep the part of a brief that states what correct looks like at full length. A dropped negation in an
 assertion turns a passing screen into a defect report, and no token saving covers the hour spent chasing

@@ -27,9 +27,13 @@ holds its own context, works one brief, and reports by writing a file. Nothing m
 | `/makarasty:fleet-wait <run-id> [n]` | Workers are running and you want each finish to announce itself |
 | `/makarasty:fleet-collect <run-id>` | Workers have finished and you want one ranked backlog |
 | `/makarasty:fleet-resume <run-id>` | The machine restarted mid-run: reopen the workers whose context survived, respawn the rest |
+| `/makarasty:fleet-design <screens>` | You want the application's screens as artboards on disk, assembled into a Claude Design canvas you can open and edit |
+| `/makarasty:fleet-redesign <screens and direction>` | That canvas exists and you want proposals beside the captured screens, states included |
+| `/makarasty:fleet-call <who and what about>` | You have a call, a meeting or an interview to hold in a language you do not speak well, about a system you know: the fleet digs the facts, the top model writes the page you read from, and `live <run-id>` answers beside you during the call |
 
-`fleet-plan` and `fleet-run` answer only to you. They spawn paid work and depend on your clicks, so no
-agent starts them on its own initiative. The other three are reachable by an agent that needs them.
+`fleet-plan`, `fleet-run`, `fleet-design`, `fleet-redesign` and `fleet-call` answer only to you. They spawn paid work
+and depend on your clicks, so no agent starts them on its own initiative. The others are reachable by an
+agent that needs them.
 
 ## A run, start to finish
 
@@ -43,7 +47,11 @@ agent starts them on its own initiative. The other three are reachable by an age
 - `docs/WALKTHROUGH.md`: the fifteen-minute first run, for an operator who has never done one.
 - `docs/PROTOCOL.md`: run layout, brief format, finding schema, project configuration.
 - `docs/MEASUREMENTS.md`: the measurement behind every rule, by id.
-- `docs/MISSIONS.md`: the six mission kinds and how each one splits.
+- `docs/MISSIONS.md`: the nine mission kinds and how each one splits.
+- `docs/DESIGN.md`: the design half - critique with geometry probes, the canvas on disk, redesign beside it, and the loop back to code.
+- `docs/CALL.md`: the call half - the facts with their evidence, the page a non-native speaker reads aloud, and the live chat that answers from the same facts.
+- `docs/WORKTREES.md`: how a code worker gets its worktree and how a run removes them without reaching the main checkout.
+- `docs/SAFETY.md`: the closed list of what a fleet may delete, the path-depth gate, and why a gate beats a prose rule.
 - `docs/LANES.md`: what a lane is, how wide each one goes, and why the repo lane is not capped by a monitor.
 - `docs/BROWSER.md`: the pane gate and why a hidden pane invents findings.
 - `docs/BROKER.md`: one or two sessions hold the panes, everyone else files a browser walk as a file.

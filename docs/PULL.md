@@ -276,13 +276,20 @@ It is not idle, and this is the part fixed briefs never allowed:
 - Re-prioritises by filing a new task, never by renaming an existing one. Order lives in the numeric
   prefix and is fixed when the task is published, because renaming a file changes the task id under
   whoever currently holds it.
+- Stops a run early when the operator says so, deleting nothing: park every unclaimed task under a claim
+  directory owned by `chip planner-stop`, so `next` reports the queue drained; tell each worker in
+  `answers/<chip>-notice-STOP.md` to finish what it holds and write `.done`; then collect exactly as for a
+  drained run - `merge`, `render`, `landed`. Un-parking is removing those directories, the one case where
+  deleting a claim is right, because no worker ever held them. A stopped run that is never collected
+  leaves its findings in the chips' files: on 2026-09-04, 180 findings, no backlog, and the fourteen open
+  decisions typed into a document by hand.
 
 ## Worker economy
 
 The text a worker emits during a run is read by nobody. Findings prose is written for the human who will
 fix the defect and stays full length; everything else, its own narration, its notes to itself, its prompts
 to subagents, is compressed. Drop articles and filler, keep every number, unit, negation and identifier
-exact. The `caveman` plugin does this well when installed.
+exact. The `caveman` plugin does this when installed; what it is worth is measured two headings down.
 
 Never compress an assertion or a brief's statement of what correct looks like. A dropped negation turns a
 passing screen into a defect report, and no token saving covers the hour spent chasing it.
@@ -316,6 +323,17 @@ What can: anything the model does not need to read should be produced by the she
 back as a count or a slice — `cmd > out.txt; wc -l out.txt` — because a payload that passes through the
 model is paid once as output and then again in every later turn that carries it.
 
+**A long queue is worked through subagents, so the worker's own context stays flat** [M30]. Every task a
+worker finishes inline leaves 20-30 k of context behind it - the reads, the test output, the diff - and
+the next task pays for all of it on every turn. Measured on four paneless workers over 175 tasks: context
+climbed from 105 k at the first claim to 970-992 k around the thirtieth, every worker was compacted by the
+harness, and the run read 2,414 M cached tokens at 471 k per turn. Over the same 184 claims the workers
+spawned zero subagents. So: work the first three tasks yourself, write what they taught you into your
+notes, and from then on hand each task to ONE subagent at the task's model - the task file, `RULES.md`
+and your notes in its prompt, findings filed through `fleet.sh find` from inside it, a ten-line return.
+`fleet.sh next` prints `DELEGATE` when you have crossed that line. A subagent's whole life costs less than
+one of your turns once you hold a dozen tasks' worth of context.
+
 **Every finding already goes through the gate.** 1 516 of 1 516 findings in one run and 327 of 327 in
 another carried the stamp only `fleet.sh find` writes, so batching findings is not what those `Write`
 payloads were. Do not "fix" a problem the disk says you do not have.
@@ -328,7 +346,10 @@ SLOWER** than shelling out to `find` [M25]. The one difference that is not a mat
 precondition: the harness refuses an `Edit` to a file that was never `Read`, `cat` cannot satisfy it, and
 **187 `Edit` calls across that corpus failed exactly there** — three round trips instead of one, every
 time. So: `Read` before `Edit`, `Grep` for a search whose output the model must read, the shell for
-listing, for running things, and for moving bulk between files without the model in the middle.
+listing, for running things, and for moving bulk between files without the model in the middle. **And
+where the session runs in the auto permission mode, the harness itself asks for shell reads** - then edit
+with the shell too. Edit with what you read with; the twelve refusals of 2026-09-04 were every one a file
+`cat` had read and `Edit` then touched [M31].
 
 **And look at the permission classifier before blaming any of that.** Every shell call needs a permission
 decision; `Read`, `Grep` and `Glob` need none. On the same corpus, 108 of 500 sessions were in a mode

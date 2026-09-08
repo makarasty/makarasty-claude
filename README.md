@@ -25,7 +25,7 @@ From a local checkout, which is the path this release was developed and tested o
 /plugin install makarasty@makarasty
 ```
 
-The three side commands are a second, optional plugin from the same marketplace:
+The side commands are a second, optional plugin from the same marketplace:
 
 ```
 /plugin install makarasty-tools@makarasty
@@ -53,8 +53,11 @@ machine will carry. The other commands run it themselves when they find a projec
 | `/makarasty:fleet-wait <run-id> [n]` | you or Claude | Waits without spending model turns, then collects |
 | `/makarasty:fleet-collect <run-id>` | you or Claude | Merges, enforces the evidence contract, dedupes, ranks |
 | `/makarasty:fleet-resume <run-id>` | you or Claude | Cold start after a crash: reopens the workers whose context survived, respawns the rest |
+| `/makarasty:fleet-design <screens> [fast]` | you | Plans a canvas run: the application's screens as artboards on disk, assembled into a Claude Design canvas and published |
+| `/makarasty:fleet-redesign <screens and direction> [fast]` | you | Plans a redesign over that canvas: proposals beside the captured screens, states included, directions sketched first when none was given |
+| `/makarasty:fleet-call <who and what about> [fast]` | you | Plans a call run: the facts dug out of the project with their evidence, then the bilingual page a non-native speaker reads aloud; `live <run-id>` in a fresh chat answers beside them during the call |
 
-Three more commands ship as a **separate plugin**, `makarasty-tools`, from the same marketplace: they are
+Five more commands ship as a **separate plugin**, `makarasty-tools`, from the same marketplace: they are
 useful beside a fleet and have nothing to do with its contract, so they version apart from it.
 
 | Command | Who reaches it | What it does |
@@ -62,12 +65,29 @@ useful beside a fleet and have nothing to do with its contract, so they version 
 | `/makarasty-tools:commit` | you or Claude | Commits under your own name, short message, no tool signature |
 | `/makarasty-tools:review` | you or Claude | One line per finding, and only findings that name a failing input |
 | `/makarasty-tools:unslop [on\|off\|text]` | you or Claude | Toggles humanised replies, or rewrites a given text |
+| `/makarasty-tools:say <what to say>` | you or Claude | Turns what you mean into simple English to say on a call or send to a vendor, source-language gist beside each line |
+| `/makarasty-tools:notify [what you are waiting for]` | you or Claude | One message to your phone when this chat, another chat, or a fleet run finishes: Telegram, Discord, ntfy or a webhook |
 
-`fleet`, `fleet-plan` and `fleet-run` answer only to you: they spawn paid work and depend on your clicks,
-so no agent starts them on its own initiative.
+`fleet`, `fleet-plan`, `fleet-run`, `fleet-design`, `fleet-redesign` and `fleet-call` answer only to you: they spawn
+paid work and depend on your clicks, so no agent starts them on its own initiative.
 
 `/makarasty-tools:commit` fires on plain phrasing rather than a slash, so "commit as me" or "commit from my
 name" reaches it, in whatever language you asked in.
+
+`/makarasty-tools:notify` is the answer to "did it finish" for a chat you are not sitting in. Say "ping me
+when the tests are done" in the chat doing the work and it arms a marker for that session; a hook sends
+one message when the turn ends, the first lines of the last reply under the verdict, then disarms. A chat
+that asks a question instead is reported as waiting for your answer; one that dies on a rate limit says
+so; one reopened after a crash checks whether the work was already done and, if it was, tells you it was
+done before the restart. `fleet.sh landed` posts a run's headline the same way. Setting up is one command
+in the terminal (the first "ping me" hands it to you with a Run button): a wizard asks which channel,
+prints the steps for Telegram (a BotFather token), Discord (a channel webhook URL) or ntfy (an app and a
+topic, no account), takes the one value, and saves only once a test message has arrived on the phone.
+The secret goes from your keyboard to `~/.claude/makarasty/notify.json` and never through a chat, and no
+browser tab is opened. A finish that happens before the wizard is done is delivered the moment a channel
+is saved. The hooks start nothing while no chat is armed: one `ls` per event, no node. The host's own
+`PushNotification` reaches the phone only while Remote Control is connected; this one needs nothing
+connected.
 
 ## Agents
 
@@ -76,6 +96,9 @@ name" reaches it, in whatever language you asked in.
 - **`fleet-profiler`** measures load, interaction and stability, returning readings with their spread and
   the machine load beside them.
 - **`fleet-triage`** merges and ranks a run's findings, on Haiku.
+- **`fleet-design-eye`** reviews one screen for design defects: two geometry probes first, a zoomed
+  screenshot of each candidate second, and findings that carry the rectangles behind them. The pictures
+  stay in its context.
 
 ## The gate
 
@@ -136,9 +159,51 @@ the axis the mission splits along.
 | `implement` | seam | worktree |
 | `research` | source | none |
 | `design` | one screen, in three waves: recon, then the primitives, then the screens | worktree |
+| `critique` | one screen; a rectangle or a ratio is the evidence, never a screenshot alone | none |
+| `canvas` | one screen per artboard, in stages: recon, the primitives sheet, the screens, compare, assemble | none |
+| `redesign` | one screen; proposals beside the captured ones, directions sketched first | none |
+| `call` | source, in two stages: the facts with their evidence, then the page a non-native speaker reads aloud; a fresh chat answers live from the same facts | none |
 
 Splitting along the wrong axis is what makes a fleet run worthless. Two workers on one slice cost twice
 and then agree with each other, which reads as corroboration and is not.
+
+The last three are the design half, and they form a loop: critique what runs, capture it as a canvas,
+propose beside it, then implement the approved artboards with the `design` kind. The canvas is a
+file-based one - `<Screen>.dc.html` artboards and a `canvas.json` in the project - seeded into the editor
+the harness's `design` skill carries and published as a page where the operator clicks, drags and saves.
+[`docs/DESIGN.md`](docs/DESIGN.md) has the loop and the gates.
+
+## What it is allowed to delete
+
+A fleet runs unattended across a dozen sessions, so what it may remove from the disk is a short, closed
+list rather than a matter of each worker's judgement:
+
+1. **Its own scratch**, under `.fleet/<run-id>/`, which is declared scratch and belongs in the ignore file.
+2. **The worktrees its own workers created**, under `.claude/worktrees/`, and only through
+   `fleet.sh clean`.
+
+Nothing else. There is no `git reset --hard`, no `git clean`, no `git checkout --` anywhere in the plugin,
+and no recursive force-delete of a path it did not create.
+
+`fleet.sh clean` is a dry run unless it is given `--remove`. It touches only worktrees this run registered
+for itself, it **keeps** any tree carrying uncommitted changes or commits neither merged nor pushed, and it
+deletes a branch only with `git branch -d`, the form that refuses unmerged work. Everything it skips is
+printed with the reason.
+
+Every deletion passes a path gate: absolute, free of `..` and of `.` segments, at least four levels below
+the root, inside `.claude/worktrees/` with something after it, and never a directory containing the
+shell's own working directory. Containment does most of the work; the depth floor is a second, independent
+guard for the case containment cannot see, such as a worktree somebody created at `C:/wtmerge`, one slip
+from the drive root. A path the gate refuses is reported as a stray, never deleted and never ignored.
+
+The step that makes it safe is not obvious, and it is measured [M32]. A worktree usually has a
+`node_modules` **junction** into the main checkout, and `git worktree remove` **follows that junction and
+deletes what it points at** - eight runs out of eight on this machine, at the top level and nested,
+`--force` included, exit code 0 every time. So `clean` unlinks every junction and symlink inside a worktree before anything recursive
+touches it, which kept the main checkout intact in every paired run. The same applies to the harness's own
+`ExitWorktree` and to any hand-rolled `rm -rf` or `rmdir /S`: unlink first, or the delete reaches past the
+tree you meant. [`docs/WORKTREES.md`](docs/WORKTREES.md) has the full procedure. [`docs/SAFETY.md`](docs/SAFETY.md) is the whole
+safety story: the closed list, the gate, the dry run, and why a gate beats a rule written in prose.
 
 ## Lanes, and why this is not only a browser tool
 
@@ -251,13 +316,29 @@ cost accounting now in `docs/PULL.md`: the bill is turns multiplied by context -
 exists because every visual defect that sweep found lived in a state nobody designed: the loaded screen
 had a designer, the loading state and the transition did not.
 
+**1.2.0 adds the design half.** A `critique` kind whose evidence is a rectangle and a ratio: two probes
+run before any screenshot, and the design probe was verified on a fixture - nine planted defects found,
+zero of ten look-alikes reported (M29). A `canvas` kind that recreates the application's screens as
+artboards on disk, each carrying the source files and the frame count it came from, and assembles them
+into a Claude Design canvas; the pipeline ran end to end on a fixture project through the design skill's
+own helper and check. A `redesign` kind that proposes beside the captured screens, states included. No
+fleet has yet captured a real application this way; see "Known limits".
+
 ## Reference
 
 - [`docs/WALKTHROUGH.md`](docs/WALKTHROUGH.md) your first fleet in fifteen minutes, for somebody who has
   never run one
 - [`docs/PROTOCOL.md`](docs/PROTOCOL.md) run layout, brief format, finding schema, portability, shell traps
 - [`docs/PULL.md`](docs/PULL.md) the task queue, claiming, heartbeats, budgets, asking the planner
-- [`docs/MISSIONS.md`](docs/MISSIONS.md) the six kinds and the axis each splits along
+- [`docs/MISSIONS.md`](docs/MISSIONS.md) the ten kinds and the axis each splits along
+- [`docs/DESIGN.md`](docs/DESIGN.md) the design half: critique with geometry probes, the canvas on disk,
+  redesign beside it, and the loop back to code
+- [`docs/CALL.md`](docs/CALL.md) the call half: the facts with their evidence, the page a non-native speaker
+  reads aloud, and the live chat that answers beside them
+- [`docs/WORKTREES.md`](docs/WORKTREES.md) worktrees: registration, the junction measurement, and the only
+  path in this plugin that deletes one
+- [`docs/SAFETY.md`](docs/SAFETY.md) what an unattended fleet may delete, the path-depth gate, and the
+  evidence behind writing the reason beside the rule
 - [`docs/BROWSER.md`](docs/BROWSER.md) blindness, the gate, panes, viewports, round trips
 - [`docs/SWEEPS.md`](docs/SWEEPS.md) checks that catch a class of defect rather than one bug
 - [`docs/MOCKING.md`](docs/MOCKING.md) reaching states the sandbox data will not produce, and the line
@@ -280,6 +361,12 @@ had a designer, the loading state and the transition did not.
   get re-measured instead of remembered
 - [`scripts/visual-probe.js`](scripts/visual-probe.js) visual defects found by geometry, so a screenshot
   confirms rather than invents
+- [`scripts/design-probe.js`](scripts/design-probe.js) design defects found by geometry and computed
+  style: a crooked control, an uneven row, unreadable text, a target too small, plus the page's own scale
+  and its landmarks. Verified on [`scripts/fixtures/design-probe.html`](scripts/fixtures/design-probe.html)
+- [`scripts/fleet-canvas.mjs`](scripts/fleet-canvas.mjs) the canvas gate and its assembly: provenance
+  stamped and checked, artboards laid out, a static one rendered plain for measuring, the design skill's
+  helper driven to seed the page
 - [`docs/PERF.md`](docs/PERF.md) measuring speed on a machine the fleet is loading
 - [`docs/MODELS.md`](docs/MODELS.md) which model per stage, and the delegation economics
 - [`docs/PORTING.md`](docs/PORTING.md) every assumption this makes about its host, and its substitute
@@ -333,10 +420,24 @@ interpreter whose name ends in a carriage return. This repository pins `*.sh tex
 `CLAUDE_CODE_GIT_BASH_PATH` is the escape hatch. Nothing in the fleet can work around a shell the harness
 cannot find.
 
-## Known limits of 1.1.1
+## Known limits of 1.4.0
 
 Written down rather than fixed, because a tool that hides its sample size is asking to be trusted further
 than it has been tested. Full list in [`CHANGELOG.md`](CHANGELOG.md).
+
+- **No fleet has captured a real application as a canvas yet.** `fleet-canvas.mjs` ran end to end on a
+  fixture project in one session - stamp, check, layout, plain, seed, and the design skill's own check on
+  the seeded page - and the commands that plan a canvas or a redesign run are written against that, not
+  against a run. The compare stage's 2 px tolerance is a starting number, not a measured one.
+- **The design probe was verified in one browser on one fixture** (M29): nine planted defects found, zero
+  of ten look-alikes reported, one extra candidate. Its contrast reading composites ancestor backgrounds
+  and cannot see an overlapping sibling; it says `approx` when it blended a translucent layer and gives up
+  on an image. `offScale` and `ghostBoxes` are candidates by design, and a reader who files them unlooked
+  at will file noise.
+- **Publishing a canvas is the planner's manual step**, through the `design` skill's own publish rule,
+  because the runtime version pin and the capability roster move with the harness and are deliberately
+  not copied into this plugin. A canvas run ends with a link only if the planner does that step, and the
+  skill's helper is on the machine only after `/design` has run there once.
 
 - Every number in this README was measured on **one machine, by one operator, against one application**,
   over four runs in six days. Real measurements, weak sample.

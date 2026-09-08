@@ -45,7 +45,7 @@ if (!fs.existsSync(dir)) { console.error(`no transcript directory at ${dir} - pa
 const doneAt = {};
 if (fs.existsSync(runDir)) {
   for (const f of fs.readdirSync(runDir)) {
-    const m = f.match(/^(\d+)\.(done|blocked)$/);
+    const m = f.match(/^([\w-]+)\.(done|blocked)$/);
     if (m) doneAt[m[1]] = fs.statSync(path.join(runDir, f)).mtimeMs;
   }
 }
@@ -61,10 +61,17 @@ for (const name of fs.readdirSync(dir).filter((f) => f.endsWith('.jsonl'))) {
   const seed = (first && (first.content || JSON.stringify(first.message || ''))) || '';
   if (!seed.includes(run)) continue;
 
-  const m = seed.match(/worker (\d+)/) || seed.match(/brief-(\d+)\.md/);
-  const chip = m ? m[1] : '??';
+  // A chip id is whatever the prompt said it was, and since 2026-09-03 that includes `cid-03`.
+  // The run's own register is the authority when it exists: `chips/<session-id>` holds the chip, and the
+  // transcript is named after the session. The prompt is the fallback.
+  let chip = '';
+  try { chip = fs.readFileSync(path.join(runDir, 'chips', name.replace(/\.jsonl$/, '')), 'utf8').trim(); } catch { /* not registered */ }
+  const m = seed.match(/chip id is `([\w-]+)`/) || seed.match(/worker ([\w-]+)/) || seed.match(/brief-([\w-]+)\.md/);
+  if (!chip) chip = m ? m[1] : '??';
   const planner = /fleet-plan|Interview the operator/.test(seed);
-  const paneless = /do NOT need a browser pane|lane repo/i.test(seed);
+  // The lane is read from what the session did, not from what its prompt said: a paneless fix run's
+  // prompt matched neither phrase the old heuristic looked for, and four repo workers printed as pane.
+  let sawBrowser = false;
 
   const stamps = objs.filter((o) => o.timestamp).map((o) => Date.parse(o.timestamp));
   const t0 = Math.min(...stamps), t1 = Math.max(...stamps);
@@ -75,6 +82,9 @@ for (const name of fs.readdirSync(dir).filter((f) => f.endsWith('.jsonl'))) {
   // each turn carries, whether file work went through the shell or the file tools, and the calls that
   // failed for a reason that was not the command's fault.
   let ctxTotal = 0, shellCalls = 0, fileCalls = 0, shellReads = 0, editRefusals = 0, limitFails = 0;
+  // Peak context and compactions: a worker whose context reached the ceiling was summarised and restarted
+  // by the harness, and the two hundred turns before that were the most expensive in the run [M30].
+  let ctxMax = 0, compactions = 0;
   const use = new Map(); const spans = []; const turnTimes = [];
 
   for (const o of objs) {
@@ -82,6 +92,7 @@ for (const name of fs.readdirSync(dir).filter((f) => f.endsWith('.jsonl'))) {
       // An async agent returns immediately and reports its real completion as a notification, so the span
       // that matters is tool_use to notification, not tool_use to tool_result.
       const txt = JSON.stringify(o.message || o);
+      if (/being continued from a previous conversation/.test(txt)) compactions++;
       const n = txt.match(/<tool-use-id>(toolu_[A-Za-z0-9]+)<\/tool-use-id>/);
       if (n && use.has(n[1]) && use.get(n[1]).name === 'Agent') spans.push([use.get(n[1]).t, Date.parse(o.timestamp)]);
       if (o.message && Array.isArray(o.message.content)) {
@@ -107,11 +118,13 @@ for (const name of fs.readdirSync(dir).filter((f) => f.endsWith('.jsonl'))) {
     turns++;
     const u = o.message.usage || {};
     out += u.output_tokens || 0; cacheRead += u.cache_read_input_tokens || 0;
-    ctxTotal += (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0) + (u.input_tokens || 0);
+    const ctxNow = (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0) + (u.input_tokens || 0);
+    ctxTotal += ctxNow; if (ctxNow > ctxMax) ctxMax = ctxNow;
     const t = Date.parse(o.timestamp); turnTimes.push(t);
     for (const c of o.message.content || []) {
       if (c.type !== 'tool_use') continue;
       use.set(c.id, { name: c.name, t });
+      if (BROWSER.test(c.name)) sawBrowser = true;
       if (c.name === 'Bash' || c.name === 'PowerShell') shellCalls++;
       if (['Read', 'Grep', 'Glob', 'Edit', 'Write'].includes(c.name)) fileCalls++;
       const input = JSON.stringify(c.input || {});
@@ -142,7 +155,7 @@ for (const name of fs.readdirSync(dir).filter((f) => f.endsWith('.jsonl'))) {
 
   const d = doneAt[chip];
   rows.push({
-    chip, planner, lane: paneless ? 'repo' : 'pane',
+    chip, planner, lane: sawBrowser ? 'pane' : 'repo',
     lifeMin: Math.round((t1 - t0) / 60000),
     turns, outK: Math.round(out / 1000), cacheM: Math.round(cacheRead / 1e6),
     paneDrivenMin: Math.round(driven),
@@ -151,6 +164,7 @@ for (const name of fs.readdirSync(dir).filter((f) => f.endsWith('.jsonl'))) {
     afterDoneTurns: d ? turnTimes.filter((t) => t > d + 60000).length : null,
     clocks, helperCalls: helper, handClaims,
     ctxK: turns ? Math.round(ctxTotal / turns / 1000) : 0,
+    ctxMaxK: Math.round(ctxMax / 1000), compactions,
     shellCalls, fileCalls, shellReads, editRefusals, limitFails,
     gateAfterMin: firstGate === null ? null : Math.round((firstGate - t0) / 60000),
     askAfterMin: firstAsk === null ? null : Math.round((firstAsk - t0) / 60000),
@@ -167,12 +181,13 @@ if (args.includes('--json')) {
 }
 
 const col = (s, w) => String(s ?? '-').padStart(w);
-console.log('chip lane  life  turns  outK cacheM  pane  idle  afterDone(min/turns) clocks helper hand gate ask');
+console.log('chip lane  life  turns  outK cacheM  pane  idle  afterDone(min/turns) clocks helper hand gate ask  ctxK ctxMax cmp');
 for (const r of rows) {
   console.log(
     `${col(r.chip, 4)} ${r.lane.padEnd(5)}${col(r.lifeMin, 5)}${col(r.turns, 7)}${col(r.outK, 6)}${col(r.cacheM, 7)}` +
     `${col(r.paneDrivenMin, 6)}${col(r.idleMin, 6)}${col(r.afterDoneMin, 12)}${col(r.afterDoneTurns, 7)}` +
-    `${col(r.clocks, 7)}${col(r.helperCalls, 7)}${col(r.handClaims, 5)}${col(r.gateAfterMin, 5)}${col(r.askAfterMin, 4)}`);
+    `${col(r.clocks, 7)}${col(r.helperCalls, 7)}${col(r.handClaims, 5)}${col(r.gateAfterMin, 5)}${col(r.askAfterMin, 4)}` +
+    `${col(r.ctxK, 6)}${col(r.ctxMaxK, 7)}${col(r.compactions, 4)}`);
 }
 
 const sum = (k) => rows.reduce((a, b) => a + (b[k] || 0), 0);
@@ -184,6 +199,9 @@ console.log(`clocks armed ${sum('clocks')}; helper calls ${sum('helperCalls')} a
 // The bill is turns multiplied by context [M24], and the two habits that move it are visible from here.
 const avgCtx = Math.round(rows.reduce((a, r) => a + r.ctxK * r.turns, 0) / Math.max(1, sum('turns')));
 console.log(`context ${avgCtx} K per turn on average; ${sum('turns')} turns x that is what the run reads back`);
+// A worker that compacted crossed the ceiling, and each task before that added 20-30 k it never gave
+// back. The cure is delegating whole tasks once the worker holds a few, which `fleet.sh next` now asks for.
+if (sum('compactions')) console.log(`${sum('compactions')} compaction(s): those workers reached the context ceiling working tasks inline; past the first few, each task belongs in its own subagent [M30]`);
 console.log(`shell calls ${sum('shellCalls')} against ${sum('fileCalls')} file-tool calls, of which ${sum('shellReads')} read a file through the shell`);
 if (sum('editRefusals')) console.log(`  ${sum('editRefusals')} Edit calls refused for a file read through the shell - three round trips each, and avoidable [M25]`);
 // Shell calls are the ones a permission decision is made about, and a session in the classifier's slow

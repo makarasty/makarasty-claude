@@ -147,6 +147,85 @@ uncheckable answer is where a confident wrong answer hides.
 
 Pairs with the `research` skill when installed.
 
+## critique
+
+Look at running screens and report what is wrong to look at: a control off its row, a gap that does not
+repeat, text under the contrast floor, a target too small to hit, a focus state that paints nothing.
+
+Split by **screen**, one per task, pane lane. One `fleet-design-eye` spawn per task, the way a verify
+task spawns one `fleet-scenario`.
+
+Isolation: none.
+
+**The evidence is a rectangle or a ratio, never a screenshot.** Two probes run first and return candidates
+with their geometry; the screenshot is zoomed to a candidate and confirms or refutes it. A model shown a
+whole page and asked what is wrong will answer whether or not anything is, and that is the failure this
+kind is built against. Geometric findings carry `rects`, with `a` the subject and `b` the box it is
+measured against. Full rules and the severity table in [`DESIGN.md`](DESIGN.md).
+
+Demand: states named in the task and reached or reported unreached, since the loaded screen is the one
+state somebody already designed. Severity is the agent's, with the screen in front of it, and collection
+copies it. A critique finding becomes a `design` task in the fix queue, never a `fix` one.
+
+## canvas
+
+Recreate the application's screens as artboards on disk, and assemble them into one Claude Design canvas
+the operator can open, pan and edit.
+
+Split by **screen**, one artboard per task, in stages the queue enforces with `after:`: recon (pane,
+measures the screen), the primitives sheet (repo, one task), the screens (repo), an optional compare
+(pane, measures the artboard against the screen), and assemble (repo, one task). The planner publishes.
+
+Isolation: none. A task writes exactly one new file under the canvas directory and edits no source, so
+there is nothing to merge; a task that finds itself editing anything else has left its brief.
+
+**The gate is provenance.** Every artboard names the source files it was built from and, where a recon
+ran, the viewport and the frame count it was measured under; `fleet-canvas.mjs check` refuses one that
+names a file that does not exist or claims a measurement through a blind pane. An artboard recreated from
+memory of an application is the design equivalent of a blind pane.
+
+Demand: exact values from source and recon, never rounded to a grid; real copy; the artboard static, so a
+viewer retypes it in place. Planned by `/makarasty:fleet-design`; format, stages and the compare tolerance
+in [`DESIGN.md`](DESIGN.md).
+
+## redesign
+
+Propose new artboards beside the captured ones, on the same canvas.
+
+Split by **screen**. The design model owns every proposal end to end, for the reason the `design` kind
+gives. When the operator has not chosen a direction, one task sketches two to four first, on their own
+page, and the proposals are filed after the pick.
+
+Isolation: none, for the `canvas` reason.
+
+Demand: a proposal carries its loading and empty states as sibling artboards, keeps the product truth -
+content, function, what the screen lets a person do - and treats the current look as evidence and
+anti-reference. Its provenance names the captured artboard and the source read; nothing was measured and
+`check` says so. Planned by `/makarasty:fleet-redesign`. An approved proposal is the specification a
+`design` mission implements, per "Closing the loop" in [`DESIGN.md`](DESIGN.md).
+
+## call
+
+Prepare a person to hold a conversation in a language they do not speak well - a vendor's support desk,
+a partner's engineer, an interviewer - about a system they know well, and then sit in on the call.
+
+Split by **source**, the `research` axis, in two stages the queue enforces with `after:`: facts (repo,
+one task per source, each fact written with its evidence and how it is known) and the script (repo, one
+task, the design model, gated on every facts task). Then a fresh chat answers live from the same facts.
+
+Isolation: none. A facts task writes one new file; the script task writes two; nothing is shared.
+
+**The gate is the fact.** Every number in the script traces to a fact with `evidence`, `when` and one of
+four words for how it is known - measured, read, told, guess - and a guess is never spoken; it goes to
+the traps. `fleet-call.mjs check` refuses a page citing a fact no file defines, a fact with nothing
+behind it, and a digit in a line meant to be read aloud, because numbers are the words a person under
+load drops first. A number said aloud to a vendor that nobody measured is a blind pane.
+
+Demand: the facts model is Opus, because "every number about this topic" is not a clear spec and a
+weaker model finishes it early and quietly; the findings are the claims the facts refuted - the letter
+that said five templates where the source has six. Planned by `/makarasty:fleet-call`; the fact shape,
+the page, the register, the gate and the live contract in [`CALL.md`](CALL.md).
+
 ## Choosing the number of workers
 
 Count the independent slices the split axis produces, then cap it by what the machine and the operator can

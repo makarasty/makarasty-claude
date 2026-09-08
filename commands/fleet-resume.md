@@ -96,6 +96,19 @@ workers died: the survivors usually finished several tasks before the lights wen
 If the run had a `verify` or `pane` lane, say which lane each new chip is for. A pane worker whose pane is
 not open stops and asks a person, and a recovery is exactly the moment nobody is watching that chat.
 
+### 4b. Only then, sweep the worktrees of the workers that are not coming back
+
+```bash
+sh "$f" clean .fleet/<run-id>              # dry run first, always
+sh "$f" clean .fleet/<run-id> --remove
+```
+
+**After the reopening, never before it.** A reopened worker returns to its own worktree, and a clean that
+ran first would have pulled the floor out from under it. `clean` keeps any tree holding uncommitted or
+unmerged-and-unpushed work, which after a crash is exactly the tree worth keeping - a dead worker's
+half-finished slice is recoverable from its branch, and a report saying which trees were kept is more
+useful here than a tidy disk.
+
 ### 5. Re-arm the watch and say what was lost
 
 `/makarasty:fleet-wait <run-id> <count>` again, with the count you now expect - it is the surviving chips

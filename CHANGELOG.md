@@ -1,5 +1,195 @@
 # Changelog
 
+## 1.4.0 — 2026-09-08
+
+Worktrees get a lifecycle. A run that writes code left one worktree and one branch per worker on the disk
+with nothing in the plugin saying who removes them, so every agent improvised the removal - and on Windows
+improvisation looks like `rmdir /S` on screen, which is the moment an operator stops trusting the run.
+
+- **Measured first, and the obvious command turned out to be the unsafe one [M32].** A worktree carrying a
+  `node_modules` junction into the main checkout, then `git worktree remove`: **the main checkout's
+  `node_modules` was emptied, eight runs out of eight**, exit code 0 every time, with a remote and
+  without. `--force` behaves the same, and a junction one level down is followed exactly as one at the
+  top. Unlinking first left the main checkout intact. The recursive delete walks into the reparse point; it
+  does not know a link from a directory. The rule is therefore not "avoid `rmdir /S`" but **unlink every
+  reparse point before anything recursive touches the tree** - `git worktree remove`, `ExitWorktree`,
+  `rm -rf` and `rmdir /S` alike.
+- **`fleet.sh clean <run-dir>`** is the only path in the plugin that removes a worktree, and it is a dry
+  run unless given `--remove`. It acts only on worktrees the run registered, only under
+  `.claude/worktrees/`, never on the main checkout and never on a locked tree. It **keeps** any tree with
+  uncommitted changes, with commits neither in the main checkout's branch nor on the branch's upstream, or
+  on a detached HEAD; it unlinks reparse points at any depth first; it removes without `--force`; and it
+  deletes a branch only with `git branch -d`. Everything skipped is printed with its reason, and the
+  ignored files that would go with a tree are listed before it goes. There is deliberately no flag that
+  deletes a tree holding work.
+- **`fleet.sh worktree <run-dir> <chip>`** registers a code worker's tree at its first claim. Registration
+  scopes cleanup to this run: the machine runs several runs at once, and a blanket sweep of
+  `.claude/worktrees/` would take a live run's tree. A run that registered nothing is reported and left
+  alone. **`fleet.sh unlink <worktree-path>`** gives a worker the unlink as a command rather than as a
+  sentence in a document, gated by the same path rule.
+- **A path gate, because a path goes wrong at its end.** An empty variable, a `dirname` too many, a prefix
+  stripped twice: each turns a path into its own parent. `unsafe_path()` refuses anything relative, a
+  network path, one holding `..` or a `.` segment, one shallower than `min_path_segments`
+  (calibration, 4), one not inside `.claude/worktrees/` **with something after it**, and one that contains
+  the shell's own working directory. It runs at registration as well as at cleanup, so a tree that could
+  never be cleaned is caught while somebody can still move it, and `clean` prints the `git worktree move`
+  line. A worktree the gate refuses is reported as a `STRAY` and never touched. Run against a real project
+  it found eleven worktrees at the root of drive C.
+- **A review round at the top tier found a blocker and three majors in the above, all fixed and all now
+  under test.** A worktree on a detached HEAD was removed and its commits left unreachable. A detached main
+  checkout made `merge-base` compare a branch against itself, so every tree read as merged. The branch was
+  taken from the registration rather than from the worktree, so a worker that switched branches had the
+  wrong one checked. And the unlink ran before git could refuse, so a locked tree lost its links and was
+  reported as untouched. The same round found the cwd guard was **inert on Windows** - `pwd` prints
+  `/c/...` where git prints `C:/...`, so the comparison never matched - which is the plugin's own
+  failure mode, a guard that looks like protection and is not.
+- **`docs/SAFETY.md`**: the closed list of what an unattended fleet may delete, which slip each guard
+  catches, and - the part worth reading - **where the guards stop**: a worker's own exit is not gated, an
+  agent's own shell is not gated, and the measurement is one machine. It also states what the evidence for
+  writing the reason above the rule does and does not support. The ordering has a controlled ablation
+  behind it for text a model **generates** (Wei et al.; Turpin et al. on rationalising a pre-committed
+  answer) and is not established at all for a document a model reads, where the one measured effect on
+  constraint-following is that reasoning first makes it **worse**. The convention is kept and is not asked
+  to carry the safety.
+- **`docs/WORKTREES.md`** carries the procedure and the measurement; the README states the closed list. No
+  `git reset --hard`, no `git clean`, no `git checkout --` anywhere in the plugin.
+- Twenty-three self-test checks over the path gate, registration, the dry run, the work-holding guard, the
+  detached-HEAD case, stray reporting, the `unlink` command, and two real junctions - one at the top level
+  and one nested - each asserting the target survives.
+- **Not done, written down:** the junction measurement is one machine and one git version; the unlink-first
+  arm is one run per method, re-asserted by the self-test rather than by repetition; `clean` has not yet
+  run against a real multi-worker code run.
+
+## 1.3.0 — 2026-09-08
+
+A tenth kind, for the conversation rather than the code: a person who knows the system and not the
+language, on a call with a vendor, a partner or an interviewer, reading from a page the fleet wrote and
+asking a fresh chat mid-call. Same premise as the rest - a number said aloud that nobody measured is a
+blind pane - so the gate is on the facts.
+
+- **`kind: call`.** Two stages gated by `after:`: facts (repo, one task per source, Opus) and the
+  script (repo, one task, the design model). A fact is a heading with `evidence`, `when` and one of
+  four words for how it is known - measured, read, told, guess - and a guess is never spoken: it goes to
+  the traps. The findings of a call run are the claims the facts refuted, which is what the previous
+  letter or the previous call got wrong. `docs/CALL.md` holds the fact shape, the page, the register
+  and the live contract.
+- **`scripts/fleet-call.mjs check`** refuses a page citing a fact no file defines, a fact with nothing
+  behind it, a page that cites nothing, a missing `CALL.md`, and a digit inside a line meant to be read
+  aloud; `--stale <days>` lists the measured facts older than the window, for the footer's "re-measure
+  before the call". Twelve self-test checks.
+- **`templates/call-script.html`**: the Contoso page's styles and fixed sections, so the script task
+  fills a page rather than designing one. What the interpreting research added to the page: a numbers
+  table, because numbers are the words dropped first under load (Desmet et al., 56.5 to 86.5 percent
+  with numbers on screen), and the five repair lines air traffic control keeps - say again, confirm,
+  correction, standby, unable - so a lost speaker has something to say.
+- **`/makarasty:fleet-call <who and what about>`**: `fleet-plan` with the kind and the stages fixed,
+  one interview round (counterpart, the two languages, the source list, the answers to bring home, the
+  reserved topics, where the page goes), repo chips only, and the page in the operator's chat when the
+  run lands. **`/makarasty:fleet-call live <run-id>`** in a fresh chat is the call itself: every reply
+  is two blocks - the read language with a source tag, the speak language below, one sentence per line,
+  numbers as words - and a question the facts do not answer gets the dig notice in both languages
+  first, then the dig in the same turn, then the answer with its tag. `unslop` on throughout; no
+  subagent, because the speaker is on a call.
+- **`fleet.sh landed` gates on `backlog.jsonl` existing, not on it being non-empty**, which is what
+  `fleet-merge.mjs` documented all along: a merge that found nothing writes an empty file, and a call
+  run whose facts refuted nothing, or a canvas run without a compare stage, could not land before.
+- A sixth eval case, `script-speaks-only-facts`, scores a script worker that speaks a number no fact
+  carries or leaves a guess out of the traps. Unrun, like the other five.
+- **`makarasty-tools` 1.2.0: `/makarasty-tools:notify`**, one message to the phone when a chat you walked
+  away from ends its turn. Arming is a marker per session id, so a chat nobody armed never sends; the
+  Stop hook sends once, the tail of the last reply under the verdict, and disarms. A last reply ending in
+  a question reads "waiting for your answer"; `StopFailure` reads "stopped on an error" and keeps the
+  marker; a permission prompt reads "needs you", once per five minutes. A chat reopened after a crash
+  gets one line in context from the `SessionStart` hook - check whether the work is already done before
+  doing anything - and a finish written to disk but never delivered is resent on reopening with no model
+  turn spent, or the moment the wizard saves a channel. Telegram, Discord, ntfy and a plain webhook, read from
+  `~/.claude/makarasty/notify.json`; Discord is POST only, so a GET webhook does not exist, and it is
+  sent with `@everyone` by default because a webhook message without a mention does not buzz a phone.
+  **`notify.mjs setup`** is a wizard in the terminal, not a browser tab: which channel, the steps for
+  that one, the single value it needs, a test message that must arrive before anything is saved, the
+  bot's name looked up from the token so the person knows what to open and press Start in, a topic
+  generated for ntfy. The token goes keyboard to file and never through a chat. **The hook commands in
+  `plugin.json` start node only when a marker file exists at all** - one `ls` per event otherwise, in
+  every session - and a marker older than seven days is pruned at the next arm, so a chat that died
+  unreopened cannot hold that guard open. Sends retry twice on a network failure and not on a 4xx.
+  `fleet.sh landed` posts a run's headline through the same script, once, the first time it writes
+  `FINISHED`; the `FLEET.md` webhook line is retired in favour of that file.
+  `tools/hooks/notify-selftest.sh`: 52 checks over the hook, the guard and the wizard, with a dry-run
+  sink and no network. Measured on the development machine: a node start is 32 MB and about 50 ms, the
+  hook with a marker peaks at 39 MB for that long, and the guard alone is about a millisecond. Not measured yet: whether the desktop app's queued-message path makes `--next`
+  unnecessary, and the wizard against a real Telegram bot.
+- **Not done, written down:** no fleet has prepared a real call yet; the Contoso page this is modelled
+  on was written by hand in one chat.
+
+## 1.2.0 — 2026-09-03
+
+The design half: three mission kinds, one agent, two scripts, one document and two planner commands, all
+built on the same premise as the rest - a screenshot is not evidence, and an artboard drawn from memory is
+a blind pane.
+
+- **`kind: critique`.** One screen per task, pane lane, one `fleet-design-eye` spawn. Two probes run
+  before any picture: `visual-probe.js` for collisions and clipping, and the new `design-probe.js` for
+  siblings off their row, gaps that do not repeat, controls of two heights on one line, values outside the
+  page's own scale, text under 4.5:1, targets under 24 px, images at the wrong ratio, boxes drawn around
+  nothing, lines over 90 characters - plus the page's scale and its landmarks. The screenshot is zoomed to
+  a candidate and confirms or refutes it. Verified on `scripts/fixtures/design-probe.html`: nine planted
+  defects found, zero of ten look-alikes reported, one extra candidate [M29]. Geometric findings carry
+  `rects` (`a` the subject, `b` the box it is measured against), and `fixqueue` routes a finding with
+  `rects` or a `probe` field to a `kind: design` task, because the design model owns the screen it repairs.
+- **`kind: canvas`.** The application's screens as `<Screen>.dc.html` artboards under `design/canvas/`,
+  assembled into the Claude Design canvas the harness's `design` skill carries. Stages gated by `after:`:
+  recon (a pane measures the screen with the design probe), the primitives sheet, the screens (repo, from
+  source and recon), an optional compare (a pane measures the artboard's plain render against the screen),
+  assemble. `scripts/fleet-canvas.mjs` is the gate and the assembly: `stamp` writes the provenance block,
+  `check` refuses an artboard that names a source file that does not exist or claims a measurement through
+  a blind pane, `layout` writes `canvas.json` with the editor's gaps and a cover, keeping every position an
+  operator moved, `plain` renders a static artboard standalone, `seed` drives the design skill's helper and
+  its check. Ran end to end on a fixture project. Isolation is `none`: one new file per task, no source
+  edits.
+- **`kind: redesign`.** Proposals as `<Screen>.Proposed.dc.html` on a `Proposed` page beside the captured
+  screen, loading and empty states as sibling artboards, the design model end to end, and two to four
+  direction sketches on their own page first when the operator has not chosen one. An approved proposal is
+  the specification a `design` mission implements; `docs/DESIGN.md` closes that loop.
+- **`/makarasty:fleet-design` and `/makarasty:fleet-redesign`**: `fleet-plan` with the kind, the axis and
+  the stages fixed. Both end with the planner publishing the seeded page through the `design` skill's own
+  publish step, because the runtime pin and the capability rule move with the harness and are not copied
+  here.
+- **`FLEET.md` gains three optional lines**: `Canvas:`, `Canvas viewport:`, `Design tokens:`. The token
+  file feeds `window.__fleetScale`, and off-scale becomes off-token.
+- **Measured while building it, and guarded:** Git Bash on Windows rewrites a `/cases` argument into a
+  path under its own install, so `stamp` refuses a route that does not start with `/` and names
+  `MSYS_NO_PATHCONV=1`. The probe's first draft counted a 13 px padding once per side and voted it onto
+  the page's scale; it counts once per element now.
+- Self-test: twenty-four checks over the probes, the canvas gate, the layout, the plain render and the
+  seed. The seed check drives the real helper when the design skill has been extracted on the machine and
+  otherwise asserts the refusal names the reason. A fifth eval case, `artboard-carries-provenance`, scores a worker
+  that claims a measurement it never made.
+- **Not done, written down:** no fleet has captured a real application yet; the compare tolerance is a
+  starting number; the probe was verified in one browser; publishing is the planner's manual step.
+- **Docs stop selling `caveman` as a saving.** `fleet-run`, `docs/MODELS.md` and `docs/PULL.md` told a
+  worker to switch it on from the first message; M24, measured in the same release, puts chat prose at 5%
+  of what a worker emits and output at 0.3% of what moves. The three paragraphs now say what the plugin
+  is worth, and name `ponytail` as the plugin that works on the layer a writing kind actually spends on.
+- **Two ledger entries from the 2026-09-04 fix run, added 2026-09-05, and the rule each produced.** [M30]
+  Every one of four paneless workers grew its context by 20-30 k per task, stood at 970-992 k around its
+  thirtieth claim and was compacted by the harness: 2,414 M cached reads, 471 k per turn, the dearest run
+  in the ledger, and zero subagent spawns over 184 claims with `fanout: 3` in every task's reach.
+  `fleet.sh next` now prints `DELEGATE` once a chip has finished `delegate_past_tasks` tasks (calibration,
+  3), and `fleet-retro.mjs` prints context per turn, peak context and compactions per worker, tells a pane
+  worker from a repo one by whether it ever called a browser tool rather than by a phrase in its prompt,
+  and reads a chip id that is not a number. [M31] The shell reads that keep refusing `Edit` come from the
+  harness's own auto-mode instruction to use `cat` and `sed`; the rule is now "edit with what you read
+  with", not "Read first".
+- **A stopped run is still collected.** The 2026-09-04 run ended on the operator's word, was merged and
+  pushed by hand, and never saw `merge` or `landed`: 180 findings in four files and no backlog, for the
+  third time in this ledger. `PULL.md` says how to stop a run and that collection still follows.
+- **`makarasty-tools` 1.1.0: `/makarasty-tools:say`**, the spoken register: lines a person who is not a
+  native speaker reads aloud to a vendor or its support. One sentence per line, numbers as words, "what
+  we do, what we get, the question" in place of a proposal, and the exit "maybe we do it wrong".
+  Distilled from the Contoso call script of 2026-08-21 and the two corrections that produced it. `unslop`
+  gains one cut, the word the reader would have to look up, and points at `say` for the spoken case.
+
+
 ## 1.1.1 — 2026-09-02
 
 An adversarial read of 1.1.0 by a second model, verified against the tree and the two crashed runs.

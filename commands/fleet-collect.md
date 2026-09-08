@@ -66,6 +66,10 @@ mechanism marked as a lead rather than a diagnosis, the lane it needs, and the t
 A second fleet claims that queue with `/makarasty:fleet-run .fleet/fix-<run-id>/`, or one chat works it
 alone. Either way the input is a queue, not a document somebody has to re-read.
 
+A finding that carries `rects` or a `probe` field - the shape a critique run files - becomes a `kind: design`
+task rather than `kind: fix`, because the design model owns the screen it repairs and a spacing token
+hand-patched by a cheaper model is how the next critique finds the same screen wrong somewhere new.
+
 ## Read only what is finished
 
 A worker with findings but no `.done` and no `.blocked` is still running. List it as outstanding and do
@@ -107,6 +111,12 @@ that silence is ambiguous between finished and dead.
 It writes `FINISHED` into the run directory when it passes. That file, not anybody's memory of a
 notification, is the durable answer to "did this run end".
 
+The same call sends the headline to the operator's phone when the `makarasty-tools` plugin is installed and
+`~/.claude/makarasty/notify.json` names a channel (Telegram, Discord, ntfy, a webhook): run id and counts,
+once, the first time `FINISHED` is written, and never findings text. Findings can carry data from the
+application under test, and a webhook is egress. There is nothing for you to do for it; it is mentioned so
+you do not send a second one by hand.
+
 Then, in this order. The order is the point: a notification is an event and events get missed, so
 everything durable is already on disk before one is sent.
 
@@ -124,7 +134,8 @@ everything durable is already on disk before one is sent.
    32 blockers, worker 05 blind, backlog at .fleet/<id>/backlog.md`. It reaches the operator's phone when
    Remote Control is connected, and it is skipped automatically if they are sitting at the terminal, which
    is the behaviour you want. **Exactly one per run, and it means finished** - that is the whole operator
-   contract, and it only holds if nothing else in the run ever pushes.
+   contract, and it only holds if nothing else in the run ever pushes. The phone channels got the same
+   headline from `landed` a moment ago; this one is for the host's own push.
 3. **`TaskStop`** the run's `fleet-wait` monitor, and every other background task this session armed.
    Measured 2026-08-27: a watch left armed after its run finished kept polling for five hours and forty two
    minutes, and was noticed only when the operator asked what the six hour task in their task list was.
@@ -134,15 +145,29 @@ everything durable is already on disk before one is sent.
 4. **Rename this session** to `fleet <run-id> - FINISHED <n>f/<b>b`, if the host offers a session-title
    tool (`mcp__ccd_session_mgmt__set_session_title` here, `self`). The sidebar is the only surface visible
    from a chat the operator is not sitting in, and by now every worker has renamed itself the same way.
+5. **Clean up the run's worktrees**, last, once `FINISHED` is on disk and the findings are merged:
+
+   ```bash
+   sh "$f" clean .fleet/<run-id>              # what it would remove, and what it will keep and why
+   sh "$f" clean .fleet/<run-id> --remove
+   ```
+
+   A run that wrote code leaves one worktree and one branch per code worker, and they are dead weight once
+   the work is pushed. `clean` acts only on the worktrees this run registered, only under
+   `.claude/worktrees/`, and it **keeps** any tree with uncommitted changes or commits neither merged nor
+   pushed - print those lines rather than working around them, because each one is somebody's unpushed
+   work. It unlinks junctions before removing anything, which is what stops the delete reaching the main
+   checkout [M32], and it deletes a branch only with `git branch -d`. Never clean before the run has
+   landed: a worktree removed early takes findings that were never filed with it.
 
 Exactly two other things are worth waking someone for, and both belong to the planner rather than here: a
 fleet still stalled after a revive attempt failed, and nothing else. A worker asking for its pane must
 never page at night, because a sleeping operator cannot open a pane; that is what the paneless lane and the
 panes-open-before-bed rule in `fleet-plan` are for.
 
-**If the project's `FLEET.md` names a webhook**, post the same headline there as well: run id and counts.
-Never findings text. A webhook is egress, the findings can carry data from the application under test, and
-the URL belongs outside the repository.
+**A channel URL belongs outside the repository.** `landed` already posted the headline to every channel in
+`~/.claude/makarasty/notify.json`; a `FLEET.md` that names a webhook is the old shape, and the operator
+should move that URL into the file the notifier reads (`/makarasty-tools:notify test` proves it).
 
 ## Enforce the evidence contract
 
