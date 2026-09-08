@@ -1,0 +1,443 @@
+<title>Call script</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=Literata:ital,opsz,wght@0,7..72,400;0,7..72,500;1,7..72,400&family=JetBrains+Mono:wght@400;500&display=swap">
+
+<style>
+  :root{
+    --bg:#EFF1EE; --surface:#FFFFFF; --surface-2:#F6F7F3; --sunken:#E7EAE5;
+    --ink:#14181B; --ink-2:#3B454B; --muted:#6C777D; --line:#D8DDD6; --line-strong:#BEC6BC;
+    --accent:#1B6B63; --accent-ink:#0F4A44; --accent-soft:#DCEAE6;
+    --hot:#B03A22; --hot-soft:#F6E2DC;
+    --warm:#9C661B; --warm-soft:#F5E9D6;
+    --cool:#2E6A8D; --cool-soft:#DEE9F1;
+    --calm:#57666E; --calm-soft:#E4E8E7;
+    --shadow:0 1px 2px rgba(20,24,27,.05), 0 8px 24px -18px rgba(20,24,27,.35);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#0F1213; --surface:#161A1C; --surface-2:#1C2124; --sunken:#121617;
+      --ink:#E8EDE9; --ink-2:#C3CBC9; --muted:#8B9794; --line:#293033; --line-strong:#3A4347;
+      --accent:#5CBDAC; --accent-ink:#8FD6C8; --accent-soft:#12312D;
+      --hot:#E07C61; --hot-soft:#331C15;
+      --warm:#D7A24C; --warm-soft:#2E2413;
+      --cool:#7CACCC; --cool-soft:#16262F;
+      --calm:#93A1A7; --calm-soft:#1D2426;
+      --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 30px -20px rgba(0,0,0,.8);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0F1213; --surface:#161A1C; --surface-2:#1C2124; --sunken:#121617;
+    --ink:#E8EDE9; --ink-2:#C3CBC9; --muted:#8B9794; --line:#293033; --line-strong:#3A4347;
+    --accent:#5CBDAC; --accent-ink:#8FD6C8; --accent-soft:#12312D;
+    --hot:#E07C61; --hot-soft:#331C15;
+    --warm:#D7A24C; --warm-soft:#2E2413;
+    --cool:#7CACCC; --cool-soft:#16262F;
+    --calm:#93A1A7; --calm-soft:#1D2426;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 30px -20px rgba(0,0,0,.8);
+  }
+
+  *{box-sizing:border-box}
+  body{
+    background:var(--bg); color:var(--ink);
+    font-family:"Literata", Georgia, serif; font-size:17px; line-height:1.62;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1000px; margin:0 auto; padding:0 20px 96px}
+  h1,h2,h3,h4,.ui{font-family:"Golos Text", "Segoe UI", system-ui, sans-serif}
+  code,kbd,.mono{font-family:"JetBrains Mono", ui-monospace, Menlo, Consolas, monospace}
+  a{color:var(--accent-ink)}
+  :focus-visible{outline:2px solid var(--accent); outline-offset:3px; border-radius:3px}
+
+  .masthead{padding:56px 0 28px; border-bottom:1px solid var(--line)}
+  .eyebrow{
+    font-family:"Golos Text",sans-serif; font-size:12px; font-weight:600; letter-spacing:.14em;
+    text-transform:uppercase; color:var(--muted); display:flex; gap:10px; flex-wrap:wrap; align-items:center;
+  }
+  .eyebrow span.dot{width:4px;height:4px;border-radius:50%;background:var(--line-strong);display:inline-block}
+  h1{
+    font-size:clamp(34px, 5.4vw, 54px); line-height:1.04; font-weight:700; letter-spacing:-.02em;
+    margin:14px 0 12px; text-wrap:balance;
+  }
+  .standfirst{font-size:19px; color:var(--ink-2); max-width:62ch; margin:0}
+  .stats{display:flex; flex-wrap:wrap; gap:0; margin-top:26px; border:1px solid var(--line); border-radius:10px; overflow:hidden; background:var(--surface)}
+  .stat{flex:1 1 150px; padding:12px 16px; border-right:1px solid var(--line)}
+  .stat:last-child{border-right:0}
+  .stat b{display:block; font-family:"Golos Text",sans-serif; font-size:21px; font-weight:700; font-variant-numeric:tabular-nums}
+  .stat span{font-family:"Golos Text",sans-serif; font-size:11.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted)}
+
+  .rail{
+    position:sticky; top:0; z-index:20; background:color-mix(in srgb, var(--bg) 92%, transparent);
+    backdrop-filter:blur(8px); border-bottom:1px solid var(--line);
+  }
+  .rail-inner{max-width:1000px; margin:0 auto; padding:9px 20px; display:flex; gap:8px; overflow-x:auto}
+  .rail a{
+    font-family:"Golos Text",sans-serif; font-size:12.5px; font-weight:600; letter-spacing:.02em;
+    text-decoration:none; color:var(--ink-2); white-space:nowrap;
+    padding:5px 11px; border-radius:999px; border:1px solid var(--line); background:var(--surface);
+  }
+  .rail a:hover{border-color:var(--line-strong); color:var(--ink)}
+  .rail a .n{color:var(--muted); font-variant-numeric:tabular-nums; margin-right:6px}
+
+  section{margin-top:48px}
+  h2{
+    font-size:13px; font-weight:700; letter-spacing:.16em; text-transform:uppercase;
+    color:var(--muted); margin:0 0 6px;
+  }
+  .h2-title{font-family:"Golos Text",sans-serif; font-size:clamp(24px,3.2vw,32px); font-weight:700; letter-spacing:-.015em; margin:0 0 8px; line-height:1.15}
+  .h2-note{color:var(--ink-2); max-width:66ch; margin:0 0 22px}
+
+  .panel{background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:22px 24px; box-shadow:var(--shadow)}
+  .panel + .panel{margin-top:14px}
+  .panel h3{font-size:18px; font-weight:600; margin:0 0 10px; letter-spacing:-.01em}
+  .panel p{margin:0 0 12px}
+  .panel p:last-child{margin-bottom:0}
+
+  ul,ol{margin:0 0 12px; padding-left:20px}
+  li{margin:0 0 7px}
+  li:last-child{margin-bottom:0}
+
+  .rules{display:grid; gap:12px; grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
+  .rule{background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:16px 18px}
+  .rule h4{font-size:15px; margin:0 0 6px; font-weight:600}
+  .rule p{margin:0 0 8px; font-size:15.5px; color:var(--ink-2)}
+  .rule p:last-child{margin-bottom:0}
+  .rule .tag{
+    font-family:"Golos Text",sans-serif; font-size:11px; font-weight:700; letter-spacing:.1em; text-transform:uppercase;
+    color:var(--accent-ink); display:block; margin-bottom:8px;
+  }
+
+  .block-head{display:flex; align-items:baseline; gap:14px; flex-wrap:wrap; margin:0 0 4px}
+  .tempo{
+    font-family:"Golos Text",sans-serif; font-size:11.5px; font-weight:700; letter-spacing:.12em; text-transform:uppercase;
+    padding:4px 10px; border-radius:999px;
+  }
+  .t-hot{background:var(--hot-soft); color:var(--hot)}
+  .t-warm{background:var(--warm-soft); color:var(--warm)}
+  .t-cool{background:var(--cool-soft); color:var(--cool)}
+  .t-calm{background:var(--calm-soft); color:var(--calm)}
+
+  .q{
+    background:var(--surface); border:1px solid var(--line); border-radius:12px;
+    margin-top:16px; overflow:hidden; box-shadow:var(--shadow); position:relative;
+  }
+  .q::before{content:""; position:absolute; left:0; top:0; bottom:0; width:4px}
+  .q.hot::before{background:var(--hot)}
+  .q.warm::before{background:var(--warm)}
+  .q.cool::before{background:var(--cool)}
+  .q.calm::before{background:var(--calm)}
+  .q-head{display:flex; gap:16px; align-items:flex-start; padding:20px 24px 12px 26px}
+  .q-num{
+    font-family:"Golos Text",sans-serif; font-weight:700; font-size:15px; font-variant-numeric:tabular-nums;
+    color:var(--muted); padding-top:3px; min-width:22px;
+  }
+  .q-head h3{font-family:"Golos Text",sans-serif; font-size:21px; font-weight:700; letter-spacing:-.015em; margin:0 0 4px; line-height:1.24}
+  .q-head .why{font-size:14.5px; color:var(--muted); margin:0; font-family:"Golos Text",sans-serif}
+  .q-body{padding:0 24px 22px 26px; display:flex; flex-direction:column; gap:16px}
+  .lead{font-size:17.5px; margin:0; color:var(--ink)}
+  .expand{margin:0; color:var(--ink-2)}
+
+  .say{
+    background:var(--accent-soft); border-left:3px solid var(--accent); border-radius:0 10px 10px 0;
+    padding:16px 20px;
+  }
+  .say .lbl{
+    font-family:"Golos Text",sans-serif; font-size:11px; font-weight:700; letter-spacing:.14em; text-transform:uppercase;
+    color:var(--accent-ink); display:block; margin-bottom:10px;
+  }
+  .say p{margin:0 0 7px; font-size:18.5px; line-height:1.5; color:var(--ink)}
+  .say p:last-child{margin-bottom:0}
+  .say .stage{
+    display:block; font-family:"Golos Text",sans-serif; font-size:12px; font-weight:700;
+    letter-spacing:.1em; text-transform:uppercase; color:var(--accent-ink);
+    margin:16px 0 7px; padding-top:12px; border-top:1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  }
+  .say .stage:first-of-type{margin-top:0; padding-top:0; border-top:0}
+
+  .cols{display:grid; gap:14px; grid-template-columns:repeat(auto-fit,minmax(250px,1fr))}
+  .box{background:var(--surface-2); border:1px solid var(--line); border-radius:10px; padding:14px 16px}
+  .box h4{
+    font-family:"Golos Text",sans-serif; font-size:11px; font-weight:700; letter-spacing:.12em; text-transform:uppercase;
+    color:var(--muted); margin:0 0 8px;
+  }
+  .box p, .box li{font-size:15.5px; color:var(--ink-2); margin:0 0 8px}
+  .box p:last-child, .box li:last-child{margin-bottom:0}
+  .box .en{color:var(--ink)}
+
+  .facts{
+    background:var(--sunken); border:1px solid var(--line); border-radius:10px;
+    padding:14px 16px; font-family:"JetBrains Mono", monospace; font-size:13px; line-height:1.75;
+    color:var(--ink-2); overflow-x:auto; white-space:pre; font-variant-numeric:tabular-nums;
+  }
+  .warnbox{
+    border:1px solid var(--hot); background:var(--hot-soft); border-radius:10px; padding:14px 16px;
+  }
+  .warnbox h4{
+    font-family:"Golos Text",sans-serif; font-size:11px; font-weight:700; letter-spacing:.12em;
+    text-transform:uppercase; color:var(--hot); margin:0 0 8px;
+  }
+  .warnbox p, .warnbox li{font-size:15.5px; color:var(--ink); margin:0 0 8px}
+  .warnbox p:last-child, .warnbox li:last-child{margin-bottom:0}
+
+  code{
+    background:var(--sunken); border:1px solid var(--line); border-radius:5px;
+    padding:1px 5px; font-size:.88em;
+  }
+
+  .tablewrap{overflow-x:auto; border:1px solid var(--line); border-radius:10px; background:var(--surface)}
+  table{border-collapse:collapse; width:100%; min-width:520px}
+  th,td{text-align:left; padding:11px 14px; border-bottom:1px solid var(--line); font-size:15px; vertical-align:top}
+  th{
+    font-family:"Golos Text",sans-serif; font-size:11.5px; font-weight:700; letter-spacing:.1em;
+    text-transform:uppercase; color:var(--muted); background:var(--surface-2);
+  }
+  tr:last-child td{border-bottom:0}
+  td.mono{font-family:"JetBrains Mono",monospace; font-size:13px; font-variant-numeric:tabular-nums}
+  td.say-cell{font-size:16px}
+
+  footer{margin-top:56px; padding-top:20px; border-top:1px solid var(--line); color:var(--muted); font-size:14px}
+
+  @media (max-width:640px){
+    body{font-size:16px}
+    .q-head, .q-body{padding-left:20px; padding-right:18px}
+    .say p{font-size:17.5px}
+  }
+  @media print{
+    .rail{display:none}
+    .q,.panel,.rule{break-inside:avoid; box-shadow:none}
+  }
+</style>
+
+<!--
+  templates/call-script.html - the page a call run's script task fills. The styles above are the Contoso
+  script's of 2026-08-21, which the operator judged easy to read at the table; keep them. Fill the body
+  below in the run's READ language (labels, gists, traps) with the SPEAK language only inside the green
+  .say blocks, the .en follow-ups and the .say-cell column - those are the lines a person reads aloud,
+  and the gate (scripts/fleet-call.mjs check) refuses a digit in any of them. Every <article class="q">
+  and every defense row cites the facts it was written from in data-facts. Section order and ids stay:
+  the rail links to them. Delete this comment when the page is written.
+-->
+
+<div class="rail">
+  <div class="rail-inner ui">
+    <a href="#how"><span class="n">00</span>How to run it</a>
+    <a href="#numbers"><span class="n">00</span>Numbers aloud</a>
+    <a href="#open"><span class="n">01</span>Opening</a>
+    <a href="#block1"><span class="n">1–N</span>Hot</a>
+    <a href="#block2"><span class="n">N–M</span>Warm</a>
+    <a href="#defense">If they ask us</a>
+    <a href="#close">Closing</a>
+    <a href="#traps">Traps</a>
+    <a href="#log">Answer log</a>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <p class="eyebrow">Company <span class="dot"></span> topic <span class="dot"></span> who is on the line <span class="dot"></span> date</p>
+    <h1>Call script: counterpart</h1>
+    <p class="standfirst">N questions in speaking order. Each one has the same shape: we do this, we get this, how should it work. We propose nothing; we ask how it is meant to work. One sentence per line, numbers as words, a pause after every line.</p>
+    <div class="stats">
+      <div class="stat"><b>N</b><span>questions</span></div>
+      <div class="stat"><b>3 steps</b><span>we do / we get / the question</span></div>
+      <div class="stat"><b>window</b><span>facts measured over</span></div>
+      <div class="stat"><b>K</b><span>answers to bring home</span></div>
+    </div>
+  </header>
+
+  <section id="how">
+    <h2>00 · How to run it</h2>
+    <p class="h2-title">The rules, and the five lines for when you are lost</p>
+    <p class="h2-note">Who is on the line and what they can do. What they cannot do, so no question asks them to.</p>
+    <div class="rules">
+      <div class="rule"><span class="tag">Rule 1</span><h4>We ask, we do not propose</h4><p>We do this, we get this, please explain why and how it should work.</p></div>
+      <div class="rule"><span class="tag">Rule 2</span><h4>Leave them the exit</h4><p>End a hard question with <em>“Maybe we send it wrong, or read the wrong field. Please tell me.”</em></p></div>
+      <div class="rule"><span class="tag">Rule 3</span><h4>One line, then a pause</h4><p>Each line in a green block is one sentence. Read it, stop, breathe.</p></div>
+      <div class="rule"><span class="tag">Rule 4</span><h4>Ask, then be quiet</h4><p>After the question line, the next line is theirs.</p></div>
+      <div class="rule"><span class="tag">Rule 5</span><h4>Every answer in writing</h4><p><em>“Can you send that to me in writing?”</em></p></div>
+      <div class="rule"><span class="tag">Rule 6</span><h4>Argue only with their own numbers</h4><p>A request number, a ticket, a field name from their document.</p></div>
+      <div class="rule"><span class="tag">Rule 7</span><h4>Money stays off</h4><p>They raise it: listen, write it down, name no figure of ours.</p></div>
+    </div>
+    <div class="panel" style="margin-top:14px">
+      <h3>When you are lost: five lines that always work</h3>
+      <div class="say">
+        <span class="lbl">Say again</span>
+        <p>“Sorry, can you say that again, a bit slower?”</p>
+        <span class="stage">Confirm</span>
+        <p>“Let me check I understood. You said the code is in the second answer. Is that right?”</p>
+        <span class="stage">Correction</span>
+        <p>“Correction. The right number is forty three, not forty two.”</p>
+        <span class="stage">Standby</span>
+        <p>“One moment, I am checking.”</p>
+        <span class="stage">Unable</span>
+        <p>“I cannot answer that now. I will write to you today.”</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="numbers">
+    <h2>00 · Numbers</h2>
+    <p class="h2-title">How to say every number on this page</p>
+    <p class="h2-note">In the green blocks the numbers are already words. This table is for a number you need that is not in the text.</p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th style="width:28%">What it is</th><th style="width:26%">How it looks</th><th>How to say it</th></tr></thead>
+        <tbody>
+          <tr><td>A large count</td><td class="mono">797</td><td class="say-cell">“about eight hundred”</td></tr>
+          <tr><td>A share</td><td class="mono">35 of 109</td><td class="say-cell">“about one in three”</td></tr>
+          <tr><td>A request number</td><td class="mono">273143568</td><td class="say-cell">“two seven three — one four three — five six eight”</td></tr>
+          <tr><td>A code</td><td class="mono">00112</td><td class="say-cell">“zero zero one one two”</td></tr>
+          <tr><td>A date</td><td class="mono">08/01/2026</td><td class="say-cell">“August first”</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="open">
+    <h2>01 · Opening</h2>
+    <p class="h2-title">The first forty seconds</p>
+    <p class="h2-note">Two jobs: learn who is on the line, and set the frame - nothing is broken, we want to know how to do it right.</p>
+    <div class="panel" data-facts="">
+      <h3>Who is on the line</h3>
+      <div class="say">
+        <span class="lbl">Say</span>
+        <p>“Before we start, one question.”</p>
+        <p>“Who is on the call today?”</p>
+      </div>
+    </div>
+    <div class="panel" data-facts="">
+      <h3>The frame</h3>
+      <div class="say">
+        <span class="lbl">Say</span>
+        <p>“Some context first, so nobody has to guess.”</p>
+        <p>“Nothing is broken. I want to show you what we send, what we get back, and ask how we should handle it.”</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="block1">
+    <div class="block-head">
+      <span class="tempo t-hot">Block 1 · hot</span>
+      <h2 style="margin:0">Questions 1–N</h2>
+    </div>
+    <p class="h2-title">What stops work right now</p>
+    <p class="h2-note">Reached only this far: the call still counted.</p>
+
+    <!-- one article per question; tempo class hot | warm | cool | calm; data-facts names the facts it cites -->
+    <article class="q hot" id="q1" data-facts="F02-1">
+      <div class="q-head">
+        <span class="q-num ui">01</span>
+        <div>
+          <h3>The question, as a heading in the read language</h3>
+          <p class="why">Why it is asked, in one line.</p>
+        </div>
+      </div>
+      <div class="q-body">
+        <p class="lead">The gist in the read language: what we do, what comes back, what we do not know.</p>
+        <p class="expand">The second paragraph when the first needs it. What we do about it today, and why that is not an answer.</p>
+        <div class="facts">we send:      what we send, exactly
+we get:       the field and the value, exactly
+measured:     35 of 109 · window 2026-07-24 … 08-12 · F02-1
+do not say:   the figure that was never measured</div>
+        <div class="say">
+          <span class="lbl">Say</span>
+          <span class="stage">1 · What we do</span>
+          <p>“My first question is the most important one for us.”</p>
+          <p>“We send the second check to Northwind with our organization number. The same number we send to every other carrier.”</p>
+          <span class="stage">2 · What we get</span>
+          <p>“About one Northwind check in three comes back with error forty three.”</p>
+          <p>“No other carrier gives us this error. Not once.”</p>
+          <span class="stage">3 · The question</span>
+          <p>“What does that error mean in this case?”</p>
+          <p>“Is our number wrong, or do we have to send it in a different way for them?”</p>
+          <p>“Maybe we send it wrong. Please tell me.”</p>
+        </div>
+        <div class="cols">
+          <div class="box">
+            <h4>If the answer is vague</h4>
+            <ul>
+              <li class="en">“What do your other customers do here? There must be a normal way.”</li>
+              <li class="en">“Can you look at one of these on your side? I will give you the request number.”</li>
+            </ul>
+          </div>
+          <div class="box">
+            <h4>How I will know the answer is good</h4>
+            <p>What in our own data confirms or refutes what they say, so the speaker recognises a good answer when they hear one.</p>
+          </div>
+        </div>
+      </div>
+    </article>
+  </section>
+
+  <section id="defense">
+    <h2>If they ask us</h2>
+    <p class="h2-title">Short answers to their questions</p>
+    <p class="h2-note">Each one closes the topic and returns to our list. An interview is mostly this table.</p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th style="width:26%">They ask</th><th style="width:30%">The gist</th><th>Say</th></tr></thead>
+        <tbody>
+          <tr data-facts="F02-1">
+            <td>“What is your volume?”</td>
+            <td>About eight hundred checks a month, one run plus manual ones.</td>
+            <td class="say-cell">“About eight hundred checks a month. One monthly run, plus manual checks.”</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="close">
+    <h2>Closing</h2>
+    <p class="h2-title">The answers without which the call did not happen</p>
+    <div class="panel">
+      <ol>
+        <li>The first answer to bring home.</li>
+        <li>The second.</li>
+      </ol>
+    </div>
+    <div class="panel">
+      <h3>How to end</h3>
+      <div class="say">
+        <span class="lbl">Say</span>
+        <p>“Let me read back what I wrote down, so we agree on it.”</p>
+        <p>“I will send this list in writing today, with the request numbers for every point.”</p>
+        <p>“Can you open a ticket for this list before we hang up, and give me the number?”</p>
+        <p>“Who should be on that email?”</p>
+        <p>“And when can I expect the written answers?”</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="traps">
+    <h2>Traps</h2>
+    <p class="h2-title">Where it is easy to say the wrong thing</p>
+    <p class="h2-note">Every guess in the facts, and every claim of ours the facts refuted. In the read language, with the reason.</p>
+    <div class="rules">
+      <div class="rule" data-facts="F02-2">
+        <span class="tag">Do not claim</span>
+        <h4>“The retry helps”</h4>
+        <p>Nobody measured it. Ask instead: “When we get this, should we try again later?”</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="log">
+    <h2>Answer log</h2>
+    <p class="h2-title">Fill in during the call; the letter after the call is written from this table</p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th style="width:6%">#</th><th style="width:30%">Question</th><th>What they said</th><th style="width:16%">Who</th><th style="width:14%">In writing by</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">01</td><td>The first question, in three words</td><td></td><td></td><td></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer>
+    Company · topic · call script · date. The facts were measured over WINDOW; nothing on this page was estimated by eye. Facts older than the window, to re-measure before the call: none / F02-1 (2026-08-12).
+  </footer>
+
+</div>
