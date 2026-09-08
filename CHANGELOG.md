@@ -59,6 +59,17 @@ improvisation looks like `rmdir /S` on screen, which is the moment an operator s
 - **Not done, written down:** the junction measurement is one machine and one git version; the unlink-first
   arm is one run per method, re-asserted by the self-test rather than by repetition; `clean` has not yet
   run against a real multi-worker code run.
+- **The commands were audited against the published frontmatter spec, and two contradictions came out of
+  it.** `README.md` and `commands/fleet.md` listed `fleet-run` among the commands only the operator may
+  start, while its frontmatter correctly allows model invocation - and it has to, because the operator
+  starts a worker by clicking a chip and the model in that new session is what invokes `fleet-run` there.
+  Acting on the prose would have broken every worker. Separately, `fleet-redesign` told the model to run
+  `/makarasty:fleet-design` when the canvas was missing, which the harness blocks: that command carries
+  `disable-model-invocation`. It now prints the line for the operator instead. `docs/COMMANDS.md` records
+  the invocation contract, the checklist before adding a command, and the field most easily misread:
+  `allowed-tools` is a one-turn permission **pre-approval**, not a restriction, and it cannot separate
+  `fleet.sh clean --remove` from the safe helper calls that share its prefix - which is why the protection
+  lives in the dry-run default and the path gate instead.
 
 ## 1.3.0 — 2026-09-08
 

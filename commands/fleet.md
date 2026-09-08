@@ -31,9 +31,10 @@ holds its own context, works one brief, and reports by writing a file. Nothing m
 | `/makarasty:fleet-redesign <screens and direction>` | That canvas exists and you want proposals beside the captured screens, states included |
 | `/makarasty:fleet-call <who and what about>` | You have a call, a meeting or an interview to hold in a language you do not speak well, about a system you know: the fleet digs the facts, the top model writes the page you read from, and `live <run-id>` answers beside you during the call |
 
-`fleet-plan`, `fleet-run`, `fleet-design`, `fleet-redesign` and `fleet-call` answer only to you. They spawn paid work
-and depend on your clicks, so no agent starts them on its own initiative. The others are reachable by an
-agent that needs them.
+`fleet`, `fleet-plan`, `fleet-design`, `fleet-redesign` and `fleet-call` carry
+`disable-model-invocation: true`: they spawn paid work and depend on your clicks, so no agent starts them.
+The others are reachable by an agent that needs them, and `fleet-run` has to be: you start a worker by
+clicking its chip, and the model in that new session is what invokes `fleet-run` there.
 
 ## A run, start to finish
 
@@ -52,6 +53,7 @@ agent that needs them.
 - `docs/CALL.md`: the call half - the facts with their evidence, the page a non-native speaker reads aloud, and the live chat that answers from the same facts.
 - `docs/WORKTREES.md`: how a code worker gets its worktree and how a run removes them without reaching the main checkout.
 - `docs/SAFETY.md`: the closed list of what a fleet may delete, the path-depth gate, and why a gate beats a prose rule.
+- `docs/COMMANDS.md`: how a command in this plugin is written - who may invoke it, what `allowed-tools` really does, and the checklist before adding one.
 - `docs/LANES.md`: what a lane is, how wide each one goes, and why the repo lane is not capped by a monitor.
 - `docs/BROWSER.md`: the pane gate and why a hidden pane invents findings.
 - `docs/BROKER.md`: one or two sessions hold the panes, everyone else files a browser walk as a file.

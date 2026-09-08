@@ -65,7 +65,8 @@ inherits a defect it is not allowed to fix.
 
 A `canvas` or `redesign` mission has its stages fixed and its own planner: `/makarasty:fleet-design` and
 `/makarasty:fleet-redesign` write those queues, gates included, and hand back to the sections below for
-the chips and the watch. A `critique` mission is planned here like a verify one, with `docs/DESIGN.md`
+the chips and the watch. Both carry `disable-model-invocation`, so you cannot invoke them from here: say
+which one this mission wants and let the operator run it. A `critique` mission is planned here like a verify one, with `docs/DESIGN.md`
 supplying what the task carries: the screens and their states, the token file, and the assertion lines.
 
 Count the independent slices the axis produces. That is your worker count, and **it is capped per lane,

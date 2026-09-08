@@ -48,7 +48,7 @@ machine will carry. The other commands run it themselves when they find a projec
 | `/makarasty:fleet` | you | Names the other commands and when to use each |
 | `/makarasty:fleet-init` | you or Claude | Prepares a project: origin, services, agent login, `FLEET.md`, machine sizing |
 | `/makarasty:fleet-plan <mission> [fast]` | you | Interviews you into a plan, splits it into a queue or briefs, offers one chip per worker |
-| `/makarasty:fleet-run <brief or run dir>` | you | Runs one brief, or works a queue until it is drained |
+| `/makarasty:fleet-run <brief or run dir>` | you click the chip, the worker invokes it | Runs one brief, or works a queue until it is drained |
 | `/makarasty:fleet-login` | you or Claude | Opens and authenticates the project's local app |
 | `/makarasty:fleet-wait <run-id> [n]` | you or Claude | Waits without spending model turns, then collects |
 | `/makarasty:fleet-collect <run-id>` | you or Claude | Merges, enforces the evidence contract, dedupes, ranks |
@@ -68,8 +68,11 @@ useful beside a fleet and have nothing to do with its contract, so they version 
 | `/makarasty-tools:say <what to say>` | you or Claude | Turns what you mean into simple English to say on a call or send to a vendor, source-language gist beside each line |
 | `/makarasty-tools:notify [what you are waiting for]` | you or Claude | One message to your phone when this chat, another chat, or a fleet run finishes: Telegram, Discord, ntfy or a webhook |
 
-`fleet`, `fleet-plan`, `fleet-run`, `fleet-design`, `fleet-redesign` and `fleet-call` answer only to you: they spawn
-paid work and depend on your clicks, so no agent starts them on its own initiative.
+`fleet`, `fleet-plan`, `fleet-design`, `fleet-redesign` and `fleet-call` carry
+`disable-model-invocation: true`, so only you can start them: they spawn paid work and depend on your
+clicks. `fleet-run` is the deliberate exception. You start it by clicking a chip, and then the worker's
+own model invokes it in that new session, so it must stay model-invocable - giving it the flag would
+block every worker the moment it tried to begin.
 
 `/makarasty-tools:commit` fires on plain phrasing rather than a slash, so "commit as me" or "commit from my
 name" reaches it, in whatever language you asked in.
@@ -339,6 +342,8 @@ fleet has yet captured a real application this way; see "Known limits".
   path in this plugin that deletes one
 - [`docs/SAFETY.md`](docs/SAFETY.md) what an unattended fleet may delete, the path-depth gate, and the
   evidence behind writing the reason beside the rule
+- [`docs/COMMANDS.md`](docs/COMMANDS.md) who may invoke each command, what `allowed-tools` actually
+  grants, and the checklist before adding one
 - [`docs/BROWSER.md`](docs/BROWSER.md) blindness, the gate, panes, viewports, round trips
 - [`docs/SWEEPS.md`](docs/SWEEPS.md) checks that catch a class of defect rather than one bug
 - [`docs/MOCKING.md`](docs/MOCKING.md) reaching states the sandbox data will not produce, and the line

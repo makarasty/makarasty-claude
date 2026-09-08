@@ -18,8 +18,10 @@ the `commands/` directory holding this file.
 
 A redesign runs over a canvas that already holds the captured screens: a proposal is measured against
 the screen it replaces, and the operator sees both on one page. No `design/canvas/*.dc.html` for the
-screens in `$ARGUMENTS` means running `/makarasty:fleet-design` for them first, in this chat, and
-continuing here when it lands. Say so in one line rather than refusing.
+screens in `$ARGUMENTS` means the capture has to happen first, and **you cannot start it yourself**:
+`fleet-design` carries `disable-model-invocation: true`, so the harness blocks a model that tries. Say in
+one line which screens have no artboard, print the exact line for the operator to run -
+`/makarasty:fleet-design <those screens>` - and stop there rather than refusing or improvising a capture.
 
 ## What this is
 
