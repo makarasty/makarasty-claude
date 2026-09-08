@@ -50,6 +50,12 @@ worth noting, note it.
 **Consultant paragraphs.** Text that could describe any project. If a sentence would survive being pasted
 into a different codebase unchanged, it is saying nothing about this one.
 
+**Words the reader would have to look up.** `verbatim`, `canonical`, `envelope`, `orchestrate`,
+`idempotent` to a reader who is not an engineer or not a native speaker. Say what the word means: "we save
+every answer exactly as it comes". Say, get, send, wrong, works - not state, receive, transmit, incorrect,
+functions. The Contoso call script of 2026-08-21 was rewritten for exactly this, after its reader stopped
+on `verbatim`.
+
 ## What to keep
 
 Numbers, units, identifiers, file paths, error strings, code, and every negation, verbatim. Humanising is
@@ -69,6 +75,10 @@ wrong". Specific numbers instead of "significantly". The occasional blunt senten
 it.
 
 Uncertainty stated once, precisely, then dropped. Not sprinkled through every clause.
+
+Lines somebody will say aloud to a vendor or their support are a different register, and
+`/makarasty-tools:say` carries it: one sentence per line, numbers as words, a question instead of a
+proposal.
 
 ## Done when
 

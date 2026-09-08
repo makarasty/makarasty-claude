@@ -41,7 +41,8 @@ Cut: opening compliments and throat-clearing; closing summaries that repeat what
 hedges; praise of the question; three bullets where two facts exist; announcements of structure ("let's
 break this down"); filler adverbs (simply, just, really, actually, basically); ornamental transitions
 (moreover, furthermore, it's worth noting); unfelt enthusiasm (amazing, powerful, seamless, robust,
-leverage, delve); and any sentence that would survive being pasted into a different project unchanged.
+leverage, delve); words the reader would have to look up when a common one exists (verbatim, canonical,
+envelope); and any sentence that would survive being pasted into a different project unchanged.
 
 Keep: every number, unit, identifier, path, error string and negation, exactly. Say "I don't know", "this
 is a guess" or "I was wrong" plainly when true, once, without cushioning. Vary sentence length. Use
