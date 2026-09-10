@@ -6,24 +6,12 @@ allowed-tools: Bash, Read, Write, Glob, Grep, Monitor, TaskStop
 
 The run is on disk and the sessions are not. This command turns that into three lists and a wave of clicks.
 
-## Why this is a different command from `sweep`
-
-`sweep` and the revive message both assume the workers are still there. One names a claim nobody is
-advancing so the planner can poke the chat holding it; the other is the message that pokes it. Measured
-2026-08-27: three workers dead for nearly three hours came back within seconds of a cross-session status
-check, and nothing else in the system can do that.
-
-None of it survives the machine going down. A message needs a live receiver, and after a reboot there are
-none. Measured 2026-09-01: the 26 worker sessions of two runs were gone from `ListAgents` (which listed
-five unrelated chats started minutes earlier) and absent from the app's own session list, archived or not.
-A planner asked to bring the run back answered, correctly, that it could not - and the operator was left
-choosing between a fresh run and walking the queue by hand.
-
-What survived is enough. `chips/<session-id>` was written at the first claim, so the run knows which
-session was which chip. The claims are still standing. And Claude Code keeps each session's transcript
-under `~/.claude/projects/<slug>/<session-id>.jsonl`, so a session with a transcript can be reopened with
-its context intact. **A reopened worker is worth several fresh ones**: it still holds the files it read,
-the refutations it already made, and the half-written finding it was about to file.
+`sweep` and the revive message both assume the workers are still there, and after a restart none of them
+are: a message needs a live receiver, and `ListAgents` no longer lists them [M27]. What survives is
+`chips/<session-id>`, written at the first claim, the standing claims, and each session's transcript under
+`~/.claude/projects/<slug>/<session-id>.jsonl` — enough to reopen a worker with its context intact. **A
+reopened worker is worth several fresh ones**: it still holds the files it read, the refutations it already
+made, and the half-written finding it was about to file.
 
 ## Do this
 

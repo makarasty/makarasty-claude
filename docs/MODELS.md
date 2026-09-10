@@ -54,6 +54,13 @@ running it inline.
 The brief carries the choice, in `model:` and `verdict-model:`. A single brief splitting the two is normal:
 one model walks the scenario, another rules on what the walk produced.
 
+Neither field changes the model of the session reading the brief, which was fixed when that session
+started. They are honoured by dispatch. `model:` is passed as the `Agent` call's per-invocation parameter,
+which outranks the agent definition's own frontmatter, so a brief naming a tier gets it. `verdict-model:`
+is honoured by spawning a second pass at that tier over the returned observations, and a definition whose
+own frontmatter already carries the tier - `fleet-design-eye` on Opus - honours it without the brief saying
+anything. Effort does not travel this way: it comes from the agent file alone, per the section below.
+
 Guidance:
 
 - **Dense state, unfamiliar domain, or a subtle correctness question**: Opus walks it. Weaker models do not
@@ -63,8 +70,9 @@ Guidance:
 - **A screen that has to look right, or a proposal for how it should**: the design model, end to end, and
   it is the one place where the top tier is the cheap choice - a proposal from a weaker model is a redesign
   the operator has to redesign. Capturing a screen from source is not that job; the strong general model
-  copies exact values well. Reviewing a screen for design defects is a Sonnet walk with an Opus verdict,
-  because the probes carry the judgement the walk would otherwise need.
+  copies exact values well. Reviewing a screen for design defects is not that job either: `fleet-design-eye`
+  runs the geometry probes and rules on what they return in one pass, on Opus, because the probes carry the
+  measurement and what is left is the verdict nobody downstream re-decides.
 - **A page somebody will read aloud to a vendor**: the design model for the page, for the copy reason above;
   Opus for the facts behind it, because "every number about this topic" is not a clear spec and a weaker
   model finishes it early and quietly. `CALL.md` has the stages.
@@ -72,12 +80,63 @@ Guidance:
 
 ## Reasoning effort
 
-Per call effort is not settable through the `Agent` tool. Its parameters are `model`, `subagent_type`,
-`isolation`, `run_in_background`, and the prompt. Effort is settable per agent inside a `Workflow` script,
-and session wide by the operator.
+Effort is settable per subagent, in the definition file's frontmatter. The `effort` field is documented at
+`code.claude.com/docs/en/sub-agents` as "Effort level when this subagent is active. Overrides the session
+effort level. Default: inherits from session. Options: `low`, `medium`, `high`, `xhigh`, `max`; available
+levels depend on the model." Each of the four agents in `agents/` carries one, with its reason in the file.
 
-So treat effort as a session level dial rather than a per stage one, unless a stage is worth building a
-Workflow around. A brief that claims per subagent effort control is describing a knob that does not exist.
+The `Agent` tool call itself still takes no effort parameter. Its parameters are `model`, `subagent_type`,
+`isolation`, `run_in_background`, and the prompt. So effort reaches a subagent through its definition file
+or not at all, and a brief asking a running session to raise its own effort, or to dispatch one stage at an
+effort its agent file does not carry, is describing something that cannot happen.
+
+Model reaches a subagent through four places, in this order: the per-invocation `model` parameter, then the
+definition's `model` frontmatter, where `inherit` selects the main conversation's model, then the
+`CLAUDE_CODE_SUBAGENT_MODEL` environment variable, then the main conversation's model. Setting
+`CLAUDE_CODE_SUBAGENT_MODEL_FORCE` to `1` moves that environment variable to the front, where it overrides
+both the per-invocation parameter and the frontmatter; with `FORCE` set and no `CLAUDE_CODE_SUBAGENT_MODEL`
+alongside it, every subagent runs on the main conversation's model. That ordering holds from Claude Code
+v2.1.251. Before it the environment variable came first on its own.
+
+What the ordering costs this plugin: `fleet-run` spawns its pane agents with the brief's `model:` as a
+per-invocation parameter, and that is the top of the order, so the `model:` line in `fleet-scenario`,
+`fleet-profiler` and `fleet-design-eye` is the fallback for a brief that omits one rather than the tier
+those agents actually run at. `fleet-triage` is spawned by `fleet-collect` with no model, so its
+frontmatter is what runs. The `effort:` line is load-bearing in all four, because nothing overrides it per
+call.
+
+Effort is settable in `settings.json` too: a top-level `effortLevel` covers models with no saved level of
+their own, and `modelSettings.<model-id>.effortLevel` holds one model at its own level, where the per-model
+entry wins. Both take `low`, `medium`, `high` and `xhigh`; `max` and `ultracode` are reachable only through
+`/effort`, the `--effort` launch flag, or `CLAUDE_CODE_EFFORT_LEVEL`. Where nothing is set, the model's own
+default applies, which is `high` on every model that supports effort, except Opus 4.7, which defaults to
+`xhigh`.
+
+## What the operator sets once
+
+A session's own model and its effort are fixed when the session starts. Neither the session nor a brief it
+reads can change them mid-run, which is why a brief's `verdict-model:` is honoured by spawning and never by
+switching.
+
+On this machine `~/.claude/settings.json` carries `"model": "sonnet"` and `"effortLevel": "medium"`, and no
+`modelSettings` block. So every session here starts on Sonnet at medium effort, which is one step below the
+`high` Sonnet would otherwise default to, and every subagent that does not carry its own `effort` inherits
+that medium. That is the reason the four agent files each pin one: without them, a single operator dial
+silently sets the depth of a design verdict.
+
+So the things an operator can set once, instead of switching models by hand between chips: `model` and
+`effortLevel` in settings for where sessions start, `modelSettings.<model-id>.effortLevel` to hold one tier
+at a different depth than the rest, `CLAUDE_CODE_SUBAGENT_MODEL` to move every otherwise-unassigned
+subagent onto one tier, and `model:` plus `effort:` in the four agent files for the work a fleet actually
+dispatches. All of that is documented, and all of it is read at session start.
+
+One thing here is not settled. The documentation says a background session started from a chip does not
+inherit the model of the session that started it: the agent view header shows the dispatch default, and
+"New sessions you start from the input use this model, which comes from the `model` setting in your user
+settings." The operator of this plugin reports the opposite in practice, a chip coming up on the model of
+the session that spawned it. Nobody has measured it on this host, so it stays an open question rather than
+a claim. The experiment that settles it is one line: from a session running on a model other than the
+settings default, spawn a chip, then run `/model` in the chip's session and read back what it says.
 
 ## Cost discipline that is not about models
 
@@ -89,7 +148,9 @@ Most waste is not the tier. In order of size:
 3. **Round trips.** Independent tool calls issued one per message cost a full model turn each. Send them
    in one message.
 4. **Unscoped verification.** In a large repository a full test suite and a full typecheck dwarf every
-   token decision on this page. Scope during the work, sweep once at the end.
+   token decision on this page, and two of them at once put the machine this was written on into the page
+   file. This one is no longer yours to remember: a hook refuses a full suite or a full typecheck from a
+   worker that does not hold the verify lane, and names the scoped form in the refusal.
 
 ## Writing for the models you dispatch
 

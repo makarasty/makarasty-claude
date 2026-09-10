@@ -385,7 +385,7 @@ function seed() {
     process.exit(2);
   }
   const project = path.resolve(opt('project', process.cwd()));
-  const files = artboardsIn(dir);
+  let files = artboardsIn(dir);
   let refused = 0;
   for (const f of files) { const r = checkOne(f, project); if (r.errors.length) { refused++; console.error(`REFUSED ${path.basename(f)}: ${r.errors[0]}`); } }
   if (refused) { console.error(`${refused} artboard(s) refused by the gate; run \`fleet-canvas.mjs check ${target}\` for the full list`); process.exit(1); }
@@ -393,6 +393,10 @@ function seed() {
   // drops entries, so canvas.json can never name an artboard that was deleted after the last layout, which
   // is the one thing the helper refuses that a worker cannot see coming.
   layout();
+  // The list is taken again after the layout, never before it: on a canvas with no cover the layout writes
+  // Main.dc.html and names it in canvas.json, and a list snapshotted a line earlier sends every artboard
+  // except the one the editor is about to open on. That is every canvas's first seed.
+  files = artboardsIn(dir);
   const images = fs.readdirSync(dir).filter((f) => IMAGE_EXT.has(path.extname(f).toLowerCase())).map((f) => path.join(dir, f));
   const args = [path.join(skill, 'seed-canvas.mjs'), '--template', path.join(skill, 'payload.template.html'), '--out', path.resolve(out), '--title', title];
   for (const f of files) args.push('--artboard', f);

@@ -139,6 +139,23 @@ them elsewhere.
 6. Keep the finding schema and the evidence contract unchanged. They are the part with no host dependency
    at all, and they are why a run from a year ago can still be read.
 
+## Cutting a half out
+
+Porting is one reason to know the seams; wanting less of the tool is the other. A project with no
+interface to look at should not pay for the browser half, and neither should a reader of these documents.
+The slices, measured on this release, with what dangles when each goes:
+
+| Slice | Cut it by | What dangles |
+|---|---|---|
+| **call** | Deleting `docs/CALL.md`, `commands/fleet-call.md`, `scripts/fleet-call.mjs`, `templates/call-script.html`, and the `call` section of `MISSIONS.md` | Nothing else references them. The cleanest seam in the plugin. |
+| **design and canvas** | Deleting `docs/DESIGN.md`, `commands/fleet-design.md`, `commands/fleet-redesign.md`, `scripts/fleet-canvas.mjs`, `scripts/design-probe.js`, `agents/fleet-design-eye.md` | Two edits in core: `fleet-merge.mjs` derives `kind: design` from a finding's `rects` or `probe`, and `fleet.sh find` carries the rectangle geometry gate. Both are conditional and harmless if left. |
+| **worktrees** | Deleting `docs/WORKTREES.md` and `docs/SAFETY.md` | 274 of `fleet.sh`'s lines go with them, the path gate included - and that gate is the only thing in this plugin that guards a deletion. Cut the feature and you cut the guard; leave both. |
+| **browser and panes** | Not by deleting files | The deepest coupling. The lane split exists for it, `LANES.md` is half a pane document, and the broker is 106 lines of `fleet.sh`. A paneless project already pays almost nothing for it at run time - every pane document is behind a branch pointer - so the cost of keeping it is prose on a shelf rather than turns in a run. |
+
+What is left after all four is the core: the queue, the claim, the finding schema, the merge, the gate,
+and the five commands that drive them. That is the part worth porting, and the part a project with no
+interface is already using on its own.
+
 ## What has no host dependency
 
 The evidence contract. The gate as an idea, separate from its implementation. Splitting by an axis rather

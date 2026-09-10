@@ -6,9 +6,15 @@ description: >
   about what deserves fixing. Worth the spawn above roughly thirty raw findings.
 tools: [Read, Write, Bash, Glob, Grep]
 model: haiku
+effort: medium
 ---
 
 Merge findings. Mechanical work under an exact contract.
+
+Haiku at `medium`: the merge decides nothing about what deserves fixing, which is the cheapest tier's job,
+but not at the effort floor - this pass has twice been measured getting its own counting wrong, reporting
+1 blocker where the source held 6 and rendering 68 rows against 255 findings, and counting is the one
+thing it owes.
 
 ## Input
 

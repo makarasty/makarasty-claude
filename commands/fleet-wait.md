@@ -8,20 +8,11 @@ Watch `.fleet/<run-id>/` for workers finishing. The waiting belongs in the shell
 than in a re-read each turn, which costs a model turn per empty check and needs the operator to prod you
 between them.
 
-## The watch must emit on silence, not only on progress
-
-A watch that fires only when a file appears cannot tell a busy fleet from a dead one. Both look like an
-empty inbox.
-
-Three of six workers once stalled at the same minute; no file changed for nearly three hours, the watch
-stayed silent because silence was all it had to say, and the planner slept 65 minutes until the operator
-typed "I think the chat has hung" [M17]. The `Monitor` tool's own
-guidance names this failure: if the thing you are watching died right now, would your filter emit
-anything?
-
-So the loop below carries a quiet timer. Every ten minutes with no change on disk it says so and names
-every claim still outstanding and who holds it. That line is the planner's cue to send a status check to
-the worker holding it, which is the only thing that revives a dead session.
+The loop below emits on silence as well as on progress, because a watch that fires only when a file appears
+cannot tell a busy fleet from a dead one and a stalled fleet writes no files [M17]. Every ten minutes with
+no change on disk it names each claim still outstanding and who holds it, alongside how many tasks and
+workers have landed. That line is the cue to send a status check to the worker holding a claim nobody is
+advancing, which is the only thing that revives a dead session.
 
 ## The loop
 
@@ -32,6 +23,7 @@ run=RUNID; n=N; quiet=600
 d=.fleet/$run; seen=$d/.watch-seen; : > "$seen"; last=$(date +%s)
 FS=$(ls -t ~/.claude/plugins/cache/*/makarasty/*/scripts/fleet.sh 2>/dev/null | head -1)
 while true; do
+  [ -e "$(cd "$d" 2>/dev/null && pwd)/FINISHED" ] && { echo "run landed"; break; }
   for f in $d/tasks/claimed/*/owner $d/tasks/done/* $d/ask/*.md $d/*.done $d/*.blocked $d/*.waiting; do
     [ -e "$f" ] || continue; grep -Fxq "$f" "$seen" && continue; echo "$f" >> "$seen"; last=$(date +%s)
     case "$f" in
@@ -71,24 +63,13 @@ shows up by name in the stall report, but it does not wake you on its own: a cla
 planner: of 62 notifications one planner received, 13 were claims it took no action on, each costing a full
 model turn to read and dismiss [M18].
 
-**Two details in that loop are load bearing.** The `seen` file is matched with `grep -Fxq`, whole line, not
-by substring: the previous version tested `case "$seen" in *"$f"*`, under which the presence of `task-22b`
-silently suppressed every event for `task-22`, and a reclaimed task always produces exactly that pair. And
-the file lives inside the run directory rather than in a temp path, so a restarted watch on a different
-machine or shell finds it.
+Copy the `seen` matching as it stands: `grep -Fxq` is a whole-line test, and the substring version it
+replaced let the presence of `task-22b` silently suppress every event for `task-22`, which is exactly the
+pair a reclaimed task produces.
 
-## The stall line is also the progress line
-
-Every stall report now carries how many tasks are done of how many are ready, and how many workers have
-landed of how many were expected. Two reasons, and the second is the one that matters.
-
-It tells the operator, in the one chat they are reading, roughly how much run is left - divide done by
-elapsed and you have the fleet's realised throughput, which beats every estimate anybody wrote before the
-run started.
-
-And it separates *stalled* from *slow* without opening a worker chat. A quiet interval whose counts moved
-since the last one is a fleet doing long tasks. A quiet interval whose counts are identical for the third
-time is a fleet that has stopped, and that is the case the next section is about.
+**A stall report whose counts moved since the last one is a fleet doing long tasks; one whose counts are
+identical is a fleet that has stopped.** That distinction is made without opening a worker chat, and it is
+what the next section acts on.
 
 ## The run ends by declaration, not by a count that may never arrive
 

@@ -4,32 +4,19 @@ argument-hint: <mission in plain words> [fast]
 disable-model-invocation: true
 ---
 
-The reference files named below (`docs/PROTOCOL.md` and its siblings) live in this plugin's own directory,
-not in the project you are working on. Resolve that directory once, before following any pointer:
-
-```bash
-ls -dt ~/.claude/plugins/cache/*/makarasty/*/docs 2>/dev/null | head -1
-```
-
-Empty output means the plugin is running from a checkout instead of an install: look for `docs/` beside
-the `commands/` directory holding this file.
+The `docs/*` files named below live in this plugin's own directory, not in the project you are working on.
+Resolve it once, before following any pointer, with
+`ls -dt ~/.claude/plugins/cache/*/makarasty/*/docs 2>/dev/null | head -1`. Empty output means a checkout
+rather than an install: `docs/` sits beside the `commands/` directory holding this file.
 
 ## Missing prerequisites are work, not a refusal
 
-A fleet command run against a project that was never set up finds no `FLEET.md`, no login runbook and no
-`.fleet/`. Refusing at that point is the wrong answer: the missing pieces are exactly what an agent is
-good at producing.
-
-So: say what is missing in one line, run `/makarasty:fleet-init` to produce it, and continue into the
-work the operator actually asked for. No blocker, no second command for them to remember.
-
-The same rule holds for everything else that can be absent. A missing directory gets created. An
-accelerator that is not installed gets noted once and worked around. A brief that names a screen the
-project does not have becomes a question in `ask/`, not a stop.
-
+No `FLEET.md`, no login runbook, no `.fleet/`: say what is missing in one line, run
+`/makarasty:fleet-init` to produce it, and continue into the work the operator actually asked for. A
+missing directory gets created, an accelerator that is not installed gets noted once and worked around,
+and a brief naming a screen the project does not have becomes a question in `ask/` rather than a stop.
 Stop for exactly two things, because neither can be produced by working harder: a **credential or account
 only the operator can provide**, and a **reserved control** that would cost money or reach a real person.
-Everything else is repairable, and repairing it quietly is the difference between a tool and a form.
 
 A person reads this chat and only this chat, so write for them rather than for a parser. If the
 `makarasty-tools` plugin is installed, `/makarasty-tools:unslop on` does it for you.
@@ -37,8 +24,10 @@ A person reads this chat and only this chat, so write for them rather than for a
 Split the mission in `$ARGUMENTS` into briefs, one per worker session, then offer a chip for each and
 stop. You write briefs. You do not do the mission.
 
-Read `docs/PROTOCOL.md` for the run layout and brief format,
-and `docs/MISSIONS.md` for the mission kinds. Both are short.
+Read `docs/PROTOCOL.md`'s "Directory layout", "Brief format" and "Finding schema" before you write one -
+those three are the run's shape and the contract you restate in every brief - and the section of
+`docs/MISSIONS.md` for the kind you are planning. Neither file is short, and the rest of both is worker
+material or a kind you are not running.
 
 ## 1. Ground yourself in the project
 
@@ -66,25 +55,30 @@ inherits a defect it is not allowed to fix.
 A `canvas` or `redesign` mission has its stages fixed and its own planner: `/makarasty:fleet-design` and
 `/makarasty:fleet-redesign` write those queues, gates included, and hand back to the sections below for
 the chips and the watch. Both carry `disable-model-invocation`, so you cannot invoke them from here: say
-which one this mission wants and let the operator run it. A `critique` mission is planned here like a verify one, with `docs/DESIGN.md`
-supplying what the task carries: the screens and their states, the token file, and the assertion lines.
+which one this mission wants and let the operator run it. A `critique` mission is planned here like a
+verify one, with the "Critique" section of `docs/DESIGN.md` - and nothing else from that file - supplying
+what the task carries: the screens and their states, the token file, and the assertion lines.
 
 Count the independent slices the axis produces. That is your worker count, and **it is capped per lane,
-never once for the whole fleet.** Ten is where browser panes stop fitting a single display, so ten caps
-the **pane** lane and nothing else; the repo lane is capped by the machine and sized from the queue, by
-the rule in `docs/LANES.md`; the verify lane is one. Read the project's `FLEET.md` concurrency line for
-both numbers rather than deriving them again.
+never once for the whole fleet.** The repo lane is capped by the machine and sized from the queue, by the
+rule in `docs/LANES.md`; the verify lane is one; and the pane lane has three numbers that are not
+interchangeable. **The default is two** and it is where you start: `pane_workers_default` in the plugin's
+`calibration.json`. `pane_workers_display_ceiling` in the same file is the **usable** ceiling, what tiles
+side by side at a readable width with nothing stacked below, a number to plan against rather than to start
+from. **Ten is the physical ceiling**, where panes stop being panes; between the usable ceiling and ten
+they stack in a second row at half height, which is a decision the operator makes rather than a slope.
+Read both values from `calibration.json` rather than retyping them, and read the project's `FLEET.md`
+concurrency line for the widths this machine and this display were actually measured at.
 
-A single cap of ten across both lanes is how a run ends up eight browser workers wide and two files wide.
+A single cap across both lanes is how a run ends up eight browser workers wide and two files wide.
 Measured 2026-08-31: fourteen workers ran on a box sized for it, six on panes and eight on files, and the
 plan that produced them had to argue its way past this paragraph to do it.
 
-**Then size the pane lane down, hard.** Ten is a ceiling, not a target, and the same run measured seven
-open panes carrying under one pane's worth of actual browser driving - 104 minutes of it - with one pane
-driven for zero minutes over sixty-one. **Two pane workers is the default.** Each pane you open past what the work needs costs the
-operator a question, a piece of their screen, and the standing obligation to keep it displayed - and buys
-nothing while nobody is driving it. If the mission is large enough that two panes will queue, read
-`docs/BROKER.md` and file browser walks against one or two hosts instead of opening more.
+**Then size the pane lane down, hard.** Seven open panes once carried under one pane's worth of actual
+browser driving, one of them driven for zero minutes over sixty-one [M15]. Each pane you open past what the
+work needs costs the operator a question, a piece of their screen, and the standing obligation to keep it
+displayed, and buys nothing while nobody is driving it. If the mission is large enough that two panes will
+queue, read `docs/BROKER.md` and file browser walks against one or two hosts instead of opening more.
 
 Two workers on one slice cost twice and then agree with each other, which reads as corroboration and is
 not.
@@ -213,7 +207,7 @@ limit of this run, recorded as unreached. Without that sentence the boundary rea
 
 A verify brief that only says "look at these screens" produces a worker that reads the first row of each
 and calls it fine. Name the sweeps it must run, from `docs/SWEEPS.md`, and say which screens each applies
-to.
+to. Open that file at this point and not before: a mission with no verify slices never needs it.
 
 The interaction posture belongs in the brief in one line: exercise every control that neither mutates
 shared state nor leaves the machine, open dialogs and cancel them, and record every control that produced
@@ -230,8 +224,8 @@ claimed total where a count is involved.
 
 ## 6. Add measurement rules when speed is in scope
 
-A brief that measures speed carries a "How to measure" section built from
-`docs/PERF.md`: three runs with median and spread, machine load
+A brief that measures speed carries a "How to measure" section built from `docs/PERF.md`, which is worth
+opening only once a brief actually measures something: three runs with median and spread, machine load
 recorded beside every number, a named comparison arm, `setInterval` for sampling.
 
 Schedule those workers in their own wave. They are measuring a machine the other workers are loading.
@@ -269,12 +263,13 @@ finished workers sitting on disk unnoticed, because the operator assumed the pla
 planner assumed the operator would run it. The watch waits in the shell, so arming it early costs nothing
 and it fires whether the chips are clicked in one minute or twenty.
 
-**Arm the loop `fleet-wait` gives you, quiet timer included, and do not write your own.** A watch that
-emits only when a file appears cannot tell a working fleet from a dead one, and a stalled fleet writes no
-files. Measured 2026-08-27: a planner armed a hand written `while true` watch with no stall line and no
-exit condition. It missed three workers dying at the same minute, left the planner asleep for 65 minutes
-until the operator intervened, and then ran on for five hours and forty two minutes after the run had
-finished.
+**Arm the loop `fleet-wait` gives you, quiet timer included, and do not write your own.** The supplied loop
+is a `while true` as well; what separates it from a hand written one is the two things a hand written one
+leaves out. It has an exit condition, so it ends itself when the last worker lands, and it emits on silence
+as well as on progress, so a fleet that has stopped writing files still produces a line. Measured
+2026-08-27, a planner's own watch had neither: it missed three workers dying at the same minute, left the
+planner asleep for 65 minutes until the operator intervened, and then ran on for five hours and forty two
+minutes after the run had finished [M17].
 
 **When the stall line names a claim nobody is advancing, message that worker.** A cross-session status
 check is the only thing that revives a session which ended a turn with nothing pending, and in that run
@@ -304,16 +299,18 @@ once, at hand over:
   notification means it has not finished.
 
 Say the pane arithmetic out loud, because the operator is about to discover it the hard way. Two numbers,
-and do not blur them: **two panes is what the work has needed** in both measured runs, and five is what a
-display fits before panes stack below at half height. The second number is a ceiling for a mission that
-genuinely queues, not a target. Pass on the three ergonomics from `docs/BROWSER.md` as well:
-drag the planning chat out into its own floating window, zoom the application window out to buy a column,
-and on Windows a window can be sized past the monitors by pushing it off one edge and pulling the opposite
-one. Nobody thinks of any of that with eight chats already open.
+and do not blur them: **the default of two is what the work has needed** in both measured runs, and the
+display ceiling above it is what tiles at a readable width before panes stack below at half height. The
+second is a ceiling for a mission that genuinely queues, not a target, and both are in `calibration.json`.
+Pass on the three ergonomics as well: drag the planning chat out into its own floating window, zoom the
+application window out to buy a column, and on Windows a window can be sized past the monitors by pushing
+it off one edge and pulling the opposite one. Nobody thinks of any of that with eight chats already open.
 
-Before each wave after the first, have them check free physical memory against the commit charge.
-Committed above physical means the next worker is paged from disk, and every speed number still in flight
-is measuring a paging machine rather than the application.
+You do not have to ration memory between waves any more, and you should not try: `fleet.sh next` reads the
+machine before every claim and refuses to hand out a task below the floor, so a wave that is too wide stops
+itself at the queue rather than in the page file. What is still worth saying out loud, once, is that a
+speed number taken while the box is paging describes the page file rather than the application - so a wave
+that measures anything schedules where nothing else is running.
 
 ## Done when
 

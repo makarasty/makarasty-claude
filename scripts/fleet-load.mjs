@@ -7,14 +7,20 @@
 // a memory of one.
 //
 //   node fleet-load.mjs                     one census, human readable
-//   node fleet-load.mjs --json              the same, as one JSON object
+//   node fleet-load.mjs --json              the same, as one JSON object, `tight` included
+//   node fleet-load.mjs --clear <GB>        exit 0 when free memory is above <GB>, 1 otherwise. Silent.
 //   node fleet-load.mjs --watch 30          sample every 30s until Ctrl-C
 //   node fleet-load.mjs --watch 30 --out load.csv    ... and append each sample to a CSV
 //
 // Measured on the host this was written for, 2026-08-31: an agent session with no browser pane is about
 // 330 MB resident; opening one pane on a local single page application adds one renderer process at
-// 344 MB, and closing the tab returns all of it within seconds. Fourteen sessions and six panes ran
-// without touching the page file on a 31.2 GB machine, so on that box RAM is not what caps a fleet.
+// 344 MB, and closing the tab returns all of it within seconds [M21].
+//
+// That last clause used to end "so on that box RAM is not what caps a fleet", and 2026-09-10 took it back
+// [M34]: 344 MB is what a light page costs, and one tab holding 150,000 DOM nodes measured 2,061 MB. A
+// reload returns none of it. So this file is no longer only a report - `fleet.sh next` refuses to hand out
+// a task when `--clear` says the machine is under its floor, and the hook that refuses a full test suite
+// asks it what is already running.
 
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -26,18 +32,32 @@ const has = (n) => args.includes(n);
 const sh = (cmd, a) => { try { return execFileSync(cmd, a, { encoding: 'utf8', maxBuffer: 32e6 }); } catch { return ''; } };
 const round = (n, d = 2) => Math.round(n * 10 ** d) / 10 ** d;
 
+// A census that throws is worse than one that is missing a column: every caller has a fallback, so the
+// throw becomes a default nobody notices. Parse defensively and say what was lost.
+function parse(text, fallback) {
+  if (!text || !text.trim()) return fallback;
+  // Strip the control characters JSON forbids inside a string, keeping the ones its grammar uses between
+  // tokens. Doing it unconditionally costs one pass and removes a whole class of failure.
+  const clean = text.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, ' ');
+  try { return JSON.parse(clean); } catch (e) {
+    console.error(`fleet-load: could not read the process list (${e.message}); the numbers below count only what parsed`);
+    return fallback;
+  }
+}
+
 function windows() {
   const ps = (s) => sh('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', s]);
-  const os = JSON.parse(ps(
+  const os = parse(ps(
     '$o=Get-CimInstance Win32_OperatingSystem; ' +
     '$pf=(Get-CimInstance Win32_PageFileUsage | Measure-Object CurrentUsage -Sum).Sum; ' +
     '@{freeKB=$o.FreePhysicalMemory;totalKB=$o.TotalVisibleMemorySize;' +
     'commitKB=($o.TotalVirtualMemorySize-$o.FreeVirtualMemory);limitKB=$o.TotalVirtualMemorySize;' +
     'pagedKB=($pf*1024)} | ConvertTo-Json -Compress'
-  ) || '{}');
-  const procs = JSON.parse(ps(
-    'Get-CimInstance Win32_Process | Select-Object Name,ProcessId,WorkingSetSize,CommandLine | ConvertTo-Json -Compress'
-  ) || '[]');
+  ), {});
+  const procs = parse(ps(
+    'Get-CimInstance Win32_Process | Select-Object Name,ProcessId,WorkingSetSize,CommandLine | ' +
+    'ConvertTo-Json -Compress -Depth 3'
+  ), []);
   return { os, procs };
 }
 
@@ -92,6 +112,16 @@ function census() {
     pagedGB: os.pagedKB == null ? null : round(os.pagedKB / 1048576),
     sessions: groups['agent session']?.n || 0,
     panes: groups['browser pane or window']?.n || 0,
+    // Commit above physical is ordinary on Windows and says nothing on its own: it counts reserved address
+    // space, most of which is never touched. What decides whether the next worker is paged from disk is
+    // free physical memory, with page file usage as the corroborating reading.
+    //
+    // The two thresholds are deliberately different. Refusing below 2 GB and releasing only above 4 is
+    // hysteresis, and without it every worker held on one reading claims again on the next, all at once,
+    // on the same 2.1 GB - which is the moment the machine dies rather than the moment it recovers.
+    tight: (os.freeKB || 0) / 1048576 < 2
+      || (os.pagedKB != null && os.pagedKB / 1048576 > 4 && (os.freeKB || 0) / 1048576 < 4),
+    clearGB: 4,
     groups: Object.fromEntries(Object.entries(groups)
       .sort((a, b) => b[1].bytes - a[1].bytes)
       .map(([k, v]) => [k, { n: v.n, totalMB: Math.round(v.bytes / 1048576), maxMB: Math.round(v.max / 1048576) }])),
@@ -99,10 +129,7 @@ function census() {
 }
 
 function render(c) {
-  // Commit above physical is ordinary on Windows and says nothing on its own: the number counts reserved
-  // address space, most of which is never touched. What decides whether the next worker is paged from disk
-  // is free physical memory, with page file usage as the corroborating reading.
-  const tight = c.freeGB < 2 || (c.pagedGB != null && c.pagedGB > 4 && c.freeGB < 4);
+  const tight = c.tight;
   const lines = [
     `machine   ${c.totalGB} GB physical, ${c.freeGB} GB free` +
       (c.commitGB != null ? `, commit ${c.commitGB} GB of ${c.commitLimitGB} GB` : '') +
@@ -117,6 +144,14 @@ function render(c) {
     lines.push(`${k.padEnd(28)}${String(v.n).padStart(2)}   ${String(v.totalMB).padStart(8)}   ${String(v.maxMB).padStart(10)}`);
   }
   return lines.join('\n');
+}
+
+// --clear N: say nothing, and exit 0 only when free memory is above N GB. This is what a worker refused
+// for memory backgrounds, so the shell decides when it may claim again and no model has to poll.
+if (has('--clear')) {
+  const want = Number(flag('--clear', 4));
+  const c = census();
+  process.exit(c.freeGB > want ? 0 : 1);
 }
 
 const interval = Number(flag('--watch', 0));

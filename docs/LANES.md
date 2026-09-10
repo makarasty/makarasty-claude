@@ -46,16 +46,8 @@ they run out of memory. A run that writes code has a verify lane whether it name
 
 ## Every task declares its lane
 
-```markdown
----
-task-id: task-07-vendor-egress
-needs: repo          # pane | verify | repo
-budget: 25
-fanout: 3            # repo lane only, see below
----
-```
-
-Absent `needs`, read the steps: a step that names a screen, a click, a viewport or a screenshot is `pane`.
+`needs: pane | verify | repo` in the task's frontmatter, whose full shape is in
+[`PROTOCOL.md`](PROTOCOL.md), "Task format". Absent `needs`, read the steps: a step that names a screen, a click, a viewport or a screenshot is `pane`.
 A step that names a test command, a typecheck or a build is `verify`. Everything else is `repo`.
 
 **Write the lane before the steps, not after.** A task drafted as a browser walk stays a browser walk even
@@ -114,10 +106,16 @@ rather than reasoning about it - `node scripts/fleet-load.mjs` prints the census
 | closing the tab | returns all of it within seconds, process gone | same A/B |
 | fourteen sessions and six panes | 4.4 GB plus 1.9 GB, no page file growth | during the run |
 
-So a repo worker is roughly a third of a gigabyte and a pane worker is two to three times that, not the
-order of magnitude it feels like, and nowhere near a constraint on a machine with
-double digit free gigabytes. **The repo lane is not memory bound on any modern machine.** What binds it is
-how many claims the queue can keep fed, which is why the width above is computed from the ready queue.
+So a repo worker is roughly a third of a gigabyte, and a pane worker is that plus whatever page it is
+holding - which on a light application is another 344 MB and on a heavy one was **2,061 MB in a single
+tab** [M34]. The repo lane is bound by how many claims the queue can keep fed, which is why the width above
+is computed from the ready queue. The pane lane is bound by memory, and the figure that decides it belongs
+to the project rather than to this page.
+
+None of it is a rule anybody has to remember. `fleet.sh next` reads free memory before every claim and
+hands out nothing below the floor in `calibration.json`, and a hook refuses a full suite or a full
+typecheck from a worker that does not hold the verify lane. This paragraph is here to explain those two
+refusals, not to ask for anything.
 
 **Start the repo lane at full width in the first wave**, not after the browser workers have settled. The
 one exception is a wave that measures speed: a performance task and a wide repo fan-out on the same box
@@ -162,8 +160,10 @@ subagent driving three tool calls spent 45,775 tokens, nearly all of it startup 
 to be worth a whole slice of work, not one lookup. Two greps belong in one message to your own shell; four
 independent file clusters belong to four agents.
 
-`fanout: N` on the task raises or lowers that. Above five, split the task instead: five returns are already
-more than one worker can rule on without losing the thread.
+`fanout: N` on the task raises or lowers that. **No script reads that field.** It is the planner's
+instruction to the worker and it holds only because the worker honours it, which is why it also says
+nothing about the machine: above five, split the task instead, because five returns are already more than
+one worker can rule on without losing the thread.
 
 `sh "$f" width .fleet/<run-id>` answers this for the whole lane; the paragraph below is what it computes.
 
@@ -172,6 +172,13 @@ workers.** Read free physical memory before a wide fan-out and take the smaller 
 machine has room for. The precedent is in this plugin's own host project, whose vitest config chooses 14
 workers above 20 GB free and 4 below 9, and whose comment records the merge that OOM-killed five chunks of
 sixteen.
+
+**A repo worker is who claims it.** A chip is only ever told `lane pane` or `lane repo`, and `next` used
+to filter on an exact match, so a `needs: verify` task was claimable by nobody: it sat in the queue for
+the whole run and `landed` then refused to close the run over it. A repo worker now takes a verify task
+when no other verify task is held, and `next` prints a `VERIFY LANE` line telling it that it holds the
+fleet's only one. That check is a width rather than a lock - the queue's atomicity is per task, so two
+workers reaching it in the same instant can both pass it.
 
 **The verify lane is exclusive, and it beats every other rule here.** A full typecheck or a full test suite
 is the whole machine: measured on the host this plugin was built on, a cold typecheck peaks at 4.9 GB and
@@ -232,9 +239,10 @@ failure line.
 commit and the state of the tree, because six workers are changing it while the finding is being written,
 and a finding without that is unreproducible an hour later.
 
-**Changes:** the fleet's width. Pane-bound runs are capped by how many panes fit on a display, five before
-they stop being usable and ten before they stop being panes. A repo-only run is capped by the machine and
-by how many claims the queue can keep fed, which is a much larger number.
+**Changes:** the fleet's width. Pane-bound runs start at the default of two and are capped by how many
+panes fit on a display: the display ceiling in `calibration.json` before they stop being usable, ten before
+they stop being panes. A repo-only run is capped by the machine and by how many claims the queue can keep
+fed, which is a much larger number.
 
 **Appears:** the verify lane. A run that writes code needs a rule for who may run the suite, and the
 project's `FLEET.md` states the cost. Give it to one worker at a time, at the end, and let the rest verify

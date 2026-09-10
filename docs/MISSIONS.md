@@ -64,14 +64,25 @@ twelve unrelated fixes does the first three well.
 
 Isolation: worktree.
 
+**One kind of task is exempt from that split, and it has to be.** A defect whose cause is shared lives in
+a file somebody else owns, so exclusive ownership - the thing that stops two workers colliding - is also
+what stops the cause being fixed once. Measured on one project: a duplicated guard was named for
+consolidation in three separate run documents across three runs and deferred every time as "out of scope
+per the brief", while three modules got the same handle-discarding timer patched three times. So
+`fleet-gate.mjs cluster` writes a `kind: root` task for each candidate shared cause and gates its members
+behind it on `after:`, which the queue already enforces. The root owns the seam while every task that
+reaches it is held. `docs/GATE.md` has the ceilings, and why refuting a candidate is a complete result.
+
 **Re-verify before repairing.** A backlog entry is a report, not a fact. Measured 2026-08-26: a fix
 mission over 100 findings refuted about 15, and three of eight blockers and majors changed diagnosis the
 moment someone tried to fix them, including the flagship blocker whose stated mechanism turned out to be
 a different bug entirely. A worker that repairs what the entry claims, rather than what the code does,
 writes a fix for a defect nobody had.
 
-**Name the twins before fixing a shared seam.** When a defect lives in something more than one surface
-uses, find every other user of it first and say which ones share the flaw. A fix applied to one side of a
+**Name the twins before fixing a shared seam.** `fixqueue` lists the twins that share your files, and
+`cluster` puts a root in front of the ones that share a cause; neither finds the third surface that shares
+neither. When a defect lives in something more than one surface uses, find every other user of it first
+and say which ones share the flaw. A fix applied to one side of a
 seam and not the other leaves two surfaces behaving differently under the same input, and that divergence
 is worse than the original defect because nothing looks broken from either side alone. Measured in the
 same mission: fixing a filter on the client left its server twin and its export twin untouched, so one
@@ -83,6 +94,20 @@ cascade, and check what depended on the thing you removed.
 
 Demand: a fix arrives with a reproduction that failed before it and passes after. A fix nobody can prove
 is a change, not a fix.
+
+That was prose here from the day this kind existed, and a fix run landed 164 changes without anything
+checking it. It is checkable, so `fleet.sh finish` now checks it: `fleet-gate.mjs prove` runs the
+reproduction rather than recording a claim about it, before the change and after, and `finish` refuses the
+task unless the first failed, the second passed, and the tree moved between them. That last condition is
+not pedantry - a build daemon that died mid-run returned `BUILD SUCCESSFUL, 0 failures` over a tree whose
+fix had been reverted. A `before` that passes is a refutation, which is the cheapest good news a fix run
+gets.
+
+**A change that alters what somebody outside the repository reads goes through `ask/` or through a
+recorded decision, and a hook enforces which.** Three such changes shipped from one project's runs with
+neither: two endpoints moved behind authentication, breaking monitoring nobody in the run could see; a
+history clear moved onto an event that also fires on a console load; a detector deleted rather than
+repaired. All three were reasoned about carefully and none was asked about. `docs/GATE.md`.
 
 **End with the full suite, once, sequentially.** Scoped runs during the work; the whole thing at the end.
 The regression that mission shipped closest to production was invisible to every worker and every review,

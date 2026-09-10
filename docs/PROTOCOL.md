@@ -201,10 +201,10 @@ Add `.fleet/` to the project's ignore file. Runs are scratch, not history.
 run-id: 2026-08-26-checkout-flow
 chip-id: "01"
 kind: verify           # verify | investigate | implement | fix | research | design | critique | canvas | redesign | call
+needs: pane            # pane | verify | repo, the lane this brief's work belongs to
 model: sonnet          # the model that does the work
 verdict-model: opus    # the model that decides what counts as a finding
 owns: [routes, files, or areas this worker may touch]
-after: task-02-primitives   # optional: `next` holds this task until that one is done
 isolation: none        # none | worktree, see below
 ---
 
@@ -223,6 +223,45 @@ Named explicitly, including the areas other workers own, by number.
 
 `kind` selects the working style, described in [`MISSIONS.md`](MISSIONS.md).
 
+Nothing in `scripts/` reads a brief: a brief is read by the worker alone, so a field here is a rule to a
+model rather than an input to a program.
+
+## Task format
+
+A pull-mode task in `tasks/ready/` is the same document with different frontmatter, and this half **is**
+parsed. `fleet.sh next` reads `needs`, `budget` and `after`; the sections below the frontmatter are the
+brief's, minus the ones that describe a whole worker's slice.
+
+```markdown
+---
+task-id: task-07-vendor-egress
+kind: fix              # the same set as a brief's
+needs: repo            # pane | verify | repo. Absent, `next` will not match it to a lane
+budget: 25             # minutes. `next` prints twice this as the abort deadline, and `sweep` calls a
+                       # claim quiet for longer than one budget abandoned. Absent, `sweep` assumes 25
+after: task-02-primitives   # optional, one id or several: `next` holds this task until those are done
+fanout: 3              # optional, repo lane only. No script reads it; a worker honours it, see LANES.md
+---
+```
+
+`fleet.sh fixqueue` writes a second-generation queue from a merged backlog and adds three fields to that
+frontmatter, so a fix worker can see where its task came from without opening the backlog: `finding-id`,
+the id `merge` stamped on the finding; `severity`, carried over from it; and `twins`, the ids of the other
+findings whose evidence named the same file, which are one seam and belong to one worker.
+
+`fixqueue` also derives the fields above rather than asking: `kind` is `design` when the finding carried
+`rects` or a probe and `fix` otherwise, and `needs` is `pane` when the reproduction names a click, a
+keystroke, a hover, a scroll, a drag, a screenshot, an overlap or a zoom, and `repo` otherwise.
+
+`fleet-gate.mjs cluster` then writes one more shape into the same queue, `kind: root`, and adds `after:` to
+the tasks it gates. A root task carries `shared`, the file or identifier its members all reach, and
+`gates`, the task ids held behind it. It is the one task in a fix queue that may edit files another task
+names, which is the point of it: everything that reaches its seam is held while it runs.
+[`GATE.md`](GATE.md) is the whole stage.
+
+`fleet.sh finish` refuses a `fix` or `root` task whose reproduction has not been run through
+`fleet-gate.mjs prove` before the change and after it, over a tree that moved between the two.
+
 `isolation: worktree` gives the worker its own checkout. Any brief that writes code uses it. Two sessions
 editing one tree produce a merge nobody asked for. Creating and removing those trees safely is
 [`WORKTREES.md`](WORKTREES.md): a junction left inside a worktree is a hole a recursive delete follows into
@@ -237,7 +276,9 @@ One JSON object per line in `<chip-id>.jsonl`:
 ```
 
 `fleet.sh find` stamps `when` and `chip` for you and refuses the line if the rest is not there, so the
-schema is a gate rather than a request. `when` matters because a run changes shared state under itself:
+schema is a gate rather than a request. **It is also the only way a line reaches that file**: an append
+written by hand passes none of those checks, and the gate is the only place the contract is enforced rather
+than requested. `when` matters because a run changes shared state under itself:
 without an observed-at time, quarantining the findings taken after a role flip or a saved setting is
 guesswork, and with it the quarantine is a script.
 
@@ -282,6 +323,12 @@ Two more line shapes exist for the same reason, and for the same file:
 
 `created` is what the run left behind in the environment. A fleet writes real rows, and the next person to
 read that sandbox deserves to know which of them an agent made rather than a person.
+
+Both auxiliary shapes are checked rather than waved through. An auxiliary line **may not carry**
+`severity`: the merge routes on that field alone, so one extra key beside a severity used to file a
+blocker with no area and no evidence straight into the backlog, and exit 0 doing it. `created` needs
+`where`, `state_changed` needs `when`, and `what` - the retired field name - is refused on every shape
+rather than only on findings.
 
 `state_changed` is any change to state the whole fleet shares: the account's role, a saved column
 selection, a dashboard's card set, anything the server persists per account rather than per session. Write

@@ -41,17 +41,35 @@ const runDir = flag('--run-dir') || path.join('.fleet', run);
 if (!fs.existsSync(dir)) { console.error(`no transcript directory at ${dir} - pass --dir`); process.exit(2); }
 
 // When a worker wrote its completion marker. Everything after that timestamp is a session that had nothing
-// left to do, which is the single most expensive thing this tool measures.
+// left to do, which is the single most expensive thing this tool measures. Beside it, the run's own chip
+// register: `chips/<session-id>` is written at a worker's first claim, so it says which sessions belong to
+// this run without reading a word of any prompt.
 const doneAt = {};
-if (fs.existsSync(runDir)) {
+const registered = new Map();
+const runDirHere = fs.existsSync(runDir);
+if (runDirHere) {
   for (const f of fs.readdirSync(runDir)) {
     const m = f.match(/^([\w-]+)\.(done|blocked)$/);
     if (m) doneAt[m[1]] = fs.statSync(path.join(runDir, f)).mtimeMs;
   }
+  try {
+    const c = path.join(runDir, 'chips');
+    for (const f of fs.readdirSync(c)) registered.set(f, fs.readFileSync(path.join(c, f), 'utf8').trim());
+  } catch { /* nothing claimed yet */ }
 }
+// A run directory that is not there is not a run that wasted nothing. `--run-dir` defaults to a path under
+// the cwd, so running this from anywhere but the project silently leaves every marker unread and every
+// afterDone column measured against nothing, which prints as a clean run.
+if (!runDirHere) console.error(`no run directory at ${path.resolve(runDir)}: pass --run-dir <path>. Without it there are no completion markers, and every afterDone number below is measured against nothing.`);
+else if (!Object.keys(doneAt).length) console.error(`no .done or .blocked markers under ${path.resolve(runDir)}: every afterDone number below is measured against nothing.`);
 
+// The run id has to match whole. As a substring, `2026-09-08-full-audit` also collects every session of
+// `fix-2026-09-08-full-audit` and charges them against the parent run's completion markers, which is where
+// this project's telemetry got its 1935 minutes of life after done.
+const WHOLE_RUN = new RegExp(`(^|[^\\w-])${run.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^\\w-])`);
 const BROWSER = /^mcp__.*[Bb]rowser__/;
 const rows = [];
+let unattributed = 0;
 
 for (const name of fs.readdirSync(dir).filter((f) => f.endsWith('.jsonl'))) {
   const p = path.join(dir, name);
@@ -59,16 +77,16 @@ for (const name of fs.readdirSync(dir).filter((f) => f.endsWith('.jsonl'))) {
   for (const line of fs.readFileSync(p, 'utf8').split('\n')) { if (line) try { objs.push(JSON.parse(line)); } catch { /* torn line */ } }
   const first = objs.find((o) => o.type === 'queue-operation' || o.type === 'user');
   const seed = (first && (first.content || JSON.stringify(first.message || ''))) || '';
-  if (!seed.includes(run)) continue;
+  const enrolled = registered.get(name.replace(/\.jsonl$/, ''));
+  if (!enrolled && !WHOLE_RUN.test(seed)) continue;
 
-  // A chip id is whatever the prompt said it was, and since 2026-09-03 that includes `cid-03`.
-  // The run's own register is the authority when it exists: `chips/<session-id>` holds the chip, and the
-  // transcript is named after the session. The prompt is the fallback.
-  let chip = '';
-  try { chip = fs.readFileSync(path.join(runDir, 'chips', name.replace(/\.jsonl$/, '')), 'utf8').trim(); } catch { /* not registered */ }
-  const m = seed.match(/chip id is `([\w-]+)`/) || seed.match(/worker ([\w-]+)/) || seed.match(/brief-([\w-]+)\.md/);
-  if (!chip) chip = m ? m[1] : '??';
   const planner = /fleet-plan|Interview the operator/.test(seed);
+  // A chip id is whatever the prompt said it was, and since 2026-09-03 that includes `cid-03`. The
+  // register is the authority where it has an entry; the prompt is the fallback, and a session this run
+  // claims whose chip neither can name is left out rather than filed under a number that collides.
+  const m = seed.match(/chip id is `([\w-]+)`/) || seed.match(/worker ([\w-]+)/) || seed.match(/brief-([\w-]+)\.md/);
+  const chip = enrolled || (m && m[1]) || (planner ? 'plan' : '');
+  if (!chip) { unattributed++; continue; }
   // The lane is read from what the session did, not from what its prompt said: a paneless fix run's
   // prompt matched neither phrase the old heuristic looked for, and four repo workers printed as pane.
   let sawBrowser = false;
@@ -172,6 +190,7 @@ for (const name of fs.readdirSync(dir).filter((f) => f.endsWith('.jsonl'))) {
   });
 }
 
+if (unattributed) console.error(`${unattributed} session(s) name this run but no chip id: left out rather than guessed at.`);
 if (!rows.length) { console.error(`no session transcripts for run ${run} under ${dir}`); process.exit(1); }
 rows.sort((a, b) => (a.chip < b.chip ? -1 : 1));
 
@@ -193,7 +212,12 @@ for (const r of rows) {
 const sum = (k) => rows.reduce((a, b) => a + (b[k] || 0), 0);
 console.log('');
 console.log(`${rows.length} sessions, ${sum('turns')} turns, ${sum('outK')} K output tokens, ${sum('cacheM')} M cached reads`);
-console.log(`after their own completion marker: ${sum('afterDoneMin')} minutes and ${sum('afterDoneTurns')} turns of session life`);
+// A zero here reads as a run that wasted nothing, and it is the same zero a run whose markers were never
+// found prints. Name the denominator so the two can be told apart.
+const marked = rows.filter((r) => r.afterDoneMin !== null).length;
+console.log(marked
+  ? `after their own completion marker: ${sum('afterDoneMin')} minutes and ${sum('afterDoneTurns')} turns of session life, over the ${marked} of ${rows.length} sessions that have one`
+  : `after their own completion marker: NOT MEASURED - no marker under ${path.resolve(runDir)} matches any of these ${rows.length} sessions`);
 console.log(`clocks armed ${sum('clocks')}; helper calls ${sum('helperCalls')} against ${sum('handClaims')} hand rolled claims`);
 
 // The bill is turns multiplied by context [M24], and the two habits that move it are visible from here.

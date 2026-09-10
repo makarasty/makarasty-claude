@@ -90,6 +90,32 @@ sh "$fleet" finish "$run" "${winner:-20}" task-03 >/dev/null 2>&1
 sh "$fleet" next "$run" 09 repo >/dev/null 2>&1; rc=$?
 code "an empty lane reports drained rather than handing out foreign work" 3 "$rc"
 
+# The verify lane is one worker wide and no chip is ever told to ask for it - a chip prompt carries `pane`
+# or `repo` - so a `needs: verify` task was claimable by nobody and `landed` refused the run over it.
+vrun="${TMPDIR:-/tmp}/fleet-verify-$$"; mkdir -p "$vrun/tasks/ready" "$vrun/tasks/done"
+for n in 1 2; do
+  cat > "$vrun/tasks/ready/task-0$n-suite.md" <<EOF
+---
+task-id: task-0$n-suite
+needs: verify
+budget: 10
+---
+## Steps
+1. Run the whole suite, which this machine has room for once.
+EOF
+done
+out=$(sh "$fleet" next "$vrun" 41 repo); rc=$?
+code "a repo worker may take a verify task, because nobody else can" 0 "$rc"
+check "and is told it now holds the only verify lane there is" "VERIFY LANE" "$out"
+out=$(sh "$fleet" next "$vrun" 42 repo 2>&1); rc=$?
+code "a second worker is refused while that lane is held" 3 "$rc"
+sh "$fleet" finish "$vrun" 41 task-01-suite >/dev/null 2>&1
+out=$(sh "$fleet" next "$vrun" 42 repo); rc=$?
+check "and gets the next verify task once it lands" "CLAIMED task-02-suite" "$out"
+out=$(sh "$fleet" next "$vrun" 43 pane 2>&1); rc=$?
+code "a pane worker never takes one: it is the machine's lane, not the browser's" 3 "$rc"
+rm -rf "$vrun"
+
 [ -e "$run/RUN_FORMAT" ] && ok "the run carries the layout version it was written under" || bad "the run carries the layout version it was written under"
 cp "$run/RUN_FORMAT" "$run/.fmt"; echo 99 > "$run/RUN_FORMAT"
 out=$(sh "$fleet" status "$run" 2>&1); rc=$?
@@ -121,6 +147,25 @@ check "a visual claim whose rectangles miss each other is refused" "do not inter
 out=$(printf '%s' '{"unreached":"steps 7-9","reason":"budget exceeded"}' | sh "$fleet" find "$run" 07 2>&1); rc=$?
 code "an unreached line is a legitimate line" 0 "$rc"
 
+# An auxiliary line records what this worker did to the environment, and it used to be the way past every
+# check above: one extra key turned the gate off for the whole object.
+out=$(printf '%s' '{"created":"note","severity":"blocker","area":"","observed":"","evidence":"","what":"x"}' | sh "$fleet" find "$run" 07 2>&1); rc=$?
+code "an auxiliary key does not turn the gate off for the rest of the object" 1 "$rc"
+check "and a severity on an auxiliary line is refused by name" "auxiliary line carries no severity" "$out"
+out=$(printf '%s' '{"created":"user Ada Test, group QA-2"}' | sh "$fleet" find "$run" 07 2>&1); rc=$?
+code "a created line with nowhere to look for the row is refused" 1 "$rc"
+out=$(printf '%s' '{"state_changed":"active role a -> p"}' | sh "$fleet" find "$run" 07 2>&1); rc=$?
+check "and a state change with no window is refused, because every later sighting was measured inside it" "state_changed needs when" "$out"
+out=$(printf '%s' '{"created":"user Ada Test, group QA-2","where":"sandbox company 41"}' | sh "$fleet" find "$run" 07 2>&1); rc=$?
+code "an auxiliary line in its own shape is filed" 0 "$rc"
+
+# A chip's file existing at all is the difference between "filed nothing" and "never filed", and the
+# append used to create it before node had read a byte.
+out=$(printf '%s' '{"area":"a"}' | sh "$fleet" find "$run" 88 2>&1); rc=$?
+code "a chip whose first finding is refused files nothing" 1 "$rc"
+[ -e "$run/88.jsonl" ] && bad "and leaves no empty file to be read later as a chip that found nothing" "88.jsonl exists" \
+  || ok "and leaves no empty file to be read later as a chip that found nothing"
+
 echo
 echo "clocks that disarm themselves"
 
@@ -128,7 +173,15 @@ out=$(sh "$fleet" clock "$run" 07 task-02 20 2>&1); rc=$?
 code "a clock is printed for the worker to background" 0 "$rc"
 check "it watches for its own task closing" "tasks/done/task-02" "$out"
 check "and for its worker finishing" "07.done" "$out"
+check "and for its worker going blind, which is as finished as done" "07.blocked" "$out"
 check "and it speaks only if the budget really elapsed" "echo budget-elapsed-task-02" "$out"
+# The paths are read from a shell standing somewhere else - a worktree, where `.fleet/` is gitignored and
+# so does not exist at all - which is where every one of these is backgrounded from.
+# Through `sh`, because that is the interpreter fleet.sh itself is run under: `pwd -W` is a Git Bash
+# extension, so asking this shell would compare the run directory in two different spellings.
+absrun=$(cd "$run" && sh -c 'pwd -W 2>/dev/null || pwd')
+check "and every path in it is absolute, so a worker in a worktree can meet its exit conditions" "$absrun/tasks/done/task-02" "$out"
+check "one landed run ends it wherever it is armed" "[ -e \"$absrun/FINISHED\" ] && exit 0; i=0" "$out"
 rounds=$(printf '%s' "$out" | grep -o -- '-lt [0-9][0-9]*' | head -1 | tr -dc 0-9)
 want_rounds=$(( 20 * mult * 60 / poll ))
 [ "$rounds" = "$want_rounds" ] && ok "a 20 minute budget at the configured multiplier and poll interval" || bad "a 20 minute budget at the configured multiplier and poll interval" "$rounds rounds, wanted $want_rounds"
@@ -152,7 +205,25 @@ if grep -q "budget-elapsed-task-09" "$run/.clockout9" 2>/dev/null; then
 else
   bad "an open task's clock still rings at twice its budget" "$(cat "$run/.clockout9" 2>/dev/null)"
 fi
+# And the same open task's clock stops the moment the run declares itself finished, which is the only way
+# to reach a clock armed hours ago in a chat nobody is sitting in.
+: > "$run/FINISHED"
+( eval "$(printf '%s' "$out9" | sed "s/sleep $poll/sleep 0/")" ) > "$run/.clockoutF" 2>&1
+if grep -q "budget-elapsed" "$run/.clockoutF" 2>/dev/null; then
+  bad "a landed run silences every clock still armed" "clock still fired"
+else
+  ok "a landed run silences every clock still armed"
+fi
+rm -f "$run/FINISHED"
 sh "$fleet" finish "$run" 07 task-09 >/dev/null 2>&1
+
+# A project path with a space in it used to arm the clock on a different directory entirely.
+spacey="${TMPDIR:-/tmp}/fleet space $$"; mkdir -p "$spacey/tasks/ready"
+cp "$run/tasks/ready/task-09.md" "$spacey/tasks/ready/task-09.md"
+spaceabs=$(cd "$spacey" && sh -c 'pwd -W 2>/dev/null || pwd')
+out=$(sh "$fleet" next "$spacey" 07 repo 2>&1)
+check "the clock a run whose path has a space arms names that path in quotes" "clock \"$spaceabs\" 07" "$out"
+rm -rf "$spacey"
 
 out=$(sh "$fleet" finish "$run" 99 task-01 2>&1); rc=$?
 code "a worker cannot close somebody else's claim" 4 "$rc"
@@ -165,6 +236,7 @@ echo "finishing, and the difference between empty and over"
 out=$(sh "$fleet" drained "$run" 07 2>&1); rc=$?
 code "an empty queue the planner has not closed does not finish a worker" 5 "$rc"
 check "and it is told to poll instead" "Poll again" "$out"
+check "with a poll that stops itself when the run lands, like every other loop this prints" '/FINISHED" ] && { echo run-finished' "$out"
 [ -e "$run/07.done" ] && bad "no done marker while the queue is open" "07.done exists" || ok "no done marker while the queue is open"
 
 rm "$run/tasks/queue-open"
@@ -200,6 +272,13 @@ printf 'the tool everybody is tripping over is fixed\n' | sh "$fleet" broadcast 
 out=$(sh "$fleet" status "$run" 2>&1)
 check "a question older than the broadcast is flagged rather than left silently open" "broadcast landed after it" "$out"
 
+# The heading used to be printed above nothing at all: its `|| echo none` hung off a pipeline whose exit
+# status was sed's, and sed succeeds on empty input.
+bare="${TMPDIR:-/tmp}/fleet-bare-$$"; mkdir -p "$bare/tasks/ready"
+out=$(sh "$fleet" status "$bare" 2>&1)
+check "a run where no worker has finished says so under the markers heading" "  none" "$out"
+rm -rf "$bare"
+
 echo
 echo "sizing the repo lane"
 
@@ -207,6 +286,24 @@ out=$(sh "$fleet" width "$run" 2>&1); rc=$?
 code "the width of the repo lane is computed, not retyped" 0 "$rc"
 check "and it answers with a number" "REPO_WORKERS" "$out"
 check "showing the queue term it came from" "ready repo tasks" "$out"
+
+# The constants are read once at startup by sed rather than by a node run per lookup, so this checks the
+# reading itself: a copy of the script beside a calibration of our own, with a provenance sentence that
+# must not become a constant. Newest wins, hence the future stamp.
+calrun="${TMPDIR:-/tmp}/fleet-cal-$$"; mkdir -p "$calrun/scripts" "$calrun/run/tasks/ready"
+cp "$fleet" "$calrun/scripts/fleet.sh"
+cat > "$calrun/calibration.json" <<'CAL'
+{
+  "budget_multiplier": 3,
+  "clock_poll_seconds": 7,
+  "_provenance": { "clock_poll_seconds": "a sentence carrying 99, which is not a constant" }
+}
+CAL
+touch -t 203012312359 "$calrun/calibration.json" 2>/dev/null
+out=$(sh "$calrun/scripts/fleet.sh" clock "$calrun/run" 07 task-01 20 2>&1)
+check "a calibrated multiplier and poll interval are both read from the file" "-lt $(( 20 * 3 * 60 / 7 ))" "$out"
+check "and the poll is the file's, not the built-in default" "sleep 7;" "$out"
+rm -rf "$calrun"
 
 echo
 echo "abandoned claims"
@@ -225,6 +322,23 @@ sh "$fleet" sweep "$run" --release >/dev/null 2>&1
 [ -d "$run/tasks/claimed/task-77" ] && bad "--release hands the task back" "still claimed" || ok "--release hands the task back"
 out=$(sh "$fleet" sweep "$run" 2>&1)
 check "and a released claim is not swept twice" "no abandoned claims" "$out"
+
+# Every age in this script is one mtime reading, and without node that reading is empty: the sweep then
+# called a claim quiet for 0 minutes and reported a dead fleet healthy. Build a PATH that still has the
+# shell's own tools and nothing named node; skip where no such PATH exists.
+nonode=""
+for d in /usr/bin /bin; do [ -x "$d/sed" ] && nonode="${nonode:+$nonode:}$d"; done
+if [ -n "$nonode" ] && ! PATH="$nonode" command -v node >/dev/null 2>&1; then
+  out=$(PATH="$nonode" sh "$fleet" sweep "$run" 2>&1); rc=$?
+  code "with no node to read an mtime, sweep refuses rather than calling every claim fresh" 2 "$rc"
+  check "and says what it would have been guessing about" "how long a claim has been quiet" "$out"
+  PATH="$nonode" sh "$fleet" recover "$run" >/dev/null 2>&1; rc=$?
+  code "and recover refuses rather than sending a live session down the RESUME branch" 2 "$rc"
+  out=$(PATH="$nonode" sh "$fleet" status "$run" 2>&1)
+  check "while status, which is the planner's view, says the run age ceiling is not being checked" "run age unknown" "$out"
+else
+  echo "  skip  every PATH on this host carries node, so the blind case cannot be built"
+fi
 [ -e "$run/tasks/released/task-77.md" ] && ok "the released task leaves the queue with its claim" || bad "the released task leaves the queue with its claim"
 [ -e "$run/tasks/ready/task-77.md" ] && bad "and cannot be handed straight back under the same id" "still in ready/" || ok "and cannot be handed straight back under the same id"
 out=$(sh "$fleet" finish "$run" 99 task-77 2>&1); rc=$?
@@ -269,6 +383,28 @@ sh "$fleet" finish "$depsrun" 31 task-01-primitives >/dev/null 2>&1
 out=$(sh "$fleet" next "$depsrun" 32 repo); rc=$?
 code "once the dependency lands the task is claimable" 0 "$rc"
 check "and it is the task that was waiting" "CLAIMED task-02-screen" "$out"
+
+# A released task is work nobody finished, so the tasks whose `after:` named it are waiting on a done
+# marker nobody will write: the wave answered QUEUE WAITING for the rest of the run and `landed` refused
+# over it. The later stages go back to the planner with the stage that died.
+cat > "$depsrun/tasks/ready/task-03-polish.md" <<'DEP'
+---
+task-id: task-03-polish
+needs: repo
+budget: 20
+after: task-02-screen
+---
+## Steps
+1. Polish the screen, once it exists.
+DEP
+touch -t 202001010000 "$depsrun/tasks/claimed/task-02-screen/owner" "$depsrun/tasks/claimed/task-02-screen/heartbeat" 2>/dev/null
+out=$(sh "$fleet" sweep "$depsrun" --release 2>&1)
+check "releasing a task takes the tasks waiting on it with it" "also released task-03-polish" "$out"
+out=$(sh "$fleet" next "$depsrun" 33 repo 2>&1); rc=$?
+code "so the wave does not wait forever on a marker nobody will write" 3 "$rc"
+check "and the queue says it is empty rather than waiting" "QUEUE DRAINED" "$out"
+[ -e "$depsrun/tasks/released/task-03-polish.md" ] && ok "the dependent waits in released/ to be re-filed with the wave" \
+  || bad "the dependent waits in released/ to be re-filed with the wave"
 rm -rf "$depsrun"
 
 echo
@@ -463,6 +599,21 @@ check "the broker reports its backlog" "0 pending" "$out"
 check "and the lease it sizes hosts on, which survives the claim being removed" "median lease" "$out"
 grep -q '"claimed_at"' "$run/pane/results/07-1.json" 2>/dev/null && ok "the served walk carries the time it was claimed" || bad "the served walk carries the time it was claimed"
 
+# A walk is claimed with the same mkdir a task is, has no heartbeat, and nothing ever swept `pane/running`:
+# a host that died holding one - or one whose result the gate refused - left it unclaimable by everybody
+# while its requester waited for an answer nobody could produce.
+printf 'Walk the Archived tab.\n' | sh "$fleet" pane-ask "$run" 07 >/dev/null 2>&1
+sh "$fleet" pane-next "$run" 02 >/dev/null 2>&1
+touch -t 202001010000 "$run/pane/running/07-2/owner" 2>/dev/null
+out=$(sh "$fleet" sweep "$run" 2>&1)
+check "a walk nobody is advancing is named by the sweep" "ABANDONED? walk 07-2" "$out"
+sh "$fleet" sweep "$run" --release >/dev/null 2>&1
+out=$(sh "$fleet" pane-next "$run" 03 2>&1); rc=$?
+code "and --release hands it back to the next host" 0 "$rc"
+check "which is the walk that was stuck" "WALK 07-2" "$out"
+good='{"gate":301,"conditions":"1440x900, zoom 100","observations":[]}'
+printf '%s' "$good" | sh "$fleet" pane-serve "$run" 03 07-2 >/dev/null 2>&1
+
 echo
 echo "landing the run"
 
@@ -498,12 +649,27 @@ out=$(sh "$fleet" landed "$run" 2 2>&1); rc=$?
 check "a worker still waiting on the operator blocks the landing" "waiting on the operator" "$out"
 rm "$run/03.waiting"
 
+# A worker that went blind and then finished writes both markers, and counting the files made one worker
+# look like two - a run reading as complete with somebody still out, and a phone told so.
+: > "$run/07.blocked"
+out=$(sh "$fleet" landed "$run" 3 2>&1); rc=$?
+code "a chip that wrote both a done and a blocked marker is one worker, not two" 1 "$rc"
+check "and the count says which" "2 of 3 workers finished" "$out"
+rm -f "$run/07.blocked"
+
 out=$(sh "$fleet" landed "$run" 2 2>&1); rc=$?
 code "a finished run lands" 0 "$rc"
 [ -e "$run/FINISHED" ] && ok "and leaves the FINISHED file behind as the durable answer" || bad "and leaves the FINISHED file behind as the durable answer"
 
 out=$(sh "$fleet" summary "$run" 2>&1)
 check "the run banner carries a machine readable line" "fleet-summary: {" "$out"
+
+# The rows walked every chip file while the totals walked `[0-9]*.jsonl`, so a chip id that is not a
+# number printed rows full of findings above a total of nothing - and that nothing went to the phone.
+printf '%s\n' '{"area":"lists","severity":"major","observed":"the tab is empty","evidence":"cases.page.vue:184 slices before counting","mechanism_status":"unknown"}' > "$run/cid-03.jsonl"
+out=$(sh "$fleet" summary "$run" 2>&1)
+check "a chip id that is not a number is counted in the totals, not only in its own row" '"majors":2' "$out"
+rm -f "$run/cid-03.jsonl"
 
 echo
 echo "the design canvas"
@@ -767,6 +933,25 @@ if command -v git >/dev/null 2>&1; then
   out=$(sh "$fleet" unlink "C:/wtmerge" 2>&1); rc=$?
   code "unlink refuses a path too shallow to be a worktree" 2 "$rc"
 
+  # Every document tells the worker to unlink from inside the tree it is about to leave, and the guard
+  # against deleting this shell's own footing refused exactly that: the path and the working directory
+  # were the same. `unlink` removes the links inside a tree and never the tree, so standing in it is
+  # safe - and it is the step [M32] exists to enforce, which means a refusal here leaves the junctions in.
+  wtU="$wl/main/.claude/worktrees/wtU"
+  ( cd "$wl/main" && git worktree add -q "$wtU" -b wtU ) >/dev/null 2>&1
+  mkdir -p "$wtU/sub"
+  out=$(cd "$wtU/sub" && sh "$fleet" unlink "$wtU" 2>&1); rc=$?
+  code "unlink runs from inside the tree, which is the only way the documents call it" 0 "$rc"
+  check "and says what it removed" "unlinked" "$out"
+  out=$(cd "$wtU" && sh "$fleet" worktree "$wrun" 09 2>&1); rc=$?
+  code "and a worker registers the tree it is standing in, which is that command's default argument" 0 "$rc"
+  # The same term still refuses to DELETE the directory this shell is standing in, which is what it is for.
+  out=$(cd "$wtU" && sh "$fleet" clean "$wrun" --remove 2>&1)
+  check "but a deletion of the tree this shell stands in is still refused" "working directory" "$out"
+  [ -d "$wtU" ] && ok "and that tree is still on disk" || bad "and that tree is still on disk"
+  ( cd "$wl/main" && git worktree remove --force "$wtU" ) >/dev/null 2>&1
+  git -C "$wl/main" branch -D wtU >/dev/null 2>&1
+
   # A worktree cleanup can never reach is named rather than ignored, because it sits there forever and
   # only the operator can move it. Build one that is too shallow and check it is reported, never touched.
   ( cd "$wl/main" && git worktree add -q "$wl/stray" -b strayB ) >/dev/null 2>&1
@@ -783,6 +968,498 @@ if command -v git >/dev/null 2>&1; then
 else
   echo "  skip  no git"
 fi
+
+echo
+echo "the stage between a finding and a change"
+
+# These cases build their own fixtures rather than reusing $run: the proof gate compares the state of a
+# git tree before a change against its state after one, so they need a checkout of their own to move.
+tmp="${TMPDIR:-/tmp}/fleet-gate-$$"
+mkdir -p "$tmp"
+FLEET_SCRIPTS="$here"
+export FLEET_SCRIPTS
+
+# --- fleet-gate.mjs: the judgement stage -----------------------------------------------------------
+# Paste into scripts/fleet-selftest.sh. Uses the same `check`/`ok`/`bad` helpers and the same $tmp/$G
+# conventions as the cases above it. G is the gate script beside fleet.sh.
+
+G="$here/fleet-gate.mjs"
+if ! command -v node >/dev/null 2>&1; then
+  echo "  skip  fleet-gate cases: node is not on PATH"
+else
+
+# A run whose backlog holds one real cluster - two areas reaching one file - and one finding that reaches
+# nothing else. The cluster is what a root task is for; the loner must be left alone.
+gr=$tmp/gate/.fleet/r1
+mkdir -p "$gr"
+cat > "$gr/backlog.jsonl" <<'JSONL'
+{"id":"f-1","severity":"blocker","area":"login","observed":"session drops on refresh","mechanism":"the sessionStore write is not awaited","evidence":"src/auth/session.ts:42","repro":"npm test -- session"}
+{"id":"f-2","severity":"major","area":"export","observed":"export loses the last row","mechanism":"the sessionStore write is not awaited","evidence":"src/auth/session.ts:51","repro":"npm test -- export"}
+{"id":"f-3","severity":"major","area":"billing","observed":"invoice total rounds down","mechanism":"integer division","evidence":"src/billing/total.ts:9","repro":"npm test -- billing"}
+JSONL
+
+out=$(cd "$tmp/gate" && node "$G" cluster .fleet/r1 2>&1)
+check "two areas reaching one file are one candidate root" "1 candidate root" "$out"
+out=$(cat "$gr/clusters.md")
+check "and the root names the file they share" 'src/auth/session.ts' "$out"
+case "$out" in *f-3*) bad "a finding nothing else reaches is not put under a root" "$out";; *) ok "a finding nothing else reaches is not put under a root";; esac
+
+# The queue. One task per finding, as fixqueue writes them, then the gate wires the root in front.
+q=$tmp/gate/.fleet/fix-r1/tasks/ready
+mkdir -p "$q"
+for f in 1 2 3; do
+  printf -- '---\ntask-id: task-00%s-area\nkind: fix\nfinding-id: f-%s\nseverity: major\nneeds: repo\nbudget: 25\n---\n\n# area\n\n## Done when\n\n- something\n' "$f" "$f" > "$q/task-00$f-area.md"
+done
+out=$(cd "$tmp/gate" && node "$G" cluster .fleet/r1 --queue .fleet/fix-r1 2>&1)
+check "the root task is written into the queue" "1 root task(s) written" "$out"
+check "and its members are gated behind it" "2 task(s) gated" "$out"
+check "the root task owns the shared seam" "kind: root" "$(cat "$q/task-root-001.md")"
+check "and says which tasks wait on it" "gates: [task-001-area, task-002-area]" "$(cat "$q/task-root-001.md")"
+check "a member waits for the root" "after: task-root-001" "$(cat "$q/task-001-area.md")"
+check "and is told to re-run its reproduction first" "it may already pass" "$(cat "$q/task-001-area.md")"
+case "$(cat "$q/task-003-area.md")" in *after:*) bad "an ungrouped task is not gated" "gated";; *) ok "an ungrouped task is not gated";; esac
+
+# A second run over the same queue must not gate a task twice, or it can never be claimed.
+out=$(cd "$tmp/gate" && node "$G" cluster .fleet/r1 --queue .fleet/fix-r1 2>&1)
+check "running the gate twice does not gate a task twice" "0 task(s) gated" "$out"
+
+# prove / check: a fix arrives with a reproduction that failed before it and passes after it.
+pr=$tmp/gate/.fleet/r1/tasks/claimed/task-001-area
+mkdir -p "$pr"
+(cd "$tmp/gate" && git init -q . 2>/dev/null; git -C "$tmp/gate" config user.email t@t; git -C "$tmp/gate" config user.name t; echo one > "$tmp/gate/f.txt"; git -C "$tmp/gate" add -A >/dev/null 2>&1; git -C "$tmp/gate" commit -qm one >/dev/null 2>&1)
+
+out=$(cd "$tmp/gate" && node "$G" check .fleet/r1 task-001-area 2>&1)
+check "a task with no proof is refused" "no reproduction was recorded before" "$out"
+
+out=$(cd "$tmp/gate" && node "$G" prove .fleet/r1 task-001-area before -- "grep -q two f.txt" 2>&1)
+check "a failing reproduction is recorded" "before: exit 1" "$out"
+out=$(cd "$tmp/gate" && node "$G" check .fleet/r1 task-001-area 2>&1)
+check "and the task is still refused until there is an after" "no reproduction was recorded after" "$out"
+
+out=$(cd "$tmp/gate" && node "$G" prove .fleet/r1 task-001-area after -- "grep -q two f.txt" 2>&1)
+out=$(cd "$tmp/gate" && node "$G" check .fleet/r1 task-001-area 2>&1)
+check "a reproduction that still fails is refused" "still fails after the change" "$out"
+
+# The tree has to have moved. A green over the same bytes that were red is the false green a dead build
+# daemon produced on a real run: BUILD SUCCESSFUL over a tree whose fix had been reverted.
+echo two > "$tmp/gate/f.txt"
+git -C "$tmp/gate" add -A >/dev/null 2>&1; git -C "$tmp/gate" commit -qm two >/dev/null 2>&1
+out=$(cd "$tmp/gate" && node "$G" prove .fleet/r1 task-001-area after -- "grep -q two f.txt" 2>&1)
+out=$(cd "$tmp/gate" && node "$G" check .fleet/r1 task-001-area 2>&1)
+check "red before, green after, over a tree that changed" "PROVEN task-001-area" "$out"
+
+git -C "$tmp/gate" revert --no-edit -q HEAD >/dev/null 2>&1; echo two > "$tmp/gate/f.txt"
+out=$(cd "$tmp/gate" && node "$G" prove .fleet/r1 task-001-area before -- "grep -q two f.txt" 2>&1)
+check "a reproduction that passes before the change is a refutation" "refuted, not fixed" "$out"
+
+# A green whose tree is identical to the red one proves nothing, whatever the exit code says. This is the
+# false green a dead build daemon produced on a real run - BUILD SUCCESSFUL over a tree whose fix had been
+# reverted - and only a forced rebuild found it. Nothing here touches the checkout between the two runs.
+mk=$tmp/outside-marker
+rm -f "$mk"
+mkdir -p "$tmp/gate/.fleet/r1/tasks/claimed/task-002-area"
+out=$(cd "$tmp/gate" && node "$G" prove .fleet/r1 task-002-area before -- "test -f \"$mk\"" 2>&1)
+: > "$mk"
+out=$(cd "$tmp/gate" && node "$G" prove .fleet/r1 task-002-area after -- "test -f \"$mk\"" 2>&1)
+out=$(cd "$tmp/gate" && node "$G" check .fleet/r1 task-002-area 2>&1)
+check "a pass over an unchanged tree proves nothing" "byte for byte what it was" "$out"
+
+# asks: the open questions as one round, and the decisions nobody was asked about beside them.
+mkdir -p "$gr/ask" "$gr/answers"
+printf 'The peace-mode ordering fix is a live behaviour change on a flag an operator may already have set.\nrecommend: fix it, and note it in the release\n' > "$gr/ask/07-2.md"
+printf 'answered\n' > "$gr/answers/07-1.md"
+printf 'closed one\n' > "$gr/ask/07-1.md"
+out=$(cd "$tmp/gate" && node "$G" asks .fleet/r1 2>&1)
+check "an unanswered question is in the round" "07-2.md" "$out"
+check "and the worker's recommendation is shown with it" "the worker recommends" "$out"
+case "$out" in *07-1.md*) bad "a question with an answer beside it is not re-asked" "$out";; *) ok "a question with an answer beside it is not re-asked";; esac
+
+out=$(cd "$tmp/gate" && echo '{"token":"/api/server/status","why":"no caller outside the bundled frontend, checked the access log"}' | node "$G" decide .fleet/r1 07 2>&1)
+check "a contract call taken without asking is recorded" "recorded: 07 changed /api/server/status" "$out"
+out=$(cd "$tmp/gate" && node "$G" asks .fleet/r1 2>&1)
+check "and it is shown to the operator with the questions" "1 contract change(s) were decided without asking" "$out"
+out=$(cd "$tmp/gate" && echo '{"token":"/api/thing"}' | node "$G" decide .fleet/r1 07 2>&1) || true
+check "a decision with no rationale is refused" "a silent one" "$out"
+
+# surface: the names this project promised something outside it.
+out=$(cd "$tmp/gate" && node "$G" surface . 2>&1)
+check "the contract surface is generated from the checkout" "surface tokens to" "$out"
+
+fi
+
+# --- fleet-contract.mjs: the PreToolUse gate -------------------------------------------------------
+# The hook is handed a payload on stdin and answers with an exit code: 0 lets the edit through, 2 refuses
+# it with a sentence. Its cwd comes from the harness in the operating system's own spelling, so ask node
+# for it exactly as the fleet-guard cases above do.
+
+H="$here/../hooks/fleet-contract.mjs"
+[ -f "$H" ] || H="$here/fleet-contract.mjs"
+if [ ! -f "$H" ] || ! command -v node >/dev/null 2>&1; then
+  echo "  skip  fleet-contract cases"
+else
+  hp="${TMPDIR:-/tmp}/fleet-contract-$"
+  mkdir -p "$hp/.fleet/r9/chips" "$hp/.fleet/r9/ask"
+  hcwd=$(cd "$hp" && { node -e 'process.stdout.write(process.cwd())' 2>/dev/null || pwd; })
+  for s in 9 10 11 12; do printf '%s' "$s" > "$hp/.fleet/r9/chips/sess-$s"; done
+  printf 'route\t/api/server/status\tsrc/web/Controller.kt\nexport\tgetProgressNote\tsrc/api.ts\n' > "$hp/.fleet/contract-surface.txt"
+
+  # <session> <old> <new> -> "<exit> <stderr>"
+  hook() {
+    node -e 'const [c,s,o,n]=process.argv.slice(1);process.stdout.write(JSON.stringify({session_id:s,cwd:c,tool_name:"Edit",tool_input:{file_path:"src/web/Controller.kt",old_string:o,new_string:n}}))' \
+      "$hcwd" "$1" "$2" "$3" > "$hp/in.json"
+    out=$(node "$H" < "$hp/in.json" 2>&1); printf '%s %s' "$?" "$out"
+  }
+
+  o=$(hook sess-9 'get("/api/server/status") { roster() }' 'authed("/api/private") { roster() }')
+  check "an edit that drops a promised route is refused" "2 " "$o"
+  check "and it names the route" "/api/server/status" "$o"
+  check "and offers the question as one of two ways past it" "ask/9-" "$o"
+  check "and the recorded decision as the other" "fleet-gate.mjs decide" "$o"
+
+  # A substring count says the name survived this. It is the rename most likely to be made.
+  o=$(hook sess-12 'get("/api/server/status")' 'get("/api/server/statistics")')
+  check "renaming a route to a longer name that contains it is still a removal" "2 " "$o"
+
+  o=$(hook sess-10 'get("/api/server/status") { roster() }' 'get("/api/server/status") { roster().sorted() }')
+  check "an edit that leaves the route where it was is allowed" "0 " "$o"
+
+  o=$(hook sess-9 'get("/api/server/status")' 'gone')
+  check "the same name is not raised twice in one session" "0 " "$o"
+
+  printf 'Moving /api/server/status behind auth. recommend: do it, note it in the release.\n' > "$hp/.fleet/r9/ask/10-1.md"
+  o=$(hook sess-10 'get("/api/server/status")' 'authed("/x")')
+  check "a name already asked about is allowed through" "0 " "$o"
+
+  o=$(hook sess-11 'const a = 1' 'const a = 2')
+  check "an edit touching no promised name is allowed" "0 " "$o"
+  o=$(hook unregistered 'get("/api/server/status")' 'gone')
+  check "a session that is not a fleet worker is never gated" "0 " "$o"
+
+  node -e 'const [c]=process.argv.slice(1);process.stdout.write(JSON.stringify({session_id:"sess-11",cwd:c,tool_name:"Read",tool_input:{file_path:"x"}}))' "$hcwd" > "$hp/in.json"
+  node "$H" < "$hp/in.json" >/dev/null 2>&1; code "reading is never gated" 0 "$?"
+
+  rm -f "$hp/.fleet/contract-surface.txt"
+  o=$(hook sess-11 'get("/api/server/status")' 'gone')
+  check "a project that generated no contract surface is never gated" "0 " "$o"
+  rm -rf "$hp"
+fi
+
+echo
+echo "the merge, the retro and the canvas"
+
+echo
+echo "the merge, and the reconciliation that has to be able to fail"
+
+# This block pastes into fleet-selftest.sh unchanged. The preamble fires only when the file is run on its
+# own, and then FLEET_SCRIPTS says where the scripts are.
+if ! command -v check >/dev/null 2>&1; then
+  set -u
+  LC_ALL=C; export LC_ALL
+  here=${FLEET_SCRIPTS:-$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)}
+  pass=0; fail=0
+  ok()   { pass=$((pass + 1)); printf '  ok    %s\n' "$1"; }
+  bad()  { fail=$((fail + 1)); printf '  FAIL  %s\n' "$1"; [ -n "${2:-}" ] && printf '        got: %s\n' "$2"; }
+  check(){ case "$3" in *"$2"*) ok "$1";; *) bad "$1" "$(printf '%s' "$3" | tr '\n' '|' | cut -c1-160)";; esac; }
+  code() { [ "$2" = "$3" ] && ok "$1" || bad "$1" "exit $3, wanted $2"; }
+  _mjs_standalone=1
+fi
+
+mg="$here/fleet-merge.mjs"
+if [ -f "$mg" ] && command -v node >/dev/null 2>&1; then
+  mrun="${TMPDIR:-/tmp}/fleet-merge-$/2026-09-08-full-audit"; mkdir -p "$mrun"
+  # Two chips see one thing independently. One of them decided its own sighting was its dev server's fault;
+  # the other reproduced it three times. A third chip is called `cid-03`, which fleet.sh find accepts.
+  printf '%s\n' '{"chip":"07","area":"auth","severity":"blocker","observed":"login loops forever","evidence":"my dev server was on the wrong port","mechanism_status":"unknown","skip_reason":"my dev server was misconfigured"}' > "$mrun/07.jsonl"
+  printf '%s\n' '{"chip":"08","area":"auth","severity":"blocker","observed":"login loops forever","evidence":"auth/session.ts:44 refreshes the cookie it just cleared, reproduced three times","mechanism_status":"established","confirmation":"confirmed"}' > "$mrun/08.jsonl"
+  printf '%s\n%s\n' '{"chip":"cid-03","area":"billing","severity":"blocker","observed":"invoice total ignores tax","evidence":"billing/total.ts:12 sums before tax","mechanism_status":"established"}' '{"chip":"cid-03","area":"nav","severity":"minor","observed":"back button skips a page","evidence":"router/history.ts:9 pops twice","mechanism_status":"hypothesis"}' > "$mrun/cid-03.jsonl"
+
+  out=$(node "$mg" merge "$mrun" 2>&1); rc=$?
+  code "a merge whose files add up finishes" 0 "$rc"
+  check "a chip id that is not a bare number is read like any other" "cid-03.jsonl" "$out"
+  check "and its findings are counted" "input findings   4" "$out"
+  check "the reconciliation names both halves it compared" "4 findings off 3 chip file(s)" "$out"
+  grep -q 'billing/total.ts:12' "$mrun/backlog.jsonl" && ok "a blocker filed by cid-03 reaches the backlog" || bad "a blocker filed by cid-03 reaches the backlog"
+
+  # One worker's skip reason is a statement about that worker, not about the finding.
+  grep -q 'reproduced three times' "$mrun/backlog.jsonl" && ok "an independently reproduced blocker survives another worker's skip" || bad "an independently reproduced blocker survives another worker's skip"
+  grep -q 'on the wrong port' "$mrun/backlog.jsonl" && bad "and the row keeps the stronger evidence" "the skipped sighting's evidence won" || ok "and the row keeps the stronger evidence"
+  grep -q 'my dev server was misconfigured' "$mrun/backlog.jsonl" && ok "with the skip reason carried on the row rather than deleted with it" || bad "with the skip reason carried on the row rather than deleted with it"
+  [ -s "$mrun/skipped.jsonl" ] && bad "and nothing was set aside" "skipped.jsonl is not empty" || ok "and nothing was set aside"
+
+  # A group every one of whose sightings was skipped does leave the backlog.
+  printf '%s\n' '{"chip":"09","area":"perf","severity":"major","observed":"the list takes nine seconds","evidence":"measured on a laptop that was compiling","mechanism_status":"unknown","skip_reason":"the machine was busy"}' > "$mrun/09.jsonl"
+  node "$mg" merge "$mrun" >/dev/null 2>&1
+  grep -q '"area":"perf"' "$mrun/skipped.jsonl" && ok "a group every sighting of which was skipped is set aside" || bad "a group every sighting of which was skipped is set aside"
+  rm -f "$mrun/09.jsonl"
+
+  # The merge's own output is output. Reading backlog.jsonl back as a chip file would let a second merge
+  # count its own rows as findings.
+  out=$(node "$mg" merge "$mrun" 2>&1)
+  check "the files this merge writes are named as not-input" "backlog.jsonl (written by this merge, never read back as input)" "$out"
+  check "and a second merge over the same run counts the same findings" "input findings   4" "$out"
+
+  # Both halves of the reconciliation have to be able to disagree. Break the merge on purpose: the halves
+  # that stood here before were the arrays the grouping had just built, and agreed by construction.
+  sed "s|w('backlog.jsonl', merged);|w('backlog.jsonl', merged.slice(0, -1));|" "$mg" > "$mrun/short-write.mjs"
+  grep -q 'merged.slice(0, -1)' "$mrun/short-write.mjs" && ok "the sabotaged copy really is sabotaged" || bad "the sabotaged copy really is sabotaged"
+  out=$(node "$mrun/short-write.mjs" merge "$mrun" 2>&1); rc=$?
+  code "a merge that writes fewer rows than it grouped is refused" 1 "$rc"
+  check "and names the finding that reached no row" "reach no row on disk" "$out"
+  [ -e "$mrun/backlog.jsonl" ] && bad "and leaves no backlog for the run to land over" "backlog.jsonl is still there" || ok "and leaves no backlog for the run to land over"
+
+  # A file that was never opened files no findings, so nothing downstream of the read can miss it.
+  sed "s|if (GENERATED.includes(f))|if (/^cid-/.test(f)) continue; if (GENERATED.includes(f))|" "$mg" > "$mrun/unread.mjs"
+  out=$(node "$mrun/unread.mjs" merge "$mrun" 2>&1); rc=$?
+  code "a chip file the merge never opened is refused" 1 "$rc"
+  check "by name" "never opened: cid-03.jsonl" "$out"
+
+  node "$mg" merge "$mrun" >/dev/null 2>&1; rc=$?
+  code "and the honest merge still reconciles afterwards" 0 "$rc"
+  node "$mg" render "$mrun" >/dev/null 2>&1
+  grep -q 'one worker skipped this' "$mrun/backlog.md" && ok "the rendered backlog shows that a worker had skipped the row" || bad "the rendered backlog shows that a worker had skipped the row"
+  rm -rf "${TMPDIR:-/tmp}/fleet-merge-$"
+else
+  echo "  skip  no fleet-merge.mjs or no node"
+fi
+
+echo
+echo "the retro, and which run a session belongs to"
+
+rt="$here/fleet-retro.mjs"
+if [ -f "$rt" ] && command -v node >/dev/null 2>&1; then
+  rdir="${TMPDIR:-/tmp}/fleet-retro-$"; mkdir -p "$rdir/tx" "$rdir/.fleet/2026-09-08-full-audit/chips"
+  # Two sessions with the same chip number: one worked the run, one worked the fix run named after it. As
+  # a substring the parent run id matches both, and the child's hours were charged against the parent's
+  # completion marker. Let node write the transcripts, so the timestamps are exact.
+  node -e '
+    const fs = require("fs"), d = process.argv[1];
+    const t = (m) => new Date(Date.UTC(2026, 8, 8, 10, m)).toISOString();
+    const line = (o) => JSON.stringify(o) + "\n";
+    const sess = (seed, t0, step) => {
+      let s = line({ type: "user", timestamp: t(t0), message: { role: "user", content: seed } });
+      for (let i = 1; i < 6; i++) s += line({ type: "assistant", timestamp: t(t0 + i * step), message: { usage: { output_tokens: 100 }, content: [] } });
+      return s;
+    };
+    fs.writeFileSync(d + "/tx/sess-parent.jsonl", sess("Work .fleet/2026-09-08-full-audit/brief-07.md; your chip id is `07`", 0, 10));
+    fs.writeFileSync(d + "/tx/sess-child.jsonl", sess("Work .fleet/fix-2026-09-08-full-audit/brief-07.md; your chip id is `07`", 120, 60));
+    fs.writeFileSync(d + "/tx/sess-nochip.jsonl", sess("Have a look at .fleet/2026-09-08-full-audit and tell me what it holds", 0, 2));
+    fs.writeFileSync(d + "/.fleet/2026-09-08-full-audit/chips/sess-parent", "07");
+    fs.writeFileSync(d + "/.fleet/2026-09-08-full-audit/07.done", "");
+    const done = new Date(Date.UTC(2026, 8, 8, 10, 30));
+    fs.utimesSync(d + "/.fleet/2026-09-08-full-audit/07.done", done, done);
+  ' "$rdir"
+
+  out=$(cd "$rdir" && node "$rt" 2026-09-08-full-audit --dir "$rdir/tx" 2>&1)
+  check "a run collects its own sessions" "1 sessions, 5 turns" "$out"
+  check "and not the sessions of the fix run named after it" "20 minutes and 2 turns" "$out"
+  check "counting the sessions it declined to attribute rather than guessing" "no chip id: left out" "$out"
+  out=$(cd "$rdir" && node "$rt" fix-2026-09-08-full-audit --run-dir "$rdir/.fleet/fix-2026-09-08-full-audit" --dir "$rdir/tx" 2>&1)
+  check "and the fix run collects its own" "1 sessions, 5 turns" "$out"
+  check "without borrowing the parent run's completion marker" "NOT MEASURED" "$out"
+
+  # A run directory that is not there is not a run that wasted nothing, and the zero it used to print was
+  # indistinguishable from one.
+  out=$(cd "${TMPDIR:-/tmp}" && node "$rt" 2026-09-08-full-audit --dir "$rdir/tx" 2>&1); rc=$?
+  code "a retro with no run directory still reports" 0 "$rc"
+  check "and says the markers were never found" "no run directory at" "$out"
+  check "rather than printing a zero that reads as a clean run" "NOT MEASURED" "$out"
+  out=$(cd "$rdir" && node "$rt" 2026-09-08-full-audit --dir "$rdir/tx" --json 2>/dev/null)
+  printf '%s' "$out" | node -e 'let s="";process.stdin.on("data",(d)=>s+=d).on("end",()=>process.exit(JSON.parse(s).length===1?0:1))' 2>/dev/null; rc=$?
+  code "the warnings stay off stdout, so --json still parses" 0 "$rc"
+  rm -rf "$rdir"
+else
+  echo "  skip  no fleet-retro.mjs or no node"
+fi
+
+echo
+echo "the canvas seed, and the cover it writes on the way"
+
+cv2="$here/fleet-canvas.mjs"
+if [ -f "$cv2" ] && command -v node >/dev/null 2>&1; then
+  sdir="${TMPDIR:-/tmp}/fleet-seed-$"; mkdir -p "$sdir/src" "$sdir/design" "$sdir/skill"
+  printf 'x' > "$sdir/src/Cases.vue"
+  cat > "$sdir/design/Cases.dc.html" <<'ART'
+<!doctype html>
+<html><head><meta charset="utf-8"><script src="./support.js"></script></head>
+<body><x-dc><helmet><style>body { margin: 0; } a { color: #000; }</style></helmet>
+<div style="width: 1440px; height: 900px">Cases</div></x-dc></body></html>
+ART
+  # A stand-in for the design skill's helper, so this asserts on every machine rather than only on one
+  # where /design has run. It answers the only question that matters: was every artboard canvas.json names
+  # actually handed to it.
+  cat > "$sdir/skill/payload.template.html" <<'TPL'
+<!-- template -->
+TPL
+  cat > "$sdir/skill/seed-canvas.mjs" <<'STUB'
+import fs from 'node:fs';
+const a = process.argv.slice(2);
+if (a[0] === '--check') { console.log('CHECK ok'); process.exit(0); }
+const sent = a.filter((x, i) => a[i - 1] === '--artboard');
+const named = JSON.parse(fs.readFileSync(a[a.indexOf('--canvas') + 1], 'utf8')).artboards.map((x) => x.file);
+const miss = named.filter((n) => !sent.some((s) => s.endsWith(n)));
+console.log(miss.length ? 'MISSING FROM PAYLOAD: ' + miss.join(', ') : 'PAYLOAD COMPLETE: ' + named.join(', '));
+fs.writeFileSync(a[a.indexOf('--out') + 1], 'seeded');
+STUB
+  (cd "$sdir" && node "$cv2" stamp design/Cases.dc.html --source src/Cases.vue --frame 1440x900) >/dev/null 2>&1
+  out=$(cd "$sdir" && node "$cv2" seed design --title "Fixture" --out "$sdir/out.html" --skill-dir "$sdir/skill" 2>&1); rc=$?
+  code "the first seed of a canvas finishes" 0 "$rc"
+  check "the cover the layout wrote is in the payload it shipped" "PAYLOAD COMPLETE: Main.dc.html" "$out"
+  check "and the count it reports is the count it sent" "seeding 2 artboards" "$out"
+  rm -rf "$sdir"
+else
+  echo "  skip  no fleet-canvas.mjs or no node"
+fi
+
+if [ -n "${_mjs_standalone:-}" ]; then
+  echo
+  echo "$pass passed, $fail failed"
+  [ "$fail" = 0 ] || exit 1
+fi
+
+echo
+echo "finish refuses a fix nobody proved"
+
+if command -v node >/dev/null 2>&1 && command -v git >/dev/null 2>&1; then
+  fg=$tmp/finishgate
+  mkdir -p "$fg/r/tasks/ready"
+  ( cd "$fg" && git init -q . && git config user.email t@t && git config user.name t )
+  printf -- '---\ntask-id: t1\nkind: fix\nneeds: repo\nbudget: 5\n---\n\n# a fix task\n' > "$fg/r/tasks/ready/t1.md"
+  ( cd "$fg" && sh "$fleet" next r 07 repo ) >/dev/null 2>&1
+  out=$( cd "$fg" && sh "$fleet" finish r 07 t1 2>&1 ); rc=$?
+  code "a fix task with no proof does not get its done marker" 1 "$rc"
+  check "and the worker is told how to record one" "prove r t1 before" "$out"
+  [ -e "$fg/r/tasks/done/t1" ] && bad "and no done marker was written" "marker exists" || ok "and no done marker was written"
+
+  echo one > "$fg/f.txt"
+  ( cd "$fg" && git add -A >/dev/null 2>&1 && git commit -qm one >/dev/null 2>&1 )
+  ( cd "$fg" && node "$here/fleet-gate.mjs" prove r t1 before -- "grep -q two f.txt" ) >/dev/null 2>&1
+  echo two > "$fg/f.txt"
+  ( cd "$fg" && git add -A >/dev/null 2>&1 && git commit -qm two >/dev/null 2>&1 )
+  ( cd "$fg" && node "$here/fleet-gate.mjs" prove r t1 after -- "grep -q two f.txt" ) >/dev/null 2>&1
+  out=$( cd "$fg" && sh "$fleet" finish r 07 t1 2>&1 ); rc=$?
+  code "the same task finishes once the reproduction has been run both ways" 0 "$rc"
+  check "and it says so" "DONE t1" "$out"
+
+  # A task of any other kind is not asked for a reproduction: the demand belongs to the fix kinds.
+  printf -- '---\ntask-id: t2\nkind: verify\nneeds: repo\nbudget: 5\n---\n\n# not a fix\n' > "$fg/r/tasks/ready/t2.md"
+  ( cd "$fg" && sh "$fleet" next r 07 repo ) >/dev/null 2>&1
+  out=$( cd "$fg" && sh "$fleet" finish r 07 t2 2>&1 ); rc=$?
+  code "a task that is not a fix finishes without one" 0 "$rc"
+else
+  echo "  skip  finish-gate cases: node or git missing"
+fi
+
+echo
+echo "the throttle that keeps a fleet off the page file"
+
+if command -v node >/dev/null 2>&1; then
+  mt=$tmp/tight
+  mkdir -p "$mt/scripts" "$mt/r/tasks/ready"
+  cp "$here/fleet.sh" "$here/fleet-load.mjs" "$mt/scripts/" 2>/dev/null
+  printf -- '---\ntask-id: t1\nkind: fix\nneeds: repo\nbudget: 5\n---\n\n# a task\n' > "$mt/r/tasks/ready/t1.md"
+
+  # A floor no machine can meet: the refusal must fire whatever this box happens to have free.
+  node -e 'const f=require("fs"),p=process.argv[1];const c=JSON.parse(f.readFileSync(p+"/../calibration.json","utf8"));c.memory_floor_gb=99999;f.writeFileSync(p+"/../calibration.json",JSON.stringify(c,null,2))' "$mt/scripts" 2>/dev/null ||
+    node -e 'const f=require("fs");f.writeFileSync(process.argv[1],JSON.stringify({memory_floor_gb:99999,memory_clear_gb:99999},null,2))' "$mt/calibration.json"
+  out=$( cd "$mt" && sh scripts/fleet.sh next r 07 repo 2>&1 ); rc=$?
+  code "a claim is refused when the machine has no memory left" 6 "$rc"
+  check "and the worker is told the box is full, not that it did something wrong" "MACHINE TIGHT" "$out"
+  check "and is given the wait to background rather than an ending" "until node" "$out"
+  check "whose loader path is absolute, since a worktree worker has another working directory" "/scripts/fleet-load.mjs" "$out"
+  check "and which ends itself when the run lands" "FINISHED" "$out"
+  check "and it is told the one thing it can do while waiting" "close anything" "$out"
+  [ -e "$mt/r/tight/07" ] && ok "the held worker is on disk where status can find it" || bad "the held worker is on disk where status can find it" "no marker"
+  [ -e "$mt/r/tasks/claimed/t1" ] && bad "and nothing was claimed" "claimed anyway" || ok "and nothing was claimed"
+
+  # Floor back to a number any machine meets: the same call must now hand the task out and clear the mark.
+  node -e 'const f=require("fs");f.writeFileSync(process.argv[1],JSON.stringify({memory_floor_gb:0,memory_clear_gb:0},null,2))' "$mt/calibration.json"
+  out=$( cd "$mt" && sh scripts/fleet.sh next r 07 repo 2>&1 ); rc=$?
+  code "and with room again the same call claims" 0 "$rc"
+  [ -e "$mt/r/tight/07" ] && bad "and the held mark is cleared" "still there" || ok "and the held mark is cleared"
+
+  out=$( cd "$mt" && sh scripts/fleet.sh drained r 07 2>&1 )
+  check "a drained worker is asked for its pane back" "CLOSE YOUR BROWSER PANE" "$out"
+  rm -rf "$mt"
+else
+  echo "  skip  memory throttle cases: no node"
+fi
+
+echo
+echo "the hook that refuses the whole machine"
+
+M="$here/../hooks/fleet-memory.mjs"
+[ -f "$M" ] || M="$here/fleet-memory.mjs"
+if [ -f "$M" ] && command -v node >/dev/null 2>&1; then
+  mh=$tmp/memhook
+  mkdir -p "$mh/.fleet/r1/chips" "$mh/.fleet/r1/tasks/claimed" "$mh/.fleet/r1/tasks/ready"
+  printf '07' > "$mh/.fleet/r1/chips/sess-a"
+  mcwd=$(cd "$mh" && { node -e 'process.stdout.write(process.cwd())' 2>/dev/null || pwd; })
+  bashcall() {
+    node -e 'const [c,s,cmd]=process.argv.slice(1);process.stdout.write(JSON.stringify({session_id:s,cwd:c,tool_name:"Bash",tool_input:{command:cmd}}))' \
+      "$mcwd" "$1" "$2" > "$mh/in.json"
+    out=$(node "$M" < "$mh/in.json" 2>&1); printf '%s %s' "$?" "$out"
+  }
+
+  o=$(bashcall sess-a "git status")
+  check "an ordinary command is never gated" "0 " "$o"
+  o=$(bashcall sess-a "npx vitest run src/auth/session.test.ts")
+  check "a scoped run is never gated" "0 " "$o"
+  o=$(bashcall sess-a "npm test -- --changed")
+  check "and neither is one over the changed set" "0 " "$o"
+  o=$(bashcall sess-zz "npx vitest run")
+  check "a session that is not a fleet worker is never gated" "0 " "$o"
+
+  # A worker holding the verify lane is the one worker allowed to take the machine.
+  mkdir -p "$mh/.fleet/r1/tasks/claimed/t-verify"
+  printf 'chip 07\nclaimed now\n' > "$mh/.fleet/r1/tasks/claimed/t-verify/owner"
+  printf -- '---\ntask-id: t-verify\nneeds: verify\nbudget: 30\n---\n\n# the suite\n' > "$mh/.fleet/r1/tasks/ready/t-verify.md"
+  o=$(bashcall sess-a "npx vitest run")
+  check "a worker holding the verify lane may run the whole suite" "0 " "$o"
+  rm -rf "$mh/.fleet/r1/tasks/claimed/t-verify" "$mh/.fleet/r1/tasks/ready/t-verify.md"
+  rm -f "$mh/.fleet/r1/chips/sess-a.memory-warned"
+
+  # The refusal itself, with a census that always says the box is full. Without this the decisive case is
+  # untestable, because whether the hook fires depends on what the machine happens to have free.
+  cat > "$mh/tight-census.mjs" <<'STUB'
+console.log(JSON.stringify({ when: new Date().toISOString(), totalGB: 31.2, freeGB: 0.9, tight: true,
+  sessions: 4, panes: 3, groups: { 'browser pane or window': { n: 3, totalMB: 3200, maxMB: 2061 },
+  'toolchain: typecheck': { n: 2, totalMB: 2100, maxMB: 1200 } } }));
+STUB
+  FLEET_LOAD="$mh/tight-census.mjs"; export FLEET_LOAD
+  o=$(bashcall sess-a "npx vitest run")
+  check "a full suite is refused when the machine is full" "2 " "$o"
+  check "and the worker is told what is already running" "typecheck or test process" "$o"
+  check "and offered the verify lane rather than only a refusal" "claim the verify lane" "$o"
+  o=$(bashcall sess-a "npx vitest run")
+  check "and it is not raised a second time in one session" "0 " "$o"
+
+  rm -f "$mh/.fleet/r1/chips/sess-a.memory-warned"
+  node -e 'const [c,s]=process.argv.slice(1);process.stdout.write(JSON.stringify({session_id:s,cwd:c,tool_name:"mcp__Claude_Browser__navigate",tool_input:{url:"http://x"}}))' "$mcwd" sess-a > "$mh/in.json"
+  o=$(node "$M" < "$mh/in.json" 2>&1); rc=$?
+  code "driving a browser on a full machine is refused too" 2 "$rc"
+  check "and the worker is told a reload will not help" "reload returns none of it" "$o"
+  unset FLEET_LOAD
+
+  # A census that cannot answer must never block work: this hook sits on the Bash path of every worker, so
+  # failing closed would stop the fleet over a broken reading rather than over a full machine.
+  printf 'process.exit(3)\n' > "$mh/broken-census.mjs"
+  printf 'console.log("not json at all")\n' > "$mh/garbage-census.mjs"
+  rm -f "$mh/.fleet/r1/chips/sess-a.memory-warned"
+  FLEET_LOAD="$mh/broken-census.mjs"; export FLEET_LOAD
+  o=$(bashcall sess-a "npx vitest run")
+  check "a census that exits non-zero lets the command through" "0 " "$o"
+  FLEET_LOAD="$mh/garbage-census.mjs"
+  o=$(bashcall sess-a "npx vitest run")
+  check "and so does one that answers with nonsense" "0 " "$o"
+  node -e 'const [c,s]=process.argv.slice(1);process.stdout.write(JSON.stringify({session_id:s,cwd:c,tool_name:"mcp__Claude_Browser__navigate",tool_input:{url:"http://x"}}))' "$mcwd" sess-a > "$mh/in.json"
+  node "$M" < "$mh/in.json" >/dev/null 2>&1
+  code "a browser call is not gated when the census is unreadable" 0 "$?"
+  unset FLEET_LOAD
+  rm -rf "$mh"
+else
+  echo "  skip  memory hook cases"
+fi
+rm -rf "$tmp"
 echo "$pass passed, $fail failed"
 if [ "${1:-}" = "--keep" ]; then echo "run directory kept: $run"; else rm -rf "$run"; fi
 [ "$fail" = 0 ] || exit 1

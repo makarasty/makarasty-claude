@@ -1,5 +1,257 @@
 # Changelog
 
+## 1.5.0 — 2026-09-10
+
+A run finds well and decides badly. Seventeen runs on one application and six on another say the first
+half plainly: 7 findings of 2,851 carried neither a `file:line` nor a number, so the evidence contract
+holds where it was put. The second half is three failures that all have one shape — a rule that lives in
+prose while nothing on the path enforces it.
+
+- **A fix now arrives with a reproduction that was run.** "A fix arrives with a reproduction that failed
+  before it and passes after" has been in `MISSIONS.md` since the fix kind existed, and one fix run landed
+  164 changes with nothing checking. `fleet-gate.mjs prove` runs the command rather than recording a claim
+  about it, before the change and after, and writes the exit code, the commit and a digest of the working
+  tree into the claim. `fleet.sh finish` refuses a `fix` or `root` task unless the first failed, the second
+  passed, the command was the same one, and **the tree moved between them** — a dead build daemon on a real
+  run returned `BUILD SUCCESSFUL, 0 failures` over a tree whose fix had been reverted, and only a forced
+  rebuild found it. A `before` that passes is reported as a refutation, which is the cheapest good news a
+  fix run gets: roughly 15 findings in every 100 end that way.
+- **A cause several findings share is ruled on once, before any of them is patched.** The fix queue splits
+  by file cluster so no two workers open one file, which is also why a shared seam never gets fixed: it
+  belongs to somebody else. Measured on one project, a duplicated guard was named for consolidation in
+  three separate run documents across three runs and deferred every time as "out of scope per the brief",
+  while three modules had the same handle-discarding timer patched three times under a note saying a fourth
+  would turn three patches into one helper. `fleet-gate.mjs cluster` writes a `kind: root` task per
+  candidate shared cause and gates its members behind it on `after:`, the ordering the queue already
+  enforces. The root is the one task in a fix queue allowed to edit files another task names, because
+  everything reaching its seam is held while it runs. Refuting a candidate is a complete result and
+  releases the members to be fixed on their own evidence.
+- **Two ceilings, both from a real backlog, both in `calibration.json`.** Replayed against a 436-finding
+  audit, the first shape produced one candidate 51 findings wide because they all touched a 5,000-line
+  command file: gating fifty-one tasks behind one worker serialises a run and returns nothing the file
+  split does not already give, so a candidate over six members is reported as a hotspot and gates nothing.
+  A token more than 15% of a run mentions is the project's vocabulary — without that cut, `forEach` and
+  `playerData` came out as candidate causes. Identifiers are read from the mechanism rather than from the
+  whole finding for the same reason, and one file cited at two depths (`Timer.java` and
+  `.../arc/util/Timer.java`) is one file. After both: 42 roots over 128 of 219 fix tasks, sized two to six.
+- **An edit that drops a name something outside the repository reads is refused.** Three changes shipped
+  from one project's runs with no question asked: two endpoints moved behind session authentication, so
+  unauthenticated monitoring nobody in the run could see began getting 401; a history clear moved onto an
+  event that also fires on a console `load`, so a restart plus an autosave load truncated history that had
+  survived it; a detector deleted rather than repaired, whose rewritten config comment forced six servers
+  to rewrite their configuration on next boot. All three were reasoned about carefully. The same runs asked
+  86 questions and got 85 answers, so the operator was there the whole time — taste was not the missing
+  piece. `hooks/fleet-contract.mjs` runs on `PreToolUse` and blocks an edit that removes a token listed in
+  `.fleet/contract-surface.txt`, offering two ways past, both one line: file the `ask/`, or record the
+  decision. `decisions.jsonl` is read out at landing. It is timid like `fleet-guard`: no fleet, no chip, or
+  no surface file and it exits 0, and it raises a given name once per session, ever.
+- **`fleet-gate.mjs surface`** generates that file from the tracked sources — routes, exported names,
+  configuration keys, event names — and `fleet-init` now runs it and tells the operator to trim and commit
+  it. The ignore rule for `.fleet/` changed shape with it: `.fleet/*` plus a negation, because git does not
+  descend into an excluded directory and `.fleet/` on its own leaves the negation silently dead.
+- **`fleet-gate.mjs asks`** prints every open question as one round with the recommendation its worker
+  filed, and the decisions taken without asking underneath. What costs the operator is not the count but a
+  question arriving alone in a chat they are not sitting in.
+
+### Fourteen defects in `fleet.sh`, and what they had in common
+
+Most of them were a guard that had never once fired, or one that fired on the wrong thing. The self-test
+went from 167 cases to 282; 32 of the new ones fail against the old script.
+
+- **One extra key turned the finding gate off.** An auxiliary line (`created`, `state_changed`) ran no
+  checks at all and the `else` after it held every requirement, so
+  `{"created":"note","severity":"blocker","area":"","observed":"","evidence":"","what":"x"}` was filed and
+  exited 0 — an evidence-free blocker with the retired field name, straight into the backlog, because the
+  merge routes on `severity` alone. Auxiliary lines have their own shape now: no `severity`, `created`
+  needs `where`, `state_changed` needs `when`, and `what` is refused on every shape.
+- **`unlink` refused itself, and so did worktree registration.** Both are documented as being run from
+  inside the worktree, and the path guard treated a path containing the shell's working directory as
+  unsafe — a path contains itself. That guard is the [M32] step, the one that stops `git worktree remove`
+  from following a `node_modules` junction and emptying the main checkout, measured seven times out of
+  seven. It had never succeeded once: across every run on this machine, worktrees registered came to zero.
+  The predicate is right for a command that deletes a tree and wrong for two that do not, so those two now
+  drop that term and `clean` keeps it. The self-test previously called `unlink` with an explicit path from
+  the main checkout, which is why the documented path was the untested one.
+- **The abort clock could never exit early**, for exactly the workers it guards. Its exit conditions were
+  relative paths under `.fleet/`, and a worker that writes code sits in a git worktree where `.fleet/` is
+  gitignored and therefore absent — so every clock ran its full term, up to twice the budget, and then woke
+  a session that had finished hours before. Paths are absolute now, `.blocked` counts as an ending, and
+  `<run>/FINISHED` is checked first and every round, so **one `landed` call ends every clock still armed
+  anywhere on the machine**. The poll `drained` prints carries the same escape, which leaves nothing this
+  plugin arms that a landing does not reach.
+- **`landed` counted one chip twice.** A chip that wrote both `.blocked` and `.done` closed a two-worker
+  run on its own, wrote `FINISHED`, and paged the operator's phone on that count.
+- **The `verify` lane was claimable by nobody.** It is defined in `LANES.md`, `next` filtered on an exact
+  match, and chips are only ever told `pane` or `repo` — so a verify task sat in the queue and `landed`
+  then refused the run over a claim nobody could make. A repo worker takes it when no other verify task is
+  held, and `next` says so. Stated in the code as what it is: a width, not a lock.
+- **Without node, `sweep` reported health for a dead fleet.** The age helper returned empty, every claim
+  read as zero minutes old, and the one instrument for a dead worker printed `no abandoned claims`.
+  `recover --release` was worse: an empty quiet time sent every live chip down the resume branch. Those
+  three refuse now rather than answer wrongly.
+- **A pane walk that failed validation was unclaimable forever.** The claim directory stood, `pane-next`
+  skipped it for every host, and the requester polled a result that was never coming; nothing swept
+  `pane/running/`. A walk has no heartbeat, so it gets a lease instead — `pane_walk_lease_minutes`, a
+  chosen 30, in `calibration.json`.
+- **Releasing a task deadlocked its wave.** Every task whose `after:` named the released one waited on a
+  done marker nobody would write. `--release` cascades now, transitively, skipping anything a worker holds.
+- **`summary`'s rows and its totals read different globs**, so a run with a chip id like `cid-03` printed
+  rows full of findings above a total of zero — and paged that zero to the phone.
+- **A refused finding still created the chip's file**, so a worker whose first finding was rejected read
+  afterwards as a chip that had found nothing rather than one that had never filed.
+- Plus: `$run` unquoted in the two command strings printed for an operator to background, so a project path
+  with a space armed a clock on the wrong directory; a `|| echo "  none"` that could never fire, because
+  the pipeline's status was `sed`'s; and `cal` spawning an `ls` and a fresh `node` per constant lookup on
+  the hottest path in the protocol. The calibration file is read once at startup now: `next` went from
+  ~438 ms to ~320 ms per call, and `clock`, which is almost nothing but constant lookups, from 238 ms to
+  146 ms.
+
+### The two halves of the merge that could not disagree
+
+`fleet-merge.mjs` refused to finish "if the sightings do not add up to the input or if a blocker present in
+the input is absent from the output", and `fleet-collect.md` cited a 254-finding run as proof. The
+sightings half was summed from the groups that had just been built out of the input, so it was `n === n`;
+a merge sabotaged to write one row fewer than it grouped still reported every finding accounted for. It now
+reads `backlog.jsonl` and `skipped.jsonl` back off disk, matches them to the chip files by finding id,
+re-lists the directory so a `*.jsonl` it never opened fails the run, and removes what it generated when the
+check fails, since `landed` gates on that file existing.
+
+Three more, all of them silent:
+
+- One worker's `skip_reason` took another worker's independently reproduced blocker out of the backlog with
+  it, because the group's fate was read off whichever same-severity sighting loaded first. A group is
+  skipped only when every sighting in it was, the strongest evidence is now the head, and skip reasons
+  travel on the merged row.
+- A chip id that was not a bare number — the register has held `cid-03` since 2026-09-03 — had every
+  finding it filed dropped by the merge, which read only `NN.jsonl` while `fleet.sh find` writes for any
+  chip string and prints `FILED`. Every `*.jsonl` is read now, and the files read and the files skipped are
+  both named in the output.
+- `fleet-retro.mjs` matched a session to a run by plain substring on its first message, so
+  `2026-09-08-full-audit` collected every session of `fix-2026-09-08-full-audit`, and chip numbers that
+  collide across runs were charged against the wrong completion marker. That is where a "1,935 minutes of
+  session life after done" figure came from. The run id must match whole, the run's own register decides
+  membership, and a session that cannot be attributed is left out and counted rather than guessed at.
+
+### The reading path, halved
+
+Every line on a mandatory path is paid on every run by every session, and the path had grown until
+`fleet-run.md` demanded the pane be opened "before anything else you would read" with 1,381 lines mandated
+above that paragraph.
+
+| Path | Before | After |
+|---|---|---|
+| Worker, before its first task | 1,305 | 458 |
+| Worker, pull mode, before its first claim | 1,715 | 868 |
+| Worker, pane branch, whole run | 2,776 | 2,011 |
+| Planner, before it can write a brief | 1,398 | 834 |
+| Planner, pull mode with panes, whole run | 2,850 | 1,783 |
+
+Pointers name a section rather than a file, `PROTOCOL.md`'s finding schema waits until findings are
+written, `WORKTREES.md` until the tree is removed, and `BROWSER.md` until past the gate — with the gate
+expression itself inlined, since that one line is what is needed first. The nine-line plugin-directory
+preamble that stood at the top of nine command files is four lines now. Raw totals are flat; the path is
+not.
+
+Eight contradictions went with it, each one rule stated two incompatible ways: findings through
+`fleet.sh find` or appended by hand (the gate wins everywhere — a hand-written line passes no check); who
+writes `.done` (`drained` in pull mode, by hand only on an assigned brief, where there is no queue to
+drain); three mutually exclusive end-of-turn states in one file; the pane ceiling as ten, five and two,
+which are three different things and are now named as such; what the finding gate actually refuses,
+rewritten from the code; a `while true` watch held up as a cautionary tale two files from the `while true`
+watch this plugin supplies; a brief spec carrying a field only tasks use and missing two the queue parses;
+and `fanout:`, kept with "no script reads this field" said out loud.
+
+### Models: the knob that turned out to exist
+
+`MODELS.md` said per-stage reasoning effort was "a knob that does not exist" and told planners to treat
+effort as a session-wide dial. The first half is still true of the `Agent` tool's parameters; the
+conclusion drawn from it was wrong. A subagent definition takes both `model:` and `effort:`, and effort is
+the one nothing overrides per call — so `fleet-scenario` (sonnet/high), `fleet-profiler` (sonnet/medium),
+`fleet-triage` (haiku/medium) and `fleet-design-eye` (opus/high) now carry their tier and their effort,
+each with a sentence saying why. The model resolution order, both environment variables and
+`modelSettings.<id>.effortLevel` are written down, along with the one thing that is not settled: the
+documentation says a session started from a chip takes the dispatch default rather than the spawning
+session's model, and this plugin's operator reports the opposite in practice. That is recorded as an open
+question with the experiment that settles it, rather than answered from either side.
+
+### What actually blinds a pane, and what a pane actually costs
+
+Two measurements on 2026-09-10, both of which overturned a rule this plugin had been enforcing.
+
+**[M33] The screen has nothing to do with it.** A sampler left in a page for 463 seconds, recording frames
+per second while the operator moved the pane through six states by hand. A pane fully covered by another
+window composites at 300 frames a second. So does one on a second monitor with a corner showing, and so
+does one pushed entirely past the edge of the desktop at `screenX` 5032. Two things stop it: another tab
+being selected in its window, and that window being minimised. The ceiling of five panes, justified by how
+many tile readably on a display, was measuring the wrong constraint - panes nobody is watching can be
+parked off the desktop and go on working, and the ergonomics section that offered that as a risky trick
+now offers it as the answer.
+
+Three signals that look like they could replace the frame gate, and cannot. `innerWidth` held its real
+value through 142 consecutive seconds of zero frames. `document.visibilityState` reported `visible` on a
+pane delivering nothing, immediately after a screenshot was taken of it. And `tabs_context` answered
+`The Browser pane is currently displayed` while the page inside it drew zero frames at a width of 949 px.
+The host's flag sees whether the pane has a place in the layout, which is a different question.
+
+Two behaviours nothing had named. **The first second after a tab is selected delivers zero frames**, at
+both transitions, so a gate fired the instant an operator says they have opened the pane reads blind and
+sends the worker back to ask for a pane that is already open - read zero, wait a second, read again.
+And a **minimised window emits stray seconds of 2 to 4 frames**, which is the mechanism behind the
+existing rule that a reading between 1 and 59 is blind: a `frames > 0` check would have passed that worker.
+
+`setInterval` divides on the same line and fails worse than silence. With the pane not laid out it ticked
+3 times in a minute. With the pane laid out but not compositing it ticked **142 times in 142 seconds**,
+one per second, exactly on time, while the page drew nothing. `PERF.md` told workers to sample with it;
+now it tells them to put the frame gate beside every series it produces.
+
+**[M34] A pane is one renderer per tab and about 113 MB, and then whatever the page weighs.** Closing and
+reopening reproduced that to within a megabyte. Then 150,000 DOM nodes went into one tab: that renderer
+went **132 MB to 2,061 MB**, free memory 14.9 GB to 12.0, commit 33.5 GB to 36.3 against 31.2 physical.
+A reload gave none of it back - only closing the tab did. [M21] measured +344 MB per pane in August and
+concluded that RAM does not cap a fleet; the number was right and the conclusion was about a light page,
+so that entry is now marked superseded rather than corrected.
+
+### Memory discipline, in three refusals
+
+The operator's machine dies of this, and the rules against it were prose - in `LANES.md`, in `MODELS.md`,
+and in the operator's own `CLAUDE.md` - which this project measures at approximately zero compliance. They
+are refusals now, at the three places the cost is visible.
+
+- **`fleet.sh next` reads the machine before every claim.** Below `memory_floor_gb` it hands out nothing:
+  exit 6, `MACHINE TIGHT`, and the loop to background while waiting. It refuses the task and never the
+  worker, because a session that stops because it was refused is a dead chat and nothing restarts one
+  [M03]. It releases only above `memory_clear_gb`, and the gap between the two is hysteresis: with one
+  threshold every held worker claims again on the same reading, together, which is the moment the box dies
+  rather than the moment it recovers. `fleet.sh status` names who is held, since a worker waiting on memory
+  holds no claim and would otherwise appear nowhere.
+- **A `PreToolUse` hook refuses a full test suite or a full typecheck** from a worker that does not hold
+  the verify lane, when the machine is tight or one is already running. It names the scoped form and the
+  verify lane in the refusal, and it raises itself once per session, ever. The verify lane exists for
+  exactly this and, until this release, could not be claimed by anybody at all.
+- **The same hook refuses a browser call on a full machine** and tells the worker to close its pane, since
+  a reload returns nothing and only closing the tab does [M34].
+
+`fleet-load.mjs` gains `--clear <GB>`, which exits 0 when there is room and is what a held worker waits on,
+and its `tight` reading moves into the census where callers can read it rather than being computed inside
+the human-readable table.
+
+**And the census was broken.** `JSON.parse` was refusing the whole 200 kB process list because one command
+line on this machine carried a bell character - an agent's own arguments, four of them - so the census
+threw and every caller fell back to a default. `fleet.sh width` falls back to a flat cap of six, which
+means the memory term had been silently absent from lane sizing on any machine running a process with a
+control character in its arguments. Control characters are stripped before the parse now, and a parse that
+still fails says so instead of returning an empty list. Fixing it was what made the rest of this section
+possible: every refusal above reads that census.
+
+### Seams, for cutting rather than porting
+
+`PORTING.md` gains a table of the four optional halves — call, design and canvas, worktrees, browser and
+panes — with what dangles when each is removed. Call is clean: four files and one mission section. Design
+leaks two conditional lines into core. Worktrees take the path gate with them, which is reason enough to
+keep both. The browser half cannot be cut by deleting files, and does not need to be: every pane document
+is behind a branch pointer, so a paneless project already pays prose on a shelf rather than turns in a run.
+
+
 ## 1.4.0 — 2026-09-08
 
 Worktrees get a lifecycle. A run that writes code left one worktree and one branch per worker on the disk

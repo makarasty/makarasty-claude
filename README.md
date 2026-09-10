@@ -103,7 +103,12 @@ connected.
   screenshot of each candidate second, and findings that carry the rectangles behind them. The pictures
   stay in its context.
 
-## The gate
+## The pane gate
+
+This plugin calls a mechanical refusal a gate and has four of them: this one, the finding gate in
+`fleet.sh find`, the path gate every deletion passes ([`docs/SAFETY.md`](docs/SAFETY.md)), and the stage
+between a finding and a change ([`docs/GATE.md`](docs/GATE.md)). They have nothing in common except the
+shape - something is refused rather than asked for.
 
 A browser pane that is not displayed on screen stops compositing. It still navigates, still loads pages,
 still returns plausible DOM, and every visual observation made through it is false:
@@ -345,6 +350,7 @@ fleet has yet captured a real application this way; see "Known limits".
 - [`docs/COMMANDS.md`](docs/COMMANDS.md) who may invoke each command, what `allowed-tools` actually
   grants, and the checklist before adding one
 - [`docs/BROWSER.md`](docs/BROWSER.md) blindness, the gate, panes, viewports, round trips
+- [`docs/GATE.md`](docs/GATE.md) the stage between a finding and a change: the reproduction executed, the shared cause ruled on first, the contract surface
 - [`docs/SWEEPS.md`](docs/SWEEPS.md) checks that catch a class of defect rather than one bug
 - [`docs/MOCKING.md`](docs/MOCKING.md) reaching states the sandbox data will not produce, and the line
   between a scene and a shared write
@@ -381,8 +387,10 @@ fleet has yet captured a real application this way; see "Known limits".
 A version is a promise about a surface, and this one is deliberately narrow. Under semver, 1.x will not
 break:
 
-- **The run directory layout** - `tasks/ready`, `tasks/claimed/<id>/owner`, `tasks/done`, `ask/`,
-  `answers/`, `pane/`, and the `<chip>.jsonl` / `.notes.md` / `.done` / `.blocked` / `.waiting` files.
+- **The run directory layout** - `tasks/ready`, `tasks/claimed/<id>/owner`, `tasks/claimed/<id>/proof`,
+  `tasks/done`, `ask/`, `answers/`, `pane/`, `decisions.jsonl`, `clusters.jsonl`, and the
+  `<chip>.jsonl` / `.notes.md` / `.done` / `.blocked` / `.waiting` files. `.fleet/contract-surface.txt`
+  sits beside the runs rather than inside one, because it belongs to the project and is committed with it.
   Each run stamps `RUN_FORMAT` at its first write, and a `fleet.sh` that reads an older format refuses a
   newer run rather than misreading it.
 - **`fleet.sh`'s subcommands and their exit codes**: 0 done; 1 a line the schema gate refused, a walk
@@ -425,10 +433,36 @@ interpreter whose name ends in a carriage return. This repository pins `*.sh tex
 `CLAUDE_CODE_GIT_BASH_PATH` is the escape hatch. Nothing in the fleet can work around a shell the harness
 cannot find.
 
-## Known limits of 1.4.0
+## Known limits of 1.5.0
 
 Written down rather than fixed, because a tool that hides its sample size is asking to be trusted further
 than it has been tested. Full list in [`CHANGELOG.md`](CHANGELOG.md).
+
+- **The memory refusals have never fired in a real run.** The throttle in `next`, the hook that refuses
+  a full suite, and the one that refuses a browser call on a full machine are covered by self-test cases
+  against a stub census, and the numbers behind them were measured on one machine on one afternoon
+  [M33, M34]. No worker has yet been held on memory during a mission, and the two thresholds in
+  `calibration.json` are chosen rather than measured.
+- **The heavy-page figure is synthetic.** 2,061 MB came from 150,000 DOM nodes built into a fixture,
+  not from an application anybody uses. It establishes that the cost is unbounded, and the shape of the
+  rule that follows from that; it is not any real project's number, which is why the rule says to
+  measure your own with `node scripts/fleet-load.mjs`, once with the application open and once without,
+  rather than quoting this one. **Nothing automates that yet**, and nothing stores the result: the pane
+  ceiling is currently held by the memory floor in `calibration.json` rather than by a per-project number.
+- **The pane states in [M33] were driven by hand, once, on Windows.** Six states, one operator, one
+  afternoon, one window manager. macOS and Linux may stop a pane for reasons this never met.
+- **No fleet has yet run with the gate on.** `fleet-gate.mjs` and `fleet-contract.mjs` are covered by 36
+  self-test cases and the clustering was built against a real 436-finding backlog, where it produced 42
+  candidate roots over 128 findings and the six-member ceiling had to be added because the first shape
+  offered one candidate 51 findings wide. But no worker has yet been stopped by the contract hook in a live
+  run, and no fix has yet been refused by `finish` for want of a proof. The numbers in
+  [`docs/GATE.md`](docs/GATE.md) are from replaying a finished run, not from running one.
+- **The contract surface is a regular expression over text.** It will miss a route built by concatenation
+  and a configuration key read through a variable, and it will offer tokens nothing depends on. The file is
+  meant to be edited by hand and committed; a project that does not edit it gets a gate that fires on the
+  wrong names.
+- **The clustering ceilings are calibration, not contract.** Six members and fifteen percent are two
+  numbers from one backlog on one project. They are in `calibration.json` because they will need moving.
 
 - **No fleet has captured a real application as a canvas yet.** `fleet-canvas.mjs` ran end to end on a
   fixture project in one session - stamp, check, layout, plain, seed, and the design skill's own check on
@@ -485,7 +519,10 @@ than it has been tested. Full list in [`CHANGELOG.md`](CHANGELOG.md).
   above.
 - **Project specifics.** They live in the project, in `FLEET.md`.
 - **Required dependencies.** `rg`, `sg`, `jq` and friends are offered by `fleet-init` and none are needed.
-  A worker that stops because `fd` is absent has invented a dependency.
+  A worker that stops because `fd` is absent has invented a dependency. **Node is the one exception, and
+  only for four subcommands**: `sweep`, `recover` and `pane-status` refuse with exit 2 without it rather
+  than reporting every age as zero - a dead fleet reading healthy is worse than an honest refusal - and
+  `finish` cannot check a fix's proof without it. Everything else degrades to a warning.
 
 ## Licence
 

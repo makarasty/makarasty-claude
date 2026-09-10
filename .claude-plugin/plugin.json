@@ -1,7 +1,7 @@
 {
   "name": "makarasty",
-  "description": "Run one mission across several Claude Code sessions at once, plus the commands for the work around it. Workers hold their own context and browser, gate what they can actually see, and report by writing files.",
-  "version": "1.4.0",
+  "description": "Run one mission across several Claude Code sessions at once, with a gate between what a run finds and what it changes. Workers hold their own context and browser, gate what they can actually see, and report by writing files.",
+  "version": "1.5.0",
   "author": {
     "name": "makarasty",
     "url": "https://github.com/makarasty"
@@ -15,6 +15,30 @@
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/fleet-guard.mjs\"",
             "timeout": 5,
             "statusMessage": "Checking for an unfinished claim"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/fleet-contract.mjs\"",
+            "timeout": 5,
+            "statusMessage": "Checking the contract surface"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|mcp__.*[Bb]rowser__(navigate|preview_start|browser_batch|computer)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/fleet-memory.mjs\"",
+            "timeout": 6,
+            "statusMessage": "Checking what the machine has left"
           }
         ]
       }

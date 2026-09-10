@@ -3,15 +3,10 @@ description: What the fleet commands are and which one to reach for
 disable-model-invocation: true
 ---
 
-The reference files named below (`docs/PROTOCOL.md` and its siblings) live in this plugin's own directory,
-not in the project you are working on. Resolve that directory once, before following any pointer:
-
-```bash
-ls -dt ~/.claude/plugins/cache/*/makarasty/*/docs 2>/dev/null | head -1
-```
-
-Empty output means the plugin is running from a checkout instead of an install: look for `docs/` beside
-the `commands/` directory holding this file.
+The `docs/*` files named below live in this plugin's own directory, not in the project you are working on.
+Resolve it once, before following any pointer, with
+`ls -dt ~/.claude/plugins/cache/*/makarasty/*/docs 2>/dev/null | head -1`. Empty output means a checkout
+rather than an install: `docs/` sits beside the `commands/` directory holding this file.
 
 A fleet runs one mission across several Claude Code sessions at once. Each session opens its own browser,
 holds its own context, works one brief, and reports by writing a file. Nothing messages anything.
@@ -52,6 +47,7 @@ clicking its chip, and the model in that new session is what invokes `fleet-run`
 - `docs/DESIGN.md`: the design half - critique with geometry probes, the canvas on disk, redesign beside it, and the loop back to code.
 - `docs/CALL.md`: the call half - the facts with their evidence, the page a non-native speaker reads aloud, and the live chat that answers from the same facts.
 - `docs/WORKTREES.md`: how a code worker gets its worktree and how a run removes them without reaching the main checkout.
+- `docs/GATE.md`: what stands between a finding and a change - the reproduction executed, the shared cause ruled on first, and the contract surface a hook refuses to let an edit drop.
 - `docs/SAFETY.md`: the closed list of what a fleet may delete, the path-depth gate, and why a gate beats a prose rule.
 - `docs/COMMANDS.md`: how a command in this plugin is written - who may invoke it, what `allowed-tools` really does, and the checklist before adding one.
 - `docs/LANES.md`: what a lane is, how wide each one goes, and why the repo lane is not capped by a monitor.

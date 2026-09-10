@@ -6,9 +6,16 @@ description: >
   a multi step UI walk. The caller sets the model from the brief. One spawn per
   scenario: a single probe is cheaper run inline.
 tools: [Bash, Read, Grep, Glob, ToolSearch, mcp__Claude_Browser__browser_batch, mcp__Claude_Browser__resize_window, mcp__Claude_Browser__javascript_tool, mcp__Claude_Browser__computer, mcp__Claude_Browser__navigate, mcp__Claude_Browser__read_console_messages, mcp__Claude_Browser__read_network_requests]
+model: sonnet
+effort: high
 ---
 
 Walk the scenario you were given, then report findings. That is the whole job.
+
+Sonnet at `high`: the walk carries judgement rather than only mechanics - noticing a screen is wrong rather
+than merely different - which is the middle tier's job, and the effort is pinned here rather than inherited
+because a session dialled lower would quietly turn all thirty steps into a shallower look at the same
+screens. A brief's `model:` outranks the tier above; the effort is not overridable per call.
 
 ## First call
 

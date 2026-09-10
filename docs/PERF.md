@@ -25,7 +25,11 @@ way, on the same machine state. Without a comparison arm there is a number, and 
   `longtask`, and `event`.
 - `performance.getEntriesByType('navigation')` for load phases, `'resource'` for slow or repeated requests.
 - `performance.measure` around a scripted interaction.
-- `setInterval` for sampling anything over time.
+- `setInterval` for sampling anything over time - **with the frame gate beside every series it produces.**
+  A pane that is laid out but not compositing runs `setInterval` at full rate: measured at 142 ticks in
+  142 seconds, one per second, exactly on time, while the page drew nothing at all [M33]. A timing series
+  taken there is correctly spaced, plausible, and about nothing. It is the one instrument on this page that
+  fails without looking like it failed.
 
 ## What lies
 

@@ -4,7 +4,9 @@
  * Measured 2026-08-28: a merge written by a model rendered 68 of 254 findings while its own summary
  * claimed 255, reported one blocker where the workers had filed six, and dropped two blockers entirely,
  * including the worst finding of the run. Nothing about the output looked wrong. So the merge is a
- * script, the counts come from the files, and a mismatch is an error rather than a sentence.
+ * script, the counts come from the files, and a mismatch is an error rather than a sentence. The
+ * reconciliation matches the findings read off the chip files against the rows read back off the files it
+ * wrote, by finding id: a check whose two halves cannot disagree is a sentence again.
  *
  *   node fleet-merge.mjs merge    <run-dir>   ->  backlog.jsonl, skipped.jsonl, and a reconciliation
  *   node fleet-merge.mjs render   <run-dir>   ->  backlog.md and skipped.md, rendered from the JSONL
@@ -22,14 +24,23 @@ if (!cmd || !runDir) {
 }
 const runId = path.basename(path.resolve(runDir));
 const SEV = ['blocker', 'major', 'minor', 'polish'];
+// The three files this script writes into the run directory. They are output, and a second merge that read
+// one back as a chip file would count its own backlog as findings.
+const GENERATED = ['backlog.jsonl', 'skipped.jsonl', 'unreached.jsonl'];
 const read = (f) => fs.readFileSync(path.join(runDir, f), 'utf8').split('\n').filter(Boolean);
+const rows = (f) => (fs.existsSync(path.join(runDir, f)) ? read(f).map((l) => JSON.parse(l)) : []);
 const key = (o) =>
   `${String(o.area || '').toLowerCase().trim()}|${String(o.observed || '').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60)}`;
 
 function load() {
-  const findings = [], unreached = [], aux = [], torn = [];
-  for (const f of fs.readdirSync(runDir).filter((x) => /^\d+\.jsonl$/.test(x))) {
-    const chip = f.replace('.jsonl', '');
+  const findings = [], unreached = [], aux = [], torn = [], chips = [], ignored = [];
+  // A chip id is whatever the worker was told it was: `07`, and since 2026-09-03 `cid-03` as well.
+  // Matching only the bare numbers dropped every finding the other chips filed, silently, while `fleet.sh
+  // find` had accepted each one and printed FILED. Read every chip file, and say which files were not one.
+  for (const f of fs.readdirSync(runDir).filter((x) => x.endsWith('.jsonl')).sort()) {
+    if (GENERATED.includes(f)) { ignored.push(`${f} (written by this merge, never read back as input)`); continue; }
+    const chip = f.replace(/\.jsonl$/, '');
+    chips.push(f);
     read(f).forEach((line, i) => {
       let o;
       try { o = JSON.parse(line); } catch { torn.push({ chip, line: i + 1 }); return; }
@@ -40,11 +51,11 @@ function load() {
       else aux.push(o);
     });
   }
-  return { findings, unreached, aux, torn };
+  return { findings, unreached, aux, torn, chips, ignored };
 }
 
 if (cmd === 'merge') {
-  const { findings, unreached, aux, torn } = load();
+  const { findings, unreached, aux, torn, chips, ignored } = load();
   const windows = aux.filter((a) => a.state_changed && a.when).map((a) => ({ from: Date.parse(a.when), what: a.state_changed }))
     .filter((w) => !Number.isNaN(w.from));
 
@@ -57,7 +68,14 @@ if (cmd === 'merge') {
 
   const merged = [], skipped = [];
   for (const g of groups.values()) {
-    g.sort((a, b) => SEV.indexOf(a.severity) - SEV.indexOf(b.severity));
+    // Which sighting the row is built from used to be whichever one `readdir` returned first, so a chip
+    // that skipped its own sighting could hand the group its evidence and its fate. Within a severity the
+    // sighting that saw the most goes first: one that was not skipped, then one confirmed, then the one
+    // whose evidence is longest, which is a proxy for how much of it was written down.
+    g.sort((a, b) => SEV.indexOf(a.severity) - SEV.indexOf(b.severity) ||
+      (a.skip_reason ? 1 : 0) - (b.skip_reason ? 1 : 0) ||
+      (b.confirmation === 'confirmed') - (a.confirmation === 'confirmed') ||
+      String(b.evidence || '').length - String(a.evidence || '').length);
     const head = g[0];
     const entry = {
       id: head.id,
@@ -81,7 +99,13 @@ if (cmd === 'merge') {
     const w = entry.when ? Date.parse(entry.when) : NaN;
     const contaminated = windows.filter((x) => !Number.isNaN(w) && w >= x.from).map((x) => x.what);
     if (contaminated.length) entry.contaminated_by = contaminated;
-    if (head.skip_reason) skipped.push({ ...entry, skip_reason: head.skip_reason });
+    // A skip reason is a statement about the worker that wrote it, not about the finding: one chip's
+    // misconfigured dev server took a second chip's independently reproduced blocker out of the backlog
+    // with it. The group leaves the backlog only when every sighting in it was skipped; otherwise the
+    // reasons travel on the row, for whoever reads it next.
+    const reasons = g.filter((x) => x.skip_reason).map((x) => `${x.chip}: ${x.skip_reason}`);
+    if (reasons.length) entry.skip_reasons = reasons;
+    if (reasons.length === g.length) skipped.push({ ...entry, skip_reason: head.skip_reason });
     else merged.push(entry);
   }
 
@@ -103,12 +127,9 @@ if (cmd === 'merge') {
   w('skipped.jsonl', skipped);
   w('unreached.jsonl', unreached);
 
-  const count = (rows) => SEV.map((s) => `${rows.filter((r) => r.severity === s).length} ${s}`).join(' / ');
-  const inBlockers = new Set(findings.filter((f) => f.severity === 'blocker').map((f) => key(f)));
-  const outBlockers = new Set([...merged, ...skipped].filter((f) => f.severity === 'blocker').map((f) => key(f)));
-  const lostBlockers = [...inBlockers].filter((k) => !outBlockers.has(k));
-  const accounted = merged.reduce((n, m) => n + m.sightings.length, 0) + skipped.reduce((n, m) => n + m.sightings.length, 0);
-
+  const count = (r) => SEV.map((s) => `${r.filter((x) => x.severity === s).length} ${s}`).join(' / ');
+  console.log(`chip files read  ${chips.length}: ${chips.join(', ')}`);
+  if (ignored.length) console.log(`files not read   ${ignored.join(', ')}`);
   console.log(`input findings   ${findings.length}  (${count(findings)})`);
   console.log(`merged entries   ${merged.length}  (${count(merged)})`);
   console.log(`skipped entries  ${skipped.length}`);
@@ -116,19 +137,42 @@ if (cmd === 'merge') {
   console.log(`unreached        ${unreached.length}`);
   console.log(`auxiliary lines  ${aux.length}${windows.length ? `, ${windows.length} shared-state window(s)` : ''}`);
 
-  if (accounted !== findings.length) {
-    console.error(`RECONCILE FAILED: ${accounted} sightings accounted for against ${findings.length} input findings`);
+  // The two halves of this check have to be able to disagree, and the ones that stood here could not: both
+  // were read off the arrays the grouping had just built, which agree by construction. Measured 2026-09-10
+  // against a merge sabotaged to write one row fewer than it grouped, and one whose chip file was never
+  // opened: both printed "every blocker survived" and exited 0. So the input is what was read off the chip
+  // files and the output is what came back off backlog.jsonl and skipped.jsonl, matched by finding id.
+  const carrier = new Map();
+  for (const r of [...rows('backlog.jsonl'), ...rows('skipped.jsonl')]) for (const s of r.sightings || []) carrier.set(s, r);
+  const inIds = new Set(findings.map((f) => f.id));
+  const name = (list) => list.slice(0, 8).join(', ') + (list.length > 8 ? `, and ${list.length - 8} more` : '');
+  const lost = findings.filter((f) => !carrier.has(f.id)).map((f) => f.id);
+  const demoted = findings.filter((f) => f.severity === 'blocker' && carrier.has(f.id) && carrier.get(f.id).severity !== 'blocker')
+    .map((f) => `${f.id} -> ${carrier.get(f.id).severity}`);
+  const invented = [...carrier.keys()].filter((id) => !inIds.has(id));
+
+  // The directory is listed a second time here rather than trusted from `load`. A file that was never
+  // opened files no findings, so nothing downstream of `load` can miss it, which is how `cid-03.jsonl`
+  // went unread for a week under a reconciliation that said everything was accounted for.
+  const unread = fs.readdirSync(runDir).filter((f) => f.endsWith('.jsonl') && !chips.includes(f) && !GENERATED.includes(f));
+
+  const failed = [];
+  if (unread.length) failed.push(`${unread.length} .jsonl file(s) in the run directory this merge never opened: ${name(unread)}`);
+  if (lost.length) failed.push(`${lost.length} finding(s) read off the chip files reach no row on disk: ${name(lost)}`);
+  if (demoted.length) failed.push(`${demoted.length} blocker(s) landed on a row of lower severity: ${name(demoted)}`);
+  if (invented.length) failed.push(`${invented.length} sighting id(s) on disk that no chip file filed: ${name(invented)}`);
+  if (failed.length) {
+    for (const f of failed) console.error(`RECONCILE FAILED: ${f}`);
+    // Same reason the torn line refuses before writing: `landed` gates on backlog.jsonl existing, so a
+    // backlog that lost a finding is worse than none at all. This merge wrote these three seconds ago.
+    for (const f of GENERATED) fs.rmSync(path.join(runDir, f), { force: true });
+    console.error(`REFUSED: ${GENERATED.join(', ')} were removed rather than left behind for the run to land over.`);
     process.exit(1);
   }
-  if (lostBlockers.length) {
-    console.error(`RECONCILE FAILED: ${lostBlockers.length} blocker(s) present in input and absent from output`);
-    process.exit(1);
-  }
-  console.log('reconciled: every input finding is accounted for, every blocker survived');
+  console.log(`reconciled: ${findings.length} findings off ${chips.length} chip file(s), ${carrier.size} carried by ${merged.length + skipped.length} rows read back off disk`);
 }
 
 if (cmd === 'render') {
-  const rows = (f) => (fs.existsSync(path.join(runDir, f)) ? read(f).map((l) => JSON.parse(l)) : []);
   const merged = rows('backlog.jsonl'), skipped = rows('skipped.jsonl'), unreached = rows('unreached.jsonl');
   const esc = (s) => String(s == null ? '' : s).replace(/\|/g, '\\|').replace(/\r?\n/g, ' ').trim();
   const out = [`# Backlog - run \`${runId}\``, '',
@@ -145,7 +189,8 @@ if (cmd === 'render') {
     out.push('| id | Area | Observed | Repro | Evidence | Mechanism | Status | Conditions | Confirm | Workers |',
       '|---|---|---|---|---|---|---|---|---|---|');
     for (const m of g) out.push('| ' + [m.id, m.area, m.observed, m.repro, m.evidence, m.mechanism,
-      m.mechanism_status, [m.conditions, (m.contaminated_by || []).join('; ')].filter(Boolean).join(' | '),
+      m.mechanism_status, [m.conditions, (m.contaminated_by || []).join('; '),
+        (m.skip_reasons || []).map((r) => `one worker skipped this - ${r}`).join('; ')].filter(Boolean).join(' | '),
       m.confirmation, m.workers.join(' ')].map(esc).join(' | ') + ' |');
     out.push('');
   }

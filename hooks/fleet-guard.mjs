@@ -17,6 +17,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { findRuns } from './run-dir.mjs';
 
 const bail = () => process.exit(0);
 
@@ -45,23 +46,7 @@ const session = payload.session_id || process.env.CLAUDE_CODE_SESSION_ID || '';
 const cwd = payload.cwd || process.cwd();
 if (!session) bail();
 
-// A hook can be handed a POSIX path on a machine whose node resolves Windows paths - Git Bash hands out
-// `/c/Users/...` and `/tmp/...` for the same directories the harness calls `C:\Users\...`. Try both
-// spellings rather than treating one of them as "no fleet here".
-const candidates = [cwd];
-const m = /^\/([a-zA-Z])\/(.*)$/.exec(cwd);
-if (m) candidates.push(m[1].toUpperCase() + ':' + path.sep + m[2].split('/').join(path.sep));
-
-let fleetDir = null;
-let runs = [];
-for (const base of candidates) {
-  try {
-    const dir = path.join(base, '.fleet');
-    runs = fs.readdirSync(dir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => path.join(dir, e.name));
-    fleetDir = dir;
-    break;
-  } catch { /* try the next spelling */ }
-}
+const { fleetDir, runs } = findRuns(cwd);
 if (!fleetDir) bail();
 
 for (const run of runs) {
@@ -83,7 +68,7 @@ for (const run of runs) {
     const claimDir = path.join(run, 'tasks', 'claimed', id);
     let owner = '';
     try { owner = fs.readFileSync(path.join(claimDir, 'owner'), 'utf8'); } catch { continue; }
-    if (!new RegExp(`^chip ${chip}$`, 'm').test(owner)) continue;
+    if (!owner.split('\n').some((l) => l.trim() === `chip ${chip}`)) continue;
 
     // Holding a claim is not the failure. The failure is claiming as the closing act of a turn and never
     // touching it again [M03], and it has a signature: the heartbeat still equals the claim time, and the

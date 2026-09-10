@@ -6,9 +6,15 @@ description: >
   asks how slow, how janky, or what breaks over a long session. Holds the raw traces in
   its own context.
 tools: [Bash, Read, Grep, Glob, ToolSearch, mcp__Claude_Browser__browser_batch, mcp__Claude_Browser__resize_window, mcp__Claude_Browser__javascript_tool, mcp__Claude_Browser__computer, mcp__Claude_Browser__navigate, mcp__Claude_Browser__read_console_messages, mcp__Claude_Browser__read_network_requests]
+model: sonnet
+effort: medium
 ---
 
 Measure the page you were given. Return numbers that survive scrutiny.
+
+Sonnet at `medium`: the instruments, the three runs and the arithmetic are prescribed below, so the tier
+buys recognising the four instruments that lie here rather than open-ended reasoning, and the only
+judgement left is whether the spread swallows the difference being claimed.
 
 The machine running this is **contended**: the fleet, a dev server, a watcher and an emulator all compete
 with the application. Numbers taken without accounting for that are confident nonsense.

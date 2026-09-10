@@ -183,8 +183,11 @@ process table sampled either side. An agent session with no pane: **~330 MB** re
 within seconds of closing the tab. Fourteen sessions and six panes together: 4.4 GB plus 1.9 GB, no page
 file growth.
 **Rule:** the repo lane is not memory bound on a modern machine; size it from the queue.
-**Status:** current. Re-measure with `node scripts/fleet-load.mjs` rather than trusting this line on a
-different machine.
+**Status:** superseded by [M34]. The numbers here are still right and the conclusion drawn from them was
+not: the application under test that day was a local single-page app, and +344 MB is what a light page
+costs. A page with 150,000 nodes measured 2,061 MB in the same kind of process, on the same box, which is
+six times this entry's whole pane budget in one tab. What a pane costs is a property of the project, not of
+the plugin, so it is measured per project rather than quoted from here.
 
 ## M22 — Tool calls that bought nothing
 **2026-08-26**, eight-worker run: **259 of 1,350 tool calls were avoidable** on a conservative count, 473
@@ -362,4 +365,113 @@ to repeat.
 it in that order and is the only path in this plugin that removes a worktree; it is a dry run unless given
 `--remove`, it keeps any tree with uncommitted or unmerged-and-unpushed work, and it deletes a branch only
 with `git branch -d`. Full procedure in [`WORKTREES.md`](WORKTREES.md).
+
+**The enforcement existed and did not run, 2026-08-08 to 2026-09-10.** `fleet.sh unlink` refused every
+call made the way every document here describes it - from inside the worktree - because its guard treated
+a path containing the shell's working directory as unsafe and a path contains itself. Worktree
+registration refused itself for the same reason, and across every run on this machine the number of
+worktrees registered was zero, so `clean` never had one to act on either. The guard is right for a
+command that deletes the tree and wrong for two that do not; both now pass a flag that drops that term,
+and `clean` keeps it. A rule enforced by something that has never once succeeded is a rule in prose with
+extra steps.
+**Status:** current.
+
+## M33 — What actually stops a pane compositing is the tab and the taskbar, not the screen
+**2026-09-10**, one Claude Code desktop session on Windows 11, the in-app Browser pane holding
+`scripts/fixtures/design-probe.html`. A sampler was installed in the page and left running for 463
+seconds while the operator moved the pane through six states by hand; it recorded, once a second, the
+frames `requestAnimationFrame` delivered in that second, `innerWidth`, and `document.visibilityState`.
+
+| The pane is | frames/s | `innerWidth` | `visibilityState` |
+|---|---|---|---|
+| not the active tab of its window | **0** | 0, or its last laid-out width | hidden |
+| in a window minimised to the taskbar | **0**, with stray seconds of 2 to 4 | last width | hidden |
+| fully covered by another window | 300 | real | visible |
+| in a window on a second monitor, mostly covered | 300 | real | visible |
+| in a window pushed entirely off the screen (`screenX` 5032) | 300 | real | visible |
+| the active tab, on screen | 285 to 301 | real | visible |
+
+Three transitions, second by second, as the operator switched away from the chat and back:
+
+```
+16s   0f/1239px/visible     the tab is selected; the first second still delivers nothing
+17s 285f  18s 242f  19s 165f
+21s  57f/hidden             the second the operator left the tab
+22s to 164s   0f/1239px/hidden        142 consecutive seconds, width unchanged throughout
+164s  0f/1239px/visible     back on the tab; again a first second with nothing
+165s 271f, then 300, 300, 299, 301, 299, 300, 301, 300, 299, 301, 300, 300
+```
+
+And into and out of a minimised window:
+
+```
+391s 300f/visible   393s 239f/hidden   394s 4f   395-398s 0f   399s 2f   400s 0f
+```
+
+Four things this contradicts. **Physical visibility is irrelevant**: covered, half off a second monitor,
+and wholly off-screen all held 300 frames. The plugin's ceiling of five panes, justified by how many fit a
+monitor, was measuring the wrong constraint. **`innerWidth` is not a gate**: it stayed at 1,239 through
+142 seconds of zero frames. **`document.visibilityState` is not a gate either**: it reported `visible` on a
+pane delivering zero frames immediately after a screenshot was taken of it. **The host's own flag is not a
+gate**: `tabs_context` answered `The Browser pane is currently displayed` while the page in it delivered
+zero frames at a width of 949 px.
+
+Two behaviours the earlier entries did not name. A tab becoming active delivers **zero frames in its first
+second**, at 16s and again at 164s, so a gate run the instant an operator says they have opened the pane
+reads blind and sends the worker back to ask for a pane that is already open. And a minimised window emits
+**stray single seconds of 2 to 4 frames**, which is the mechanism behind the rule that a reading between 1
+and 59 is blind: a `frames > 0` check would have passed that worker.
+
+`setInterval` divides on the same line, and its behaviour is worse than silence. With the pane not laid
+out at all the sampler ticked 3 times in a minute — it advances only when a tool call pokes the page. With
+the pane laid out but not compositing it ticked **142 times in 142 seconds**, one per second, exactly on
+time, while the page drew nothing. A timing series taken there is clean, plausible, correctly spaced and
+about nothing.
+
+**Rule:** the frame gate stands, and the frame count remains the only thing that separates live from blind
+[M01]. What changes is the operator's obligation and the ceiling. A pane is live when its tab is the
+selected tab of a window that is not minimised; it does not need focus, the screen, or an unobstructed
+view. So a fleet may hold as many live panes as it has windows, each pushed wherever the operator likes,
+including off the screen entirely — and the pane ceiling is memory [M34] rather than monitors. Gate twice
+with a second between, because the first second after a tab is selected delivers nothing.
+**Status:** current.
+
+## M34 — A pane costs one renderer, and the renderer costs whatever the page costs
+**2026-09-10**, the same session and machine: 31.2 GB physical, 16 cores, with the operator's own parallel
+work running throughout and a memory trimmer active. Every point was sampled twice, and machine load was
+recorded beside every number because the trimmer moved the totals during the run.
+
+| Point | claude.exe processes | renderers | renderer total | free | commit |
+|---|---|---|---|---|---|
+| pane open, one trivial tab | 46 | 8 | 1,844 MB | 14.3 GB | 34.6 GB |
+| pane closed | 45 | 7 | 1,730 MB | 14.3 GB | 34.6 GB |
+| reopened, one trivial tab | 46 | 8 | 1,844 MB | 14.4 GB | 34.6 GB |
+| a second tab added | 46 | 9 | 1,882 MB | 14.9 GB | 33.5 GB |
+
+**A pane is one renderer process per tab and about 113 MB of it**, reproduced to within one megabyte by
+closing and reopening. The two tabs' own processes read 132 MB and 125 MB.
+
+Then 150,000 DOM nodes were built into one of those tabs:
+
+```
+that renderer   132 MB -> 2,061 MB
+free            14.9 GB -> 12.0 GB
+commit          33.5 GB -> 36.3 GB     against 31.2 GB physical
+```
+
+**The pane is nearly free and the page is not.** One tab holding a large document cost 1.9 GB, and nothing
+about the pane bounds that: the cost is the application under test.
+
+Two findings beside it. **A reload does not give the memory back** — after `location.reload()` the same
+renderer read 2,141 MB, and only closing the pane returned it. A worker that has walked a heavy application
+holds those gigabytes for the rest of its session. And **the process family's total is not a usable
+instrument on this machine**: while a tab was being added, the sum over `claude.exe` fell from 5,265 MB to
+5,040 MB because the trimmer was working, which reads as a tab that saved memory. The per-process working
+set of the renderer is the instrument; the family total is not.
+
+**Rule:** size the pane lane from memory rather than from monitors [M33]. The number a project needs is the
+weight of its own page under test, divided into the free memory less the operator's reserve. Nothing takes
+that measurement automatically yet: `node scripts/fleet-load.mjs` shows the largest renderer on the box
+under **browser pane or window**, so it is one command with a pane open and one without, and the difference
+is the number. Until somebody records it, `fleet.sh next` is what stands between a fleet and the page file. A worker that has finished with a heavy page closes its pane rather than reloading it.
 **Status:** current.

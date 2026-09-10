@@ -5,9 +5,15 @@ worker [M01].
 
 ## Blind
 
-A pane that is not displayed on screen stops compositing. It still navigates, still loads pages, still
-returns plausible DOM. A session working through it cannot tell, so it reports fiction with full
-confidence, and that output is indistinguishable from real findings.
+A pane stops compositing when its tab is not the selected tab of its window, or when that window is
+minimised. It still navigates, still loads pages, still returns plausible DOM, and it still returns
+screenshots. A session working through it cannot tell, so it reports fiction with full confidence, and
+that output is indistinguishable from real findings.
+
+**Being on screen has nothing to do with it** [M33]. A pane fully covered by another window composites at
+300 frames a second. So does one on a second monitor with a corner showing, and so does one pushed
+entirely past the edge of the desktop. Two things stop a pane, and only two: another tab being selected in
+its window, and that window being minimised.
 
 This is the failure this plugin exists to prevent, and it is not only a tester's problem. Measured
 2026-08-26: a fix worker hit it while trying to measure whether its own repair had worked, and correctly
@@ -19,15 +25,24 @@ Symptoms, every one of which reads as an application defect and is not:
 
 | Symptom | Cause |
 |---|---|
-| screenshot times out after 5s | pane not displayed |
+| a screenshot arrives, fresh and correct-looking | the capture forces a paint; the page behind it is still not running, so what you have is a photograph of a stopped clock |
 | `requestAnimationFrame` never fires, so a sampling loop returns an empty array | no compositing, so no frames are scheduled. `setInterval` still runs |
 | CSS transitions frozen at their start value, enter classes never clearing | `transitionend` never fires |
 | virtualized rows read as empty text | they need layout the blind pane never runs |
 | in-page requests hang to their timeout | measured: an axios POST sat to its 180 second timeout while `curl` answered the same endpoint in 4 seconds |
 
+Three signals look like they could replace the gate and cannot. `innerWidth` held its real value through
+142 consecutive seconds of zero frames. `document.visibilityState` answered `visible` on a pane
+delivering nothing, immediately after a screenshot was taken of it. And `tabs_context` reported
+**`The Browser pane is currently displayed`** while the page inside it drew zero frames at a width of
+949 px [M33]. The host's own flag sees whether the pane has a place in the layout, which is not the same
+question. Only the frame count answers the question you are asking.
+
 ## The gate
 
-This is the canonical form. Everything that needs it points here.
+This is the canonical form. Everything that needs it points here, with one deliberate copy: `fleet-run`
+inlines the expression at the top of its file, because a pane worker runs the gate before it has read
+anything else and a pointer there would cost the turn the gate exists to save. Change both together.
 
 ```js
 new Promise(res => { let f = 0; requestAnimationFrame(function t(){ f++; requestAnimationFrame(t); }); setTimeout(() => res(f), 1000); })
@@ -39,6 +54,12 @@ machine or a pane being collapsed while you read it, and timing taken from it lo
 
 Run it before the first visual step, and again before each batch of visual work. A pane collapsed mid run
 takes the worker blind silently, and every observation after that point is worthless.
+
+**A single zero is not an answer; measure twice with a second between.** The first second after a tab
+becomes the selected one delivers **zero frames**, measured at both transitions in the same run [M33]. A
+gate fired the instant an operator says they have opened the pane therefore reads blind, and sends the
+worker back to ask for a pane that is already open - which is the shape that cost six pane workers between
+1 and 34 minutes each [M20]. Read zero, wait a second, read again, and believe the second one.
 
 A blind worker asks the operator to display the pane, then **measures again**: before this gate existed,
 eight workers of eight ran blind and filed 94 findings nobody could have observed [M02]. The reading is the
@@ -71,12 +92,15 @@ tool's output.
 - Panes composite independently. Measured: a worker's pane read 301 and 302 frames per second and returned
   real screenshots while its own chat was greyed out and unfocused, with another session's pane live at the
   same time.
-- The gate is the pane being displayed. Chat focus does not enter into it, and neither does which chat is
-  active.
+- The gate is the tab being selected in a window that is not minimised. Chat focus does not enter into it,
+  neither does which chat is active, and neither does whether any of it is visible.
 - Two concurrent live panes are confirmed under real concurrent work, 2026-08-26: two workers walked
   different screens at the same time, each reading roughly 300 frames per second, neither observing
-  anything attributable to the other. Three or more is untested, and so is an occluded or collapsed
-  pane.
+  anything attributable to the other.
+- Occluded, half off a second monitor, and wholly off screen were untested until 2026-09-10 and are now
+  measured: all three composite at full rate [M33]. Collapsed and minimised are the two that do not.
+- So the number of live panes a fleet can hold is the number of windows the operator is willing to keep
+  un-minimised, and those windows can be anywhere, including nowhere the operator can see.
 
 ## Wave sizing
 
@@ -85,15 +109,25 @@ not competing for a display, and capping the file half of a fleet at the width o
 ends up with eight browser workers queued behind each other and nobody reading the source tree. The repo
 lane's width comes from the machine, in `LANES.md`.
 
-**Five is what fits. Two is usually what is needed.** Those are different questions and the second one is
-the one to ask first. Seven open panes carried 104 minutes of actual browser driving across a 153 minute
+**The ceiling is memory, not monitors** [M33, M34]. This section used to size the pane lane by how many
+panes tile readably on a display, which measured the wrong thing: a pane off the edge of the desktop
+composites exactly as well as one in the middle of it. What a pane actually costs is one renderer process
+per tab - about 113 MB of it, and then whatever the page weighs. One tab holding 150,000 DOM nodes read
+**2,061 MB** [M34]. Size the lane by dividing free memory, less the operator's reserve, by the weight of
+this project's own page. Measure it rather than guessing: `node scripts/fleet-load.mjs` prints the largest
+renderer on the machine, so one reading with the application open and one without gives you the figure. No
+command takes it for you, and no file stores it yet - which is why the floor in `calibration.json` and the
+refusal in `fleet.sh next` are what actually hold the line today.
+
+**Two is usually what is needed, whatever the ceiling allows.** Seven open panes carried 104 minutes of actual browser driving across a 153 minute
 run, no pane busy for 38 percent of it, peak three [M15]. Opening a pane costs the
 operator a question, a piece of screen and the obligation to keep it displayed, and it buys nothing while
 nobody is driving it. Start at two, and add one when the browser work is visibly queueing - `LANES.md` for
 how to see that, `BROKER.md` for the shape that makes adding one cheap.
 
-Five sessions tile side by side at a readable width with nothing stacked below, and that is the ceiling to
-plan against rather than the number to start from.
+Five sessions tile side by side at a readable width with nothing stacked below. That is a comfort number
+for panes the operator intends to watch, and it is not a ceiling: panes nobody is watching can be parked
+off screen and go on working.
 
 **Ten is the ceiling, and the step from five to ten is a decision rather than a slope.** Past five, panes
 stack in a second row at roughly half height: still composited, still usable, noticeably cramped. Once the
@@ -108,10 +142,9 @@ a 16 core, 31 GB box: 5.0 GB physical free of 31.2, **42 GB committed against 31
 14 node processes, 41 agent processes, 60 percent CPU. The box stayed up and it was paging, so every speed
 number taken in that window describes a paging machine rather than the application.
 
-So the check before adding a wave is free physical memory against commit charge, not a count of panes.
-Committed above physical means the next worker buys its slot from the pagefile.
-
-Close a wave's panes before opening the next.
+So what bounds a wave is free physical memory, not a count of panes. Nobody has to check it: `fleet.sh
+next` reads it before every claim and refuses below the floor, and a worker driving a pane on a full
+machine is told to close it rather than asked to consider closing it.
 
 Workers measuring speed get a wave to themselves, and at this scale it is not optional. They are measuring
 a machine the other workers are loading, so numbers taken alongside them describe the fleet rather than
@@ -137,11 +170,13 @@ beyond the screen, then grab the right edge and pull, and the top edge as well. 
 past what the desktop can show. Parts of it, whole panes included, can end up entirely off screen while
 the compositor keeps rendering them.
 
-That last trick is the one to use carefully, because it points straight at the thing that makes a worker
-blind. Do not reason about whether an off screen pane still composites: **let the gate answer.** A worker
-whose pane stopped compositing reads zero frames, stops, and asks, so the arrangement checks itself. If
-the workers you parked out of sight keep reporting live frame counts, the trick is working for them; if
-one goes blind, it just told you so. Either way nobody has to guess, and nobody gets fiction.
+That trick was written here with a warning attached, because nobody had measured whether an off-screen
+pane still composites. It does: a window at `screenX` 5032, entirely past the edge of the desktop, held
+300 frames a second for twenty-two seconds [M33]. So it is a supported arrangement rather than a risk, and
+it is the answer to the ceiling this page used to have - park the panes nobody is watching off the desktop
+and keep the screen for the chats.
+
+Keep letting the gate answer anyway. It costs a second and it is the only instrument that has never lied.
 
 ## The viewport is not the operator's browser
 

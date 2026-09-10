@@ -2,15 +2,10 @@
 description: Prepare a project to run fleets: app origin, services, an agent login path, FLEET.md, and the machine's two lane widths. Use before a first run, or when FLEET.md is missing.
 ---
 
-The reference files named below (`docs/PROTOCOL.md` and its siblings) live in this plugin's own directory,
-not in the project you are working on. Resolve that directory once, before following any pointer:
-
-```bash
-ls -dt ~/.claude/plugins/cache/*/makarasty/*/docs 2>/dev/null | head -1
-```
-
-Empty output means the plugin is running from a checkout instead of an install: look for `docs/` beside
-the `commands/` directory holding this file.
+The `docs/*` files named below live in this plugin's own directory, not in the project you are working on.
+Resolve it once, before following any pointer, with
+`ls -dt ~/.claude/plugins/cache/*/makarasty/*/docs 2>/dev/null | head -1`. Empty output means a checkout
+rather than an install: `docs/` sits beside the `commands/` directory holding this file.
 
 Set this project up so a fleet can run against it. Everything here is discovered from the project and
 confirmed with the operator; nothing is assumed.
@@ -68,7 +63,31 @@ whether the list is complete, because they know what costs money and you are gue
 
 ## 4. Create the run directory and ignore it
 
-Create `.fleet/` and add it to the project's ignore file. Runs are scratch, not history.
+Create `.fleet/` and ignore its contents. Runs are scratch, not history - but one file in there is not,
+so write the rule with a star and a negation rather than as a directory:
+
+```
+.fleet/*
+!.fleet/contract-surface.txt
+```
+
+`.fleet/` on its own would be wrong here, and silently: git does not descend into an excluded directory, so
+the negation below it never applies and the file stays ignored with nothing reporting that it did.
+
+## 4b. Generate the contract surface
+
+```bash
+node "$(ls -t ~/.claude/plugins/cache/*/makarasty/*/scripts/fleet-gate.mjs | head -1)" surface .
+```
+
+It writes `.fleet/contract-surface.txt`: the routes, exported names, configuration keys and event names
+this project has promised to something outside itself. A worker whose edit drops one of those is stopped
+until a question or a recorded decision names it, and without this file that gate is off.
+
+**Then read it, cut what does not belong, and commit that file** - it is the one thing in `.fleet/` that is
+not scratch, which is what the ignore rule above is shaped around. It errs wide by design: a token in there
+that nothing depends on costs a worker one question, and a token missing from it costs the outage the gate
+exists to prevent. Tell the operator how many tokens it holds and that trimming it is theirs to do.
 
 ## 5. Size the machine
 
@@ -136,5 +155,6 @@ untested runbook is the thing every worker in every future run will trust blindl
 ## Done when
 
 `FLEET.md` exists and every fact in it was discovered or confirmed rather than assumed, the login runbook
-exists and has been executed successfully once, `.fleet/` is created and ignored, and the operator has
-both worker numbers with the reason for the gap between them.
+exists and has been executed successfully once, `.fleet/` is created and ignored with
+`contract-surface.txt` kept out of that ignore, and the operator has both worker numbers with the reason
+for the gap between them.

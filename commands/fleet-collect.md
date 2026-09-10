@@ -4,15 +4,10 @@ argument-hint: <run-id>
 allowed-tools: Bash, Read, Write, Glob, Grep, Agent, PushNotification, TaskStop, mcp__ccd_session_mgmt__set_session_title
 ---
 
-The reference files named below (`docs/PROTOCOL.md` and its siblings) live in this plugin's own directory,
-not in the project you are working on. Resolve that directory once, before following any pointer:
-
-```bash
-ls -dt ~/.claude/plugins/cache/*/makarasty/*/docs 2>/dev/null | head -1
-```
-
-Empty output means the plugin is running from a checkout instead of an install: look for `docs/` beside
-the `commands/` directory holding this file.
+The `docs/*` files named below live in this plugin's own directory, not in the project you are working on.
+Resolve it once, before following any pointer, with
+`ls -dt ~/.claude/plugins/cache/*/makarasty/*/docs 2>/dev/null | head -1`. Empty output means a checkout
+rather than an install: `docs/` sits beside the `commands/` directory holding this file.
 
 Merge every `.fleet/<run-id>/*.jsonl` into one ranked backlog. Mechanical work: dedupe, group, order. It
 does not decide whether a finding is worth fixing, and it does not fix anything.
@@ -28,9 +23,19 @@ sh "$f" render .fleet/<run-id>     # -> backlog.md and skipped.md, generated fro
 ```
 
 `merge` assigns every finding a stable id, groups by area plus symptom, carries the sighting lineage,
-flags anything observed after a `state_changed` line, and then **refuses to finish** if the sightings do
-not add up to the input or if a blocker present in the input is absent from the output. Verified against a
-254 finding run: 254 in, 254 accounted for, six blockers in and six out.
+flags anything observed after a `state_changed` line, and then **refuses to finish** if what it wrote to
+disk does not account for what it read. It reads `backlog.jsonl` and `skipped.jsonl` back off disk and
+matches them against the chip files by finding id, re-lists the directory so a `*.jsonl` it never opened
+fails the run, and refuses a blocker that landed on a lower-severity row. On a failure it removes the three
+files it generated, because `landed` gates on `backlog.jsonl` existing and a half-written one would let a
+broken run land.
+
+The previous shape of this paragraph claimed the check was verified against a 254 finding run. It was not:
+both comparisons were made between two things that could not disagree - the sightings were summed from the
+groups that had just been built out of the input, and the blocker keys were the group keys themselves - so
+the check passed by construction and would have passed over a lost finding. It was rewritten when a
+deliberately sabotaged merge, writing one row fewer than it grouped, still reported that every finding was
+accounted for.
 
 **Your judgement goes on top of that file, never instead of it.** Rank, annotate, name the twins, say what
 you would fix first. Do not retype rows into a markdown table: measured 2026-08-28, a merge written by hand
@@ -65,6 +70,20 @@ One task per blocker and major, each carrying the finding id, the reproduction, 
 mechanism marked as a lead rather than a diagnosis, the lane it needs, and the twins that share its files.
 A second fleet claims that queue with `/makarasty:fleet-run .fleet/fix-<run-id>/`, or one chat works it
 alone. Either way the input is a queue, not a document somebody has to re-read.
+
+**Then put the roots in front of it**, before a single chip is offered:
+
+```bash
+g=$(ls -t ~/.claude/plugins/cache/*/makarasty/*/scripts/fleet-gate.mjs | head -1)
+node "$g" cluster .fleet/<run-id> --queue .fleet/fix-<run-id>
+```
+
+Findings from different areas that reach one file, or that name one identifier in their mechanism, become
+one `kind: root` task with the rest gated behind it on `after:`. Without this the queue hands each surface
+of a shared defect to a different worker, none of whom may touch the seam, and the result is what three
+separate run documents recorded across three runs and nobody was allowed to act on: one cause, patched
+three times, in three files. `docs/GATE.md` has the ceilings and why a candidate wider than six findings
+is a hotspot rather than a root.
 
 A finding that carries `rects` or a `probe` field - the shape a critique run files - becomes a `kind: design`
 task rather than `kind: fix`, because the design model owns the screen it repairs and a spacing token
@@ -128,6 +147,8 @@ everything durable is already on disk before one is sent.
 
    One row per worker with its findings by severity, its unreached count and whether it went blind, then
    the run totals and the backlog path, then one `fleet-summary: {...}` JSON line a later script can read.
+   Read `decisions.jsonl` out loud beside it if the run has one - those are the contract changes workers
+   took without asking, one line each, and this is the last moment before they land.
    This block is the last thing in the planner's chat, and it is what the operator sees when they come
    back to a screen full of chats they left hours ago. Do not retype it into prose underneath.
 2. **`PushNotification`**, carrying the verdict rather than the event: `run <id> FINISHED: 246 findings,

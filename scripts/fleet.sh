@@ -19,8 +19,9 @@
 #   fleet.sh broadcast <run-dir>                   planner: append something every worker reads at its next boundary
 #   fleet.sh drained <run-dir> <chip>              queue empty: write <chip>.done. exit 5 = queue still open
 #   fleet.sh status  <run-dir>                     planner view: claims, ages, markers, questions
-#   fleet.sh sweep   <run-dir> [--release]         claims nobody is advancing; --release moves claim and
-#                                                  task aside so the planner re-files under a new id
+#   fleet.sh sweep   <run-dir> [--release]         claims and pane walks nobody is advancing; --release
+#                                                  moves the claim, its task and anything whose `after:`
+#                                                  named it aside, for the planner to re-file under new ids
 #   fleet.sh recover <run-dir> [--release]         cold start after a crash: which chips reopen with
 #                                                  `claude -r`, which must be respawned, what is unheld
 #   fleet.sh width   <run-dir>                     how many repo workers this queue and this machine want
@@ -40,8 +41,9 @@
 # The run directory carries a RUN_FORMAT file naming the layout's major version. A newer format is
 # refused rather than misread.
 #
-# POSIX sh. Works in Git Bash on Windows. Node is used only to validate a finding, and its absence
-# downgrades that to a warning rather than a failure.
+# POSIX sh. Works in Git Bash on Windows. Node validates a finding, and its absence downgrades that to a
+# warning rather than a failure. It also reads every file mtime, and the three commands whose whole answer
+# is an age - sweep, recover, pane-status - refuse without it rather than call a dead fleet healthy.
 
 set -eu
 
@@ -62,10 +64,30 @@ mtime() {
   fi
 }
 
+# Without node that reading is empty, and every command that asks for an age then treats "unknown" as
+# zero: `sweep` calls a claim quiet for 0 minutes and reports a dead fleet healthy, `recover` sends every
+# live chip down the RESUME branch, `pane-status` says no walk has waited. The finding gate degrades
+# loudly when node is absent for the same reason - an answer nothing stands behind is worse than a
+# refusal, and these are the commands that release other workers' claims.
+need_mtime() { # need_mtime <what this command would otherwise be guessing about>
+  command -v node >/dev/null 2>&1 && return 0
+  echo "REFUSED: node is absent, so no file's mtime can be read and $1 would be a guess." >&2
+  echo "  Install node, or answer it by hand: this command has no second source for an age." >&2
+  exit 2
+}
+
 cmd=${1:-}; run=${2:-}
 [ -n "$cmd" ] && [ -n "$run" ] || { echo "usage: fleet.sh <command> <run-dir> [args]" >&2; exit 2; }
 [ -d "$run" ] || { echo "no such run directory: $run" >&2; exit 2; }
 now() { date -Iseconds 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%SZ; }
+
+# The run directory as somewhere else can reach it. Everything this script prints for a caller to run
+# later - the abort clock, the poll - is backgrounded from a worktree, and `.fleet/` is gitignored, so a
+# relative run directory names nothing there: a clock's exit conditions could never be met and it ran its
+# full term, up to eight hours, before waking a session that finished at the first one. Git's own
+# spelling, which is what a worker's own paths are in.
+absdir() { ( CDPATH= cd -- "$1" 2>/dev/null && { pwd -W 2>/dev/null || pwd; } ) || printf '%s' "$1"; }
+absrun=$(absdir "$run")
 
 # The on-disk run layout is the thing this tool promises to keep working. Stamp its major version into the
 # run at the first write, so a reader a year from now can refuse a shape it does not know instead of
@@ -74,15 +96,24 @@ now() { date -Iseconds 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%SZ; }
 RUN_FORMAT=1
 
 # Constants live in calibration.json, never in a script and never in prose: a number that a planner reads
-# and a script reads must have one spelling. Falls back to the built-in default when node or the file is
-# absent, so nothing here depends on it existing.
+# and a script reads must have one spelling. Falls back to the built-in default when the file is absent,
+# so nothing here depends on it existing.
+#
+# Read once, at startup, into shell variables. It used to spawn `ls` and a fresh `node` per lookup, on the
+# hottest path in the protocol - `next` asks for two or three constants, `width` for four, `clock` for two
+# - which is a process tree per number. The file is one flat object of numbers, so sed reads all of them
+# in a single pass and without node, which also means the calibration is honoured on a machine that has
+# none rather than silently replaced by the defaults.
+_calfile=$(ls -t "$(dirname "$0")/../calibration.json" ~/.claude/plugins/cache/*/makarasty/*/calibration.json 2>/dev/null | head -1)
+if [ -n "$_calfile" ]; then
+  # A bare key holding a bare number, anchored at both ends, so nothing that is not a constant - a
+  # provenance sentence, a nested object - can reach `eval`.
+  _calkv=$(sed -n 's/^[[:space:]]*"\([A-Za-z_][A-Za-z0-9_]*\)"[[:space:]]*:[[:space:]]*\([0-9][0-9.]*\)[[:space:]]*,\{0,1\}[[:space:]]*$/CAL_\1=\2/p' "$_calfile" 2>/dev/null)
+  if [ -n "$_calkv" ]; then eval "$_calkv"; fi
+fi
 cal() { # cal <key> <default>
-  _c=$(ls -t "$(dirname "$0")/../calibration.json" ~/.claude/plugins/cache/*/makarasty/*/calibration.json 2>/dev/null | head -1)
-  if [ -n "$_c" ] && command -v node >/dev/null 2>&1; then
-    _v=$(node -e 'try{const o=require(process.argv[1]);const v=o[process.argv[2]];if(typeof v==="number")console.log(v)}catch{}' "$_c" "$1" 2>/dev/null)
-    [ -n "$_v" ] && { echo "$_v"; return; }
-  fi
-  echo "$2"
+  eval "_v=\${CAL_$1:-}"
+  case ${_v:-} in ''|*[!0-9.]*) echo "$2" ;; *) echo "$_v" ;; esac
 }
 stamp() { [ -e "$run/RUN_FORMAT" ] || printf '%s
 ' "$RUN_FORMAT" > "$run/RUN_FORMAT" 2>/dev/null || true; }
@@ -127,8 +158,8 @@ min_floor() {
   echo "$_m"
 }
 
-unsafe_path() { # unsafe_path <path> <required-segment>; prints the reason and returns 0 when UNSAFE
-  _p=${1:-}; _need=${2:-}
+unsafe_path() { # unsafe_path <path> <required-segment> [nothing-is-deleted]; prints the reason, returns 0 when UNSAFE
+  _p=${1:-}; _need=${2:-}; _keeps=${3:-}
   [ -n "$_p" ] || { echo "the path is empty"; return 0; }
   _p=${_p%/}   # a trailing slash must not change any answer below
   case "$_p" in
@@ -161,11 +192,19 @@ unsafe_path() { # unsafe_path <path> <required-segment>; prints the reason and r
   # footing and then keeps going. Read the working directory in git's own spelling: under Git Bash `pwd`
   # says /c/Users/... while git says C:/Users/..., so the plain form never matched and this guard was
   # inert on the platform it was written for.
-  _here=$(pwd -W 2>/dev/null || pwd 2>/dev/null || echo "")
-  if [ -n "$_here" ]; then
-    _lh=$(printf '%s' "${_here%/}" | tr 'A-Z' 'a-z')
-    _lp=$(printf '%s' "$_p" | tr 'A-Z' 'a-z')
-    case "$_lh/" in "$_lp"/*) echo "$_p contains this shell's working directory"; return 0 ;; esac
+  #
+  # It is a rule about DELETION, so a caller that deletes nothing passes a third argument and skips it.
+  # Without that, the two commands a worker runs from inside its own tree refused themselves: `unlink`
+  # removes reparse points inside the tree and leaves the tree, and registration only writes a file, yet
+  # both were told the path contains this shell's working directory - which is the documented way to call
+  # them (docs/WORKTREES.md), and the step [M32] exists to enforce.
+  if [ -z "$_keeps" ]; then
+    _here=$(pwd -W 2>/dev/null || pwd 2>/dev/null || echo "")
+    if [ -n "$_here" ]; then
+      _lh=$(printf '%s' "${_here%/}" | tr 'A-Z' 'a-z')
+      _lp=$(printf '%s' "$_p" | tr 'A-Z' 'a-z')
+      case "$_lh/" in "$_lp"/*) echo "$_p is this shell's working directory or one above it"; return 0 ;; esac
+    fi
   fi
   return 1
 }
@@ -191,6 +230,65 @@ unlink_links() { # unlink_links <dir>; prints how many it removed
   echo "$_n"
 }
 
+# One spelling of "which files in this directory are a chip's findings". The rows of `summary` walked
+# every `*.jsonl` while its totals - and the count `landed` pages to the phone - walked `[0-9]*.jsonl`, so
+# a run with a chip id like `cid-03`, which fleet-retro.mjs has recorded since 2026-09-03, printed rows
+# full of findings above a total of 0.
+chipids() {
+  for _f in "$run"/*.jsonl; do
+    [ -e "$_f" ] || continue
+    _c=$(basename "$_f" .jsonl)
+    # backlog, skipped and unreached are what the merge writes into the same directory.
+    case "$_c" in backlog|skipped|unreached) continue ;; esac
+    printf '%s\n' "$_c"
+  done
+}
+chipcat() { chipids | while IFS= read -r _c; do cat "$run/$_c.jsonl"; done; }
+
+# A task handed back, and every task that was waiting on it. `after:` holds a task until the one it names
+# is done, so releasing a task whose dependents are still queued leaves them waiting on a done marker
+# nobody will write: `next` answers QUEUE WAITING for the rest of the run and `landed` refuses over it.
+# The wave's later stages go back to the planner with the stage that died, which is the only way the wave
+# comes back with consistent ids - and keeping the id instead is what the graveyard rename exists to
+# prevent, because a slow worker's late write would then land on live work.
+release_task() { # release_task <task-id>; prints one line per dependent it took with it
+  _todo=$1
+  while [ -n "$_todo" ]; do
+    set -- $_todo; _id=$1; shift; _todo=$*   # a task id never carries a space, so the split is the list
+    [ -e "$run/tasks/ready/$_id.md" ] || continue
+    mkdir -p "$run/tasks/released"
+    mv "$run/tasks/ready/$_id.md" "$run/tasks/released/$_id.md"
+    for _f in "$run"/tasks/ready/*.md; do
+      [ -e "$_f" ] || continue
+      _b=$(basename "$_f" .md)
+      # A dependent somebody is already working is theirs: taking its file away mid-task is the failure
+      # this whole graveyard exists to avoid.
+      [ -d "$run/tasks/claimed/$_b" ] && continue
+      [ -e "$run/tasks/done/$_b" ] && continue
+      for _d in $(sed -n 's/^after:[[:space:]]*\(.*\)/\1/p' "$_f" | head -1 | tr ',' ' '); do
+        if [ "$_d" = "$_id" ]; then
+          echo "  also released $_b: its \`after:\` named $_id, which nobody finished"
+          _todo="${_todo:+$_todo }$_b"
+        fi
+      done
+    done
+  done
+}
+
+# The verify task somebody is holding, if any. The lane is one worker wide across the whole fleet
+# (docs/LANES.md): a full typecheck and a full test suite running at once is how this machine goes into
+# the pagefile.
+verify_held() {
+  for _c in "$run"/tasks/claimed/*/; do
+    [ -d "$_c" ] || continue
+    _i=$(basename "$_c")
+    case "$_i" in *.dead-*|*.released-*) continue ;; esac
+    [ -e "$run/tasks/done/$_i" ] && continue
+    _w=$(sed -n 's/^needs:[[:space:]]*\([a-z][a-z]*\).*/\1/p' "$run/tasks/ready/$_i.md" 2>/dev/null | head -1)
+    if [ "${_w:-}" = verify ]; then printf '%s' "$_i"; return; fi
+  done
+}
+
 case "$cmd" in
 
 next)
@@ -199,6 +297,34 @@ next)
   waiting=0
   stamp
   mkdir -p "$run/tasks/claimed" "$run/tasks/done"
+
+  # The one throttle on a fleet's own appetite. Every worker walks this call before every task, which makes
+  # it the only place a run can be stopped from growing into the page file - and the operator's machine
+  # dying is the failure this answers. It refuses the TASK, never the worker: a session that stops because
+  # it was refused is a dead chat, and nothing in a fleet restarts one [M03], so the refusal comes with the
+  # wait to background.
+  #
+  # Two thresholds, not one. Refusing below 2 GB and releasing only above 4 is hysteresis, and without it
+  # every worker held on one reading claims again on the next, together, on the same 2.1 GB.
+  loader=$(ls -t "$(dirname "$0")/fleet-load.mjs" ~/.claude/plugins/cache/*/makarasty/*/scripts/fleet-load.mjs 2>/dev/null | head -1)
+    # Absolute, because the loop below is backgrounded by a worker whose working directory may be a
+    # worktree with no relation to this checkout - the defect the abort clock carried for a month.
+    case "$loader" in /*|[A-Za-z]:*) ;; *) loader=$(cd "$(dirname "$loader")" 2>/dev/null && pwd)/$(basename "$loader") ;; esac
+  if [ -n "$loader" ] && command -v node >/dev/null 2>&1; then
+    floor=$(cal memory_floor_gb 2); clear=$(cal memory_clear_gb 4)
+    if ! node "$loader" --clear "$floor" >/dev/null 2>&1; then
+      mkdir -p "$run/tight"; now > "$run/tight/$chip"
+      free=$(node "$loader" --json 2>/dev/null | sed -n 's/.*"freeGB":\([0-9.]*\).*/\1/p' | tail -1)
+      echo "MACHINE TIGHT: ${free:-unknown} GB free, floor ${floor} GB. Nothing is wrong with you; the box is full."
+      echo "Background this and wait. Do NOT write .done, and do not end this turn without it running:"
+      echo "  [ -e \"$absrun/FINISHED\" ] && { echo run-finished; exit 0; }; until node \"$loader\" --clear $clear >/dev/null 2>&1; do sleep 60; done; echo memory-back"
+      echo "Then claim again. While you wait, the cheapest thing you can do for the run is close anything"
+      echo "of yours that holds memory: a browser pane holds its renderer until the tab is closed, and a"
+      echo "reload returns none of it [M34]."
+      exit 6
+    fi
+    rm -f "$run/tight/$chip" 2>/dev/null || true
+  fi
   for f in "$run"/tasks/ready/*.md; do
     [ -e "$f" ] || continue
     id=$(basename "$f" .md)
@@ -207,10 +333,16 @@ next)
     # reclaim. Measured 2026-08-31: `next` had no lane filter, the planner worked around it by telling
     # nine workers in their chip prompt to walk `ready/` by hand instead, and the helper went unused for
     # the whole run - 75 hand rolled claims, and every finding appended without passing the schema gate.
-    if [ -n "$lane" ]; then
-      want=$(sed -n 's/^needs:[[:space:]]*\([a-z][a-z]*\).*/\1/p' "$f" | head -1)
-      [ -n "$want" ] || want=repo
-      [ "$want" = "$lane" ] || continue
+    want=$(sed -n 's/^needs:[[:space:]]*\([a-z][a-z]*\).*/\1/p' "$f" | head -1)
+    [ -n "$want" ] || want=repo
+    if [ -n "$lane" ] && [ "$want" != "$lane" ]; then
+      # Except for the verify lane, which nobody is ever told to ask for: a chip prompt carries `pane` or
+      # `repo` and nothing else (commands/fleet-plan.md), so a `needs: verify` task was claimable by no
+      # worker in the fleet and `landed` then refused the run over the claim that never happened. A repo
+      # worker takes it, one at a time, which is the width the lane already has. Two workers reaching this
+      # line in the same instant can both pass it - the queue's atomicity is per task, and this is a
+      # width rather than a lock.
+      if [ "$want" = verify ] && [ "$lane" = repo ] && [ -z "$(verify_held)" ]; then :; else continue; fi
     fi
     # A task can wait for another to finish: `after: task-02-primitives` in the frontmatter, one id or
     # several separated by spaces or commas. The queue is the only place a wave order can be enforced
@@ -243,14 +375,19 @@ next)
       [ -n "$b" ] || b=25
       echo "CLAIMED $id"
       echo "LANE ${lane:-any}"
+      # A repo worker holding the verify task is holding the whole fleet's verify lane, and nothing else
+      # says so: the width is one because two full suites on this machine reach the pagefile together.
+      if [ "$want" = verify ] && [ "${lane:-}" != verify ]; then
+        echo "VERIFY LANE: this is a verify task and the lane is one worker wide across the fleet."
+        echo "  Nobody else can run a full suite until you finish it, so keep it scoped and close it."
+      fi
       echo "BUDGET_MIN $b"
       echo "ABORT_AFTER_SEC $(( b * $(cal budget_multiplier 2) * 60 ))"
       # Each task worked inline leaves 20-30 k of context behind it, and four workers who never spawned a
       # subagent were all compacted near their thirtieth task [M30]. Past the first few, a task belongs in
       # its own subagent. Said here, on a path every worker walks, because the same rule in prose was
       # obeyed zero times in 184 claims.
-      need=$(sed -n 's/^needs:[[:space:]]*\([a-z][a-z]*\).*/\1/p' "$f" | head -1)
-      if [ "${need:-repo}" != pane ]; then
+      if [ "$want" != pane ]; then
         dn=0
         for o in "$run"/tasks/claimed/*/owner; do
           [ -e "$o" ] || continue
@@ -261,7 +398,9 @@ next)
           echo "  Hand this task to ONE subagent at the task's model - task file, RULES.md, your notes - with findings filed through find. Keep your own context flat."
         fi
       fi
-      echo "ARM_CLOCK background what this prints: sh \"$0\" clock $run $chip $id $b"
+      # Absolute, and quoted: this is armed from a worktree, where the run directory is not under the cwd
+      # and a project path with a space in it would otherwise arm a clock on a different directory.
+      echo "ARM_CLOCK background what this prints: sh \"$0\" clock \"$absrun\" $chip $id $b"
       echo "---"
       cat "$f"
       exit 0
@@ -287,11 +426,17 @@ clock)
   # rest of the protocol writes: it wakes every 30 seconds, exits silently the moment its task is closed
   # or its worker is finished, and only speaks if the budget really did elapse. Nothing to disarm,
   # because nothing outlives its obligation.
+  #
+  # Three things widened it since. The paths are absolute, because a worker inside a git worktree has no
+  # `.fleet/` under its cwd - it is gitignored - so a relative one named nothing and every clock ran its
+  # full term. `<chip>.blocked` closes it too: a blind worker is as finished as a done one, and its clocks
+  # were running to term. And `FINISHED` is checked first and every round, so one `landed` call ends every
+  # clock still armed anywhere on the machine rather than leaving them to expire one at a time.
   chip=${3:?chip id required}; id=${4:?task id required}; mins=${5:-25}
   mult=$(cal budget_multiplier 2); poll=$(cal clock_poll_seconds 30)
   rounds=$(( mins * mult * 60 / poll ))
-  printf 'i=0; while [ $i -lt %s ]; do sleep '"$poll"'; i=$((i+1)); [ -e "%s/tasks/done/%s" ] && exit 0; [ -e "%s/%s.done" ] && exit 0; done; echo budget-elapsed-%s\n' \
-    "$rounds" "$run" "$id" "$run" "$chip" "$id"
+  printf '[ -e "%s/FINISHED" ] && exit 0; i=0; while [ $i -lt %s ]; do sleep '"$poll"'; i=$((i+1)); [ -e "%s/FINISHED" ] && exit 0; [ -e "%s/tasks/done/%s" ] && exit 0; [ -e "%s/%s.done" ] && exit 0; [ -e "%s/%s.blocked" ] && exit 0; done; echo budget-elapsed-%s\n' \
+    "$absrun" "$rounds" "$absrun" "$absrun" "$id" "$absrun" "$chip" "$absrun" "$chip" "$id"
   ;;
 
 width)
@@ -346,6 +491,31 @@ finish)
     echo "CLAIM LOST $id, done marker NOT written"; exit 4
   fi
   [ -d "$d" ] && now > "$d/heartbeat"
+
+  # A fix arrives with a reproduction that failed before it and passes after. That was prose in
+  # MISSIONS.md from the day the fix kind existed, and one fix run landed 164 changes with nothing
+  # checking it. This call is the one place every fix task already walks through, so the requirement
+  # lives here rather than in a paragraph. The gate reads the proof the worker recorded with
+  # `fleet-gate.mjs prove`, and refuses a green produced over a tree that never moved.
+  kind=$(awk '/^kind:/{print $2; exit}' "$run/tasks/ready/$id.md" 2>/dev/null)
+  case "$kind" in
+    fix|root)
+      gate=$(ls -t "$(dirname "$0")/fleet-gate.mjs" ~/.claude/plugins/cache/*/makarasty/*/scripts/fleet-gate.mjs 2>/dev/null | head -1)
+      if [ -n "$gate" ] && command -v node >/dev/null 2>&1; then
+        if ! node "$gate" check "$absrun" "$id"; then
+          echo "done marker NOT written for $id" >&2
+          echo "  Run the reproduction through the gate, then finish again:" >&2
+          echo "    node $gate prove $run $id before -- <the task reproduction>   # before your change" >&2
+          echo "    node $gate prove $run $id after  -- <the same command>        # after it" >&2
+          echo "  A reproduction that passes BEFORE the change refutes the finding, which is a result and" >&2
+          echo "  not a failure: write it up in your notes and finish with FLEET_REFUTED=1 set." >&2
+          if [ -z "${FLEET_REFUTED:-}" ]; then exit 1; fi
+          echo "FLEET_REFUTED set: closing $id as a refutation rather than as a fix." >&2
+        fi
+      fi
+      ;;
+  esac
+
   mkdir -p "$run/tasks/done"; : > "$run/tasks/done/$id"
   echo "DONE $id"
   echo "The clock guarding it sees this marker within 30 seconds and exits on its own."
@@ -355,6 +525,11 @@ find)
   chip=${3:?chip id required}
   stamp
   tmp=$(tmpfile); cat > "$tmp"
+  # The validated line lands in a temporary file first. Appending straight to the chip's file opens it
+  # before node has read anything, so a worker whose FIRST finding was refused left an empty `NN.jsonl`
+  # behind - and `recover` and `summary` then report that chip as having filed nothing rather than as
+  # never having filed.
+  out=$(tmpfile)
   if command -v node >/dev/null 2>&1; then
     node -e '
       const fs=require("fs");
@@ -362,8 +537,21 @@ find)
       catch (e) { console.error("REFUSED: not one JSON object: "+e.message); process.exit(1); }
       const sev=["blocker","major","minor","polish"];
       const problems=[];
+      // The retired field name belongs to no shape, so it is asked about before the shapes divide.
+      if (o.what) problems.push("`what` is the retired field name, use `observed`");
       if (o.unreached) { if (!o.reason) problems.push("unreached line needs reason"); }
-      else if (o.created || o.state_changed) { /* auxiliary shapes carry their own fields */ }
+      else if (o.created || o.state_changed) {
+        // An auxiliary line says what this worker DID to the environment, and it used to be the way past
+        // every check below: one extra key - `created` beside a `severity` - filed a blocker with no
+        // area, no evidence and the retired field name, and exited 0. It is not a lesser finding, it is a
+        // different shape, and the merge routes on `severity` alone (fleet-merge.mjs), so a severity here
+        // would enter the backlog as a finding nothing stands behind.
+        if (o.severity) problems.push("an auxiliary line carries no severity; file what you found as its own finding");
+        if (o.created && !String(o.where||"").trim())
+          problems.push("created needs where: the next person to read that sandbox has to find the row");
+        if (o.state_changed && !String(o.when||"").trim())
+          problems.push("state_changed needs when: collection reads it as the window every later sighting was measured in");
+      }
       else {
         for (const k of ["area","severity","observed","evidence","mechanism_status"])
           if (!o[k] || String(o[k]).trim()==="") problems.push("missing "+k);
@@ -371,7 +559,6 @@ find)
         if (o.mechanism_status && !["established","hypothesis","unknown"].includes(o.mechanism_status))
           problems.push("mechanism_status not established|hypothesis|unknown");
         if (o.evidence && String(o.evidence).length < 12) problems.push("evidence too thin to reproduce from");
-        if (o.what) problems.push("`what` is the retired field name, use `observed`");
         // A visual claim carries the two rectangles it is about, and they have to actually intersect.
         // A model shown a screenshot will report an overlap that is not there; geometry will not.
         if (o.rects) {
@@ -389,12 +576,13 @@ find)
       o.when = o.when || new Date().toISOString();
       o.chip = o.chip || process.argv[2];
       process.stdout.write(JSON.stringify(o)+"\n");
-    ' "$tmp" "$chip" >> "$run/$chip.jsonl" || { rm -f "$tmp"; exit 1; }
+    ' "$tmp" "$chip" > "$out" || { rm -f "$tmp" "$out"; exit 1; }
+    cat "$out" >> "$run/$chip.jsonl"
   else
     echo "warning: node absent, finding appended unvalidated" >&2
     tr -d '\n' < "$tmp" >> "$run/$chip.jsonl"; echo >> "$run/$chip.jsonl"
   fi
-  rm -f "$tmp"
+  rm -f "$tmp" "$out"
   echo "FILED $(wc -l < "$run/$chip.jsonl" | tr -d ' ') lines in $chip.jsonl"
   ;;
 
@@ -407,13 +595,21 @@ ask)
   ;;
 
 drained)
+  # A drained worker still holds its renderer, and only closing the tab gives it back [M34]. This is a
+  # directive on a path the worker already walks, like the rename below it; there is no measurement of
+  # whether it is obeyed, and it costs one line.
+  printf 'CLOSE YOUR BROWSER PANE if you opened one: tabs_close. The renderer lives until the tab does,\n'
+  printf 'a reload returns nothing, and one heavy page measured 2,061 MB [M34].\n'
   chip=${3:?chip id required}
   # A drained queue is not the end of the run while the planner still intends to file work. The marker
   # says so, and it is what lets the repo lane run at full width from the first minute without closing
   # chats that will be needed again an hour later.
   if [ -e "$run/tasks/queue-open" ]; then
     echo "QUEUE OPEN: $(cat "$run/tasks/queue-open" 2>/dev/null | head -1)"
-    echo "Nothing ready right now. Poll again rather than finishing: sleep 300; echo recheck"
+    # The poll carries the same escape the clocks do, and for the same reason: this is armed in a chat
+    # that may be asleep when the run lands, and one `landed` call has to end every wait on the machine.
+    echo "Nothing ready right now. Poll again rather than finishing:"
+    echo "  [ -e \"$absrun/FINISHED\" ] && { echo run-finished; exit 0; }; sleep 300; echo recheck"
     exit 5
   fi
   : > "$run/$chip.done"
@@ -495,6 +691,7 @@ pane-serve)
 
 pane-status)
   [ -d "$run/pane/requests" ] || { echo "no pane broker in this run"; exit 0; }
+  need_mtime "how long the oldest walk has waited"
   pend=0; oldest=0; nowsec=$(date +%s)
   for f in "$run"/pane/requests/*.md; do
     [ -e "$f" ] || continue; id=$(basename "$f" .md)
@@ -571,6 +768,7 @@ sweep)
   #   fleet.sh sweep <run-dir> --release  rename them aside so the task can be re-filed
   release=""
   [ "${3:-}" = "--release" ] && release=1
+  need_mtime "how long a claim has been quiet"
   nowsec=$(date +%s 2>/dev/null || echo 0)
   found=0
   for d in "$run"/tasks/claimed/*/; do
@@ -591,14 +789,32 @@ sweep)
       if [ -n "$release" ]; then
         stampsuffix=$(date +%Y%m%dT%H%M%S 2>/dev/null || echo swept)
         mv "$d" "$run/tasks/claimed/$id.released-$stampsuffix"
-        # The ready file leaves the queue with the claim. Leaving it would hand the same id straight back
-        # to the next `next`, and a slow worker's late write would then land on live work rather than in
-        # the graveyard - which is the whole reason a reclaimed task returns under a new id.
-        if [ -e "$run/tasks/ready/$id.md" ]; then
-          mkdir -p "$run/tasks/released"
-          mv "$run/tasks/ready/$id.md" "$run/tasks/released/$id.md"
-        fi
+        # The ready file leaves the queue with the claim, and so does anything whose `after:` was waiting
+        # on it. Leaving the id in place would hand it straight back to the next `next`, and a slow
+        # worker's late write would then land on live work rather than in the graveyard - which is the
+        # whole reason a reclaimed task returns under a new id.
         echo "  released; the task file is in tasks/released/ - re-file it under a NEW id, never this one"
+        release_task "$id"
+      fi
+    fi
+  done
+  # A pane walk is claimed with the same mkdir as a task and has no heartbeat, and nothing has ever swept
+  # `pane/running/`: `pane-serve` deletes the result it refused but leaves the claim standing, so a walk
+  # that failed the gate is unclaimable by every host forever while the requester waits for a result
+  # nobody can produce. The lease has to outlast a slow walk, because there is no beat to refresh it.
+  lease=$(cal pane_walk_lease_minutes 30)
+  for d in "$run"/pane/running/*/; do
+    [ -d "$d" ] || continue
+    id=$(basename "$d")
+    [ -e "$run/pane/results/$id.json" ] && continue
+    hb=$(mtime "$d/owner")
+    age=0; [ -n "$hb" ] && [ "$nowsec" -gt 0 ] && age=$(( (nowsec - hb) / 60 ))
+    if [ "$age" -gt "$lease" ]; then
+      found=$((found + 1))
+      echo "ABANDONED? walk $id  $(head -1 "$d/owner" 2>/dev/null || echo "NO OWNER")  claimed ${age}m ago against a ${lease}m lease"
+      if [ -n "$release" ]; then
+        rm -rf "$d"
+        echo "  released; the walk is pending again and the next 'pane-next' will hand it out"
       fi
     fi
   done
@@ -631,6 +847,10 @@ recover)
   #   fleet.sh recover <run-dir> --release  also release the claims of chips that cannot be resumed
   release=""
   [ "${3:-}" = "--release" ] && release=1
+  # How long ago a transcript was last written is the whole of the LIVE? test, and an unreadable one reads
+  # as zero, which sends a session somebody is sitting in down the RESUME branch and invites a second
+  # writer onto an open file.
+  need_mtime "how long ago each session was last written to"
   nowsec=$(date +%s 2>/dev/null || echo 0)
   # The host lets an operator move its whole configuration directory, transcripts included. Reading only
   # `$HOME/.claude` on such a machine reports every chip as RESPAWN, and `--release` would then free every
@@ -788,12 +1008,9 @@ recover)
       fi
       stampsuffix=$(date +%Y%m%dT%H%M%S 2>/dev/null || echo recovered)
       mv "$d" "$run/tasks/claimed/$id.released-$stampsuffix"
-      if [ -e "$run/tasks/ready/$id.md" ]; then
-        mkdir -p "$run/tasks/released"
-        mv "$run/tasks/ready/$id.md" "$run/tasks/released/$id.md"
-      fi
       freed=$((freed + 1))
       echo "  released $id (chip ${ochip:-unknown}) - re-file it under a NEW id, never this one"
+      release_task "$id"
     done
     if [ "$freed" = 0 ]; then
       if [ "$openclaims" = 0 ]; then
@@ -825,6 +1042,10 @@ status)
       echo "== run age ${runmin}m of a ${maxmin}m ceiling"
       [ "$runmin" -gt "$maxmin" ] && echo "  PAST THE CEILING: continuing is a decision now. Land what exists or raise it in calibration.json."
     fi
+  elif ! command -v node >/dev/null 2>&1; then
+    # The age is not zero, it is unreadable, and a ceiling that silently stops being checked is a ceiling
+    # nobody notices is gone. This view is the planner's, so it says so rather than refusing outright.
+    echo "== run age unknown: node is absent, so no file's mtime can be read and the ${maxmin}m ceiling is not being checked"
   fi
   echo "== claims"
   for d in "$run"/tasks/claimed/*/; do
@@ -837,8 +1058,17 @@ status)
     flag=""; [ "$hb" = "$cl" ] && flag=" NEVER-BEAT"
     echo "  $id  $o  claimed $cl  beat $hb$flag"
   done
+  # Workers held on memory hold no claim, so nothing else in this report would show them. An idle chat
+  # sitting on a two gigabyte pane is invisible to every script here and the operator is the only one who
+  # can close it, so name what is holding the machine beside the count.
+  held=$(ls "$run"/tight 2>/dev/null | tr "
+" " ")
+  [ -n "$held" ] && echo "== held on memory: $held"
   echo "== markers"
-  ls "$run"/*.done "$run"/*.blocked "$run"/*.waiting 2>/dev/null | sed 's|.*/|  |' || echo "  none"
+  # The `|| echo` this used to end with could never fire: a pipeline's status is the last command's, and
+  # `sed` succeeds on empty input, so a run with no marker at all printed a heading and nothing under it.
+  mk=$(ls "$run"/*.done "$run"/*.blocked "$run"/*.waiting 2>/dev/null | sed 's|.*/|  |')
+  printf '%s\n' "${mk:-  none}"
   echo "== questions without answers"
   bc="$run/answers/00-broadcast.md"
   for q in "$run"/ask/*.md; do
@@ -888,15 +1118,14 @@ summary)
   else
     echo " RUN FINISHED - $(basename "$run")"
     echo "=============================================================="
-    for f in "$run"/*.jsonl; do
-      [ -e "$f" ] || continue
-      c=$(basename "$f" .jsonl); case "$c" in backlog|skipped|unreached) continue;; esac
-      row "$c"
-    done
+    chipids | while IFS= read -r c; do row "$c"; done
     echo "--------------------------------------------------------------"
-    tot=$(cat "$run"/[0-9]*.jsonl 2>/dev/null | grep -c '"severity"' || true)
-    tb=$(cat "$run"/[0-9]*.jsonl 2>/dev/null | grep -c '"severity"[[:space:]]*:[[:space:]]*"blocker"' || true)
-    tm=$(cat "$run"/[0-9]*.jsonl 2>/dev/null | grep -c '"severity"[[:space:]]*:[[:space:]]*"major"' || true)
+    # The same set of files the rows above were built from. They used to be different globs, and a chip id
+    # that is not a number - `cid-03` and its kind have been in the ledger since 2026-09-03 - printed rows
+    # full of findings above a total of 0, which `landed` then paged to the operator's phone.
+    tot=$(chipcat | grep -c '"severity"' || true)
+    tb=$(chipcat | grep -c '"severity"[[:space:]]*:[[:space:]]*"blocker"' || true)
+    tm=$(chipcat | grep -c '"severity"[[:space:]]*:[[:space:]]*"major"' || true)
     dn=$(ls "$run"/*.done 2>/dev/null | wc -l | tr -d ' ')
     bl=$(ls "$run"/*.blocked 2>/dev/null | wc -l | tr -d ' ')
     wt=$(ls "$run"/*.waiting 2>/dev/null | wc -l | tr -d ' ')
@@ -904,9 +1133,17 @@ summary)
     td=$(ls "$run"/tasks/done 2>/dev/null | wc -l | tr -d ' ')
     echo "  workers done $dn, blind $bl, waiting on the operator $wt"
     echo "  tasks $td of $rd finished, findings $tot, blockers $tb, majors $tm"
+    # Contract changes workers took without asking. They are legitimate and they are the thing an
+    # operator most needs to see before a run lands: three of them shipped from one project's runs and
+    # broke a consumer outside the application that nobody in the run could see.
+    dec=$(grep -c . "$run/decisions.jsonl" 2>/dev/null || true)
+    [ -n "$dec" ] || dec=0
+    if [ "$dec" -gt 0 ]; then
+      echo "  contract changes decided without asking: $dec, in $run/decisions.jsonl - read them before landing"
+    fi
     echo "  backlog: $run/backlog.md"
-    printf 'fleet-summary: {"run":"%s","workers_done":%s,"blind":%s,"waiting":%s,"tasks_done":%s,"tasks_total":%s,"findings":%s,"blockers":%s,"majors":%s}\n' \
-      "$(basename "$run")" "$dn" "$bl" "$wt" "$td" "$rd" "$tot" "$tb" "$tm"
+    printf 'fleet-summary: {"run":"%s","workers_done":%s,"blind":%s,"waiting":%s,"tasks_done":%s,"tasks_total":%s,"findings":%s,"blockers":%s,"majors":%s,"decisions":%s}\n' \
+      "$(basename "$run")" "$dn" "$bl" "$wt" "$td" "$rd" "$tot" "$tb" "$tm" "$dec"
   fi
   echo "=============================================================="
   ;;
@@ -914,7 +1151,10 @@ summary)
 landed)
   want=${3:?expected chip count required}
   fail=0
-  have=$(ls "$run"/*.done "$run"/*.blocked 2>/dev/null | wc -l | tr -d ' ')
+  # Chips, not markers. A worker that went blind and then finished writes both `<chip>.done` and
+  # `<chip>.blocked`, and counting the files made one worker look like two: the run then read as complete
+  # with a worker still out, wrote FINISHED on that count, and paged the phone to say so.
+  have=$(ls "$run"/*.done "$run"/*.blocked 2>/dev/null | sed 's|.*/||; s|\.[^.]*$||' | sort -u | wc -l | tr -d ' ')
   [ "$have" -ge "$want" ] || { echo "NOT LANDED: $have of $want workers finished"; fail=1; }
   for d in "$run"/tasks/claimed/*/; do
     [ -d "$d" ] || continue; id=$(basename "$d")
@@ -959,8 +1199,8 @@ landed)
     # FINISHED is already on disk, so a message that never arrives loses nothing.
     nf=$(ls -t "$(dirname "$0")/../tools/hooks/notify.mjs" ~/.claude/plugins/cache/*/makarasty-tools/*/hooks/notify.mjs 2>/dev/null | head -1)
     if [ -n "$first" ] && [ -n "$nf" ]; then
-      tot=$(cat "$run"/[0-9]*.jsonl 2>/dev/null | grep -c '"severity"' || true)
-      tb=$(cat "$run"/[0-9]*.jsonl 2>/dev/null | grep -c '"severity"[[:space:]]*:[[:space:]]*"blocker"' || true)
+      tot=$(chipcat | grep -c '"severity"' || true)
+      tb=$(chipcat | grep -c '"severity"[[:space:]]*:[[:space:]]*"blocker"' || true)
       bl=$(ls "$run"/*.blocked 2>/dev/null | wc -l | tr -d ' ')
       node "$nf" send "fleet $(basename "$run") FINISHED: $tot findings, $tb blockers, $bl blind, backlog at $run/backlog.md" || true
     fi
@@ -982,8 +1222,10 @@ worktree)
   MIN_PATH_SEGMENTS=$(min_floor)
   # Catch a tree that can never be cleaned at the moment it is CREATED rather than at the end of the run,
   # because that is the moment somebody can still move it: a worktree at `C:/wtmerge` is one slip from the
-  # drive root, so cleanup will refuse it forever and it accumulates instead.
-  if why=$(unsafe_path "$wt" ".claude/worktrees"); then
+  # drive root, so cleanup will refuse it forever and it accumulates instead. Registration deletes
+  # nothing, and its default argument is the worker's own cwd, so the working-directory term is skipped:
+  # with it, a worker registering the tree it is standing in - the documented call - refused itself.
+  if why=$(unsafe_path "$wt" ".claude/worktrees" nothing-is-deleted); then
     echo "REFUSED to register this worktree: $why" >&2
     echo "  A worktree this plugin can clean up lives under <project>/.claude/worktrees/, which is where" >&2
     echo "  the harness's own EnterWorktree puts it. Move it with:  git worktree move \"$wt\" <project>/.claude/worktrees/<name>" >&2
@@ -1003,7 +1245,11 @@ unlink)
   wt=$run
   c=$(git -C "$wt" rev-parse --show-toplevel 2>/dev/null || echo ""); [ -n "$c" ] && wt=$c
   MIN_PATH_SEGMENTS=$(min_floor)
-  if why=$(unsafe_path "$wt" ".claude/worktrees"); then
+  # The tree itself is not deleted here - only the reparse points inside it - so the working-directory
+  # term does not apply, and applying it refused the only way the documents ever call this: from inside
+  # the tree, as the last thing a worker does before leaving it (docs/WORKTREES.md, commands/fleet-run.md).
+  # This is the step [M32] exists to enforce, and a guard that refused it left the junctions in place.
+  if why=$(unsafe_path "$wt" ".claude/worktrees" nothing-is-deleted); then
     echo "REFUSED: $why" >&2; exit 2
   fi
   n=$(unlink_links "$wt")
@@ -1038,7 +1284,7 @@ clean)
   reg="$run/worktrees"
   if [ ! -d "$reg" ] || [ -z "$(ls -A "$reg" 2>/dev/null)" ]; then
     echo "no worktrees registered for this run; nothing to clean"
-    echo "(a worktree worker registers itself with 'fleet.sh worktree $run <chip>'; a run with none is not swept)"
+    echo "(a worktree worker registers itself with 'fleet.sh worktree \"$absrun\" <chip>'; a run with none is not swept)"
     exit 0
   fi
   removed=0; kept=0

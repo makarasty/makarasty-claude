@@ -104,8 +104,8 @@ harder to see rather than easier.
 The claim, the `owner` write, the task-file read and the first real action all belong in **one turn**, or
 the claim should not be made. A worker cannot guarantee it will ever be asked to continue, so a claim made
 at a point where work cannot begin is a promise it has no way to keep. See `PROTOCOL.md`, "A session with
-nothing pending is dead": measured 2026-08-27, three workers claimed a task as the closing act of a turn
-and were dead for 169, 171 and 176 minutes holding it.
+nothing pending is dead", for what three workers that claimed as the closing act of a turn cost that run
+[M03].
 
 The second-order effect is the part worth remembering. Writing `owner` atomically was the right fix for
 the first failure, and it **removed the only signal that would have caught the second**. A claim with a
@@ -133,6 +133,12 @@ id they land in a graveyard and change nothing.
 `sh "$f" sweep .fleet/<run-id>` lists the claims that look abandoned and changes nothing; `--release`
 moves the claim **and its task file** aside, into `tasks/claimed/<id>.released-<time>` and
 `tasks/released/<id>.md`, so the same id cannot be handed straight back to the next claimer.
+
+**Releasing cascades.** A task whose `after:` names the released one would otherwise wait on a done
+marker nobody will ever write: `next` answers `QUEUE WAITING` for the rest of the run and `landed`
+refuses. `--release` therefore moves the dependents aside with it, transitively, printing one
+`also released <id>` line each, and leaves alone any a worker is already holding. Re-file the whole wave
+with consistent ids rather than the one task you meant to release.
 
 **A released task is then yours to close.** `fleet.sh landed` refuses a run while anything sits in
 `tasks/released/`, and there are two honest ways out: re-file the work under a new id and delete the
@@ -220,7 +226,15 @@ both the clock and the thing keeping the session alive. Nothing else in a fleet 
 subagent rounds into a scenario cannot tell twenty minutes from eighty.
 
 **And it disarms itself.** `fleet.sh clock` prints a loop that watches for its own task's done marker and
-exits when it appears, so the boundary that closes the task also silences the clock. The earlier shape, a
+exits when it appears, so the boundary that closes the task also silences the clock. It watches for three
+things, not one: the task closing, the worker writing `.done` **or** `.blocked`, and the run being landed
+at all - so one `fleet.sh landed` ends every clock still armed anywhere on the machine.
+
+**Every path in that loop is absolute**, and it has to be. A worker that writes code runs inside a git
+worktree, `.fleet/` is gitignored in every project that has run a fleet, and a fresh checkout therefore
+has no `.fleet/` under it at all. With relative paths the exit condition could never be met for exactly
+the population the clock is guarding: every one of those clocks ran its full term, up to twice the
+budget, and then woke a session that had finished hours earlier. The earlier shape, a
 bare `sleep` the worker was asked to stop, was armed 87 times across two runs and stopped zero times,
 costing 1,090 minutes of session life after the work was over. See `PROTOCOL.md`, "Pending work mirrors
 unwritten obligations".
@@ -384,9 +398,9 @@ the six, 19 and 18 findings against 65, 56, 50 and 46.
 Workers claim the next task the moment they finish. Nothing is to be won there, which is worth knowing
 before someone optimises it.
 
-**A task is one browser walk and nothing else.** Median task 23 minutes, and the delegated scenario inside
-it accounts for about 20 of those. A worker holds one pane, so its ceiling is roughly 2.6 tasks an hour
-however the queue is written. More throughput comes from more panes, or from work that does not need one.
+**A task is one browser walk and nothing else.** A worker holds one pane, so the delegated scenario inside
+each task sets its ceiling [M16], however the queue is written. More throughput comes from more panes, or
+from work that does not need one.
 
 **Which is the lever nobody pulled.** In that run, 33 of 34 tasks declared `kind: verify` and every one of
 them was written to be walked in a browser, including the ones whose whole answer was in the repository: a

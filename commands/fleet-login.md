@@ -3,15 +3,10 @@ description: Open and authenticate this project's app in this session's browser 
 allowed-tools: Bash, Read, Glob, Grep, AskUserQuestion, mcp__Claude_Browser__preview_start, mcp__Claude_Browser__preview_logs, mcp__Claude_Browser__javascript_tool, mcp__Claude_Browser__navigate
 ---
 
-The reference files named below (`docs/PROTOCOL.md` and its siblings) live in this plugin's own directory,
-not in the project you are working on. Resolve that directory once, before following any pointer:
-
-```bash
-ls -dt ~/.claude/plugins/cache/*/makarasty/*/docs 2>/dev/null | head -1
-```
-
-Empty output means the plugin is running from a checkout instead of an install: look for `docs/` beside
-the `commands/` directory holding this file.
+The `docs/*` files named below live in this plugin's own directory, not in the project you are working on.
+Resolve it once, before following any pointer, with
+`ls -dt ~/.claude/plugins/cache/*/makarasty/*/docs 2>/dev/null | head -1`. Empty output means a checkout
+rather than an install: `docs/` sits beside the `commands/` directory holding this file.
 
 Get this session's Browser pane authenticated against the project's local app. Everything here runs on
 localhost against whatever account the project provisioned for agents, so it needs nothing from the
@@ -34,14 +29,26 @@ inputs commonly ignore synthetic events and the form then blocks submit in silen
 ## 2. Confirm the services are up
 
 Check that the ports the runbook names are listening, using the command for this operating system from
-`docs/PROTOCOL.md`. Dev servers, emulators and watchers belong to the
-operator, so a missing one is a precise report rather than something to start.
+`docs/PROTOCOL.md`.
+
+**Which of them you may start is the project's call, not a rule of this command.** A dev server the
+operator runs is theirs; a backend or emulator the project hands you a launch entry for is yours, and
+reporting it as missing when the runbook told you how to start it is a failed run, not a careful one.
+`FLEET.md` says which is which.
+
+Re-check this whenever a login fails later. A service that was up at the start of a run can be down by
+the middle of it, and nothing in the app announces that.
 
 ## 3. Open the pane
 
 `preview_start` at the runbook's origin, honouring its literal host. Some projects must be reached as
 `[::1]` rather than `localhost`, and getting that wrong lands on an error page whose title still looks
 correct.
+
+**A second host is a second session.** Where a project serves an admin or operator surface on its own
+hostname, that origin authenticates separately, and the pane will not `navigate` across the boundary —
+open it with the launch entry the project provides for it. Signed in on one host proves nothing about the
+other, so probe the one you are about to use.
 
 ## 4. Gate the pane
 
@@ -67,6 +74,21 @@ Follow the runbook exactly. Then read the auth state again and assert a non-empt
 
 Identity is the assertion. Landing URLs differ per account and per role, and a screenshot costs more while
 proving less than the store read.
+
+## When the sign in fails, read the network log before you doubt the credentials
+
+**The message the app shows is not a diagnosis.** A login form has one failure toast and every cause
+arrives wearing it: a refused connection to the API, a backend that cannot reach its own datastore, a
+second-factor rule that redirected the account to email — all of them render as "invalid credentials".
+The call itself is often no better; an app's own login helper commonly rejects with a bare `undefined`,
+carrying no status and no message.
+
+So read the request. `read_network_requests` filtered to the login path separates the four cases in one
+call — a failed connection, a 4xx, a 5xx, or a 200 whose body chose a path you cannot complete — and each
+has a different fix. Retyping the password fixes none of them.
+
+**Never ask the operator to relay a code or a link from their mailbox.** An account that answers with an
+emailed step is the wrong account for an agent; say so and name the account the project provisioned.
 
 ## Done when
 

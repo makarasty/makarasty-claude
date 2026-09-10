@@ -24,8 +24,18 @@
     "quiet_interval_seconds": "Read by a planner when it arms the watch loop in fleet-wait.md, not by any script here.",
     "delegate_past_tasks": "M30 - a repo worker's context grows 20-30 k per task worked inline and four workers were compacted near their thirtieth; the first three buy the worktree and the traps, after that fleet.sh next says DELEGATE",
     "pane_workers_display_ceiling": "Read by a planner, not by a script: BROWSER.md is where the display ceiling is applied.",
-    "min_path_segments": "A path is got wrong at its end - an empty variable, a dirname too many - which turns it into its own parent. Depth is therefore the margin for error, counted in mistakes: C:/wtmerge is one slip from the drive root, <project>/.claude/worktrees/wtA is seven. Four is the floor fleet.sh will delete below. Not a measurement: a chosen floor."
+    "min_path_segments": "A path is got wrong at its end - an empty variable, a dirname too many - which turns it into its own parent. Depth is therefore the margin for error, counted in mistakes: C:/wtmerge is one slip from the drive root, <project>/.claude/worktrees/wtA is seven. Four is the floor fleet.sh will delete below. Not a measurement: a chosen floor.",
+    "root_max_members": "A candidate wider than this is a place rather than a defect - a 436 finding backlog offered one 51 wide because they all touched a 5,000 line command file. Read by fleet-gate.mjs cluster.",
+    "root_common_token_share": "A token more than this share of a run's findings mention is the project's vocabulary, not a cause. Without the cut, `forEach` and `playerData` came out as candidate causes on the same backlog. Read by fleet-gate.mjs cluster.",
+    "pane_walk_lease_minutes": "A chosen lease, not a measurement. A pane walk has no heartbeat to refresh, so the lease has to outlast a slow walk: the broker sizes hosts against a flat 20 minutes when no walk has been served yet, and this is that plus room. Read by fleet.sh sweep.",
+    "memory_floor_gb": "Free physical memory below this and `fleet.sh next` hands out no more tasks. Chosen, not measured: the machine this was built on sat at 34.6 GB committed against 31.2 GB physical before a fleet started, and one browser tab holding a heavy page took 1.9 GB of what was left [M34].",
+    "memory_clear_gb": "And it starts again only above this. The gap is hysteresis: with one threshold, every worker held on a single reading claims again on the next, together, on the same memory. Chosen rather than measured."
   },
   "hook_claim_window_minutes": 10,
-  "min_path_segments": 4
+  "min_path_segments": 4,
+  "root_max_members": 6,
+  "root_common_token_share": 0.15,
+  "pane_walk_lease_minutes": 30,
+  "memory_floor_gb": 2,
+  "memory_clear_gb": 4
 }
