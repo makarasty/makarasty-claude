@@ -5,9 +5,18 @@ disable-model-invocation: true
 ---
 
 The `docs/*` files named below live in this plugin's own directory, not in the project you are working on.
-Resolve it once, before following any pointer, with
-`ls -dt ~/.claude/plugins/cache/*/makarasty/*/docs 2>/dev/null | head -1`. Empty output means a checkout
-rather than an install: `docs/` sits beside the `commands/` directory holding this file.
+Resolve it once, before following any pointer, and ask the host rather than guessing:
+
+```bash
+p=$(node -p 'JSON.parse(require("fs").readFileSync(require("os").homedir()+"/.claude/plugins/installed_plugins.json","utf8")).plugins["makarasty@makarasty"][0].installPath.split(String.fromCharCode(92)).join("/")' 2>/dev/null) \
+  || p=$(ls -dt ~/.claude/plugins/cache/*/makarasty/*/ 2>/dev/null | head -1)
+```
+
+`$p/docs` and `$p/scripts` are then the plugin. The first form reads the record the host keeps of what it
+installed, which is the only thing that always agrees with the command file you are reading; the fallback
+exists for a checkout that was never installed. **Do not sort that cache by modification time.** It held
+five snapshots on the machine this was written on, the newest by mtime was nine days behind the newest by
+version, and a session that picked it read documentation for a plugin it was not running.
 
 ## Missing prerequisites are work, not a refusal
 
@@ -238,14 +247,14 @@ same machine.
 
 Each chip's prompt is one line:
 
-    Run the brief at .fleet/<run-id>/brief-NN.md by following the makarasty fleet-run command. Invoke it as /makarasty:fleet-run .fleet/<run-id>/brief-NN.md, and if that name does not resolve in this session, read the command file directly: ls -t ~/.claude/plugins/cache/*/makarasty/*/commands/fleet-run.md | head -1
+    Run the brief at .fleet/<run-id>/brief-NN.md by following the makarasty fleet-run command. Invoke it as /makarasty:fleet-run .fleet/<run-id>/brief-NN.md, and if that name does not resolve in this session, read the command file directly, at $(node -p 'JSON.parse(require("fs").readFileSync(require("os").homedir()+"/.claude/plugins/installed_plugins.json","utf8")).plugins["makarasty@makarasty"][0].installPath.split(String.fromCharCode(92)).join("/")' 2>/dev/null || ls -dt ~/.claude/plugins/cache/*/makarasty/*/ | head -1)/commands/fleet-run.md
 
 In pull mode there are no briefs, so the chip prompt carries the worker's identity **and its lane**.
 Without the identity a worker invents one, two workers pick the same number, and their findings interleave
 into one file that collection reads as a single worker, corrupting the count of independent sightings.
 Without the lane a paneless worker claims a browser task, discovers it cannot do it, and pays a reclaim:
 
-    You are worker NN of run <run-id>, lane repo. Work the queue by following the makarasty fleet-run command. Invoke it as /makarasty:fleet-run .fleet/<run-id>/, and if that name does not resolve in this session, read the command file directly: ls -t ~/.claude/plugins/cache/*/makarasty/*/commands/fleet-run.md | head -1
+    You are worker NN of run <run-id>, lane repo. Work the queue by following the makarasty fleet-run command. Invoke it as /makarasty:fleet-run .fleet/<run-id>/, and if that name does not resolve in this session, read the command file directly, at $(node -p 'JSON.parse(require("fs").readFileSync(require("os").homedir()+"/.claude/plugins/installed_plugins.json","utf8")).plugins["makarasty@makarasty"][0].installPath.split(String.fromCharCode(92)).join("/")' 2>/dev/null || ls -dt ~/.claude/plugins/cache/*/makarasty/*/ | head -1)/commands/fleet-run.md
 
 Say `lane pane` for the workers whose panes the operator will open, and `lane repo` for the rest. The lane
 is the third argument to every claim: `sh "$f" next .fleet/<run-id> NN repo`. Do not write the lane rule

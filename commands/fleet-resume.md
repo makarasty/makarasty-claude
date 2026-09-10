@@ -20,7 +20,7 @@ made, and the half-written finding it was about to file.
 Locate the helper once, as every other command does:
 
 ```bash
-f=$(ls -t ~/.claude/plugins/cache/*/makarasty/*/scripts/fleet.sh | head -1)
+f=$(node -p 'JSON.parse(require("fs").readFileSync(require("os").homedir()+"/.claude/plugins/installed_plugins.json","utf8")).plugins["makarasty@makarasty"][0].installPath.split(String.fromCharCode(92)).join("/")' 2>/dev/null || ls -dt ~/.claude/plugins/cache/*/makarasty/*/ | head -1)/scripts/fleet.sh
 ```
 
 ```bash

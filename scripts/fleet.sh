@@ -104,7 +104,25 @@ RUN_FORMAT=1
 # - which is a process tree per number. The file is one flat object of numbers, so sed reads all of them
 # in a single pass and without node, which also means the calibration is honoured on a machine that has
 # none rather than silently replaced by the defaults.
-_calfile=$(ls -t "$(dirname "$0")/../calibration.json" ~/.claude/plugins/cache/*/makarasty/*/calibration.json 2>/dev/null | head -1)
+# Where this plugin is, from the inside. Every file this script reaches for is either beside it or under
+# the copy the host says it installed, and those are the only two answers worth having.
+#
+# It used to be `ls -t <sibling> <cache glob> | head -1`, which sorts by modification time across both -
+# so the answer changed whenever anything touched a cached directory. On the machine this was written on
+# the cache held five snapshots, the newest by mtime was nine days behind the newest by version, and the
+# host had a sixth answer that was right: `~/.claude/plugins/installed_plugins.json` records the path it
+# installed. Ask that, and fall back to the glob only for a checkout that was never installed.
+beside() { # beside <path relative to this script> [<plugin name>]
+  if [ -e "$(dirname "$0")/$1" ]; then printf %s "$(dirname "$0")/$1"; return 0; fi
+  _pkg=${2:-makarasty}
+  if command -v node >/dev/null 2>&1; then
+    _root=$(PKG="$_pkg" node -p 'JSON.parse(require("fs").readFileSync(require("os").homedir()+"/.claude/plugins/installed_plugins.json","utf8")).plugins[process.env.PKG+"@makarasty"][0].installPath.split(String.fromCharCode(92)).join("/")' 2>/dev/null)
+    if [ -n "$_root" ] && [ -e "$_root/$3" ]; then printf %s "$_root/$3"; return 0; fi
+  fi
+  ls -t ~/.claude/plugins/cache/*/"$_pkg"/*/"$3" 2>/dev/null | head -1
+}
+
+_calfile=$(beside ../calibration.json makarasty calibration.json)
 if [ -n "$_calfile" ]; then
   # A bare key holding a bare number, anchored at both ends, so nothing that is not a constant - a
   # provenance sentence, a nested object - can reach `eval`.
@@ -306,7 +324,7 @@ next)
   #
   # Two thresholds, not one. Refusing below 2 GB and releasing only above 4 is hysteresis, and without it
   # every worker held on one reading claims again on the next, together, on the same 2.1 GB.
-  loader=$(ls -t "$(dirname "$0")/fleet-load.mjs" ~/.claude/plugins/cache/*/makarasty/*/scripts/fleet-load.mjs 2>/dev/null | head -1)
+  loader=$(beside fleet-load.mjs makarasty scripts/fleet-load.mjs)
     # Absolute, because the loop below is backgrounded by a worker whose working directory may be a
     # worktree with no relation to this checkout - the defect the abort clock carried for a month.
     case "$loader" in /*|[A-Za-z]:*) ;; *) loader=$(cd "$(dirname "$loader")" 2>/dev/null && pwd)/$(basename "$loader") ;; esac
@@ -455,7 +473,7 @@ width)
   want=$(( (ready + per - 1) / per ))
   [ "$want" -lt 1 ] && want=1
   cap=""
-  loader=$(ls -t "$(dirname "$0")/fleet-load.mjs" ~/.claude/plugins/cache/*/makarasty/*/scripts/fleet-load.mjs 2>/dev/null | head -1)
+  loader=$(beside fleet-load.mjs makarasty scripts/fleet-load.mjs)
   if [ -n "$loader" ] && command -v node >/dev/null 2>&1; then
     reserve=$(cal operator_reserve_gb 2); ceil=$(cal repo_worker_ceiling 12)
     cap=$(node "$loader" --json 2>/dev/null | RESERVE_GB="$reserve" CEIL_N="$ceil" node -e 'const RESERVE=+process.env.RESERVE_GB||2, CEIL=+process.env.CEIL_N||12; let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{const o=JSON.parse(s);const byRam=Math.floor(o.freeGB-RESERVE);console.log(Math.max(1,Math.min(byRam,CEIL)));}catch{console.log("")}})')
@@ -465,7 +483,7 @@ width)
   echo "REPO_WORKERS $n"
   echo "  ready repo tasks $ready, one worker per three -> $want"
   echo "  machine cap $cap (free memory less the ${reserve:-2} GB the operator keeps, ceiling ${ceil:-12})"
-  echo "  the pane lane is a display question and starts at $(cal pane_workers_default 2); the verify lane is 1"
+  echo "  the pane lane starts at $(cal pane_workers_default 2) and is bound by memory, not by the display [M33]; the verify lane is 1"
   echo "  every constant above comes from calibration.json"
   ;;
 
@@ -500,7 +518,7 @@ finish)
   kind=$(awk '/^kind:/{print $2; exit}' "$run/tasks/ready/$id.md" 2>/dev/null)
   case "$kind" in
     fix|root)
-      gate=$(ls -t "$(dirname "$0")/fleet-gate.mjs" ~/.claude/plugins/cache/*/makarasty/*/scripts/fleet-gate.mjs 2>/dev/null | head -1)
+      gate=$(beside fleet-gate.mjs makarasty scripts/fleet-gate.mjs)
       if [ -n "$gate" ] && command -v node >/dev/null 2>&1; then
         if ! node "$gate" check "$absrun" "$id"; then
           echo "done marker NOT written for $id" >&2
@@ -1197,7 +1215,7 @@ landed)
     # Then the phone, through the tools plugin's notifier when it is installed: the headline only, never a
     # finding, and only the first time FINISHED is written, so a second landing check does not page twice.
     # FINISHED is already on disk, so a message that never arrives loses nothing.
-    nf=$(ls -t "$(dirname "$0")/../tools/hooks/notify.mjs" ~/.claude/plugins/cache/*/makarasty-tools/*/hooks/notify.mjs 2>/dev/null | head -1)
+    nf=$(beside ../tools/hooks/notify.mjs makarasty-tools hooks/notify.mjs)
     if [ -n "$first" ] && [ -n "$nf" ]; then
       tot=$(chipcat | grep -c '"severity"' || true)
       tb=$(chipcat | grep -c '"severity"[[:space:]]*:[[:space:]]*"blocker"' || true)
@@ -1399,7 +1417,7 @@ clean)
 
 
 merge|render|fixqueue)
-  m=$(ls -t "$(dirname "$0")/fleet-merge.mjs" ~/.claude/plugins/cache/*/makarasty/*/scripts/fleet-merge.mjs 2>/dev/null | head -1)
+  m=$(beside fleet-merge.mjs makarasty scripts/fleet-merge.mjs)
   [ -n "$m" ] || { echo "fleet-merge.mjs not found beside fleet.sh" >&2; exit 2; }
   exec node "$m" "$cmd" "$run"
   ;;

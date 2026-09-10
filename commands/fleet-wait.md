@@ -21,7 +21,7 @@ advancing, which is the only thing that revives a dead session.
 ```bash
 run=RUNID; n=N; quiet=600
 d=.fleet/$run; seen=$d/.watch-seen; : > "$seen"; last=$(date +%s)
-FS=$(ls -t ~/.claude/plugins/cache/*/makarasty/*/scripts/fleet.sh 2>/dev/null | head -1)
+FS=$(node -p 'JSON.parse(require("fs").readFileSync(require("os").homedir()+"/.claude/plugins/installed_plugins.json","utf8")).plugins["makarasty@makarasty"][0].installPath.split(String.fromCharCode(92)).join("/")' 2>/dev/null || ls -dt ~/.claude/plugins/cache/*/makarasty/*/ | head -1)/scripts/fleet.sh
 while true; do
   [ -e "$(cd "$d" 2>/dev/null && pwd)/FINISHED" ] && { echo "run landed"; break; }
   for f in $d/tasks/claimed/*/owner $d/tasks/done/* $d/ask/*.md $d/*.done $d/*.blocked $d/*.waiting; do

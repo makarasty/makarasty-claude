@@ -1459,6 +1459,36 @@ STUB
 else
   echo "  skip  memory hook cases"
 fi
+
+echo
+echo "the plugin finds itself the way the host records it"
+
+# What rotted here was silent: the docs resolved `docs/` by sorting the plugin cache by modification time,
+# the newest by mtime was nine days behind the newest by version, and sessions read a plugin they were not
+# running. Nothing failed. So the shape is asserted rather than trusted.
+# The glob is allowed, but only as a fallback after a `||` - never as the primary answer.
+bad_glob=$(grep -rn "ls -d?t ~/.claude/plugins/cache" "$here/../commands" "$here/../docs" 2>/dev/null | grep -cv "||" | tr -d " ")
+if [ "${bad_glob:-0}" = 0 ]; then
+  ok "no document resolves this plugin by modification time"
+else
+  bad "no document resolves this plugin by modification time" "$bad_glob line(s) still do"
+fi
+
+if grep -rq "installed_plugins.json" "$here/../commands" 2>/dev/null; then
+  ok "and the commands ask the host's own record instead"
+else
+  bad "and the commands ask the host's own record instead" "no command reads installed_plugins.json"
+fi
+
+# `beside` must return the copy next to the script, whatever any cache holds.
+bs=$tmp/beside/scripts
+mkdir -p "$bs"
+cp "$here/fleet.sh" "$bs/"
+printf 'marker\n' > "$bs/fleet-load.mjs"
+out=$(cd "$tmp/beside" && sh scripts/fleet.sh 2>&1 | head -1)
+check "fleet.sh still runs from a copy anywhere" "usage: fleet.sh" "$out"
+rm -rf "$tmp/beside"
+
 rm -rf "$tmp"
 echo "$pass passed, $fail failed"
 if [ "${1:-}" = "--keep" ]; then echo "run directory kept: $run"; else rm -rf "$run"; fi

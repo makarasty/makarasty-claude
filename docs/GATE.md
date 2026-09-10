@@ -22,7 +22,8 @@ The three failures, and what refuses each:
 ## Where it sits
 
 ```bash
-g=$(ls -t ~/.claude/plugins/cache/*/makarasty/*/scripts/fleet-gate.mjs | head -1)
+p=$(node -p 'JSON.parse(require("fs").readFileSync(require("os").homedir()+"/.claude/plugins/installed_plugins.json","utf8")).plugins["makarasty@makarasty"][0].installPath.split(String.fromCharCode(92)).join("/")' 2>/dev/null || ls -dt ~/.claude/plugins/cache/*/makarasty/*/ | head -1)
+f=$p/scripts/fleet.sh; g=$p/scripts/fleet-gate.mjs
 
 sh  "$f" merge    .fleet/<run-id>                 # findings -> backlog.jsonl
 sh  "$f" fixqueue .fleet/<run-id>                 # backlog -> one task per finding

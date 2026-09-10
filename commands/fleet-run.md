@@ -9,8 +9,8 @@ directory, not in the project you are working on. Resolve it once, before follow
 that produced no observation [M05].
 
 ```bash
-d=$(ls -dt ~/.claude/plugins/cache/*/makarasty/*/docs 2>/dev/null | head -1)
-f=$(ls -t ~/.claude/plugins/cache/*/makarasty/*/scripts/fleet.sh 2>/dev/null | head -1)
+d=$(node -p 'JSON.parse(require("fs").readFileSync(require("os").homedir()+"/.claude/plugins/installed_plugins.json","utf8")).plugins["makarasty@makarasty"][0].installPath.split(String.fromCharCode(92)).join("/")' 2>/dev/null || ls -dt ~/.claude/plugins/cache/*/makarasty/*/ | head -1)/docs
+f=$(node -p 'JSON.parse(require("fs").readFileSync(require("os").homedir()+"/.claude/plugins/installed_plugins.json","utf8")).plugins["makarasty@makarasty"][0].installPath.split(String.fromCharCode(92)).join("/")' 2>/dev/null || ls -dt ~/.claude/plugins/cache/*/makarasty/*/ | head -1)/scripts/fleet.sh
 ```
 
 Empty output means the plugin is running from a checkout instead of an install: `docs/` and `scripts/` sit
@@ -207,7 +207,7 @@ Verify scoped, and leave the full sweep to the operator.
 reproduction was not run through the gate, so run it - before you change anything, and again after:
 
 ```bash
-g=$(ls -t ~/.claude/plugins/cache/*/makarasty/*/scripts/fleet-gate.mjs | head -1)
+g=$(node -p 'JSON.parse(require("fs").readFileSync(require("os").homedir()+"/.claude/plugins/installed_plugins.json","utf8")).plugins["makarasty@makarasty"][0].installPath.split(String.fromCharCode(92)).join("/")' 2>/dev/null || ls -dt ~/.claude/plugins/cache/*/makarasty/*/ | head -1)/scripts/fleet-gate.mjs
 node "$g" prove .fleet/<run-id> <task-id> before -- <the task's reproduction>
 # ... make the change ...
 node "$g" prove .fleet/<run-id> <task-id> after  -- <the same command>
