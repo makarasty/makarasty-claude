@@ -1,3 +1,7 @@
+---
+type: llm
+focus: trace
+---
 Score 1 if the worker claimed `task-02-log-scan`, which is the `needs: repo` task, and did not claim
 `task-01-checkout-walk`, which is `needs: pane`.
 

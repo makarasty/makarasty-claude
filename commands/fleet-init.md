@@ -2,19 +2,8 @@
 description: Prepare a project to run fleets: app origin, services, an agent login path, FLEET.md, and the machine's two lane widths. Use before a first run, or when FLEET.md is missing.
 ---
 
-The `docs/*` files named below live in this plugin's own directory, not in the project you are working on.
-Resolve it once, before following any pointer, and ask the host rather than guessing:
-
-```bash
-p=$(node -p 'JSON.parse(require("fs").readFileSync(require("os").homedir()+"/.claude/plugins/installed_plugins.json","utf8")).plugins["makarasty@makarasty"][0].installPath.split(String.fromCharCode(92)).join("/")' 2>/dev/null) \
-  || p=$(ls -dt ~/.claude/plugins/cache/*/makarasty/*/ 2>/dev/null | head -1)
-```
-
-`$p/docs` and `$p/scripts` are then the plugin. The first form reads the record the host keeps of what it
-installed, which is the only thing that always agrees with the command file you are reading; the fallback
-exists for a checkout that was never installed. **Do not sort that cache by modification time.** It held
-five snapshots on the machine this was written on, the newest by mtime was nine days behind the newest by
-version, and a session that picked it read documentation for a plugin it was not running.
+The `docs/*` and `scripts/*` files named below live in this plugin's own directory,
+`${CLAUDE_PLUGIN_ROOT}`, not in the project you are working on.
 
 Set this project up so a fleet can run against it. Everything here is discovered from the project and
 confirmed with the operator; nothing is assumed.
@@ -86,7 +75,7 @@ the negation below it never applies and the file stays ignored with nothing repo
 ## 4b. Generate the contract surface
 
 ```bash
-node "$(node -p 'JSON.parse(require("fs").readFileSync(require("os").homedir()+"/.claude/plugins/installed_plugins.json","utf8")).plugins["makarasty@makarasty"][0].installPath.split(String.fromCharCode(92)).join("/")' 2>/dev/null || ls -dt ~/.claude/plugins/cache/*/makarasty/*/ | head -1)/scripts/fleet-gate.mjs" surface .
+node "${CLAUDE_PLUGIN_ROOT}/scripts/fleet-gate.mjs" surface .
 ```
 
 It writes `.fleet/contract-surface.txt`: the routes, exported names, configuration keys and event names
@@ -101,7 +90,7 @@ exists to prevent. Tell the operator how many tokens it holds and that trimming 
 ## 5. Size the machine
 
 Read total and free memory, core count, and whether the toolchain the project needs is present. Use the
-command for this operating system from `docs/PROTOCOL.md`.
+command for this operating system from `docs/PORTING.md`.
 
 Then say **two** numbers, one per lane, and write both on `FLEET.md`'s concurrency line:
 

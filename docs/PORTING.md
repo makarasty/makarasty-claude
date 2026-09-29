@@ -163,3 +163,61 @@ than by convenience. Longest task first. A refuted claim being worth recording. 
 reporting nothing instead of guessing.
 
 Those survive every port, and they are most of what makes the runs worth reading.
+
+## Commands that differ per operating system
+
+Moved from `PROTOCOL.md` with the shell traps below, so the worker contract stays short.
+
+Two things a fleet needs differ per operating system. Everything else here is plain files.
+
+**Is a port listening.**
+
+```bash
+# macOS, Linux
+lsof -nP -iTCP:5173 -sTCP:LISTEN || ss -ltn 'sport = :5173'
+```
+```powershell
+# Windows
+Get-NetTCPConnection -State Listen -LocalPort 5173
+```
+
+**Machine load, for a measurement to be interpretable.**
+
+```bash
+# Linux
+free -m; nproc; uptime
+# macOS
+vm_stat; sysctl -n hw.ncpu; uptime
+```
+```powershell
+# Windows
+$os = Get-CimInstance Win32_OperatingSystem
+"free {0:N1}GB of {1:N1}GB" -f ($os.FreePhysicalMemory/1MB), ($os.TotalVisibleMemorySize/1MB)
+```
+
+A project's `FLEET.md` may pin the exact command for its own machine, which removes the guess entirely.
+
+Atomic claiming works everywhere: `mkdir` failing on an existing directory is POSIX behaviour and NTFS
+behaviour alike, and it is the reason the claim is a directory rather than a file.
+
+## Shell traps that cost this design real time
+
+One eight-worker run produced 47 errors, and the same two shapes hit almost everybody [M12].
+
+**A heredoc that never returns.** Writing a file by piping a heredoc into an interpreter hangs when that
+interpreter waits on standard input, and the call sits until it times out. Hit seven workers of eight.
+Write files with the harness's own write tool, and keep heredocs for text that goes straight to a file
+through `cat > file <<'EOF'`, never into a program that might read stdin.
+
+**The working directory does not persist between calls.** A `cd` in one call is gone by the next, so a
+relative path written after it resolves somewhere else. Hit six workers of eight. Use absolute paths, or
+put the `cd` and the work in the same call.
+
+**Validating your own JSONL by hand.** Three workers wrote inline scripts to check the file they had just
+written. With `jq` present, `jq -e . file.jsonl` does it in one call; without it, append one object per
+line and trust the schema rather than writing a validator. Either way it is not worth a script.
+
+The one genuinely platform bound trick is growing a window past the edges of the display, which is
+described for Windows in [`BROWSER.md`](BROWSER.md). macOS has no equivalent through the window manager,
+though a virtual display via `displayplacer` or a second Space serves the same purpose. On Linux it depends
+entirely on the compositor.

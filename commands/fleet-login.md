@@ -1,21 +1,10 @@
 ---
 description: Open and authenticate this project's app in this session's browser pane. Use before any visual check, or when a pane shows a login screen or reads empty.
-allowed-tools: Bash, Read, Glob, Grep, AskUserQuestion, mcp__Claude_Browser__preview_start, mcp__Claude_Browser__preview_logs, mcp__Claude_Browser__javascript_tool, mcp__Claude_Browser__navigate
+allowed-tools: Bash, Read, Glob, Grep, AskUserQuestion, mcp__Claude_Browser__preview_start, mcp__Claude_Browser__preview_logs, mcp__Claude_Browser__javascript_tool, mcp__Claude_Browser__navigate, mcp__Claude_Browser__read_network_requests
 ---
 
-The `docs/*` files named below live in this plugin's own directory, not in the project you are working on.
-Resolve it once, before following any pointer, and ask the host rather than guessing:
-
-```bash
-p=$(node -p 'JSON.parse(require("fs").readFileSync(require("os").homedir()+"/.claude/plugins/installed_plugins.json","utf8")).plugins["makarasty@makarasty"][0].installPath.split(String.fromCharCode(92)).join("/")' 2>/dev/null) \
-  || p=$(ls -dt ~/.claude/plugins/cache/*/makarasty/*/ 2>/dev/null | head -1)
-```
-
-`$p/docs` and `$p/scripts` are then the plugin. The first form reads the record the host keeps of what it
-installed, which is the only thing that always agrees with the command file you are reading; the fallback
-exists for a checkout that was never installed. **Do not sort that cache by modification time.** It held
-five snapshots on the machine this was written on, the newest by mtime was nine days behind the newest by
-version, and a session that picked it read documentation for a plugin it was not running.
+The `docs/*` and `scripts/*` files named below live in this plugin's own directory,
+`${CLAUDE_PLUGIN_ROOT}`, not in the project you are working on.
 
 Get this session's Browser pane authenticated against the project's local app. Everything here runs on
 localhost against whatever account the project provisioned for agents, so it needs nothing from the
@@ -38,7 +27,7 @@ inputs commonly ignore synthetic events and the form then blocks submit in silen
 ## 2. Confirm the services are up
 
 Check that the ports the runbook names are listening, using the command for this operating system from
-`docs/PROTOCOL.md`.
+`docs/PORTING.md`.
 
 **Which of them you may start is the project's call, not a rule of this command.** A dev server the
 operator runs is theirs; a backend or emulator the project hands you a launch entry for is yours, and

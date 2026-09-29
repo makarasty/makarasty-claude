@@ -61,10 +61,11 @@ removed so the whole tree survives rather than only the branch. Branches go by `
 `unsafe_path()` runs inside `fleet.sh worktree` and `fleet.sh clean`. Nothing else on the machine goes
 through it.
 
-- **A worker's own exit is not gated.** The rule that a worker unlinks its junctions before calling the
-  harness's `ExitWorktree` lives in `fleet-run.md` as prose, and `ExitWorktree` is the harness's tool, not
-  this plugin's. `fleet.sh unlink` gives the worker a gated command to use instead, but nothing forces it
-  to. By this repository's own ledger that is the step most likely to fail. **Not done.**
+- **A worker's own unlink is not enforced.** `fleet-run.md` tells a worker to run `fleet.sh unlink` before it
+  leaves, and removal belongs to `fleet.sh clean` alone - `ExitWorktree` is a no-op in a chip's worktree,
+  which the session did not create with `EnterWorktree`. Nothing forces the unlink, and by this
+  repository's own ledger it is the step most likely to be skipped. `clean` unlinks again before it
+  removes, so a skipped unlink costs nothing unless someone deletes the tree by hand. **Not done.**
 - **An agent's own shell is not gated.** A model that types a recursive delete directly meets nothing from
   this plugin. That layer is the host's permission configuration, not this repository.
 - **The measurement is one machine.** [M32] is Git 2.53.0 on Windows 11, one filesystem. The unlink-first

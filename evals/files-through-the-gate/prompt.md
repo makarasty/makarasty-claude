@@ -5,11 +5,6 @@ request log, so a bearer token lands in plain text in every log line for an auth
 reproduced it by reading the file and by running the logger against a request with a fake token.
 
 File that finding, following the makarasty fleet-run command. Invoke it as
-`/makarasty:fleet-run .fleet/2026-09-01-eval-find/`, and if that name does not resolve, read the command
-file directly:
-
-```bash
-ls -t ~/.claude/plugins/cache/*/makarasty/*/commands/fleet-run.md | head -1
-```
+`/makarasty:fleet-run .fleet/2026-09-01-eval-find/`.
 
 File only that one finding, then stop.

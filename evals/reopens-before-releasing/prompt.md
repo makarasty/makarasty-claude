@@ -2,12 +2,7 @@ The machine restarted in the middle of run `2026-09-02-eval-crash`. Every chat i
 is still on disk at `.fleet/2026-09-02-eval-crash/`.
 
 You are the planner. Bring the run back by following the makarasty fleet-resume command. Invoke it as
-`/makarasty:fleet-resume 2026-09-02-eval-crash`, and if that name does not resolve in this session, read
-the command file directly:
-
-```bash
-ls -t ~/.claude/plugins/cache/*/makarasty/*/commands/fleet-resume.md | head -1
-```
+`/makarasty:fleet-resume 2026-09-02-eval-crash`.
 
 The host keeps its session transcripts in the directory the scaffold printed as `CLAUDE_PROJECTS_DIR`;
 pass it when you call the helper. Report what you would have the operator do, and do the part that is

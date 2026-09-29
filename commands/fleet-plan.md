@@ -4,19 +4,8 @@ argument-hint: <mission in plain words> [fast]
 disable-model-invocation: true
 ---
 
-The `docs/*` files named below live in this plugin's own directory, not in the project you are working on.
-Resolve it once, before following any pointer, and ask the host rather than guessing:
-
-```bash
-p=$(node -p 'JSON.parse(require("fs").readFileSync(require("os").homedir()+"/.claude/plugins/installed_plugins.json","utf8")).plugins["makarasty@makarasty"][0].installPath.split(String.fromCharCode(92)).join("/")' 2>/dev/null) \
-  || p=$(ls -dt ~/.claude/plugins/cache/*/makarasty/*/ 2>/dev/null | head -1)
-```
-
-`$p/docs` and `$p/scripts` are then the plugin. The first form reads the record the host keeps of what it
-installed, which is the only thing that always agrees with the command file you are reading; the fallback
-exists for a checkout that was never installed. **Do not sort that cache by modification time.** It held
-five snapshots on the machine this was written on, the newest by mtime was nine days behind the newest by
-version, and a session that picked it read documentation for a plugin it was not running.
+The `docs/*` and `scripts/*` files named below live in this plugin's own directory,
+`${CLAUDE_PLUGIN_ROOT}`, not in the project you are working on.
 
 ## Missing prerequisites are work, not a refusal
 
@@ -241,20 +230,20 @@ Schedule those workers in their own wave. They are measuring a machine the other
 
 ## 7. Offer the chips
 
-One `spawn_task` per brief, titled exactly `fleet <run-id> NN`. That title is the only reliable address
-later: session handles from `ListAgents` are opaque, change between calls, and reach other accounts on the
+One `mcp__ccd_session__spawn_task` per brief, titled exactly `fleet <run-id> NN`. That title is the only
+reliable address later: session handles from `mcp__ccd_session_mgmt__list_sessions` are opaque, change between calls, and reach other accounts on the
 same machine.
 
 Each chip's prompt is one line:
 
-    Run the brief at .fleet/<run-id>/brief-NN.md by following the makarasty fleet-run command. Invoke it as /makarasty:fleet-run .fleet/<run-id>/brief-NN.md, and if that name does not resolve in this session, read the command file directly, at $(node -p 'JSON.parse(require("fs").readFileSync(require("os").homedir()+"/.claude/plugins/installed_plugins.json","utf8")).plugins["makarasty@makarasty"][0].installPath.split(String.fromCharCode(92)).join("/")' 2>/dev/null || ls -dt ~/.claude/plugins/cache/*/makarasty/*/ | head -1)/commands/fleet-run.md
+    Run the brief at .fleet/<run-id>/brief-NN.md by following the makarasty fleet-run command. Invoke it as /makarasty:fleet-run .fleet/<run-id>/brief-NN.md, and if that name does not resolve in this session, read the command file directly, at ${CLAUDE_PLUGIN_ROOT}/commands/fleet-run.md
 
 In pull mode there are no briefs, so the chip prompt carries the worker's identity **and its lane**.
 Without the identity a worker invents one, two workers pick the same number, and their findings interleave
 into one file that collection reads as a single worker, corrupting the count of independent sightings.
 Without the lane a paneless worker claims a browser task, discovers it cannot do it, and pays a reclaim:
 
-    You are worker NN of run <run-id>, lane repo. Work the queue by following the makarasty fleet-run command. Invoke it as /makarasty:fleet-run .fleet/<run-id>/, and if that name does not resolve in this session, read the command file directly, at $(node -p 'JSON.parse(require("fs").readFileSync(require("os").homedir()+"/.claude/plugins/installed_plugins.json","utf8")).plugins["makarasty@makarasty"][0].installPath.split(String.fromCharCode(92)).join("/")' 2>/dev/null || ls -dt ~/.claude/plugins/cache/*/makarasty/*/ | head -1)/commands/fleet-run.md
+    You are worker NN of run <run-id>, lane repo. Work the queue by following the makarasty fleet-run command. Invoke it as /makarasty:fleet-run .fleet/<run-id>/, and if that name does not resolve in this session, read the command file directly, at ${CLAUDE_PLUGIN_ROOT}/commands/fleet-run.md
 
 Say `lane pane` for the workers whose panes the operator will open, and `lane repo` for the rest. The lane
 is the third argument to every claim: `sh "$f" next .fleet/<run-id> NN repo`. Do not write the lane rule
@@ -280,7 +269,8 @@ as well as on progress, so a fleet that has stopped writing files still produces
 planner asleep for 65 minutes until the operator intervened, and then ran on for five hours and forty two
 minutes after the run had finished [M17].
 
-**When the stall line names a claim nobody is advancing, message that worker.** A cross-session status
+**When the stall line names a claim nobody is advancing, message that worker** with
+`mcp__ccd_session_mgmt__send_message`, addressed by its title. A cross-session status
 check is the only thing that revives a session which ended a turn with nothing pending, and in that run
 all three came back within seconds of one. Findings still travel by file, never by message.
 

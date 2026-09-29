@@ -107,9 +107,9 @@ each one stayed, and the operator removes it by hand having seen the reason.
 ## Who runs it, and when
 
 - **A live worker that finishes its brief** commits and pushes its slice, which is the isolation
-  contract, then runs `sh "$f" unlink <its worktree>`. If the host offers `ExitWorktree` it calls that
-  with `remove` afterwards, which is safe once the links are gone; otherwise it leaves the tree for the
-  planner's `clean`. It never runs a recursive delete on its own tree.
+  contract, then runs `sh "$f" unlink <its worktree>` and leaves the tree for the planner's `clean`.
+  `ExitWorktree` does nothing here: it acts only on a tree the same session made with `EnterWorktree`, and a
+  chip's worktree was made by the host. It never runs a recursive delete on its own tree.
 - **The planner, once the run has landed**, runs `fleet.sh clean .fleet/<run-id> --remove` as the last step of
   collection, after `FINISHED` is written and the findings are merged. A worktree removed before the run
   lands is a worktree whose findings might not have been filed yet.

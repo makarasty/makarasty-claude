@@ -22,7 +22,7 @@ The three failures, and what refuses each:
 ## Where it sits
 
 ```bash
-p=$(node -p 'JSON.parse(require("fs").readFileSync(require("os").homedir()+"/.claude/plugins/installed_plugins.json","utf8")).plugins["makarasty@makarasty"][0].installPath.split(String.fromCharCode(92)).join("/")' 2>/dev/null || ls -dt ~/.claude/plugins/cache/*/makarasty/*/ | head -1)
+p="<plugin>"   # the plugin root: the command that sent you here named it
 f=$p/scripts/fleet.sh; g=$p/scripts/fleet-gate.mjs
 
 sh  "$f" merge    .fleet/<run-id>                 # findings -> backlog.jsonl
@@ -54,9 +54,10 @@ Regenerate after a release, or whenever a run starts asking about names that no 
 ## The hook
 
 `hooks/fleet-contract.mjs` runs on `PreToolUse` for `Edit`, `Write`, `MultiEdit` and `NotebookEdit`. It
-compares the two sides of the edit and fires only when a surface token is in the text going out and not in
-the text coming in. Present on both sides is a line being worked around; present on neither is an edit that
-never touched it.
+compares the two sides of the edit and fires when a surface token occurs **fewer times** in the text coming
+in than in the text going out. Matching respects the token's end, so `/api/server/status` renamed to
+`/api/server/statistics` counts as a loss. The same count on both sides is a line being worked around; a
+token on neither side is an edit that never touched it.
 
 It is timid on the same principle as `fleet-guard.mjs`: no fleet under the working directory, no chip
 registered for this session, or no `contract-surface.txt` and it exits 0 without a word. It raises a given

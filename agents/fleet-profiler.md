@@ -42,7 +42,7 @@ page speed, dominate your wall clock: 33 separate calls took a previous profiler
 three runs; buy the time back from round trips.
 
 **Sample the machine.** Before and after each batch, record free memory and the number of live toolchain
-processes, using the command for this operating system from the plugin `docs/PROTOCOL.md`. Every
+processes, using the command for this operating system from the plugin `docs/PORTING.md`. Every
 number you report carries this beside it.
 
 **Three runs per claim.** Report the median and the spread. When the spread exceeds the difference you

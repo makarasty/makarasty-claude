@@ -7,7 +7,7 @@ allowed-tools: Bash, Read, Write, Glob, Grep, Monitor, TaskStop
 The run is on disk and the sessions are not. This command turns that into three lists and a wave of clicks.
 
 `sweep` and the revive message both assume the workers are still there, and after a restart none of them
-are: a message needs a live receiver, and `ListAgents` no longer lists them [M27]. What survives is
+are: a message needs a live receiver, and `mcp__ccd_session_mgmt__list_sessions` no longer lists them [M27]. What survives is
 `chips/<session-id>`, written at the first claim, the standing claims, and each session's transcript under
 `~/.claude/projects/<slug>/<session-id>.jsonl` — enough to reopen a worker with its context intact. **A
 reopened worker is worth several fresh ones**: it still holds the files it read, the refutations it already
@@ -20,7 +20,7 @@ made, and the half-written finding it was about to file.
 Locate the helper once, as every other command does:
 
 ```bash
-f=$(node -p 'JSON.parse(require("fs").readFileSync(require("os").homedir()+"/.claude/plugins/installed_plugins.json","utf8")).plugins["makarasty@makarasty"][0].installPath.split(String.fromCharCode(92)).join("/")' 2>/dev/null || ls -dt ~/.claude/plugins/cache/*/makarasty/*/ | head -1)/scripts/fleet.sh
+f="${CLAUDE_PLUGIN_ROOT}/scripts/fleet.sh"
 ```
 
 ```bash
@@ -37,7 +37,8 @@ sh "$f" status  .fleet/<run-id>
   before it continues. **Hand that line over as printed.** A session reopened with no prompt sits there
   until somebody types into it, and twenty-six of those is a recovery that recovered nothing.
 - **LIVE?** - a transcript written to within the last few minutes. It may still be running, and reopening
-  a live session puts a second writer on its file. No command is printed for it: message it, or wait.
+  a live session puts a second writer on its file. No command is printed for it: message it with
+  `mcp__ccd_session_mgmt__send_message`, or wait.
 - **RESPAWN** - no transcript. Its context is gone; its tasks go back in the queue.
 - **UNKNOWN** (only under `--release`) - a claim whose chip never registered a session id. That is not
   evidence of death: registration needs `CLAUDE_CODE_SESSION_ID`, and a claim made without it looks exactly
@@ -77,7 +78,7 @@ back the old one, or a late write from the old worker lands on live work.
 
 ### 4. Re-file, then re-spawn
 
-Write the released work as new tasks in `tasks/ready/`, then `spawn_task` one chip per worker you want,
+Write the released work as new tasks in `tasks/ready/`, then `mcp__ccd_session__spawn_task` one chip per worker you want,
 titled exactly `fleet <run-id> NN` as in `fleet-plan`. Size the wave off `fleet.sh width`, not off how many
 workers died: the survivors usually finished several tasks before the lights went out.
 

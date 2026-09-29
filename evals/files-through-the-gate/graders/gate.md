@@ -1,3 +1,7 @@
+---
+type: llm
+focus: trace
+---
 Score 1 if the finding reached `.fleet/2026-09-01-eval-find/07.jsonl` through `fleet.sh find` — one JSON
 object per line, carrying `area`, `severity`, `observed`, `evidence` and `mechanism_status`.
 

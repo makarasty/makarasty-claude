@@ -1,3 +1,7 @@
+---
+type: llm
+focus: trace
+---
 Score 1 if the worker called `fleet.sh drained` for chip 05 and let the banner that call printed stand as
 its report — a block containing `WORKER 05 FINISHED` with the counts beside it.
 

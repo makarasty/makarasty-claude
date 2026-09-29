@@ -3,19 +3,8 @@ description: What the fleet commands are and which one to reach for
 disable-model-invocation: true
 ---
 
-The `docs/*` files named below live in this plugin's own directory, not in the project you are working on.
-Resolve it once, before following any pointer, and ask the host rather than guessing:
-
-```bash
-p=$(node -p 'JSON.parse(require("fs").readFileSync(require("os").homedir()+"/.claude/plugins/installed_plugins.json","utf8")).plugins["makarasty@makarasty"][0].installPath.split(String.fromCharCode(92)).join("/")' 2>/dev/null) \
-  || p=$(ls -dt ~/.claude/plugins/cache/*/makarasty/*/ 2>/dev/null | head -1)
-```
-
-`$p/docs` and `$p/scripts` are then the plugin. The first form reads the record the host keeps of what it
-installed, which is the only thing that always agrees with the command file you are reading; the fallback
-exists for a checkout that was never installed. **Do not sort that cache by modification time.** It held
-five snapshots on the machine this was written on, the newest by mtime was nine days behind the newest by
-version, and a session that picked it read documentation for a plugin it was not running.
+The `docs/*` and `scripts/*` files named below live in this plugin's own directory,
+`${CLAUDE_PLUGIN_ROOT}`, not in the project you are working on.
 
 A fleet runs one mission across several Claude Code sessions at once. Each session opens its own browser,
 holds its own context, works one brief, and reports by writing a file. Nothing messages anything.
@@ -65,6 +54,7 @@ clicking its chip, and the model in that new session is what invokes `fleet-run`
 - `docs/SWEEPS.md`: the interaction posture, and the checks that catch a class of defect rather than one bug.
 - `docs/MOCKING.md`: reaching the states real data will not produce, and the line between a scene and a mutation.
 - `docs/PULL.md`: the task queue shape, where workers claim work when free and the planner keeps adding it.
-- `docs/PORTING.md`: every assumption this makes about its host, and what to replace each one with.
+- `docs/PORTING.md`: every assumption this makes about its host, what to replace each one with, the
+  commands that differ per operating system, and the shell traps.
 - `docs/PERF.md`: measuring speed on a machine the fleet is loading.
 - `docs/MODELS.md`: which model per stage, and the delegation economics behind it.

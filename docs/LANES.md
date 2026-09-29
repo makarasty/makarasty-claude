@@ -125,8 +125,8 @@ it can see the perf tasks sitting in `ready/`.
 ## A drained queue is not a finished worker
 
 `tasks/queue-open` is a marker the **planner** owns. While it exists, the planner still intends to file
-work, and a repo worker that finds its lane empty arms `sleep 300; echo recheck` and polls instead of
-writing `.done`. The planner deletes it when it will file nothing more, and the next poll turns every
+work, and a repo worker that finds its lane empty gets exit 5 from `drained`, arms the wake in `fleet-run` on the
+queue changing, and polls instead of writing `.done`. The planner deletes it when it will file nothing more, and the next poll turns every
 lingering worker quiet.
 
 This is what makes early width safe. A chat that has ended cannot be reopened, so a worker that finishes
@@ -154,7 +154,8 @@ The gate for fanning out, all three terms:
 2. No browser subagent of yours is running.
 3. The work splits into parts that do not read each other's output.
 
-**Three is the default width, and the reason is the fixed cost of a spawn rather than the machine.** A
+**Three is the default width (`fanout_default` in `calibration.json`), and the reason is the fixed cost of
+a spawn rather than the machine.** A
 subagent pays its system prompt and tool schemas before it does anything: measured 2026-08-24, a Haiku
 subagent driving three tool calls spent 45,775 tokens, nearly all of it startup [M13]. So a fanned-out part has
 to be worth a whole slice of work, not one lookup. Two greps belong in one message to your own shell; four
@@ -165,17 +166,10 @@ instruction to the worker and it holds only because the worker honours it, which
 nothing about the machine: above five, split the task instead, because five returns are already more than
 one worker can rule on without losing the thread.
 
-`sh "$f" width .fleet/<run-id>` answers this for the whole lane; the paragraph below is what it computes.
+`sh "$f" width .fleet/<run-id>` sizes the whole lane from free memory, and `next` refuses a claim when the
+box is full, so a worker does not weigh its fan-out against memory itself.
 
-**The repo lane's width comes from free memory, the same way the project's own test runner picks its
-workers.** Read free physical memory before a wide fan-out and take the smaller of `fanout` and what the
-machine has room for. The precedent is in this plugin's own host project, whose vitest config chooses 14
-workers above 20 GB free and 4 below 9, and whose comment records the merge that OOM-killed five chunks of
-sixteen.
-
-**A repo worker is who claims it.** A chip is only ever told `lane pane` or `lane repo`, and `next` used
-to filter on an exact match, so a `needs: verify` task was claimable by nobody: it sat in the queue for
-the whole run and `landed` then refused to close the run over it. A repo worker now takes a verify task
+**A repo worker is who claims it.** A chip is only ever told `lane pane` or `lane repo`, so a repo worker takes a verify task
 when no other verify task is held, and `next` prints a `VERIFY LANE` line telling it that it holds the
 fleet's only one. That check is a width rather than a lock - the queue's atomicity is per task, so two
 workers reaching it in the same instant can both pass it.

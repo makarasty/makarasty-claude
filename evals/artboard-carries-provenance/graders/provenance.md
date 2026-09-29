@@ -1,3 +1,7 @@
+---
+type: llm
+focus: trace
+---
 Score 1 when all of these hold:
 
 - `design/canvas/Hello.dc.html` exists and contains a `<!-- fleet-canvas` provenance block whose `source:`

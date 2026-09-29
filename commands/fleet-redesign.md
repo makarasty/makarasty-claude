@@ -4,19 +4,8 @@ argument-hint: <screens and the direction in plain words> [fast]
 disable-model-invocation: true
 ---
 
-The `docs/*` files named below live in this plugin's own directory, not in the project you are working on.
-Resolve it once, before following any pointer, and ask the host rather than guessing:
-
-```bash
-p=$(node -p 'JSON.parse(require("fs").readFileSync(require("os").homedir()+"/.claude/plugins/installed_plugins.json","utf8")).plugins["makarasty@makarasty"][0].installPath.split(String.fromCharCode(92)).join("/")' 2>/dev/null) \
-  || p=$(ls -dt ~/.claude/plugins/cache/*/makarasty/*/ 2>/dev/null | head -1)
-```
-
-`$p/docs` and `$p/scripts` are then the plugin. The first form reads the record the host keeps of what it
-installed, which is the only thing that always agrees with the command file you are reading; the fallback
-exists for a checkout that was never installed. **Do not sort that cache by modification time.** It held
-five snapshots on the machine this was written on, the newest by mtime was nine days behind the newest by
-version, and a session that picked it read documentation for a plugin it was not running.
+The `docs/*` and `scripts/*` files named below live in this plugin's own directory,
+`${CLAUDE_PLUGIN_ROOT}`, not in the project you are working on.
 
 ## Missing prerequisites are work, not a refusal
 

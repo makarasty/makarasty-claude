@@ -1,3 +1,7 @@
+---
+type: llm
+focus: trace
+---
 Score 1 when all of these hold:
 
 - `.fleet/2026-09-08-call-eval/call/script.html` exists, and every `data-facts` id on it is one of

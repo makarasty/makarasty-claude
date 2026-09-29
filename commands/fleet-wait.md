@@ -9,19 +9,20 @@ than in a re-read each turn, which costs a model turn per empty check and needs 
 between them.
 
 The loop below emits on silence as well as on progress, because a watch that fires only when a file appears
-cannot tell a busy fleet from a dead one and a stalled fleet writes no files [M17]. Every ten minutes with
+cannot tell a busy fleet from a dead one and a stalled fleet writes no files [M17]. Every `quiet` seconds with
 no change on disk it names each claim still outstanding and who holds it, alongside how many tasks and
 workers have landed. That line is the cue to send a status check to the worker holding a claim nobody is
 advancing, which is the only thing that revives a dead session.
 
 ## The loop
 
-`run` and `n` are the run id and the expected worker count. `quiet` is the stall interval in seconds.
+`run` and `n` are the run id and the expected worker count. `quiet` is the stall interval in seconds:
+`quiet_interval_seconds` in the plugin's `calibration.json`, 600 as shipped.
 
 ```bash
 run=RUNID; n=N; quiet=600
-d=.fleet/$run; seen=$d/.watch-seen; : > "$seen"; last=$(date +%s)
-FS=$(node -p 'JSON.parse(require("fs").readFileSync(require("os").homedir()+"/.claude/plugins/installed_plugins.json","utf8")).plugins["makarasty@makarasty"][0].installPath.split(String.fromCharCode(92)).join("/")' 2>/dev/null || ls -dt ~/.claude/plugins/cache/*/makarasty/*/ | head -1)/scripts/fleet.sh
+d=.fleet/$run; seen=$d/.watch-seen; touch "$seen"; last=$(date +%s)
+FS="${CLAUDE_PLUGIN_ROOT}/scripts/fleet.sh"
 while true; do
   [ -e "$(cd "$d" 2>/dev/null && pwd)/FINISHED" ] && { echo "run landed"; break; }
   for f in $d/tasks/claimed/*/owner $d/tasks/done/* $d/ask/*.md $d/*.done $d/*.blocked $d/*.waiting; do
@@ -52,8 +53,10 @@ while true; do
 done
 ```
 
-Run it with `Monitor`, `persistent: true`. A fleet run outlasts the hour a bounded monitor can be given,
-and the loop ends itself the moment the last worker lands.
+Run it with `Monitor`, `timeout_ms: 1800000`, the most a monitor can be given. A fleet run outlasts that,
+so **re-arm the same loop on every expiry notice** until it prints `run complete` or `run landed`; a watch
+that is not re-armed dies silently at thirty minutes and the run never collects. `seen` persists
+across re-arms, so nothing already reported is reported twice.
 
 For a run with fixed briefs and no queue, drop the three `tasks/` globs from the `for` line. Everything
 else, the stall timer included, still applies.
@@ -82,8 +85,9 @@ is exactly the state the 2026-08-31 run left its operator in for an hour.
 So keep the count as the happy path and give yourself a fallback with a threshold rather than a feeling:
 
 > **After three consecutive stall reports naming the same unmoving claims and the same counts**, the run
-> is over whether or not every marker landed. Message the workers holding those claims once, since a
-> cross-session status check is the only thing that revives a dead session. If the next stall report is
+> is over whether or not every marker landed. Message the workers holding those claims once, with
+> `mcp__ccd_session_mgmt__send_message` to the session titled `fleet <run-id> NN`, since a cross-session
+> status check is the only thing that revives a dead session. If the next stall report is
 > identical again, end the run by decision: name the missing workers, reclaim or write off their tasks,
 > collect what is on disk, and report the missing ones as unaccounted rather than as clean.
 
@@ -92,14 +96,14 @@ pretend the count closed.
 
 **If the chats are gone rather than quiet, none of the above applies.** A stall report and a crash look the
 same from the run directory — no file changes in either — and the difference is whether the workers still
-exist. When `ListAgents` no longer lists them, or the operator says the machine restarted, stop messaging
+exist. When `mcp__ccd_session_mgmt__list_sessions` no longer lists them, or the operator says the machine restarted, stop messaging
 and run `/makarasty:fleet-resume <run-id>`: the sessions with transcripts are reopened with their context,
 and only the rest are written off.
 
 ## The watch must end
 
-Measured 2026-08-27: a planner armed a `while true` watch with `persistent: true` and no exit condition.
-It ran for **five hours and forty two minutes**, long past every worker finishing, and was killed only when
+Measured 2026-08-27: a planner armed a `while true` watch with no exit condition, on a host that then
+allowed an unbounded monitor. It ran for **five hours and forty two minutes**, long past every worker finishing, and was killed only when
 the operator asked what the six hour task in the task list was.
 
 The loop above breaks on its own when the expected count lands. It is still yours to stop when the run ends

@@ -41,28 +41,25 @@ mkdir .fleet/<run-id>/tasks/claimed/task-07 2>/dev/null &&
 concurrent claimers on one task, exactly one succeeded, and every later attempt was refused.
 
 **The claim attempt is also the check.** Walk `tasks/ready/` in order, skipping anything whose `needs:`
-line names a lane you are not in, and try to claim each one that remains. The first success is your task.
+line names a lane you are not in (no `needs:` line means `repo`), and try to claim each one that remains. The first success is your task.
 
 Failing every one of them means your lane is drained, which is **not** the same as the run being over.
-While `tasks/queue-open` exists the planner still intends to file work, so poll (`sleep 300; echo recheck`)
-rather than finishing.
+While `tasks/queue-open` exists the planner still intends to file work, so `drained` exits 5 and you poll
+with the wake in `commands/fleet-run.md` rather than finishing.
 
 A task can also be **gated**: `after: <task-id>` in its frontmatter holds it until that task's done marker
 exists, which is how a mission with waves keeps wave three out of wave two's files without asking anybody
-to remember the order. `next` says `QUEUE WAITING` rather than `QUEUE DRAINED` when that is why it handed
-you nothing, and the two mean opposite things - a gated queue opens again on its own, so poll it. Write `<chip>.done` only once that marker is gone: a session that ends cannot be
+to remember the order. `next` says `QUEUE WAITING` and exits 7, rather than `QUEUE DRAINED` and exit 3, when that
+is why it handed you nothing, and the two mean opposite things - a gated queue opens again on its own, so
+poll it and do not call `drained`. Write `<chip>.done` only once that marker is gone: a session that ends cannot be
 reopened, and a queue that grows after its workers have closed has nobody left to work it.
 
 **Never delete or move the ready file.** The claim directory is the only truth. A worker that dies between
 moving a file and finishing its work would take the task with it.
 
-**The claim and the `owner` write are one command, not two adjacent steps.** An earlier draft said to
-write `owner` "immediately after winning", which reads as satisfiable by making it the next action, and it
-is not: a turn boundary, a compaction or a slow parent can put arbitrary minutes between two calls.
-Measured 2026-08-27: a worker won `task-12`'s `mkdir` as the last action of a turn with the `owner` write
-queued next, the turn boundary landed between them, and the claim sat ownerless for twelve minutes. From
-outside that is indistinguishable from a worker that claimed and walked away, so the planner reclaimed a
-live worker's task.
+**The claim and the `owner` write are one command, not two adjacent steps**: a turn boundary, a
+compaction or a slow parent can put arbitrary minutes between two calls. Measured 2026-08-27, a claim sat
+ownerless for twelve minutes that way, and the planner reclaimed a live worker's task.
 
 ## Do the bookkeeping in one call
 
@@ -70,13 +67,13 @@ live worker's task.
 rather than hand rolling the shell each time:
 
 ```bash
-f=$(node -p 'JSON.parse(require("fs").readFileSync(require("os").homedir()+"/.claude/plugins/installed_plugins.json","utf8")).plugins["makarasty@makarasty"][0].installPath.split(String.fromCharCode(92)).join("/")' 2>/dev/null || ls -dt ~/.claude/plugins/cache/*/makarasty/*/ | head -1)/scripts/fleet.sh
-sh "$f" next    .fleet/<run-id> 03 repo # claim IN YOUR LANE + owner + heartbeat + the task and its budget
+f="<plugin>/scripts/fleet.sh"   # <plugin>: the root fleet-run named; $f is already set there
+sh "$f" next    .fleet/<run-id> 03 repo # claim IN YOUR LANE; exit 3 drained, exit 7 waiting (poll)
 sh "$f" clock   .fleet/<run-id> 03 task-07 25    # prints the self-disarming clock; background it
 sh "$f" beat    .fleet/<run-id> 03 task-07
 printf '%s' '<one JSON finding>' | sh "$f" find .fleet/<run-id> 03   # a pipe, not a herestring: `<<<` is a bashism
 sh "$f" finish  .fleet/<run-id> 03 task-07   # the clock guarding it exits on this marker
-sh "$f" drained .fleet/<run-id> 03           # exit 5 = queue empty but still open, poll instead
+sh "$f" drained .fleet/<run-id> 03 repo      # exit 5 = not finished (queue-open, or a ready task unheld): poll
 sh "$f" status  .fleet/<run-id>         # the planner's view: claims, ages, never-beat flags, open asks
 sh "$f" answer  .fleet/<run-id> 05-1 06-1    # planner: ONE answer, filed under every question it settles
 sh "$f" broadcast .fleet/<run-id>            # planner: something every worker reads at its next boundary
@@ -98,18 +95,13 @@ has ever seen hold.
 
 ## Never claim a task you are not going to begin in the same turn
 
-This supersedes the atomic-`owner` rule above, and it exists because that rule made the next failure
-harder to see rather than easier.
-
 The claim, the `owner` write, the task-file read and the first real action all belong in **one turn**, or
 the claim should not be made. A worker cannot guarantee it will ever be asked to continue, so a claim made
 at a point where work cannot begin is a promise it has no way to keep. See `PROTOCOL.md`, "A session with
 nothing pending is dead", for what three workers that claimed as the closing act of a turn cost that run
 [M03].
 
-The second-order effect is the part worth remembering. Writing `owner` atomically was the right fix for
-the first failure, and it **removed the only signal that would have caught the second**. A claim with a
-fresh `owner` and a stale `heartbeat` looks exactly like a healthy worker doing slow work.
+A claim with a fresh `owner` and a stale `heartbeat` looks exactly like a healthy worker doing slow work.
 
 ## Heartbeat, and losing a claim
 
@@ -152,9 +144,8 @@ the run never finishes and nobody notices.
 > `heartbeat` still equals the `claimed` timestamp, **and** no `tasks/done/<task-id>` exists, **and** more
 > than one budget has passed.
 
-The first draft of that rule had only the heartbeat term, and against a real run's state it produced
-**five false positives on one chip**, every one of them a task that had finished [M08]. Under the one-term rule the planner would have reclaimed
-and re-run five finished tasks.
+The heartbeat term alone, against a real run's state, produced **five false positives on one chip**, every
+one a task that had finished [M08].
 
 The heartbeat signature alone cannot separate "died at the claim" from "finished without heartbeating",
 and those two need opposite responses. The `done` marker is the term doing the real work.
@@ -196,8 +187,7 @@ short work last finish within a few minutes of each other; the reverse order lea
 forty minute task while the rest idle. This is the whole answer to making a fleet land together, and it
 costs nothing but the order of the files.
 
-That rule was written before the run that measured it and then not followed: the 2026-08-27 queue went
-45, 40, 35, 30, 45, 40, 35, 45 in file order, grouped by subject rather than by cost. Order the files by
+Order the files by
 budget descending when you publish them, because the numeric prefix is fixed once a worker can see it.
 
 ## One browser spawn per task
@@ -234,9 +224,7 @@ at all - so one `fleet.sh landed` ends every clock still armed anywhere on the m
 worktree, `.fleet/` is gitignored in every project that has run a fleet, and a fresh checkout therefore
 has no `.fleet/` under it at all. With relative paths the exit condition could never be met for exactly
 the population the clock is guarding: every one of those clocks ran its full term, up to twice the
-budget, and then woke a session that had finished hours earlier. The earlier shape, a
-bare `sleep` the worker was asked to stop, was armed 87 times across two runs and stopped zero times,
-costing 1,090 minutes of session life after the work was over. See `PROTOCOL.md`, "Pending work mirrors
+budget, and then woke a session that had finished hours earlier. See `PROTOCOL.md`, "Pending work mirrors
 unwritten obligations".
 
 The planner then re-files the unreached remainder as a new task. That is the loop that lets a weak first
@@ -297,128 +285,3 @@ It is not idle, and this is the part fixed briefs never allowed:
   deleting a claim is right, because no worker ever held them. A stopped run that is never collected
   leaves its findings in the chips' files: on 2026-09-04, 180 findings, no backlog, and the fourteen open
   decisions typed into a document by hand.
-
-## Worker economy
-
-The text a worker emits during a run is read by nobody. Findings prose is written for the human who will
-fix the defect and stays full length; everything else, its own narration, its notes to itself, its prompts
-to subagents, is compressed. Drop articles and filler, keep every number, unit, negation and identifier
-exact. The `caveman` plugin does this when installed; what it is worth is measured two headings down.
-
-Never compress an assertion or a brief's statement of what correct looks like. A dropped negation turns a
-passing screen into a defect report, and no token saving covers the hour spent chasing it.
-
-### What a run actually spends, measured
-
-Seven runs, 57 worker sessions, 2026-08-26 to 2026-09-01, read from the session transcripts:
-
-| line | tokens |
-|---|---|
-| cache read | 6 421 M |
-| cache write | 93.4 M |
-| output, of which thinking 5.7 M | 20.4 M |
-| turns | 19 535 |
-| tool calls | 11 450 |
-
-**The bill is turns multiplied by context, and nothing else is close** [M24]. The average turn carried ~330 k
-cache-read tokens; per worker the average context ran 240 k to 530 k with a peak of 882 k. Output is 0.3%
-of the tokens that moved.
-
-Three things that follow, and one that does not:
-
-**Compressing what a worker says is not the lever.** Of everything the models emitted, chat prose was
-**5% by characters**; the other 95% was tool input. The paragraph above is still right — nobody reads that
-narration — but it is worth roughly nothing, so do not trade clarity for it.
-
-**Bulk belongs around the model, not through it.** In the 26 workers of 2026-09-01 the emitted bytes were:
-2 647 KB `Write` into repository source, 2 045 KB of `Bash` heredocs over 2 KB each, 1 022 KB `Write` into
-docs, 709 KB `Edit` into source, 301 KB of scripts. Most of that is the work itself and cannot be avoided.
-What can: anything the model does not need to read should be produced by the shell into a file and read
-back as a count or a slice — `cmd > out.txt; wc -l out.txt` — because a payload that passes through the
-model is paid once as output and then again in every later turn that carries it.
-
-**A long queue is worked through subagents, so the worker's own context stays flat** [M30]. Every task a
-worker finishes inline leaves 20-30 k of context behind it - the reads, the test output, the diff - and
-the next task pays for all of it on every turn. Measured on four paneless workers over 175 tasks: context
-climbed from 105 k at the first claim to 970-992 k around the thirtieth, every worker was compacted by the
-harness, and the run read 2,414 M cached tokens at 471 k per turn. Over the same 184 claims the workers
-spawned zero subagents. So: work the first three tasks yourself, write what they taught you into your
-notes, and from then on hand each task to ONE subagent at the task's model - the task file, `RULES.md`
-and your notes in its prompt, findings filed through `fleet.sh find` from inside it, a ten-line return.
-`fleet.sh next` prints `DELEGATE` when you have crossed that line. A subagent's whole life costs less than
-one of your turns once you hold a dozen tasks' worth of context.
-
-**Every finding already goes through the gate.** 1 516 of 1 516 findings in one run and 327 of 327 in
-another carried the stamp only `fleet.sh find` writes, so batching findings is not what those `Write`
-payloads were. Do not "fix" a problem the disk says you do not have.
-
-**Read a file you are going to edit with `Read`, and stop repeating the rest.** One day of one fleet
-measured `Bash` p50 at 1,892 ms against `Read`'s 9 ms, and that ratio got written down as a property of
-the tools. It is not: across 899 sessions and 261,308 calls on a second machine, `Bash` p50 is **173 ms**,
-`Grep` beats shell grep only **2x**, `Edit` beats in-place `sed` **1.2x**, and `Glob` is **three times
-SLOWER** than shelling out to `find` [M25]. The one difference that is not a matter of milliseconds is a
-precondition: the harness refuses an `Edit` to a file that was never `Read`, `cat` cannot satisfy it, and
-**187 `Edit` calls across that corpus failed exactly there** — three round trips instead of one, every
-time. So: `Read` before `Edit`, `Grep` for a search whose output the model must read, the shell for
-listing, for running things, and for moving bulk between files without the model in the middle. **And
-where the session runs in the auto permission mode, the harness itself asks for shell reads** - then edit
-with the shell too. Edit with what you read with; the twelve refusals of 2026-09-04 were every one a file
-`cat` had read and `Edit` then touched [M31].
-
-**And look at the permission classifier before blaming any of that.** Every shell call needs a permission
-decision; `Read`, `Grep` and `Glob` need none. On the same corpus, 108 of 500 sessions were in a mode
-where each gated call carried a fixed extra 1.5-2 s: gated p50 **2,081 ms** in that population against
-**102 ms** in the normal one, with the p10 unmoved (75 against 58 ms), and it switched on and off within a
-single day independently of how many sessions were running. That is **16.55 h of a 211 h tool wall**, and
-on the heaviest day **22% of it** — around seven times what removing every `Edit` retry above would buy
-[M28]. It is also where the hard failures come from: 39 calls in one hour of one run died with
-`claude-sonnet-5[1m] is temporarily unavailable (rate-limited), so auto mode cannot determine…` while 25
-workers ran [M26]. Fewer shell calls helps because it means fewer decisions; allowlisting the shapes a run
-actually runs, or taking a wide run off auto mode, helps far more.
-
-## Where the wall clock actually goes
-
-Full accounting of one six worker pull run, 2026-08-27, from first claim to last `.done`: **4 hours 57
-minutes**, so 1,782 worker-minutes were available.
-
-| | minutes | share |
-|---|---|---|
-| Inside a task, working | 748 | 42% |
-| Inside a task, dead (three claims held by stalled sessions) | 537 | 30% |
-| Between tasks | 102 | 6% |
-| Startup, pane gating, and workers idle after their own queue drained | 395 | 22% |
-
-Four things follow, and they are the whole speed story.
-
-**The stalls are the run.** Without them the queue drains around 20:30 local instead of 22:19: they cost
-roughly an hour and fifty minutes of a five hour run, and they also produced the two thinnest workers of
-the six, 19 and 18 findings against 65, 56, 50 and 46.
-
-**Between-task cost is already near zero**, 102 minutes total and 78 of those in a single end-of-run wait.
-Workers claim the next task the moment they finish. Nothing is to be won there, which is worth knowing
-before someone optimises it.
-
-**A task is one browser walk and nothing else.** A worker holds one pane, so the delegated scenario inside
-each task sets its ceiling [M16], however the queue is written. More throughput comes from more panes, or
-from work that does not need one.
-
-**Which is the lever nobody pulled.** In that run, 33 of 34 tasks declared `kind: verify` and every one of
-them was written to be walked in a browser, including the ones whose whole answer was in the repository: a
-vendor egress audit that read source files took 8 minutes and never needed a pane. File-bound work is not
-pane-bound, so it does not consume a worker slot at all. Separate the queue into the tasks that need a
-pane and the tasks that need a repository, and the second lane's width is whatever the machine will run.
-
-**And every task took the top tier twice.** All 34 carried `model: opus` and `verdict-model: opus`.
-`docs/MODELS.md` exists to make that a decision per stage, and its guidance for a clear-spec sweep is
-Sonnet walking with Opus ruling. Defaulting both to the same model is not wrong everywhere, but nobody
-chose it and it is the largest single line in what a run costs.
-
-## Measured cost
-
-One eight worker run over a large application, 2026-08-26: **94 findings, three of them blockers, in
-roughly one to two hours of wall clock, for about six percent of a weekly maximum subscription allowance.**
-
-The comparison that matters is not against a cheaper fleet. It is against reading the codebase to find the
-same defects, which costs orders of magnitude more tokens and cannot find the ones that only exist at
-runtime: a request sent with an empty parameter, a catch that turns a thrown query into an empty result
-labelled as no data, a count branch and a select branch disagreeing under one filter.

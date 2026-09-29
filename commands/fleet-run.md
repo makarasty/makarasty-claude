@@ -4,25 +4,32 @@ argument-hint: <path to brief file>
 ---
 
 The files named below (`docs/PROTOCOL.md`, `scripts/fleet.sh` and their siblings) live in this plugin's own
-directory, not in the project you are working on. Resolve it once, before following any pointer, and use
-`$f` for every protocol boundary below: that bookkeeping done by hand cost one measured run 235 shell calls
+directory, `${CLAUDE_PLUGIN_ROOT}`, not in the project you are working on. Use `$f` for every protocol
+boundary below: that bookkeeping done by hand cost one measured run 235 shell calls
 that produced no observation [M05].
 
 ```bash
-d=$(node -p 'JSON.parse(require("fs").readFileSync(require("os").homedir()+"/.claude/plugins/installed_plugins.json","utf8")).plugins["makarasty@makarasty"][0].installPath.split(String.fromCharCode(92)).join("/")' 2>/dev/null || ls -dt ~/.claude/plugins/cache/*/makarasty/*/ | head -1)/docs
-f=$(node -p 'JSON.parse(require("fs").readFileSync(require("os").homedir()+"/.claude/plugins/installed_plugins.json","utf8")).plugins["makarasty@makarasty"][0].installPath.split(String.fromCharCode(92)).join("/")' 2>/dev/null || ls -dt ~/.claude/plugins/cache/*/makarasty/*/ | head -1)/scripts/fleet.sh
+f="${CLAUDE_PLUGIN_ROOT}/scripts/fleet.sh"
 ```
 
-Empty output means the plugin is running from a checkout instead of an install: `docs/` and `scripts/` sit
-beside the `commands/` directory holding this file.
+**Read a doc by the sections named here, never whole.** Whole, the files this command points at are about
+36k tokens that sit in your context for every turn of the run; the named sections are under half that. One
+section, `## <heading>` to the next `## `:
+
+```bash
+awk -v h='## <heading>' 'index($0,h)==1{p=1;print;next} p&&/^## /{p=0} p' "${CLAUDE_PLUGIN_ROOT}/docs/<FILE>.md"
+```
 
 ## Missing prerequisites are work, not a refusal
 
-No `FLEET.md`, no login runbook, no `.fleet/`: say what is missing in one line, run
-`/makarasty:fleet-init` to produce it, and continue into the work the operator actually asked for. A
-missing directory gets created, an accelerator that is not installed gets noted once and worked around,
+No `FLEET.md`, no login runbook: say what is missing in one line, file it as `ask/<chip>-<n>.md`, and
+continue with whatever the brief can do without it. **Never run `/makarasty:fleet-init` from a worker**: it
+interviews the operator, and a worker gets one question (below). If nothing in the brief can proceed
+without it, write `<chip-id>.blocked` naming what is missing and stop.
+
+A missing directory gets created, an accelerator that is not installed gets noted once and worked around,
 and a brief naming a screen the project does not have becomes a question in `ask/` rather than a stop.
-Stop for exactly two things, because neither can be produced by working harder: a **credential or account
+Otherwise stop for exactly two things, because neither can be produced by working harder: a **credential or account
 only the operator can provide**, and a **reserved control** that would cost money or reach a real person.
 
 You are one worker in a fleet. Your whole job is the brief at `$ARGUMENTS`. Read it first, frontmatter
@@ -48,8 +55,8 @@ an hour instead of in one pass [M20].
    new Promise(res => { let f = 0; requestAnimationFrame(function t(){ f++; requestAnimationFrame(t); }); setTimeout(() => res(f), 1000); })
    ```
 
-   Sixty frames or more is live. Zero is blind, and so is **anything between one and fifty-nine**: report
-   the number, since intermittent compositing usually means a paging machine or a pane closing under you.
+   Sixty frames or more is live; anything below is blind, and the number goes in the report. Read a zero
+   twice, a second apart, and believe the second [M33]. Why and the symptoms: `docs/BROWSER.md`, "The gate".
 3. Blind: ask **in that same turn**, by the procedure in "Gate the pane before trusting it" below. Target:
    the question is on screen inside a minute of the chip being clicked.
 
@@ -58,8 +65,10 @@ rather than before asking for it. Those processes belong to the operator, so a m
 rather than something to start. Once the gate reads live, run `/makarasty:fleet-login`, or the project's
 runbook directly.
 
-`docs/BROWSER.md` carries the symptom list, what a blind pane still returns convincingly, and the pane
-ergonomics. None of it is worth a turn before the question is on screen.
+`docs/BROWSER.md` carries the symptom list and what a blind pane still returns convincingly. None of it is
+worth a turn before the question is on screen; once the gate reads live, read its "Blind", "Delegating
+browser work", "Instruments that return a confident zero" and "The viewport is not the operator's
+browser". The rest of it sizes panes for the planner and the operator.
 
 **Kinds that only read or write files** (investigate without instrumentation, research, and the file half
 of implement and fix) skip this section entirely.
@@ -69,12 +78,15 @@ of implement and fix) skip this section entirely.
 `$ARGUMENTS` naming a brief file is the assigned shape: work that one brief, then stop.
 
 `$ARGUMENTS` naming a run directory that contains `tasks/ready/` is **pull mode**. Read
-`docs/PULL.md` and then loop:
+`docs/PULL.md`'s "Claiming", "Heartbeat, and losing a claim" and "Asking the planner" - the rest of it is
+the planner's - and then loop:
 
 1. `sh "$f" next .fleet/<run-id> <chip> <lane>` claims the first free task **in your lane**, writes
    `owner` and the first heartbeat atomically, and prints the task with its budget and abort deadline.
    **Pass the lane** - `repo` if this session has no Browser pane, `pane` if it does - or you will claim
-   work you cannot do. **Exit 3 means the queue is drained** for that lane. By hand: walk `tasks/ready/`
+   work you cannot do. **Exit 3 means drained**: nothing left in your lane and nothing waiting. **Exit 7
+   means QUEUE WAITING**: tasks exist but an `after:` or a held verify lane holds them - poll (below), and
+   do not call `drained`. By hand: walk `tasks/ready/`
    in order, read each file's `needs:` line, `mkdir tasks/claimed/<task-id>` on the first one that matches
    your lane, and write `owner` in the same command, never as a second step.
 2. Read the task file and take the first real action on it **in the same turn as the claim**.
@@ -92,12 +104,20 @@ of implement and fix) skip this section entirely.
    claim is no longer yours. The clock sees that marker within thirty seconds and exits on its own, so
    there is nothing to remember and nothing to stop.
 
-Queue drained: `sh "$f" drained .fleet/<run-id> <chip>` and stop. That marker means the queue is empty,
-not that one task ended.
+Exit 3: `sh "$f" drained .fleet/<run-id> <chip> <lane>` and stop. That marker means the queue is empty, not that
+one task ended.
 
-**Exit 5 from `drained` means the queue is empty but still open**: the planner has not finished filing
-work, so you are not finished either. Arm `sleep 300; echo recheck`, end the turn, and try again when it
-wakes you. Do not write `.done` and do not close the chat: a session that ends cannot be reopened, and the
+**Exit 5 from `drained` means you are not finished**: the planner still holds `tasks/queue-open`, or a ready
+task nobody holds yet exists - claim again with `next` first. While `next` answers exit 7, or `drained`
+still answers 5, arm a wake on the queue actually changing, with `run_in_background`, end the turn, and
+claim again when it fires:
+
+```bash
+q=.fleet/<run-id>; k() { ls "$q/tasks/ready" "$q/tasks/done" 2>/dev/null | wc -l; [ -e "$q/tasks/queue-open" ] && echo open; }
+s=$(k); until [ -e "$q/FINISHED" ] || [ "$(k)" != "$s" ]; do sleep 30; done; echo recheck
+```
+
+Do not write `.done` and do not close the chat: a session that ends cannot be reopened, and the
 planner adding a task an hour from now has no way to reach a worker that stopped.
 
 **Every finding goes in through `sh "$f" find .fleet/<run-id> <chip>`**, one JSON object on stdin, and
@@ -125,7 +145,9 @@ sleep 120; echo wake
 ```
 
 The notification when it exits re-invokes you. That is also the only timeout this system has: a subagent
-that never returns, an answer that never comes, a pane nobody displays. Full rule and the measurements in
+that never returns, an answer that never comes, a pane nobody displays. When what you wait on is a file -
+`answers/<chip>-<n>.md`, `pane/results/<id>.json` - wake on the file and keep the same cap:
+`for i in $(seq 24); do [ -e <file> ] && break; sleep 5; done; echo wake`. Full rule and the measurements in
 `docs/PROTOCOL.md`, "A session with nothing pending is dead".
 
 Ask the operator exactly one thing, ever: to display your Browser pane. Their eyes are on the planner's
@@ -141,14 +163,6 @@ step as unreached with the reason and take the next one. Measured 2026-08-27: a 
 whether a writing band was sanctioned and blocked four minutes twenty six seconds holding a claim, for an
 answer that could not have changed what it was allowed to do.
 
-Your own narration during the run is read by nobody, so compress it from the first message: drop articles,
-filler and pleasantries, keep every number, unit, negation and identifier exact. The `caveman` plugin does
-this when installed and is fine to leave on, but do not reach for it as a saving: chat prose is a rounding
-error against what a worker actually spends [M24]. What does move the bill in a writing kind (implement,
-fix, design, redesign) is the volume of code and the turns spent producing it, which is the layer the
-`ponytail` plugin works on; where it is installed its ladder applies to the code, never to the project's
-own rules on tests and docs. Findings prose is read by whoever fixes the defect, so that stays full length.
-
 **Edit with what you read with.** In the auto permission mode the harness asks you to read with `cat` and
 `sed -n`; `Edit` then refuses that file with "File has not been read yet", three round trips instead of
 one, on every run so far [M31]. A file the shell read is changed with `sed -i`, a heredoc or a short
@@ -156,15 +170,16 @@ script. `Edit` is for a file this session `Read`. Never both on one file.
 
 ## 1. Set up for your kind and your lane
 
-The brief's `kind` decides what happens next: read that kind's section of `docs/MISSIONS.md` for the
-working style, and nothing else from it. Its `needs` field decides what you may do at the same time, and
+The brief's `kind` decides what happens next: read that kind's section of `docs/MISSIONS.md` (`root` reads
+`fix`) for the working style, and nothing else from it. Its `needs` field decides what you may do at the same time, and
 the two sections of `docs/LANES.md` that are yours are "The pane worker's idle window" and "Fan out in the
 repo lane, never in the pane lane". The rest of that file sizes lanes, which is the planner's job:
 
 - `needs: pane` - one browser subagent at a time, because they all drive this session's single pane.
   **While that subagent runs, claim one `repo` task and work it.** That wait is most of the task's length
   [M16], and filling it roughly doubles what this session produces without a second pane.
-- `needs: repo` - fan out. Three subagents in one message is the default width, and a task's `fanout:`
+- `needs: repo` - fan out. `fanout_default` in the plugin's `calibration.json` (three subagents in one
+  message) is the default width, and a task's `fanout:`
   line raises or lowers it. No script reads that field: it is a planner's instruction to you, so honour it.
   You do not need to weigh it against free memory - `next` refuses your next task when the box is full.
   The parts must not read each other's output. **On a long queue, delegate whole tasks, not parts:**
@@ -207,7 +222,7 @@ Verify scoped, and leave the full sweep to the operator.
 reproduction was not run through the gate, so run it - before you change anything, and again after:
 
 ```bash
-g=$(node -p 'JSON.parse(require("fs").readFileSync(require("os").homedir()+"/.claude/plugins/installed_plugins.json","utf8")).plugins["makarasty@makarasty"][0].installPath.split(String.fromCharCode(92)).join("/")' 2>/dev/null || ls -dt ~/.claude/plugins/cache/*/makarasty/*/ | head -1)/scripts/fleet-gate.mjs
+g="${CLAUDE_PLUGIN_ROOT}/scripts/fleet-gate.mjs"
 node "$g" prove .fleet/<run-id> <task-id> before -- <the task's reproduction>
 # ... make the change ...
 node "$g" prove .fleet/<run-id> <task-id> after  -- <the same command>
@@ -237,14 +252,15 @@ sh "$f" worktree .fleet/<run-id> <chip>
 ```
 
 It records this session's checkout and its branch, and refuses a path that is not under
-`.claude/worktrees/`, which is how a worker that is not actually in a worktree registers nothing. Removing
-that tree is the last thing you do, in section 5.
+`.claude/worktrees/`, which is how a worker that is not actually in a worktree registers nothing.
+Unlinking that tree is the last thing you do, in section 5; removing it is `fleet.sh clean`'s job.
 
 ## 1b. When the machine refuses you
 
 Three refusals exist and none of them is about you. `next` exits 6 when free memory is under the floor.
-A hook refuses a full test suite or a full typecheck unless you hold the verify lane. A hook refuses a
-browser call when the box is full and tells you to close your pane. Each one prints what to do next.
+A hook refuses a full test suite or a full typecheck, from Bash or PowerShell, unless you hold the verify
+lane. A hook refuses a browser call, in the Browser pane or through claude-in-chrome, when the box is full
+and tells you to close your pane. Each one prints what to do next.
 
 **A refusal is a wait, not an ending.** `next` gives you a loop to background; background it and end the
 turn with that pending. A session that finishes because it was refused is a dead chat, and nothing in a
@@ -256,20 +272,13 @@ it costs a second and a login when you next need one.
 
 ## 2. Gate the pane before trusting it
 
-The expression and its threshold are at the top of this file; `docs/BROWSER.md` carries the symptom list,
-each entry of which reads as an application defect and is not. This section is what you do with the
-reading.
+The expression and its threshold are at the top of this file. This section is what you do with the reading.
 
 Blind: in **one turn**, write `.fleet/<run-id>/<chip-id>.waiting` holding one line saying the pane is not
 displayed and naming the viewport you measured, **ask the operator right there with `AskUserQuestion`**,
 and arm `sleep 90; echo regate` with `run_in_background` so an unanswered question becomes another
-measurement rather than a stall. Delete the marker the moment the gate reads live, and measure again
-rather than trusting anyone's reply, because the reading is the proof: an operator can open a different
-pane, or open one and collapse it, and both answers sound like yes.
-
-**Ask immediately, not after three polite poll rounds.** A prompt that arrives four minutes after the chip
-is a second visit to a chat the operator has already left. The question is cheap **because** they are
-standing in front of that chat, and expensive only once they have moved on.
+measurement rather than a stall - a timer, because the frame count is only readable from the pane. Delete
+the marker the moment the gate reads live, and measure again rather than trusting anyone's reply.
 
 The marker is the other half, not the fallback: the planner's watch reports every `.waiting` within one
 interval, in the chat the operator is actually reading, so a question asked in a chat nobody opens is still
@@ -312,6 +321,11 @@ rule that keeps bulk out of your context.
 Read state through expressions that return small JSON. Reserve screenshots for questions that are about
 pixels.
 
+**The account is shared, so a persisted setting is a fleet-wide write** [M10]. Prefer a setting your own
+pane holds over one the server keeps; when you must change a persisted one, write the `state_changed` line
+and an `ask/` note as you do it, never afterwards; and read a surprising reading twice before filing it,
+because "this list is empty" is as likely to be another worker's write as a defect.
+
 When the brief sets `verdict-model` and it names a model other than the one this session runs, spawn one
 verdict pass at that model over the returned observations. Ruling "yourself" cannot honour the field: your
 own model was fixed when this session started and you cannot change it, so a brief asking for Opus
@@ -333,7 +347,7 @@ could not see, and writes no findings.
 
 ## 5. End so that a person can see you ended
 
-In pull mode `sh "$f" drained .fleet/<run-id> <chip>` is the whole ending: it writes `<chip>.done`, prints
+In pull mode `sh "$f" drained .fleet/<run-id> <chip> <lane>` is the whole ending: it writes `<chip>.done`, prints
 the banner generated from disk, and prints the exact session title to set. Write that marker with the
 command rather than by hand, because by hand skips the `queue-open` check, and a worker that finishes while
 the planner is still filing work is a slot the run cannot get back. On an assigned brief there is no queue
@@ -351,8 +365,9 @@ sh "$f" unlink "$(pwd -W 2>/dev/null || pwd)"
 ```
 
 It walks the whole tree, not just the top level, because a junction at `sub/node_modules` is followed too.
-Only then call `ExitWorktree` with `remove`, or leave the tree for the planner's `fleet.sh clean`. Full
-procedure in `docs/WORKTREES.md`. Never delete your worktree with a recursive force-delete of your own.
+Then leave the tree for the planner's `fleet.sh clean`, the only removal path. `ExitWorktree` does nothing
+here: this session did not create the tree with `EnterWorktree`. Never delete your worktree with a
+recursive force-delete of your own.
 
 Two things are then left:
 

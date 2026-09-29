@@ -10,7 +10,7 @@ If you only want to know whether the plugin works on your machine, stop after st
 ## 1. Prove the machine can run it — one second
 
 ```bash
-f=$(node -p 'JSON.parse(require("fs").readFileSync(require("os").homedir()+"/.claude/plugins/installed_plugins.json","utf8")).plugins["makarasty@makarasty"][0].installPath.split(String.fromCharCode(92)).join("/")' 2>/dev/null || ls -dt ~/.claude/plugins/cache/*/makarasty/*/ | head -1)/scripts/fleet.sh
+f="<plugin>/scripts/fleet.sh"   # <plugin>: installPath for makarasty in ~/.claude/plugins/installed_plugins.json
 ```
 
 ```bash

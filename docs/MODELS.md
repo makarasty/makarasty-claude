@@ -5,12 +5,15 @@ and says that too.
 
 ## The roster
 
-| Model | Fits |
-|---|---|
-| Opus | Judgement. Deciding whether an observation is a defect, ranking severity, writing a brief another model will execute without supervision. |
-| Sonnet | Execution carrying judgement. Walking a scenario, noticing that something is wrong rather than merely different, following a spec that has gaps in it. |
-| Haiku | Mechanical work under an exact contract. Fetching a value, running a fixed probe, reformatting, counting. |
-| The design model | Proposing how a screen should look, writing markup and copy meant to be seen, ruling on taste. The top tier the account offers - `fable` where it exists, otherwise Opus - and nothing cheaper touches the result afterwards: `MISSIONS.md`, design. |
+Write the alias in a brief's `model:` line and in agent frontmatter; the alias follows the tier, the ID
+pins one release. Lineup as of 2026-09-29:
+
+| Alias | Model, ID | Fits |
+|---|---|---|
+| `fable` | Fable 5.1, `claude-fable-5-1` | The design model: proposing how a screen should look, writing markup and copy meant to be seen, ruling on taste. The top tier, and nothing cheaper touches its result afterwards: `MISSIONS.md`, design. On an account without it, `opus`. |
+| `opus` | Opus 5.5, `claude-opus-5-5` | Judgement. Deciding whether an observation is a defect, ranking severity, writing a brief another model will execute without supervision. |
+| `sonnet` | Sonnet 5.5, `claude-sonnet-5-5` | Execution carrying judgement. Walking a scenario, noticing that something is wrong rather than merely different, following a spec that has gaps in it. |
+| `haiku` | Haiku 4.5, `claude-haiku-4-5-20251001` | Mechanical work under an exact contract. Fetching a value, running a fixed probe, reformatting, counting. |
 
 ## The delegation measurement
 
@@ -58,7 +61,7 @@ Neither field changes the model of the session reading the brief, which was fixe
 started. They are honoured by dispatch. `model:` is passed as the `Agent` call's per-invocation parameter,
 which outranks the agent definition's own frontmatter, so a brief naming a tier gets it. `verdict-model:`
 is honoured by spawning a second pass at that tier over the returned observations, and a definition whose
-own frontmatter already carries the tier - `fleet-design-eye` on Opus - honours it without the brief saying
+own frontmatter already carries the tier - `fleet-design-eye` on `fable` - honours it without the brief saying
 anything. Effort does not travel this way: it comes from the agent file alone, per the section below.
 
 Guidance:
@@ -67,12 +70,12 @@ Guidance:
   fail loudly here. They fail by not noticing, and silence looks like a pass.
 - **Clear spec, obvious pass or fail**: Sonnet walks it, Opus rules on the findings.
 - **Fixed probe, extraction, counting, reformatting**: Haiku under an exact output contract.
-- **A screen that has to look right, or a proposal for how it should**: the design model, end to end, and
+- **A screen that has to look right, or a proposal for how it should**: `model: fable`, end to end, and
   it is the one place where the top tier is the cheap choice - a proposal from a weaker model is a redesign
   the operator has to redesign. Capturing a screen from source is not that job; the strong general model
-  copies exact values well. Reviewing a screen for design defects is not that job either: `fleet-design-eye`
-  runs the geometry probes and rules on what they return in one pass, on Opus, because the probes carry the
-  measurement and what is left is the verdict nobody downstream re-decides.
+  copies exact values well. Reviewing a screen for design defects is the same tier: `fleet-design-eye` runs
+  the geometry probes and rules on what they return in one pass, on `fable`, because what is left after the
+  probes is a taste verdict nobody downstream re-decides.
 - **A page somebody will read aloud to a vendor**: the design model for the page, for the copy reason above;
   Opus for the facts behind it, because "every number about this topic" is not a clear spec and a weaker
   model finishes it early and quietly. `CALL.md` has the stages.
@@ -105,38 +108,14 @@ those agents actually run at. `fleet-triage` is spawned by `fleet-collect` with 
 frontmatter is what runs. The `effort:` line is load-bearing in all four, because nothing overrides it per
 call.
 
-Effort is settable in `settings.json` too: a top-level `effortLevel` covers models with no saved level of
-their own, and `modelSettings.<model-id>.effortLevel` holds one model at its own level, where the per-model
-entry wins. Both take `low`, `medium`, `high` and `xhigh`; `max` and `ultracode` are reachable only through
-`/effort`, the `--effort` launch flag, or `CLAUDE_CODE_EFFORT_LEVEL`. Where nothing is set, the model's own
-default applies, which is `high` on every model that supports effort, except Opus 4.7, which defaults to
-`xhigh`.
-
 ## What the operator sets once
 
 A session's own model and its effort are fixed when the session starts. Neither the session nor a brief it
 reads can change them mid-run, which is why a brief's `verdict-model:` is honoured by spawning and never by
-switching.
-
-On this machine `~/.claude/settings.json` carries `"model": "sonnet"` and `"effortLevel": "medium"`, and no
-`modelSettings` block. So every session here starts on Sonnet at medium effort, which is one step below the
-`high` Sonnet would otherwise default to, and every subagent that does not carry its own `effort` inherits
-that medium. That is the reason the four agent files each pin one: without them, a single operator dial
-silently sets the depth of a design verdict.
-
-So the things an operator can set once, instead of switching models by hand between chips: `model` and
-`effortLevel` in settings for where sessions start, `modelSettings.<model-id>.effortLevel` to hold one tier
-at a different depth than the rest, `CLAUDE_CODE_SUBAGENT_MODEL` to move every otherwise-unassigned
-subagent onto one tier, and `model:` plus `effort:` in the four agent files for the work a fleet actually
-dispatches. All of that is documented, and all of it is read at session start.
-
-One thing here is not settled. The documentation says a background session started from a chip does not
-inherit the model of the session that started it: the agent view header shows the dispatch default, and
-"New sessions you start from the input use this model, which comes from the `model` setting in your user
-settings." The operator of this plugin reports the opposite in practice, a chip coming up on the model of
-the session that spawned it. Nobody has measured it on this host, so it stays an open question rather than
-a claim. The experiment that settles it is one line: from a session running on a model other than the
-settings default, spawn a chip, then run `/model` in the chip's session and read back what it says.
+switching. What an operator can set once: `model` and `effortLevel` in settings for where sessions start,
+`CLAUDE_CODE_SUBAGENT_MODEL` for every otherwise-unassigned subagent, and `model:` plus `effort:` in the
+four agent files for the work a fleet dispatches. The agent files pin `effort` so that one operator dial
+does not silently set the depth of a design verdict.
 
 ## Cost discipline that is not about models
 
@@ -155,11 +134,8 @@ Most waste is not the tier. In order of size:
 ## Writing for the models you dispatch
 
 A prompt sent to a subagent is read by a model, not a person. Compress it: drop articles, filler and
-pleasantries, keep every technical term, number, unit and negation exact. The `caveman` plugin shapes
-what this session says, not what it dispatches, so the discipline is applied by hand in the brief. Expect
-little from it in tokens: M24 puts output at 0.3% of what a run moves. The `ponytail` plugin, where
-installed, injects its code-volume ladder into every subagent through `SubagentStart`, which is the one
-plugin that reaches the workers a fleet spawns.
+pleasantries, keep every technical term, number, unit and negation exact. Expect little from it in tokens:
+M24 puts output at 0.3% of what a run moves.
 
 Keep the part of a brief that states what correct looks like at full length. A dropped negation in an
 assertion turns a passing screen into a defect report, and no token saving covers the hour spent chasing

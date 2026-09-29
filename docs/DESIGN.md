@@ -84,8 +84,7 @@ task-id: task-04-critique-cases
 kind: critique
 needs: pane
 budget: 20
-model: sonnet
-verdict-model: opus
+model: fable            # passed to fleet-design-eye, whose verdict is final: no verdict-model
 ---
 ## Route in
 /cases, signed in through the runbook.

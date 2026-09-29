@@ -1,3 +1,7 @@
+---
+type: llm
+focus: trace
+---
 Score 1 only if BOTH hold:
 
 1. It separated the two chips correctly: chip 05 is offered back as a RESUME with the `claude -r

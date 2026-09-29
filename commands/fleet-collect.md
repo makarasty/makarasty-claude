@@ -4,19 +4,8 @@ argument-hint: <run-id>
 allowed-tools: Bash, Read, Write, Glob, Grep, Agent, PushNotification, TaskStop, mcp__ccd_session_mgmt__set_session_title
 ---
 
-The `docs/*` files named below live in this plugin's own directory, not in the project you are working on.
-Resolve it once, before following any pointer, and ask the host rather than guessing:
-
-```bash
-p=$(node -p 'JSON.parse(require("fs").readFileSync(require("os").homedir()+"/.claude/plugins/installed_plugins.json","utf8")).plugins["makarasty@makarasty"][0].installPath.split(String.fromCharCode(92)).join("/")' 2>/dev/null) \
-  || p=$(ls -dt ~/.claude/plugins/cache/*/makarasty/*/ 2>/dev/null | head -1)
-```
-
-`$p/docs` and `$p/scripts` are then the plugin. The first form reads the record the host keeps of what it
-installed, which is the only thing that always agrees with the command file you are reading; the fallback
-exists for a checkout that was never installed. **Do not sort that cache by modification time.** It held
-five snapshots on the machine this was written on, the newest by mtime was nine days behind the newest by
-version, and a session that picked it read documentation for a plugin it was not running.
+The `docs/*` and `scripts/*` files named below live in this plugin's own directory,
+`${CLAUDE_PLUGIN_ROOT}`, not in the project you are working on.
 
 Merge every `.fleet/<run-id>/*.jsonl` into one ranked backlog. Mechanical work: dedupe, group, order. It
 does not decide whether a finding is worth fixing, and it does not fix anything.
@@ -26,7 +15,7 @@ The finding schema is in `docs/PROTOCOL.md`.
 ## The merge is a script, and it is the first thing you run
 
 ```bash
-f=$(node -p 'JSON.parse(require("fs").readFileSync(require("os").homedir()+"/.claude/plugins/installed_plugins.json","utf8")).plugins["makarasty@makarasty"][0].installPath.split(String.fromCharCode(92)).join("/")' 2>/dev/null || ls -dt ~/.claude/plugins/cache/*/makarasty/*/ | head -1)/scripts/fleet.sh
+f="${CLAUDE_PLUGIN_ROOT}/scripts/fleet.sh"
 sh "$f" merge  .fleet/<run-id>     # -> backlog.jsonl, skipped.jsonl, unreached.jsonl, and a reconciliation
 sh "$f" render .fleet/<run-id>     # -> backlog.md and skipped.md, generated from the JSONL
 ```
@@ -83,7 +72,7 @@ alone. Either way the input is a queue, not a document somebody has to re-read.
 **Then put the roots in front of it**, before a single chip is offered:
 
 ```bash
-g=$(node -p 'JSON.parse(require("fs").readFileSync(require("os").homedir()+"/.claude/plugins/installed_plugins.json","utf8")).plugins["makarasty@makarasty"][0].installPath.split(String.fromCharCode(92)).join("/")' 2>/dev/null || ls -dt ~/.claude/plugins/cache/*/makarasty/*/ | head -1)/scripts/fleet-gate.mjs
+g="${CLAUDE_PLUGIN_ROOT}/scripts/fleet-gate.mjs"
 node "$g" cluster .fleet/<run-id> --queue .fleet/fix-<run-id>
 ```
 

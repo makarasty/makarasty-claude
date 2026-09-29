@@ -109,9 +109,8 @@ not competing for a display, and capping the file half of a fleet at the width o
 ends up with eight browser workers queued behind each other and nobody reading the source tree. The repo
 lane's width comes from the machine, in `LANES.md`.
 
-**The ceiling is memory, not monitors** [M33, M34]. This section used to size the pane lane by how many
-panes tile readably on a display, which measured the wrong thing: a pane off the edge of the desktop
-composites exactly as well as one in the middle of it. What a pane actually costs is one renderer process
+**The ceiling is memory, not monitors** [M33, M34]: a pane off the edge of the desktop composites exactly
+as well as one in the middle of it. What a pane actually costs is one renderer process
 per tab - about 113 MB of it, and then whatever the page weighs. One tab holding 150,000 DOM nodes read
 **2,061 MB** [M34]. Size the lane by dividing free memory, less the operator's reserve, by the weight of
 this project's own page. Measure it rather than guessing: `node scripts/fleet-load.mjs` prints the largest
@@ -170,10 +169,8 @@ beyond the screen, then grab the right edge and pull, and the top edge as well. 
 past what the desktop can show. Parts of it, whole panes included, can end up entirely off screen while
 the compositor keeps rendering them.
 
-That trick was written here with a warning attached, because nobody had measured whether an off-screen
-pane still composites. It does: a window at `screenX` 5032, entirely past the edge of the desktop, held
-300 frames a second for twenty-two seconds [M33]. So it is a supported arrangement rather than a risk, and
-it is the answer to the ceiling this page used to have - park the panes nobody is watching off the desktop
+An off-screen pane still composites: a window at `screenX` 5032, entirely past the edge of the desktop, held
+300 frames a second for twenty-two seconds [M33]. So park the panes nobody is watching off the desktop
 and keep the screen for the chats.
 
 Keep letting the gate answer anyway. It costs a second and it is the only instrument that has never lied.

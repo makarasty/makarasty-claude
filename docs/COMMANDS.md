@@ -45,7 +45,7 @@ Two consequences worth knowing:
 ## The rest, briefly
 
 - **`description` is capped at 1,536 characters** together with `when_to_use`, and is truncated in the
-  listing beyond that, so the first sentence carries the load. The longest here is 560. Put what the
+  listing beyond that, so the first sentence carries the load. The longest here is 271. Put what the
   command does first and when to reach for it second.
 - **A command with `disable-model-invocation` has a human-facing description**: the operator reads it in
   the `/` menu and no model matches against it. Trigger phrases in one are wasted words. A command without
@@ -56,7 +56,7 @@ Two consequences worth knowing:
 - **`model` and `effort`** apply for the rest of the invoking turn. No command here sets them: a planner's
   work is choosing the model *per task*, which belongs in the task file, not in the command that writes it.
 - **Keep a command under 500 lines** and push reference material into `docs/`, which is what every command
-  here does through its first paragraph. The longest is `fleet-run` at 334.
+  here does through its first paragraph. The longest is `fleet-run`, under 400.
 - **`commands/` is the legacy location and still supported.** The documentation recommends
   `skills/<name>/SKILL.md` for new work, which would keep every invocation name identical and add support
   for per-command files. This plugin has not moved, because its reference material is shared between
@@ -70,3 +70,8 @@ Two consequences worth knowing:
 3. Does anything it tells the model to invoke carry that flag? If so the instruction cannot be followed.
 4. Does the first sentence of the description say what it does and when to reach for it?
 5. Does it point at `docs/` rather than restating a rule that lives there?
+6. Does it name plugin files as `${CLAUDE_PLUGIN_ROOT}/...`? The host writes the real path into a command
+   body when it loads it (checked in the 2.1.280 loader), so nothing needs to search
+   `~/.claude/plugins/cache`, and a checkout loaded with `--plugin-dir` resolves to itself. A `docs/` file is
+   read with `Read` and gets no substitution, so a doc names the root as `<plugin>` and leaves the path to
+   the command that sent the reader there.

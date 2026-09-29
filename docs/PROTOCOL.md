@@ -13,14 +13,14 @@ Workers are fire and forget. They read a brief, write findings, and exit. **Noth
 by message**, because a file has an address and a session handle does not: a worker that dies leaves its
 findings behind, and one that finishes needs nobody's attention.
 
-Messaging has exactly one job, in the other direction. The planner may send a worker a status check to
-**revive** it, and that is the only thing that brings back a session which ended a turn with nothing
+Messaging has exactly one job, in the other direction. The planner may send a worker a status check
+(`mcp__ccd_session_mgmt__send_message`) to **revive** it, and that is the only thing that brings back a session which ended a turn with nothing
 pending. Measured 2026-08-27: three workers dead for nearly three hours came back within seconds of a
 cross-session message and finished their tasks. Nothing else in the system can do that, so keep the
 handles usable, and never let a finding or an answer ride that channel.
 
 **That channel dies with the machine, and the disk does not** [M27]. Measured 2026-09-01: after a
-restart the 26 worker sessions of two runs were gone from `ListAgents`, which listed five unrelated
+restart the 26 worker sessions of two runs were gone from the session list (`mcp__ccd_session_mgmt__list_sessions`), which listed five unrelated
 chats started minutes earlier, and absent from the app's own session list whether or not archived rows
 were included. A planner
 asked to revive them was right to say it could not: there was nothing left to message. What survived was
@@ -115,11 +115,9 @@ So a clock **reads the disk that closes its obligation, and exits when it sees i
 |---|---|---|
 | `fleet.sh clock <run> <chip> <task> <budget>` | one claimed task | `tasks/done/<task>` or `<chip>.done` appears, checked every 30 seconds |
 | `sleep 90; echo regate` | a pane that is not displayed | the gate reads live and the `.waiting` marker goes |
-| `sleep 300; echo recheck` | a drained queue the planner may still fill | `tasks/queue-open` is gone at the next poll |
+| the `until` wake in `fleet-run` | a queue that is not finished: `drained` exit 5, `next` exit 7 | the ready or done set changes, `queue-open` goes, or `FINISHED` appears |
 
-One clock per obligation, and never a second for an obligation that already has one. The first version of
-this rule asked the worker to remember to stop its clock. It was asked 87 times across two runs and obeyed
-zero times, which is why the clock now watches the disk instead of the worker's memory.
+One clock per obligation, and never a second for an obligation that already has one.
 
 ## The end banner, and the title
 
@@ -236,7 +234,7 @@ brief's, minus the ones that describe a whole worker's slice.
 ---
 task-id: task-07-vendor-egress
 kind: fix              # the same set as a brief's
-needs: repo            # pane | verify | repo. Absent, `next` will not match it to a lane
+needs: repo            # pane | verify | repo. Absent, `next` treats the task as `repo`
 budget: 25             # minutes. `next` prints twice this as the abort deadline, and `sweep` calls a
                        # claim quiet for longer than one budget abandoned. Absent, `sweep` assumes 25
 after: task-02-primitives   # optional, one id or several: `next` holds this task until those are done
@@ -291,9 +289,7 @@ rather than the application, a reproduction that no longer reproduces. Collectio
 `skipped.jsonl` with the full schema intact, so promoting one back later needs no re-observation.
 
 `observed`, `mechanism` and `mechanism_status` are the load bearing split, and the section "Observation
-and mechanism are separate claims" below is where the rule for them lives. This block used to name a
-single `what` field, which contradicted that section two screens further down; workers reading both wrote
-the union of them. Corrected 2026-08-28.
+and mechanism are separate claims" below is where the rule for them lives.
 
 `evidence` carries one of:
 
@@ -325,8 +321,8 @@ Two more line shapes exist for the same reason, and for the same file:
 read that sandbox deserves to know which of them an agent made rather than a person.
 
 Both auxiliary shapes are checked rather than waved through. An auxiliary line **may not carry**
-`severity`: the merge routes on that field alone, so one extra key beside a severity used to file a
-blocker with no area and no evidence straight into the backlog, and exit 0 doing it. `created` needs
+`severity`: the merge routes on that field alone, so one extra key would file a blocker with no area and
+no evidence straight into the backlog. `created` needs
 `where`, `state_changed` needs `when`, and `what` - the retired field name - is refused on every shape
 rather than only on findings.
 
@@ -425,22 +421,6 @@ know they are being waited on.
 
 The marker turns a silent stall into a named one, and it is the only thing on disk that can.
 
-## The account is shared, so a setting is a fleet-wide write
-
-Every worker signs into the same sandbox account. Anything that account persists on the server is
-therefore shared by all of them, and changing it reshapes what the others are measuring.
-
-In one application the visible-column selection, the analytics dashboard's card set and the general
-settings group are all stored per account [M10]. One worker saving a column selection changed
-which columns five other workers were looking at, and their measurements of that table were taken under a
-layout nobody chose. The browser profile is shared too, so `localStorage` is common ground: filters one
-worker saved were read by the next.
-
-Three rules follow. Prefer a setting you can change in your own pane over one the server keeps. When you
-must change a persisted one, write the `state_changed` line and an `ask/` note as you do it, never
-afterwards. And read a surprising reading twice before filing it: under a shared account, "this list is
-empty" and "this badge is 0" are as likely to be another worker's write as a defect.
-
 ## One chip, one run
 
 A worker session works one run and then stops. Reusing it for the next mission looks free and is not.
@@ -479,59 +459,3 @@ and no worker has to ask.
 
 Absent that file, each command discovers what it can and says plainly what it could not find. Guessing at
 an origin or a login form wastes an hour and produces nothing.
-
-## Portability
-
-Two things a fleet needs differ per operating system. Everything else here is plain files.
-
-**Is a port listening.**
-
-```bash
-# macOS, Linux
-lsof -nP -iTCP:5173 -sTCP:LISTEN || ss -ltn 'sport = :5173'
-```
-```powershell
-# Windows
-Get-NetTCPConnection -State Listen -LocalPort 5173
-```
-
-**Machine load, for a measurement to be interpretable.**
-
-```bash
-# Linux
-free -m; nproc; uptime
-# macOS
-vm_stat; sysctl -n hw.ncpu; uptime
-```
-```powershell
-# Windows
-$os = Get-CimInstance Win32_OperatingSystem
-"free {0:N1}GB of {1:N1}GB" -f ($os.FreePhysicalMemory/1MB), ($os.TotalVisibleMemorySize/1MB)
-```
-
-A project's `FLEET.md` may pin the exact command for its own machine, which removes the guess entirely.
-
-Atomic claiming works everywhere: `mkdir` failing on an existing directory is POSIX behaviour and NTFS
-behaviour alike, and it is the reason the claim is a directory rather than a file.
-
-## Shell traps that cost this design real time
-
-One eight-worker run produced 47 errors, and the same two shapes hit almost everybody [M12].
-
-**A heredoc that never returns.** Writing a file by piping a heredoc into an interpreter hangs when that
-interpreter waits on standard input, and the call sits until it times out. Hit seven workers of eight.
-Write files with the harness's own write tool, and keep heredocs for text that goes straight to a file
-through `cat > file <<'EOF'`, never into a program that might read stdin.
-
-**The working directory does not persist between calls.** A `cd` in one call is gone by the next, so a
-relative path written after it resolves somewhere else. Hit six workers of eight. Use absolute paths, or
-put the `cd` and the work in the same call.
-
-**Validating your own JSONL by hand.** Three workers wrote inline scripts to check the file they had just
-written. With `jq` present, `jq -e . file.jsonl` does it in one call; without it, append one object per
-line and trust the schema rather than writing a validator. Either way it is not worth a script.
-
-The one genuinely platform bound trick is growing a window past the edges of the display, which is
-described for Windows in [`BROWSER.md`](BROWSER.md). macOS has no equivalent through the window manager,
-though a virtual display via `displayplacer` or a second Space serves the same purpose. On Linux it depends
-entirely on the compositor.

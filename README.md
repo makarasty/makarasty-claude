@@ -100,8 +100,8 @@ connected.
   the machine load beside them.
 - **`fleet-triage`** merges and ranks a run's findings, on Haiku.
 - **`fleet-design-eye`** reviews one screen for design defects: two geometry probes first, a zoomed
-  screenshot of each candidate second, and findings that carry the rectangles behind them. The pictures
-  stay in its context.
+  screenshot of each candidate second, and findings that carry the rectangles behind them, on the design
+  model (`fable`). The pictures stay in its context.
 
 ## The pane gate
 
@@ -319,7 +319,8 @@ restart that killed them.** After it, the 26 worker sessions were listed nowhere
 address: a message needs a live receiver, so the only recovery this plugin had could not reach anything.
 `fleet.sh recover` reads the chip register, the claims and the host's transcripts instead, and says which
 workers can be reopened with their context (`claude -r`) rather than replaced. The same runs paid for the
-cost accounting now in `docs/PULL.md`: the bill is turns multiplied by context - 19,535 turns against
+cost accounting now in `docs/MEASUREMENTS.md`, "Appendix: what a pull run spends":
+the bill is turns multiplied by context - 19,535 turns against
 6,421 M cached reads - and output is 0.3% of the tokens that move. And the sixth mission kind, `design`,
 exists because every visual defect that sweep found lived in a state nobody designed: the loaded screen
 had a designer, the loading state and the transition did not.
@@ -336,7 +337,7 @@ fleet has yet captured a real application this way; see "Known limits".
 
 - [`docs/WALKTHROUGH.md`](docs/WALKTHROUGH.md) your first fleet in fifteen minutes, for somebody who has
   never run one
-- [`docs/PROTOCOL.md`](docs/PROTOCOL.md) run layout, brief format, finding schema, portability, shell traps
+- [`docs/PROTOCOL.md`](docs/PROTOCOL.md) run layout, brief format, finding schema, project configuration
 - [`docs/PULL.md`](docs/PULL.md) the task queue, claiming, heartbeats, budgets, asking the planner
 - [`docs/MISSIONS.md`](docs/MISSIONS.md) the ten kinds and the axis each splits along
 - [`docs/DESIGN.md`](docs/DESIGN.md) the design half: critique with geometry probes, the canvas on disk,
@@ -380,7 +381,7 @@ fleet has yet captured a real application this way; see "Known limits".
   helper driven to seed the page
 - [`docs/PERF.md`](docs/PERF.md) measuring speed on a machine the fleet is loading
 - [`docs/MODELS.md`](docs/MODELS.md) which model per stage, and the delegation economics
-- [`docs/PORTING.md`](docs/PORTING.md) every assumption this makes about its host, and its substitute
+- [`docs/PORTING.md`](docs/PORTING.md) every assumption this makes about its host, and its substitute; the per-OS commands and shell traps
 
 ## What the version number covers
 
@@ -395,8 +396,10 @@ break:
   newer run rather than misreading it.
 - **`fleet.sh`'s subcommands and their exit codes**: 0 done; 1 a line the schema gate refused, a walk
   served from a blind pane, or a run that has not landed; 2 wrong usage or a run this version cannot read;
-  3 the queue is drained for that lane; 4 the claim is no longer yours; 5 the queue is empty but the
-  planner has not closed it.
+  3 the queue is drained for that lane, nothing left and nothing waiting; 4 the claim is no longer yours;
+  5 from `drained`, not finished: the planner has not closed the queue, or a ready task nobody holds is
+  still waiting; 6 free memory is under the floor; 7 from `next`, QUEUE WAITING: tasks exist but an
+  `after:` or a held verify lane holds them.
 - **The four line shapes** a findings file may hold: a finding, `unreached`, `created`, `state_changed` -
   and the fields the schema gate enforces on each.
 - **The marker semantics**: `.done` means finished, `.blocked` means it never saw, `.waiting` means it is
@@ -487,8 +490,8 @@ than it has been tested. Full list in [`CHANGELOG.md`](CHANGELOG.md).
   `bash` and `dash`, which is what `sh` is on Debian and Ubuntu — but no macOS or Linux fleet has ever
   run.
 - The self-test covers mechanics. Whether a worker claims in its lane, files through the gate, or lets the
-  generated banner stand is what [`evals/`](evals/) is for — and those cases have never been run, because
-  `claude plugin eval` is in early access and was refused on the account this was built on.
+  generated banner stand is what [`evals/`](evals/) is for: eleven cases for `claude plugin eval`, not yet
+  run against this release. [`evals/README.md`](evals/README.md) has the command.
 - **`recover` cannot confirm a resume happened.** It prints the command, including the instruction that
   makes the reopened worker write its heartbeat first, but the operator runs it in a terminal and nothing
   writes anything on their behalf. That heartbeat moving in `fleet.sh status` is the only proof; until it
