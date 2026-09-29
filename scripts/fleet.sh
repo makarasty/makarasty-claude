@@ -9,7 +9,8 @@
 #
 # Usage, from anywhere:
 #   fleet.sh next    <run-dir> <chip> [lane]       claim the first free task in that lane, print it. exit 3 =
-#                                                  drained, or waiting on an `after:` dependency (it says which)
+#                                                  drained, nothing left and nothing waiting. exit 7 = waiting:
+#                                                  tasks exist but an `after:` or a held verify lane holds them
 #   fleet.sh beat    <run-dir> <chip> <task-id>    refresh heartbeat. exit 4 = claim lost, take another
 #   fleet.sh clock   <run-dir> <chip> <task-id> [budget-min]   print the self-disarming abort clock to background
 #   fleet.sh finish  <run-dir> <chip> <task-id>    mark the task done; its clock then exits on its own
@@ -17,7 +18,8 @@
 #   fleet.sh ask     <run-dir> <chip>              worker: read a question on stdin, file it, print the path
 #   fleet.sh answer  <run-dir> <id> [id...]        planner: one answer on stdin, filed under every id it settles
 #   fleet.sh broadcast <run-dir>                   planner: append something every worker reads at its next boundary
-#   fleet.sh drained <run-dir> <chip>              queue empty: write <chip>.done. exit 5 = queue still open
+#   fleet.sh drained <run-dir> <chip> [lane]       queue empty: write <chip>.done. exit 5 = queue still open,
+#                                                  or a ready task in that lane nobody holds yet
 #   fleet.sh status  <run-dir>                     planner view: claims, ages, markers, questions
 #   fleet.sh sweep   <run-dir> [--release]         claims and pane walks nobody is advancing; --release
 #                                                  moves the claim, its task and anything whose `after:`
@@ -116,7 +118,9 @@ beside() { # beside <path relative to this script> [<plugin name>]
   if [ -e "$(dirname "$0")/$1" ]; then printf %s "$(dirname "$0")/$1"; return 0; fi
   _pkg=${2:-makarasty}
   if command -v node >/dev/null 2>&1; then
-    _root=$(PKG="$_pkg" node -p 'JSON.parse(require("fs").readFileSync(require("os").homedir()+"/.claude/plugins/installed_plugins.json","utf8")).plugins[process.env.PKG+"@makarasty"][0].installPath.split(String.fromCharCode(92)).join("/")' 2>/dev/null)
+    # `|| _root=`: under `set -e` a failed lookup - no install record, a plugin not installed - otherwise
+    # ends the whole script from inside this substitution, silently and with exit 1.
+    _root=$(PKG="$_pkg" node -p 'JSON.parse(require("fs").readFileSync(require("os").homedir()+"/.claude/plugins/installed_plugins.json","utf8")).plugins[process.env.PKG+"@makarasty"][0].installPath.split(String.fromCharCode(92)).join("/")' 2>/dev/null) || _root=
     if [ -n "$_root" ] && [ -e "$_root/$3" ]; then printf %s "$_root/$3"; return 0; fi
   fi
   ls -t ~/.claude/plugins/cache/*/"$_pkg"/*/"$3" 2>/dev/null | head -1
@@ -132,6 +136,27 @@ fi
 cal() { # cal <key> <default>
   eval "_v=\${CAL_$1:-}"
   case ${_v:-} in ''|*[!0-9.]*) echo "$2" ;; *) echo "$_v" ;; esac
+}
+# The constants that reach shell arithmetic. `$(( 25 * 1.5 ))` is a syntax error and `/ 0` a crash, and in
+# `next` that landed after the claim was made: the claim stood and the task was never printed.
+calint() { # calint <key> <default>; a whole number of at least 1, or the default
+  _i=$(cal "$1" "$2")
+  case $_i in ''|*[!0-9]*) ;; *) [ "$_i" -ge 1 ] && { echo "$_i"; return; } ;; esac
+  echo "calibration: $1 = $_i is not a whole number of at least 1, using $2" >&2
+  echo "$2"
+}
+# The memory census, as a path somewhere else can run. FLEET_LOAD names another census script, exactly as
+# it does for hooks/fleet-memory.mjs: the refusal depends on what the machine has free, so a test needs a
+# door to a census that answers what it is told.
+load_script() {
+  _l=${FLEET_LOAD:-}
+  [ -n "$_l" ] && [ -e "$_l" ] || _l=$(beside fleet-load.mjs makarasty scripts/fleet-load.mjs)
+  [ -n "$_l" ] || return 0
+  # Absolute, because the wait is backgrounded by a worker whose working directory may be a worktree with
+  # no relation to this checkout - the defect the abort clock carried for a month. An empty answer stays
+  # empty: made absolute it named the current directory and every claim read as MACHINE TIGHT.
+  case "$_l" in /*|[A-Za-z]:*) ;; *) _l=$(cd "$(dirname "$_l")" 2>/dev/null && pwd)/$(basename "$_l") ;; esac
+  printf '%s' "$_l"
 }
 stamp() { [ -e "$run/RUN_FORMAT" ] || printf '%s
 ' "$RUN_FORMAT" > "$run/RUN_FORMAT" 2>/dev/null || true; }
@@ -238,11 +263,12 @@ unlink_links() { # unlink_links <dir>; prints how many it removed
     [ -n "$_e" ] || continue
     rm "$_e" 2>/dev/null || true
     # Windows: coreutils sometimes will not drop a junction. `rmdir` removes the link, never its target.
-    if [ -e "$_e" ] && command -v cmd >/dev/null 2>&1; then
+    if { [ -L "$_e" ] || [ -e "$_e" ]; } && command -v cmd >/dev/null 2>&1; then
       _dd=$(dirname "$_e"); _bb=$(basename "$_e")
       ( cd "$_dd" && MSYS_NO_PATHCONV=1 cmd //c "rmdir \"$_bb\"" >/dev/null 2>&1 ) || true
     fi
-    _n=$((_n + 1))
+    # Counted only once it is really gone. Callers re-scan rather than trust this number.
+    [ -L "$_e" ] || [ -e "$_e" ] || _n=$((_n + 1))
   done < "$_t"
   rm -f "$_t"
   echo "$_n"
@@ -324,10 +350,7 @@ next)
   #
   # Two thresholds, not one. Refusing below 2 GB and releasing only above 4 is hysteresis, and without it
   # every worker held on one reading claims again on the next, together, on the same 2.1 GB.
-  loader=$(beside fleet-load.mjs makarasty scripts/fleet-load.mjs)
-    # Absolute, because the loop below is backgrounded by a worker whose working directory may be a
-    # worktree with no relation to this checkout - the defect the abort clock carried for a month.
-    case "$loader" in /*|[A-Za-z]:*) ;; *) loader=$(cd "$(dirname "$loader")" 2>/dev/null && pwd)/$(basename "$loader") ;; esac
+  loader=$(load_script)
   if [ -n "$loader" ] && command -v node >/dev/null 2>&1; then
     floor=$(cal memory_floor_gb 2); clear=$(cal memory_clear_gb 4)
     if ! node "$loader" --clear "$floor" >/dev/null 2>&1; then
@@ -353,14 +376,18 @@ next)
     # the whole run - 75 hand rolled claims, and every finding appended without passing the schema gate.
     want=$(sed -n 's/^needs:[[:space:]]*\([a-z][a-z]*\).*/\1/p' "$f" | head -1)
     [ -n "$want" ] || want=repo
-    if [ -n "$lane" ] && [ "$want" != "$lane" ]; then
-      # Except for the verify lane, which nobody is ever told to ask for: a chip prompt carries `pane` or
-      # `repo` and nothing else (commands/fleet-plan.md), so a `needs: verify` task was claimable by no
-      # worker in the fleet and `landed` then refused the run over the claim that never happened. A repo
-      # worker takes it, one at a time, which is the width the lane already has. Two workers reaching this
-      # line in the same instant can both pass it - the queue's atomicity is per task, and this is a
-      # width rather than a lock.
-      if [ "$want" = verify ] && [ "$lane" = repo ] && [ -z "$(verify_held)" ]; then :; else continue; fi
+    # The verify lane, which nobody is ever told to ask for: a chip prompt carries `pane` or `repo` and
+    # nothing else (commands/fleet-plan.md), so a `needs: verify` task was claimable by no worker in the
+    # fleet and `landed` then refused the run over the claim that never happened. A repo worker takes it,
+    # one at a time, which is the width the lane already has - and so does a worker that named no lane,
+    # which used to skip this check and hand out a second verify task beside a held one. Two workers
+    # reaching this line in the same instant can both pass it - the queue's atomicity is per task, and
+    # this is a width rather than a lock.
+    if [ "$want" = verify ]; then
+      [ "$lane" = pane ] && continue
+      if [ -n "$(verify_held)" ]; then waiting=$((waiting + 1)); continue; fi
+    elif [ -n "$lane" ] && [ "$want" != "$lane" ]; then
+      continue
     fi
     # A task can wait for another to finish: `after: task-02-primitives` in the frontmatter, one id or
     # several separated by spaces or commas. The queue is the only place a wave order can be enforced
@@ -400,7 +427,7 @@ next)
         echo "  Nobody else can run a full suite until you finish it, so keep it scoped and close it."
       fi
       echo "BUDGET_MIN $b"
-      echo "ABORT_AFTER_SEC $(( b * $(cal budget_multiplier 2) * 60 ))"
+      echo "ABORT_AFTER_SEC $(( b * $(calint budget_multiplier 2) * 60 ))"
       # Each task worked inline leaves 20-30 k of context behind it, and four workers who never spawned a
       # subagent were all compacted near their thirtieth task [M30]. Past the first few, a task belongs in
       # its own subagent. Said here, on a path every worker walks, because the same rule in prose was
@@ -411,7 +438,7 @@ next)
           [ -e "$o" ] || continue
           if grep -q "^chip $chip\$" "$o" 2>/dev/null && [ -e "$run/tasks/done/$(basename "$(dirname "$o")")" ]; then dn=$((dn + 1)); fi
         done
-        if [ "$dn" -ge "$(cal delegate_past_tasks 3)" ]; then
+        if [ "$dn" -ge "$(calint delegate_past_tasks 3)" ]; then
           echo "DELEGATE: you have finished $dn tasks in this session and each left 20-30 k of context behind [M30]."
           echo "  Hand this task to ONE subagent at the task's model - task file, RULES.md, your notes - with findings filed through find. Keep your own context flat."
         fi
@@ -425,11 +452,12 @@ next)
     fi
   done
   # "Drained" and "waiting on a wave that has not landed" are different states, and a worker told the
-  # first when the second is true writes its `.done` and ends a session that still had work coming.
+  # first when the second is true writes its `.done` and ends a session that still had work coming. So the
+  # two states have two exit codes, not one exit code and two sentences.
   if [ "$waiting" -gt 0 ]; then
-    echo "QUEUE WAITING${lane:+ for lane $lane}: $waiting task(s) held by an unfinished \`after:\` dependency"
+    echo "QUEUE WAITING${lane:+ for lane $lane}: $waiting task(s) held by an unfinished \`after:\` dependency or a held verify lane"
     echo "  Poll rather than finishing: this queue opens again when those tasks land."
-    exit 3
+    exit 7
   fi
   echo "QUEUE DRAINED${lane:+ for lane $lane}"
   exit 3
@@ -451,7 +479,7 @@ clock)
   # were running to term. And `FINISHED` is checked first and every round, so one `landed` call ends every
   # clock still armed anywhere on the machine rather than leaving them to expire one at a time.
   chip=${3:?chip id required}; id=${4:?task id required}; mins=${5:-25}
-  mult=$(cal budget_multiplier 2); poll=$(cal clock_poll_seconds 30)
+  mult=$(calint budget_multiplier 2); poll=$(calint clock_poll_seconds 30)
   rounds=$(( mins * mult * 60 / poll ))
   printf '[ -e "%s/FINISHED" ] && exit 0; i=0; while [ $i -lt %s ]; do sleep '"$poll"'; i=$((i+1)); [ -e "%s/FINISHED" ] && exit 0; [ -e "%s/tasks/done/%s" ] && exit 0; [ -e "%s/%s.done" ] && exit 0; [ -e "%s/%s.blocked" ] && exit 0; done; echo budget-elapsed-%s\n' \
     "$absrun" "$rounds" "$absrun" "$absrun" "$id" "$absrun" "$chip" "$absrun" "$chip" "$id"
@@ -469,19 +497,19 @@ width)
     [ -n "$lane" ] || lane=repo
     [ "$lane" = repo ] && ready=$((ready + 1))
   done
-  per=$(cal repo_tasks_per_worker 3)
+  per=$(calint repo_tasks_per_worker 3)
   want=$(( (ready + per - 1) / per ))
   [ "$want" -lt 1 ] && want=1
   cap=""
-  loader=$(beside fleet-load.mjs makarasty scripts/fleet-load.mjs)
+  loader=$(load_script)
   if [ -n "$loader" ] && command -v node >/dev/null 2>&1; then
-    reserve=$(cal operator_reserve_gb 2); ceil=$(cal repo_worker_ceiling 12)
+    reserve=$(cal operator_reserve_gb 2); ceil=$(calint repo_worker_ceiling 12)
     cap=$(node "$loader" --json 2>/dev/null | RESERVE_GB="$reserve" CEIL_N="$ceil" node -e 'const RESERVE=+process.env.RESERVE_GB||2, CEIL=+process.env.CEIL_N||12; let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{const o=JSON.parse(s);const byRam=Math.floor(o.freeGB-RESERVE);console.log(Math.max(1,Math.min(byRam,CEIL)));}catch{console.log("")}})')
   fi
   [ -n "$cap" ] || cap=6
   n=$want; [ "$n" -gt "$cap" ] && n=$cap
   echo "REPO_WORKERS $n"
-  echo "  ready repo tasks $ready, one worker per three -> $want"
+  echo "  ready repo tasks $ready, one worker per $per -> $want"
   echo "  machine cap $cap (free memory less the ${reserve:-2} GB the operator keeps, ceiling ${ceil:-12})"
   echo "  the pane lane starts at $(cal pane_workers_default 2) and is bound by memory, not by the display [M33]; the verify lane is 1"
   echo "  every constant above comes from calibration.json"
@@ -508,7 +536,7 @@ finish)
   if ! grep -q "chip $chip\$" "$d/owner" 2>/dev/null; then
     echo "CLAIM LOST $id, done marker NOT written"; exit 4
   fi
-  [ -d "$d" ] && now > "$d/heartbeat"
+  now > "$d/heartbeat"
 
   # A fix arrives with a reproduction that failed before it and passes after. That was prose in
   # MISSIONS.md from the day the fix kind existed, and one fix run landed 164 changes with nothing
@@ -519,17 +547,22 @@ finish)
   case "$kind" in
     fix|root)
       gate=$(beside fleet-gate.mjs makarasty scripts/fleet-gate.mjs)
-      if [ -n "$gate" ] && command -v node >/dev/null 2>&1; then
-        if ! node "$gate" check "$absrun" "$id"; then
-          echo "done marker NOT written for $id" >&2
-          echo "  Run the reproduction through the gate, then finish again:" >&2
-          echo "    node $gate prove $run $id before -- <the task reproduction>   # before your change" >&2
-          echo "    node $gate prove $run $id after  -- <the same command>        # after it" >&2
-          echo "  A reproduction that passes BEFORE the change refutes the finding, which is a result and" >&2
-          echo "  not a failure: write it up in your notes and finish with FLEET_REFUTED=1 set." >&2
-          if [ -z "${FLEET_REFUTED:-}" ]; then exit 1; fi
-          echo "FLEET_REFUTED set: closing $id as a refutation rather than as a fix." >&2
-        fi
+      # No gate to ask is no proof, not a pass: this used to skip the check and close the fix unproven,
+      # while PROTOCOL.md says finish refuses one.
+      if [ -z "$gate" ] || ! command -v node >/dev/null 2>&1; then
+        echo "done marker NOT written for $id: it is a $kind task and node or fleet-gate.mjs is missing," >&2
+        echo "  so no reproduction can be read. Install node, or leave the task open for the planner." >&2
+        exit 1
+      fi
+      if ! node "$gate" check "$absrun" "$id"; then
+        echo "done marker NOT written for $id" >&2
+        echo "  Run the reproduction through the gate, then finish again:" >&2
+        echo "    node \"$gate\" prove \"$absrun\" $id before -- <the task reproduction>   # before your change" >&2
+        echo "    node \"$gate\" prove \"$absrun\" $id after  -- <the same command>        # after it" >&2
+        echo "  A reproduction that passes BEFORE the change refutes the finding, which is a result and" >&2
+        echo "  not a failure: write it up in your notes and finish with FLEET_REFUTED=1 set." >&2
+        if [ -z "${FLEET_REFUTED:-}" ]; then exit 1; fi
+        echo "FLEET_REFUTED set: closing $id as a refutation rather than as a fix." >&2
       fi
       ;;
   esac
@@ -609,7 +642,8 @@ ask)
   mkdir -p "$run/ask"
   n=1; while [ -e "$run/ask/$chip-$n.md" ]; do n=$((n + 1)); done
   cat > "$run/ask/$chip-$n.md"
-  echo "ASKED $run/ask/$chip-$n.md, read $run/answers/$chip-$n.md at your next boundary"
+  # Absolute: the asker is often in a worktree, where `.fleet/` does not exist under its cwd.
+  echo "ASKED $absrun/ask/$chip-$n.md, read $absrun/answers/$chip-$n.md at your next boundary"
   ;;
 
 drained)
@@ -627,6 +661,33 @@ drained)
     # The poll carries the same escape the clocks do, and for the same reason: this is armed in a chat
     # that may be asleep when the run lands, and one `landed` call has to end every wait on the machine.
     echo "Nothing ready right now. Poll again rather than finishing:"
+    echo "  [ -e \"$absrun/FINISHED\" ] && { echo run-finished; exit 0; }; sleep 300; echo recheck"
+    exit 5
+  fi
+  # Nor is it the end while a ready task is still unheld: `next` answers QUEUE WAITING for a task behind an
+  # `after:`, and a worker that took that for the end wrote `.done` here while its wave was still coming.
+  # Only tasks this worker could claim count: a repo worker held open by an unclaimed pane task waits for a
+  # pane worker it cannot help. The lane rules are the ones `next` applies.
+  lane=${4:-}
+  unheld=0
+  for f in "$run"/tasks/ready/*.md; do
+    [ -e "$f" ] || continue
+    id=$(basename "$f" .md)
+    { [ -e "$run/tasks/done/$id" ] || [ -d "$run/tasks/claimed/$id" ]; } && continue
+    if [ -n "$lane" ]; then
+      want=$(sed -n 's/^needs:[[:space:]]*\([a-z][a-z]*\).*/\1/p' "$f" | head -1)
+      [ -n "$want" ] || want=repo
+      if [ "$want" = verify ]; then
+        [ "$lane" = pane ] && continue
+      elif [ "$want" != "$lane" ]; then
+        continue
+      fi
+    fi
+    unheld=$((unheld + 1))
+  done
+  if [ "$unheld" -gt 0 ]; then
+    echo "QUEUE NOT EMPTY: $unheld ready task(s) nobody holds yet. Do NOT write .done."
+    echo "Claim again with next, and while it answers QUEUE WAITING poll rather than finishing:"
     echo "  [ -e \"$absrun/FINISHED\" ] && { echo run-finished; exit 0; }; sleep 300; echo recheck"
     exit 5
   fi
@@ -648,16 +709,25 @@ pane-ask)
   mkdir -p "$run/pane/requests" "$run/pane/results" "$run/pane/running"
   n=1; while [ -e "$run/pane/requests/$chip-$n.md" ] || [ -e "$run/pane/results/$chip-$n.json" ]; do n=$((n + 1)); done
   cat > "$run/pane/requests/$chip-$n.md"
-  echo "FILED $run/pane/requests/$chip-$n.md"
-  echo "READ  $run/pane/results/$chip-$n.json at your next task boundary"
+  echo "FILED $absrun/pane/requests/$chip-$n.md"
+  echo "READ  $absrun/pane/results/$chip-$n.json at your next task boundary"
   ;;
 
 pane-next)
   host=${3:?host chip id required}
   mkdir -p "$run/pane/requests" "$run/pane/results" "$run/pane/running"
-  for f in "$run"/pane/requests/*.md; do
+  # Oldest first by the time it was filed. The glob's order is lexical, which put `07-10` before `07-2`
+  # and every walk of chip 02 before any of chip 07, whatever waited longest. Lexical without node.
+  order=""
+  if command -v node >/dev/null 2>&1; then
+    order=$(node -e 'const fs=require("fs"),p=require("path"),d=process.argv[1];const r=fs.readdirSync(d).filter(f=>f.endsWith(".md")).map(f=>[fs.statSync(p.join(d,f)).mtimeMs,f.slice(0,-3)]);r.sort((a,b)=>a[0]-b[0]||(a[1]<b[1]?-1:1));process.stdout.write(r.map(x=>x[1]).join(" "))' "$run/pane/requests" 2>/dev/null) || order=""
+  fi
+  if [ -z "$order" ]; then
+    for f in "$run"/pane/requests/*.md; do if [ -e "$f" ]; then order="$order $(basename "$f" .md)"; fi; done
+  fi
+  for id in $order; do   # a walk id is <chip>-<n>, never a space
+    f=$run/pane/requests/$id.md
     [ -e "$f" ] || continue
-    id=$(basename "$f" .md)
     [ -e "$run/pane/results/$id.json" ] && continue
     if mkdir "$run/pane/running/$id" 2>/dev/null; then
       printf 'host %s\nclaimed %s\n' "$host" "$(now)" > "$run/pane/running/$id/owner"
@@ -806,13 +876,14 @@ sweep)
       echo "ABANDONED? $id  $owner  quiet ${age}m against a ${budget}m budget"
       if [ -n "$release" ]; then
         stampsuffix=$(date +%Y%m%dT%H%M%S 2>/dev/null || echo swept)
-        mv "$d" "$run/tasks/claimed/$id.released-$stampsuffix"
         # The ready file leaves the queue with the claim, and so does anything whose `after:` was waiting
         # on it. Leaving the id in place would hand it straight back to the next `next`, and a slow
         # worker's late write would then land on live work rather than in the graveyard - which is the
-        # whole reason a reclaimed task returns under a new id.
+        # whole reason a reclaimed task returns under a new id. The file goes FIRST: renamed claim first,
+        # a `next` in between re-claimed the same id and then found its task file gone.
         echo "  released; the task file is in tasks/released/ - re-file it under a NEW id, never this one"
         release_task "$id"
+        mv "$d" "$run/tasks/claimed/$id.released-$stampsuffix"
       fi
     fi
   done
@@ -820,7 +891,7 @@ sweep)
   # `pane/running/`: `pane-serve` deletes the result it refused but leaves the claim standing, so a walk
   # that failed the gate is unclaimable by every host forever while the requester waits for a result
   # nobody can produce. The lease has to outlast a slow walk, because there is no beat to refresh it.
-  lease=$(cal pane_walk_lease_minutes 30)
+  lease=$(calint pane_walk_lease_minutes 30)
   for d in "$run"/pane/running/*/; do
     [ -d "$d" ] || continue
     id=$(basename "$d")
@@ -905,7 +976,7 @@ recover)
       exit 2
     fi
   fi
-  livemin=$(cal hook_claim_window_minutes 10)
+  livemin=$(calint hook_claim_window_minutes 10)
 
   # A run that already declared itself finished is not automatically nothing to do: `landed` counts markers
   # and a worker that died before writing one is invisible to that count. Say both facts rather than either.
@@ -920,8 +991,10 @@ recover)
   for f in "$run"/chips/*; do
     [ -e "$f" ] || continue
     sid=$(basename "$f")
-    # `<session>.warned-<task>` is the Stop hook's own bookkeeping, not a chip.
-    case "$sid" in *.warned-*) continue;; esac
+    # A session id carries no dot. Every dotted name is a hook's own bookkeeping, not a chip:
+    # `.warned-<task>` (fleet-guard), `.memory-warned` and `.browser-warned` (fleet-memory),
+    # `.contract-<hex>` (fleet-contract), and whatever a hook adds next.
+    case "$sid" in *.*) continue;; esac
     chip=$(cat "$f" 2>/dev/null | tr -d ' \n')
     [ -n "$chip" ] || continue
     any=$((any + 1))
@@ -947,7 +1020,9 @@ recover)
       m=$(mtime "$t"); [ -n "$m" ] && quiet=$(( (nowsec - m) / 60 ))
     fi
     findings=0
-    [ -e "$run/$chip.jsonl" ] && findings=$(grep -c . "$run/$chip.jsonl" 2>/dev/null || echo 0)
+    # `|| true`, not `|| echo 0`: grep -c already prints 0 when it matches nothing, then exits 1.
+    [ -e "$run/$chip.jsonl" ] && findings=$(grep -c . "$run/$chip.jsonl" 2>/dev/null || true)
+    [ -n "$findings" ] || findings=0
 
     if [ -z "$open" ] && [ -n "$marker" ]; then
       # The session id belongs on this line too. A landed worker is the one whose context a follow-up run
@@ -1009,7 +1084,7 @@ recover)
       keep=""; known=""
       for f in "$run"/chips/*; do
         [ -e "$f" ] || continue
-        s=$(basename "$f"); case "$s" in *.warned-*) continue;; esac
+        s=$(basename "$f"); case "$s" in *.*) continue;; esac
         [ "$(cat "$f" 2>/dev/null | tr -d ' \n')" = "$ochip" ] || continue
         known=1
         [ -n "$(transcript "$s")" ] && keep=1
@@ -1025,10 +1100,11 @@ recover)
         continue
       fi
       stampsuffix=$(date +%Y%m%dT%H%M%S 2>/dev/null || echo recovered)
-      mv "$d" "$run/tasks/claimed/$id.released-$stampsuffix"
       freed=$((freed + 1))
       echo "  released $id (chip ${ochip:-unknown}) - re-file it under a NEW id, never this one"
+      # Task file first, claim second, as in sweep: the other order let a `next` re-claim the same id.
       release_task "$id"
+      mv "$d" "$run/tasks/claimed/$id.released-$stampsuffix"
     done
     if [ "$freed" = 0 ]; then
       if [ "$openclaims" = 0 ]; then
@@ -1048,7 +1124,7 @@ status)
   # How long this run has been going, against the ceiling in calibration.json. Comparable tools have
   # documented runs that looped for days; a fleet has no way to stop itself, so the least it can do is say
   # when continuing has become a decision rather than a default.
-  maxmin=$(cal max_run_minutes 480)
+  maxmin=$(calint max_run_minutes 480)
   first=""
   for f in "$run"/RUN_FORMAT "$run"/tasks/ready/*.md; do
     [ -e "$f" ] || continue; first=$(mtime "$f"); [ -n "$first" ] && break
@@ -1069,6 +1145,8 @@ status)
   for d in "$run"/tasks/claimed/*/; do
     [ -d "$d" ] || continue
     id=$(basename "$d")
+    # A released or dead claim is closed, as every other loop over claims already treats it.
+    case "$id" in *.dead-*|*.released-*) continue;; esac
     [ -e "$run/tasks/done/$id" ] && continue
     o=$(head -1 "$d/owner" 2>/dev/null || echo "NO OWNER")
     hb=$(cat "$d/heartbeat" 2>/dev/null || echo "none")
@@ -1272,6 +1350,13 @@ unlink)
   fi
   n=$(unlink_links "$wt")
   echo "unlinked $n reparse point(s) under $wt"
+  # A link that would not go is the whole hazard, so it is named and the exit says so.
+  left=$(find "$wt" -type l 2>/dev/null | wc -l | tr -d ' ')
+  if [ "${left:-0}" != 0 ]; then
+    echo "STILL LINKED: $left reparse point(s) under $wt would not unlink. Nothing may delete this tree:" >&2
+    find "$wt" -type l 2>/dev/null | sed 's/^/  /' >&2
+    exit 1
+  fi
   ;;
 
 clean)
@@ -1284,10 +1369,13 @@ clean)
     case "$a" in --remove) do_remove=1 ;; esac
   done
   MIN_PATH_SEGMENTS=$(min_floor)
-  main=$(git rev-parse --show-toplevel 2>/dev/null || echo "")
   # One listing for the whole command: it is asked once per worktree otherwise, and the pipeline also put
   # the stray scan in a subshell.
   wtlist=$(git worktree list --porcelain 2>/dev/null || echo "")
+  # The main checkout is the first tree git lists. `rev-parse --show-toplevel` answers for wherever this
+  # shell stands, and from inside a linked worktree that made the worktree "main": the merged test asked
+  # about its branch, and the real main checkout was reported as a stray.
+  main=$(printf '%s\n' "$wtlist" | sed -n 's/^worktree //p' | head -1)
   # A worktree this run cannot clean is named rather than ignored: it sits there forever and only the
   # operator can move it. Reported before anything else, because a run that registered nothing is exactly
   # the run where a stray would otherwise go unmentioned. Never touched.
@@ -1387,13 +1475,20 @@ clean)
     [ -n "$ign" ] && echo "      ignored files removed with the tree: $ign"
     # 5. Unlink every reparse point, at any depth, before anything recursive runs [M32].
     unlink_links "$wt" >/dev/null
+    # A link that survived the unlink is the hole [M32] is about, so the tree is not removed over it.
+    left=$(find "$wt" -type l 2>/dev/null | wc -l | tr -d ' ')
+    if [ "${left:-0}" != 0 ]; then
+      echo "SKIP  $chip: $left reparse point(s) under $wt would not unlink, and git would follow them. Nothing"
+      echo "      was removed. Unlink them by hand ('fleet.sh unlink \"$wt\"' names them), then re-run"
+      kept=$((kept+1)); continue
+    fi
     # 6. Remove the worktree. No --force: a tree holding work was kept above, so a refusal here is
     #    something this code did not anticipate and the tree stays as it is.
     if git worktree remove "$wt" 2>/dev/null; then
       git worktree prune >/dev/null 2>&1
       # 7. The branch, by the merge-checking form only. -D is never used here.
       if [ -n "$br" ] && [ "$br" != "HEAD" ]; then
-        if git branch -d "$br" >/dev/null 2>&1; then
+        if git -C "${main:-.}" branch -d "$br" >/dev/null 2>&1; then
           echo "removed  $chip: $wt and branch $br"
         else
           echo "removed  $chip: $wt (branch $br kept: git will not delete it, so it still holds something)"

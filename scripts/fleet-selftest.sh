@@ -46,6 +46,17 @@ if command -v node >/dev/null 2>&1; then
   [ -n "$poll" ] || poll=30
 fi
 
+# Every `next` asks the machine for free memory before it claims, so on a box that is actually full the
+# queue checks below failed with exit 6 for a reason that had nothing to do with the queue. FLEET_LOAD
+# points fleet.sh (and hooks/fleet-memory.mjs) at a census that always has room; the throttle's own cases
+# further down replace it with the real one or a tight one.
+loadstub="${TMPDIR:-/tmp}/fleet-load-stub-$$.mjs"
+cat > "$loadstub" <<'STUB'
+if (process.argv.includes('--clear')) process.exit(0);
+console.log(JSON.stringify({ when: new Date().toISOString(), totalGB: 64, freeGB: 60, tight: false, sessions: 0, panes: 0, groups: {} }));
+STUB
+FLEET_LOAD=$loadstub; export FLEET_LOAD
+
 task() { # task <id> <lane> <budget>
   cat > "$run/tasks/ready/$1.md" <<EOF
 ---
@@ -108,7 +119,11 @@ out=$(sh "$fleet" next "$vrun" 41 repo); rc=$?
 code "a repo worker may take a verify task, because nobody else can" 0 "$rc"
 check "and is told it now holds the only verify lane there is" "VERIFY LANE" "$out"
 out=$(sh "$fleet" next "$vrun" 42 repo 2>&1); rc=$?
-code "a second worker is refused while that lane is held" 3 "$rc"
+code "a second worker is told to wait while that lane is held, not that the queue is empty" 7 "$rc"
+# A worker that names no lane used to skip the width check entirely and take the second suite.
+out=$(sh "$fleet" next "$vrun" 44 2>&1); rc=$?
+code "a worker that named no lane is held by the verify lane too" 7 "$rc"
+case "$out" in *CLAIMED*) bad "and is not handed a second verify task" "$out";; *) ok "and is not handed a second verify task";; esac
 sh "$fleet" finish "$vrun" 41 task-01-suite >/dev/null 2>&1
 out=$(sh "$fleet" next "$vrun" 42 repo); rc=$?
 check "and gets the next verify task once it lands" "CLAIMED task-02-suite" "$out"
@@ -289,7 +304,7 @@ check "showing the queue term it came from" "ready repo tasks" "$out"
 
 # The constants are read once at startup by sed rather than by a node run per lookup, so this checks the
 # reading itself: a copy of the script beside a calibration of our own, with a provenance sentence that
-# must not become a constant. Newest wins, hence the future stamp.
+# must not become a constant. The copy beside the script wins over any installed one.
 calrun="${TMPDIR:-/tmp}/fleet-cal-$$"; mkdir -p "$calrun/scripts" "$calrun/run/tasks/ready"
 cp "$fleet" "$calrun/scripts/fleet.sh"
 cat > "$calrun/calibration.json" <<'CAL'
@@ -299,10 +314,19 @@ cat > "$calrun/calibration.json" <<'CAL'
   "_provenance": { "clock_poll_seconds": "a sentence carrying 99, which is not a constant" }
 }
 CAL
-touch -t 203012312359 "$calrun/calibration.json" 2>/dev/null
 out=$(sh "$calrun/scripts/fleet.sh" clock "$calrun/run" 07 task-01 20 2>&1)
 check "a calibrated multiplier and poll interval are both read from the file" "-lt $(( 20 * 3 * 60 / 7 ))" "$out"
 check "and the poll is the file's, not the built-in default" "sleep 7;" "$out"
+# A decimal reached shell arithmetic after the claim was made: the claim stood and the task never printed.
+printf '{\n  "budget_multiplier": 1.5,\n  "clock_poll_seconds": 0\n}\n' > "$calrun/calibration.json"
+printf -- '---\ntask-id: task-01\nneeds: repo\nbudget: 5\n---\nBODY-OF-TASK\n' > "$calrun/run/tasks/ready/task-01.md"
+out=$(sh "$calrun/scripts/fleet.sh" next "$calrun/run" 07 repo 2>&1); rc=$?
+code "a decimal multiplier in the calibration does not break a claim" 0 "$rc"
+check "which still prints its task" "BODY-OF-TASK" "$out"
+check "at the built-in multiplier" "ABORT_AFTER_SEC $((5 * 2 * 60))" "$out"
+check "and says which constant it could not use" "budget_multiplier = 1.5 is not a whole number" "$out"
+out=$(sh "$calrun/scripts/fleet.sh" clock "$calrun/run" 07 task-01 5 2>&1); rc=$?
+code "and a zero poll interval does not divide by zero" 0 "$rc"
 rm -rf "$calrun"
 
 echo
@@ -320,6 +344,8 @@ check "and nothing is changed until asked" "Nothing was changed" "$out"
 [ -d "$run/tasks/claimed/task-77" ] && ok "the claim is still there after a listing sweep" || bad "the claim is still there after a listing sweep"
 sh "$fleet" sweep "$run" --release >/dev/null 2>&1
 [ -d "$run/tasks/claimed/task-77" ] && bad "--release hands the task back" "still claimed" || ok "--release hands the task back"
+out=$(sh "$fleet" status "$run" 2>&1)
+case "$out" in *task-77.released*) bad "and status no longer lists it as a live claim" "$out";; *) ok "and status no longer lists it as a live claim";; esac
 out=$(sh "$fleet" sweep "$run" 2>&1)
 check "and a released claim is not swept twice" "no abandoned claims" "$out"
 
@@ -376,9 +402,20 @@ DEP
 out=$(sh "$fleet" next "$depsrun" 31 repo); rc=$?
 check "the first wave's task is claimable" "CLAIMED task-01-primitives" "$out"
 out=$(sh "$fleet" next "$depsrun" 32 repo 2>&1); rc=$?
-code "a task waiting on an unfinished dependency is not handed out" 3 "$rc"
+code "a task waiting on an unfinished dependency is not handed out, and the exit says waiting" 7 "$rc"
 check "and the worker is told to poll rather than that the queue is empty" "QUEUE WAITING" "$out"
 check "naming how many tasks are held" "1 task(s) held" "$out"
+# A worker that took that answer for the end used to write `.done` here while its wave was still coming.
+out=$(sh "$fleet" drained "$depsrun" 32 2>&1); rc=$?
+code "drained refuses while a ready task nobody holds is still waiting" 5 "$rc"
+check "and says why" "QUEUE NOT EMPTY" "$out"
+[ -e "$depsrun/32.done" ] && bad "and writes no done marker" "32.done exists" || ok "and writes no done marker"
+out=$(sh "$fleet" drained "$depsrun" 32 repo 2>&1); rc=$?
+code "a worker in the lane that task needs is held open too" 5 "$rc"
+# The unheld task needs the repo lane, so a pane worker could never claim it and waiting would be for nothing.
+out=$(sh "$fleet" drained "$depsrun" 33 pane 2>&1); rc=$?
+code "a worker in another lane is not held open by it" 0 "$rc"
+check "and drains" "QUEUE DRAINED" "$out"
 sh "$fleet" finish "$depsrun" 31 task-01-primitives >/dev/null 2>&1
 out=$(sh "$fleet" next "$depsrun" 32 repo); rc=$?
 code "once the dependency lands the task is claimable" 0 "$rc"
@@ -418,6 +455,10 @@ mkdir -p "$proj/some-cwd-slug" "$run/chips"
 printf '55' > "$run/chips/sess-alive"
 printf '56' > "$run/chips/sess-gone"
 printf '57' > "$run/chips/sess-still-running"
+# The hooks keep their own once-only marks in the same directory, each holding a timestamp.
+printf '2026-09-29T10:00:00.000Z' > "$run/chips/sess-alive.memory-warned"
+printf '2026-09-29T10:00:00.000Z' > "$run/chips/sess-alive.contract-2f617069"
+printf '2026-09-29T10:00:00.000Z' > "$run/chips/sess-alive.browser-warned"
 printf '{"type":"user","cwd":"/tmp/some-worktree","timestamp":"2020-01-01T00:00:00Z"}
 ' > "$proj/some-cwd-slug/sess-alive.jsonl"
 printf '{"type":"user","cwd":"/tmp/some-worktree","timestamp":"2020-01-01T00:00:00Z"}
@@ -447,6 +488,7 @@ check "a chip with no transcript is a respawn, not a resume" "RESPAWN chip 56" "
 check "a session written to a moment ago is not offered for reopening" "LIVE?   chip 57" "$out"
 check "and the report says what each chip is still holding" "holding: task-88" "$out"
 check "nothing is released by a report" "nothing was changed" "$out"
+case "$out" in *"chip 2026-09-29"*) bad "a hook's own mark is not read as a chip" "$out";; *) ok "a hook's own mark is not read as a chip";; esac
 out=$(CLAUDE_PROJECTS_DIR="$proj" sh "$fleet" recover "$run" --release 2>&1)
 check "--release frees the dead chip's claim" "released task-89" "$out"
 [ -d "$run/tasks/claimed/task-88" ] && ok "and leaves the resumable chip's claim alone" || bad "and leaves the resumable chip's claim alone" "task-88 was released"
@@ -457,7 +499,7 @@ empty="${TMPDIR:-/tmp}/fleet-selftest-empty-$$"; mkdir -p "$empty"
 CLAUDE_PROJECTS_DIR="$empty" sh "$fleet" recover "$run" --release >/dev/null 2>&1; rc=$?
 code "--release refuses when there are no transcripts to judge by" 2 "$rc"
 rm -rf "$empty"
-rm -f "$run/tasks/released/task-89.md" "$run/chips/sess-alive" "$run/chips/sess-gone" "$run/chips/sess-still-running"
+rm -f "$run/tasks/released/task-89.md" "$run/chips/sess-alive" "$run/chips/sess-gone" "$run/chips/sess-still-running" "$run/chips"/sess-alive.*
 rm -rf "$proj"
 rm -f "$run/tasks/ready/task-89.md" "$run/tasks/ready/task-90.md"
 rm -rf "$run/tasks/claimed/task-90"
@@ -614,6 +656,15 @@ check "which is the walk that was stuck" "WALK 07-2" "$out"
 good='{"gate":301,"conditions":"1440x900, zoom 100","observations":[]}'
 printf '%s' "$good" | sh "$fleet" pane-serve "$run" 03 07-2 >/dev/null 2>&1
 
+# "The oldest walk" was the glob's lexical order, which puts `09-10` before `09-2` whatever waited longest.
+printf 'Walk the tenth thing.\n' > "$run/pane/requests/09-10.md"
+printf 'Walk the second thing.\n' > "$run/pane/requests/09-2.md"
+touch -t 202001010100 "$run/pane/requests/09-10.md" 2>/dev/null
+touch -t 202001010000 "$run/pane/requests/09-2.md" 2>/dev/null
+out=$(sh "$fleet" pane-next "$run" 03 2>&1)
+check "a host is handed the walk that has waited longest, not the first by name" "WALK 09-2" "$out"
+rm -rf "$run/pane/requests/09-10.md" "$run/pane/requests/09-2.md" "$run/pane/running/09-10" "$run/pane/running/09-2"
+
 echo
 echo "landing the run"
 
@@ -638,7 +689,8 @@ if command -v node >/dev/null 2>&1; then
 ' >> "$run/07.jsonl"
   sh "$fleet" merge "$run" >/dev/null 2>&1; rc=$?
   code "a torn line refuses the merge rather than vanishing" 1 "$rc"
-  sed -i '$d' "$run/07.jsonl" 2>/dev/null || true
+  # Not `sed -i`: BSD sed reads the script as the backup suffix, and the torn line stayed.
+  sed '$d' "$run/07.jsonl" > "$run/07.jsonl.tmp" && mv "$run/07.jsonl.tmp" "$run/07.jsonl"
   sh "$fleet" merge "$run" >/dev/null 2>&1
 else
   echo "  skip  merge and render, node is absent"
@@ -884,7 +936,8 @@ if command -v git >/dev/null 2>&1; then
   # drop the commit so the branch is merged, then --remove really removes, main node_modules survives
   ( cd "$wt" && git reset -q --hard HEAD~1 ) >/dev/null 2>&1
   out=$(cd "$wl/main" && sh "$fleet" clean "$wrun" --remove 2>&1)
-  check "a clean worktree is removed" "removed" "$out"
+  # Not bare "removed": the ignored-files line says "removed with the tree" before the removal is tried.
+  check "a clean worktree is removed" "removed  01:" "$out"
   if [ -e "$wt" ]; then bad "and its directory is gone"; else ok "and its directory is gone"; fi
   if [ -n "$linkmade" ]; then
     [ -f "$wl/main/node_modules/marker.txt" ] && ok "the main checkout's node_modules survived the junction" \
@@ -909,10 +962,44 @@ if command -v git >/dev/null 2>&1; then
   if [ -n "$nested" ]; then
     ( cd "$wl/main" && sh "$fleet" worktree "$wrun" 03 "$wtN" ) >/dev/null 2>&1
     out=$(cd "$wl/main" && sh "$fleet" clean "$wrun" --remove 2>&1)
+    # The removal has to have happened, or a surviving target proves nothing.
+    [ -e "$wtN" ] && bad "the tree with a nested junction is actually removed" "$(printf '%s' "$out" | tr '\n' '|' | cut -c1-140)" \
+      || ok "the tree with a nested junction is actually removed"
     if [ -f "$wl/main/victimNested/keep.txt" ]; then ok "a junction nested below the top level is unlinked, not followed"
     else bad "a junction nested below the top level is unlinked, not followed" "the target was deleted through it"; fi
   else
     echo "  skip  could not create a nested junction on this host"
+  fi
+
+  # A link that will not unlink is the hole itself, and `clean` used to count the attempt and remove the tree
+  # anyway. Shadow `rm` and `cmd` with versions that refuse any link, and the tree has to be kept.
+  wtF="$wl/main/.claude/worktrees/wtF"
+  ( cd "$wl/main" && git worktree add -q "$wtF" -b wtF ) >/dev/null 2>&1
+  mkdir -p "$wl/main/victimF"; echo KEEP > "$wl/main/victimF/keep.txt"
+  stuck=""
+  if command -v cmd >/dev/null 2>&1; then
+    printf '@echo off\r\nmklink /J "%s" "%s"\r\n' "$(cygpath -w "$wtF/node_modules")" "$(cygpath -w "$wl/main/victimF")" > "$wl/mk3.cmd"
+    cmd //c "$(cygpath -w "$wl/mk3.cmd")" >/dev/null 2>&1 && stuck=1
+  else
+    ln -s "$wl/main/victimF" "$wtF/node_modules" 2>/dev/null && stuck=1
+  fi
+  if [ -n "$stuck" ]; then
+    realrm=$(command -v rm)
+    mkdir -p "$wl/fakebin"
+    printf '#!/bin/sh\nfor a; do case $a in -*) ;; *) [ -L "$a" ] && exit 1 ;; esac; done\nexec "%s" "$@"\n' "$realrm" > "$wl/fakebin/rm"
+    printf '#!/bin/sh\nexit 1\n' > "$wl/fakebin/cmd"
+    chmod +x "$wl/fakebin/rm" "$wl/fakebin/cmd"
+    ( cd "$wl/main" && sh "$fleet" worktree "$wrun" 05 "$wtF" ) >/dev/null 2>&1
+    out=$(cd "$wl/main" && PATH="$wl/fakebin:$PATH" sh "$fleet" clean "$wrun" --remove 2>&1)
+    check "a link that would not unlink keeps its tree" "would not unlink" "$out"
+    [ -d "$wtF" ] && ok "and the tree is still on disk" || bad "and the tree is still on disk"
+    [ -f "$wl/main/victimF/keep.txt" ] && ok "and nothing was deleted through the link" || bad "and nothing was deleted through the link"
+    out=$(PATH="$wl/fakebin:$PATH" sh "$fleet" unlink "$wtF" 2>&1); rc=$?
+    code "unlink says so with its exit rather than claiming success" 1 "$rc"
+    check "and names the link" "STILL LINKED" "$out"
+    ( cd "$wl/main" && sh "$fleet" clean "$wrun" --remove ) >/dev/null 2>&1
+  else
+    echo "  skip  could not create a junction for the unlink-failure case on this host"
   fi
 
   # A detached-HEAD worktree has commits that belong to no branch, so `git branch -d` cannot object for
@@ -1097,7 +1184,7 @@ H="$here/../hooks/fleet-contract.mjs"
 if [ ! -f "$H" ] || ! command -v node >/dev/null 2>&1; then
   echo "  skip  fleet-contract cases"
 else
-  hp="${TMPDIR:-/tmp}/fleet-contract-$"
+  hp="${TMPDIR:-/tmp}/fleet-contract-$$"
   mkdir -p "$hp/.fleet/r9/chips" "$hp/.fleet/r9/ask"
   hcwd=$(cd "$hp" && { node -e 'process.stdout.write(process.cwd())' 2>/dev/null || pwd; })
   for s in 9 10 11 12; do printf '%s' "$s" > "$hp/.fleet/r9/chips/sess-$s"; done
@@ -1166,7 +1253,7 @@ fi
 
 mg="$here/fleet-merge.mjs"
 if [ -f "$mg" ] && command -v node >/dev/null 2>&1; then
-  mrun="${TMPDIR:-/tmp}/fleet-merge-$/2026-09-08-full-audit"; mkdir -p "$mrun"
+  mrun="${TMPDIR:-/tmp}/fleet-merge-$$/2026-09-08-full-audit"; mkdir -p "$mrun"
   # Two chips see one thing independently. One of them decided its own sighting was its dev server's fault;
   # the other reproduced it three times. A third chip is called `cid-03`, which fleet.sh find accepts.
   printf '%s\n' '{"chip":"07","area":"auth","severity":"blocker","observed":"login loops forever","evidence":"my dev server was on the wrong port","mechanism_status":"unknown","skip_reason":"my dev server was misconfigured"}' > "$mrun/07.jsonl"
@@ -1217,7 +1304,7 @@ if [ -f "$mg" ] && command -v node >/dev/null 2>&1; then
   code "and the honest merge still reconciles afterwards" 0 "$rc"
   node "$mg" render "$mrun" >/dev/null 2>&1
   grep -q 'one worker skipped this' "$mrun/backlog.md" && ok "the rendered backlog shows that a worker had skipped the row" || bad "the rendered backlog shows that a worker had skipped the row"
-  rm -rf "${TMPDIR:-/tmp}/fleet-merge-$"
+  rm -rf "${TMPDIR:-/tmp}/fleet-merge-$$"
 else
   echo "  skip  no fleet-merge.mjs or no node"
 fi
@@ -1227,7 +1314,7 @@ echo "the retro, and which run a session belongs to"
 
 rt="$here/fleet-retro.mjs"
 if [ -f "$rt" ] && command -v node >/dev/null 2>&1; then
-  rdir="${TMPDIR:-/tmp}/fleet-retro-$"; mkdir -p "$rdir/tx" "$rdir/.fleet/2026-09-08-full-audit/chips"
+  rdir="${TMPDIR:-/tmp}/fleet-retro-$$"; mkdir -p "$rdir/tx" "$rdir/.fleet/2026-09-08-full-audit/chips"
   # Two sessions with the same chip number: one worked the run, one worked the fix run named after it. As
   # a substring the parent run id matches both, and the child's hours were charged against the parent's
   # completion marker. Let node write the transcripts, so the timestamps are exact.
@@ -1276,7 +1363,7 @@ echo "the canvas seed, and the cover it writes on the way"
 
 cv2="$here/fleet-canvas.mjs"
 if [ -f "$cv2" ] && command -v node >/dev/null 2>&1; then
-  sdir="${TMPDIR:-/tmp}/fleet-seed-$"; mkdir -p "$sdir/src" "$sdir/design" "$sdir/skill"
+  sdir="${TMPDIR:-/tmp}/fleet-seed-$$"; mkdir -p "$sdir/src" "$sdir/design" "$sdir/skill"
   printf 'x' > "$sdir/src/Cases.vue"
   cat > "$sdir/design/Cases.dc.html" <<'ART'
 <!doctype html>
@@ -1327,7 +1414,7 @@ if command -v node >/dev/null 2>&1 && command -v git >/dev/null 2>&1; then
   ( cd "$fg" && sh "$fleet" next r 07 repo ) >/dev/null 2>&1
   out=$( cd "$fg" && sh "$fleet" finish r 07 t1 2>&1 ); rc=$?
   code "a fix task with no proof does not get its done marker" 1 "$rc"
-  check "and the worker is told how to record one" "prove r t1 before" "$out"
+  check "and the worker is told how to record one" " t1 before -- " "$out"
   [ -e "$fg/r/tasks/done/t1" ] && bad "and no done marker was written" "marker exists" || ok "and no done marker was written"
 
   echo one > "$fg/f.txt"
@@ -1361,7 +1448,7 @@ if command -v node >/dev/null 2>&1; then
   # A floor no machine can meet: the refusal must fire whatever this box happens to have free.
   node -e 'const f=require("fs"),p=process.argv[1];const c=JSON.parse(f.readFileSync(p+"/../calibration.json","utf8"));c.memory_floor_gb=99999;f.writeFileSync(p+"/../calibration.json",JSON.stringify(c,null,2))' "$mt/scripts" 2>/dev/null ||
     node -e 'const f=require("fs");f.writeFileSync(process.argv[1],JSON.stringify({memory_floor_gb:99999,memory_clear_gb:99999},null,2))' "$mt/calibration.json"
-  out=$( cd "$mt" && sh scripts/fleet.sh next r 07 repo 2>&1 ); rc=$?
+  out=$( cd "$mt" && unset FLEET_LOAD && sh scripts/fleet.sh next r 07 repo 2>&1 ); rc=$?
   code "a claim is refused when the machine has no memory left" 6 "$rc"
   check "and the worker is told the box is full, not that it did something wrong" "MACHINE TIGHT" "$out"
   check "and is given the wait to background rather than an ending" "until node" "$out"
@@ -1373,7 +1460,7 @@ if command -v node >/dev/null 2>&1; then
 
   # Floor back to a number any machine meets: the same call must now hand the task out and clear the mark.
   node -e 'const f=require("fs");f.writeFileSync(process.argv[1],JSON.stringify({memory_floor_gb:0,memory_clear_gb:0},null,2))' "$mt/calibration.json"
-  out=$( cd "$mt" && sh scripts/fleet.sh next r 07 repo 2>&1 ); rc=$?
+  out=$( cd "$mt" && unset FLEET_LOAD && sh scripts/fleet.sh next r 07 repo 2>&1 ); rc=$?
   code "and with room again the same call claims" 0 "$rc"
   [ -e "$mt/r/tight/07" ] && bad "and the held mark is cleared" "still there" || ok "and the held mark is cleared"
 
@@ -1438,7 +1525,7 @@ STUB
   o=$(node "$M" < "$mh/in.json" 2>&1); rc=$?
   code "driving a browser on a full machine is refused too" 2 "$rc"
   check "and the worker is told a reload will not help" "reload returns none of it" "$o"
-  unset FLEET_LOAD
+  FLEET_LOAD=$loadstub   # back to the roomy census the rest of this file runs on
 
   # A census that cannot answer must never block work: this hook sits on the Bash path of every worker, so
   # failing closed would stop the fleet over a broken reading rather than over a full machine.
@@ -1454,7 +1541,7 @@ STUB
   node -e 'const [c,s]=process.argv.slice(1);process.stdout.write(JSON.stringify({session_id:s,cwd:c,tool_name:"mcp__Claude_Browser__navigate",tool_input:{url:"http://x"}}))' "$mcwd" sess-a > "$mh/in.json"
   node "$M" < "$mh/in.json" >/dev/null 2>&1
   code "a browser call is not gated when the census is unreadable" 0 "$?"
-  unset FLEET_LOAD
+  FLEET_LOAD=$loadstub
   rm -rf "$mh"
 else
   echo "  skip  memory hook cases"
@@ -1467,29 +1554,37 @@ echo "the plugin finds itself the way the host records it"
 # the newest by mtime was nine days behind the newest by version, and sessions read a plugin they were not
 # running. Nothing failed. So the shape is asserted rather than trusted.
 # The glob is allowed, but only as a fallback after a `||` - never as the primary answer.
-bad_glob=$(grep -rn "ls -d?t ~/.claude/plugins/cache" "$here/../commands" "$here/../docs" 2>/dev/null | grep -cv "||" | tr -d " ")
+bad_glob=$(grep -rEn "ls -d?t ~/.claude/plugins/cache" "$here/../commands" "$here/../docs" 2>/dev/null | grep -cv "||" | tr -d " ")
 if [ "${bad_glob:-0}" = 0 ]; then
   ok "no document resolves this plugin by modification time"
 else
   bad "no document resolves this plugin by modification time" "$bad_glob line(s) still do"
 fi
 
-if grep -rq "installed_plugins.json" "$here/../commands" 2>/dev/null; then
-  ok "and the commands ask the host's own record instead"
+if grep -rqF '${CLAUDE_PLUGIN_ROOT}' "$here/../commands" 2>/dev/null; then
+  ok "and the commands take their root from the host instead"
 else
-  bad "and the commands ask the host's own record instead" "no command reads installed_plugins.json"
+  bad "and the commands take their root from the host instead" 'no command names ${CLAUDE_PLUGIN_ROOT}'
 fi
 
-# `beside` must return the copy next to the script, whatever any cache holds.
+# `beside` must return the copy next to the script, whatever any cache holds - and must survive a host with
+# no install record at all. This used to call fleet.sh with no arguments, which exits at the usage line
+# before `beside` ever runs; and a failed record lookup killed the whole script, silently, under `set -e`.
 bs=$tmp/beside/scripts
-mkdir -p "$bs"
+mkdir -p "$bs" "$tmp/beside/home" "$tmp/beside/r/tasks/ready"
 cp "$here/fleet.sh" "$bs/"
-printf 'marker\n' > "$bs/fleet-load.mjs"
-out=$(cd "$tmp/beside" && sh scripts/fleet.sh 2>&1 | head -1)
-check "fleet.sh still runs from a copy anywhere" "usage: fleet.sh" "$out"
+printf 'if (process.argv.includes("--clear")) process.exit(1);\nconsole.log(JSON.stringify({freeGB:1.23}));\n' > "$bs/fleet-load.mjs"
+printf -- '---\ntask-id: t1\nneeds: repo\nbudget: 5\n---\n' > "$tmp/beside/r/tasks/ready/t1.md"
+out=$(cd "$tmp/beside" && unset FLEET_LOAD && HOME="$tmp/beside/home" USERPROFILE="$tmp/beside/home" sh scripts/fleet.sh status r 2>&1); rc=$?
+code "a copy of fleet.sh on a host with no install record still runs" 0 "$rc"
+out=$(cd "$tmp/beside" && unset FLEET_LOAD && HOME="$tmp/beside/home" USERPROFILE="$tmp/beside/home" sh scripts/fleet.sh next r 07 repo 2>&1); rc=$?
+code "and asks the census beside it" 6 "$rc"
+check "whose answer is the one it prints" "1.23 GB free" "$out"
+check "by the path beside the script" "beside/scripts/fleet-load.mjs" "$out"
 rm -rf "$tmp/beside"
 
 rm -rf "$tmp"
+rm -f "$loadstub"
 echo "$pass passed, $fail failed"
 if [ "${1:-}" = "--keep" ]; then echo "run directory kept: $run"; else rm -rf "$run"; fi
 [ "$fail" = 0 ] || exit 1
