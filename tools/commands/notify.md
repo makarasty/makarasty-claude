@@ -5,8 +5,8 @@ argument-hint: [what the person is waiting for] | setup | test | status | off | 
 
 The chat cannot tell whether the person is still at the screen, so it never decides to message them on
 its own. The person arms it, once, and the hook sends exactly one message when the turn they are waiting
-for ends. Arming is a marker on disk keyed by session id; the hook that reads it runs in every Claude Code
-session where this plugin is installed, and starts nothing at all while no marker exists.
+for ends. Arming is a marker on disk keyed by session id. The hook runs in every session where this plugin
+is installed; while no marker exists in this Claude config dir it is one shell glob, and node never starts.
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/hooks/notify.mjs" --arm <label>        # this chat, at the end of this turn
@@ -14,6 +14,10 @@ node "${CLAUDE_PLUGIN_ROOT}/hooks/notify.mjs" --arm --next <label> # this chat, 
 node "${CLAUDE_PLUGIN_ROOT}/hooks/notify.mjs" --arm --session <id> <label>   # another chat
 node "${CLAUDE_PLUGIN_ROOT}/hooks/notify.mjs" --status | --test | --disarm
 ```
+
+Arguments map one to one: `status` runs `--status`, `test` runs `--test`, `off` runs `--disarm`, `setup`
+is the wizard below. Anything else is the label. Quote the label in single quotes; it is the person's words
+and may hold an apostrophe or a `$`.
 
 ## Arm first, then do the work
 
@@ -58,14 +62,19 @@ the phone, and saves. Tell them only the card they asked for:
   the wizard shows, press Enter. The topic is the password; the wizard made one nobody can guess.
 
 **Never ask the person to paste a token or a webhook URL into the chat, and never write one into a project
-file.** The wizard exists so the secret goes from their keyboard to `~/.claude/makarasty/notify.json` and
-nowhere else. `test` afterwards, or any time, proves every saved channel still works.
+file.** The wizard exists so the secret goes from their keyboard to
+`${CLAUDE_CONFIG_DIR:-~/.claude}/makarasty/notify.json` and nowhere else. Each config dir, so each account, has its own channels. `test` afterwards,
+or any time, proves every saved channel still works.
 
 ## What the person gets
 
-One message, once, in the form `<project>: <label> finished`, with the first 500 characters of the chat's
-last message under it, so the lock screen shows the verdict rather than "task done". A last message that
-ends in a question is sent as `is waiting for your answer` instead, because that is what it is.
+One message, once, in the form `<project>: <label> finished`, with the last 500 characters of the chat's
+final message under it, so the lock screen shows the verdict rather than "task done". The public ntfy.sh
+server gets no excerpt unless `notify.json` holds `"excerpt": true`; `"excerpt": false` turns it off on
+every channel. Say so when the work handles data that should not leave the machine.
+
+A last message that ends in a question is sent as `is waiting for your answer` instead, and the marker
+stays: the answer starts more work, and its finish gets the real message.
 
 Three other messages exist, and each is a state rather than progress:
 
@@ -73,6 +82,8 @@ Three other messages exist, and each is a state rather than progress:
   marker stays: the work is not done.
 - **stopped on an error** - the turn died on the API (rate limit, overload). The marker stays for the
   reopened chat.
+
+A `--next` marker sends none of these during the turn that armed it.
 - **could not be delivered at the time** - the finish was written to disk and the send failed, or no
   channel existed yet. It goes out at the next chance: the chat reopening, or the wizard saving a channel.
   No model turn is spent on it.

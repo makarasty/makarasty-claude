@@ -1,86 +1,44 @@
 ---
-description: Strip assistant tics out of writing so it reads as a person wrote it. Use to turn on or off the humanised reply mode, or to rewrite a given text, file, message or document.
-argument-hint: on | off | <text, file path, or nothing to rewrite the last reply>
+description: Strip assistant tics out of writing so it reads as a person wrote it. Use for /unslop on or off (the humanised reply mode), or when asked to unslop, de-AI or humanise a given text, file or the last reply.
+argument-hint: on | off | status | <text, file path, or nothing to rewrite the last reply>
 ---
 
-Two jobs, chosen by the argument.
+The rules live in one file, `${CLAUDE_PLUGIN_ROOT}/hooks/unslop.txt`. The mode's hook and this command
+both read it.
 
-`on` or `off` toggles the mode for every later reply in this session. `on` writes the state file, `off`
-removes it, and the hook that reads it injects the rules below on each prompt:
+## `on`, `off`, `status`: only when the argument is exactly that one word
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/hooks/unslop.mjs" --enable    # or --disable, or --status
 ```
 
-Anything else is a one-shot rewrite: a file path, pasted text, or nothing at all, which means the previous
-reply. Return the rewritten version only, with no commentary about what was changed.
+The switch is a file in the Claude config dir, so it holds for every session and project under that dir,
+not only this one. A SessionStart hook injects the rules once per session (also after `/clear` and after
+a compaction), never per prompt.
 
-## What to cut
+- `on`: `--enable` prints the rules. They are now in this session's context: follow them from the next
+  reply on.
+- `off`: the rules already injected stay in context. Stop following them from the next reply, and say so
+  in one line.
+- Reply with the script's state line only.
 
-**The opening throat-clear.** "Great question", "You're absolutely right", "I'd be happy to", "Let me help
-you with that", "Certainly". Start with the answer.
+## Anything else: a one-shot rewrite
 
-**The closing summary that repeats the middle.** If the reader just read it, they do not need it again in
-shorter form.
+A file path, pasted text, or nothing, which means your previous reply. `/unslop on the README` is a rewrite
+of the README, not the toggle.
 
-**Hedges stacked on hedges.** "It seems like it might potentially be" is one claim wearing three coats.
-Make the claim, or say plainly that you do not know.
+1. `cat "${CLAUDE_PLUGIN_ROOT}/hooks/unslop.txt"` and apply its Cut and Keep lists.
+2. Keep every number, unit, identifier, path, error string, code span and negation exactly as written.
+   This is a style pass, never a fact pass: a rewrite that loses a "not" or rounds a measurement has failed.
+3. Keep length where the content earns it. A dense technical explanation is not slop because it is long.
+4. Keep the writer's own voice when the text is someone else's. Remove tics; do not impose a personality.
+5. Return the rewritten text only, with no note about what changed. For a file, write it back and say
+   which file in one line.
 
-**Praise of the reader's question.** "Excellent point", "That's a really interesting case". The reader can
-tell whether their question was good.
-
-**Symmetry for its own sake.** Three bullets because three feels complete, two paragraphs of equal weight
-because they look balanced, an "on the other hand" that has no other hand behind it.
-
-**The tricolon.** "Fast, reliable, and scalable" as decoration rather than three separate claims. One real
-claim beats three ornamental ones.
-
-**Announcing structure.** "Let's break this down", "There are three things to consider here", "First,
-let's understand the problem". Just say the thing.
-
-**Filler adverbs.** simply, just, really, actually, basically, essentially, fundamentally. Almost every one
-can be deleted with no loss.
-
-**Ornamental transitions.** "Moreover", "Furthermore", "It's worth noting that", "Importantly". If it is
-worth noting, note it.
-
-**Enthusiasm the writer does not feel.** Exclamation marks, "amazing", "powerful", "seamless", "robust",
-"leverage", "delve", "tapestry", "landscape", "realm", "ensure a smooth experience".
-
-**Consultant paragraphs.** Text that could describe any project. If a sentence would survive being pasted
-into a different codebase unchanged, it is saying nothing about this one.
-
-**Words the reader would have to look up.** `verbatim`, `canonical`, `envelope`, `orchestrate`,
-`idempotent` to a reader who is not an engineer or not a native speaker. Say what the word means: "we save
-every answer exactly as it comes". Say, get, send, wrong, works - not state, receive, transmit, incorrect,
-functions. The Contoso call script of 2026-08-21 was rewritten for exactly this, after its reader stopped
-on `verbatim`.
-
-## What to keep
-
-Numbers, units, identifiers, file paths, error strings, code, and every negation, verbatim. Humanising is
-a style pass, never a fact pass. A rewrite that loses a "not" or rounds a measurement has failed at the
-only thing that mattered.
-
-Keep length where length is the point. A dense technical explanation is not slop because it is long.
-
-Keep the writer's own voice when rewriting someone else's text. The job is removing tics, not imposing a
-different personality.
-
-## What good looks like
-
-Short sentences next to long ones. A fragment where a fragment does the job. Contractions. Plain verbs.
-Concrete nouns from the actual subject. Willingness to say "I don't know", "this is a guess", "I was
-wrong". Specific numbers instead of "significantly". The occasional blunt sentence with no cushion around
-it.
-
-Uncertainty stated once, precisely, then dropped. Not sprinkled through every clause.
-
-Lines somebody will say aloud to a vendor or their support are a different register, and
-`/makarasty-tools:say` carries it: one sentence per line, numbers as words, a question instead of a
-proposal.
+Lines someone will say aloud to a vendor or their support are a different register: use
+`/makarasty-tools:say`.
 
 ## Done when
 
 The text says the same things, keeps every fact, and no longer opens with a compliment, closes with a
-summary, or announces its own structure. For the toggle, report the new state in one line.
+summary, or announces its own structure. For the toggle, one state line.

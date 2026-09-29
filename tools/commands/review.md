@@ -1,57 +1,76 @@
 ---
-description: Review a diff, branch or file and report only findings that carry evidence. Use to review changes, review a PR, review a branch, or audit a file.
-argument-hint: [diff | branch | file path | nothing for the working tree]
-allowed-tools: Bash, Read, Grep, Glob
+description: Evidence-only correctness review of a diff, branch, PR number or file, one line per finding, each naming the input that breaks it. Use when asked to review changes, a branch or a PR for bugs. Not for style, over-engineering or security audits.
+argument-hint: [nothing | <branch> | <PR number> | <file path>] [--quick] [--fix]
+allowed-tools: Bash(git diff:*), Bash(git log:*), Bash(git show:*), Bash(git status:*), Bash(git merge-base:*), Bash(git rev-parse:*), Bash(git ls-files:*), Bash(git symbolic-ref:*), Bash(gh pr diff:*), Bash(gh pr view:*), Read, Grep, Glob, Agent, Edit
 ---
 
-Review what `$ARGUMENTS` names. Nothing given means the working tree against its merge base.
+Review what `$ARGUMENTS` names. Report findings only. No praise, no summary of the change, no restating
+the diff.
 
-One line per finding. No praise, no summary of what the change does, no restating the diff.
+## 1. Resolve the target
 
-## Format
+`<default>` is `origin/HEAD` if it resolves, else `main`, else `master`.
+
+| Argument | What to review |
+|---|---|
+| nothing | `git diff $(git merge-base HEAD <default>)` for committed, staged and unstaged changes, plus every file in `git ls-files --others --exclude-standard`, read whole |
+| a branch | `git diff <default>...<branch>` (three dots: the branch's own changes since it left the default branch) |
+| a number | `gh pr diff <n>`; `gh pr view <n>` for the stated intent |
+| a path | the whole file, as it is now |
+
+An empty diff or a ref that does not resolve: say so in one line and stop.
+
+## 2. Size gate
+
+Run `git diff --stat` (or count the PR's files) first. Up to about 15 files and 800 changed lines: review
+inline. Above that, split the files into groups of related files and give each group to a subagent with this
+command's bar and format; each returns its findings as lines in the format below. Merge them and drop duplicates.
+
+## 3. Find
+
+Read every changed file in context, not only the hunk: the function around it, its callers, and any
+guard that might already handle the case. Most wrong findings were written from the diff alone.
+
+- **Check what the diff removed**: a deleted guard, a dropped `await`, an error branch that became a
+  success path.
+- **The two failures that survive review most often**: an empty string or empty array treated as absent
+  (`??` and `||` disagree about it), and a `catch` that turns a failed query into an empty result the caller
+  reports as "no data".
+- **Match the repository's conventions**, not your own. What looks wrong is often house style: read a
+  neighbouring file before calling it a mistake.
+
+Out of scope: refactors nobody asked for, formatting that does not change meaning, style the repository
+does not enforce.
+
+## 4. Verify (skip with `--quick`)
+
+Try to disprove each candidate before reporting it. Open the caller, the guard, the type, the test that
+might already cover it, and look for the reason it cannot happen. Then:
+
+- the failing input is reachable and nothing stops it: keep it as `bug` or `risk`;
+- you cannot find the guard but cannot build the input either: report it as `q`;
+- you found the guard: drop it.
+
+## 5. Report
 
 ```
-path:line: <severity>: <problem>. <fix>.
+path:line: <bug|risk|q> [high|med]: <problem>. breaks on: <the input or sequence>. fix: <the change>.
 ```
 
-Severity is `bug`, `risk`, `nit`, or `q` for a question you cannot answer from the diff alone.
+- `bug`: a reachable input gives wrong behaviour now. `risk`: it breaks under a plausible change or load.
+  `q`: a question the code alone cannot answer. No `nit`.
+- `[high|med]` is how sure the verify pass left you. A low-confidence finding is a `q`.
+- Order: `bug`, then `risk`, then `q`; high before med.
+- Missing tests: at most one `risk` per review, and only where neighbouring code has tests. It still names
+  the case that goes untested.
+- Nothing survived: `LGTM` and stop.
 
-Nothing wrong: say `LGTM` and stop. That is a complete review and it takes one line.
+## 6. `--fix`
 
-## The bar
-
-**A finding names the input that breaks it.** "This could fail with unexpected input" is not a finding.
-"Empty array reaches line 40, `arr[0]` is undefined, `.id` throws" is. If you cannot describe the case that
-goes wrong, you have a feeling rather than a finding, and it belongs in a question instead.
-
-**Read enough to be right.** A diff shows changed lines, not the function they live in. Before calling
-something a bug, read the surrounding code, the caller, and any guard that might already handle it. Most
-review findings that turn out wrong were written from the diff alone.
-
-**Check what the diff removed**, not only what it added. A deleted guard, a dropped await, an error branch
-that quietly became a success path.
-
-**Look for the two failures that survive review most often**: an empty string or empty array treated as
-absent, since `??` and `||` disagree about that; and a `catch` that turns a thrown query into an empty
-result the caller then reports as no data.
-
-## Scope
-
-Review the change in front of you. Refactors the author did not ask for are not findings, and neither is
-a style preference the repository does not enforce.
-
-Skip formatting entirely unless it changes meaning: a moved brace that alters scope counts, a reordered
-import does not.
-
-Match the repository's conventions rather than your own. Read a few neighbouring files before calling
-something wrong; what looks like a mistake is often this codebase's house style.
-
-## Tests
-
-A change to exported logic with no test is a `risk` finding, once, naming the file. A bugfix with no
-reproducing test is a `bug` finding, because nothing stops it coming back.
+After the report, apply the fix for each `bug [high]` finding with Edit, the smallest change that closes the
+named input. Leave `risk` and `q` to the author. Then list the files changed. Without `--fix`, never edit.
 
 ## Done when
 
-Every changed file has been read in context rather than as a diff hunk, and every finding names a concrete
-failing case. Order the output by severity.
+Every changed file was read in context, every reported finding survived the verify pass (unless
+`--quick`), and every finding names the input that breaks it.

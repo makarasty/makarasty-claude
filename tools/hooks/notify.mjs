@@ -25,29 +25,39 @@
 //                                                                  person to message the bot fills it in
 //     "discord":  { "url": "https://discord.com/api/webhooks/...", "everyone": true },
 //     "ntfy":     "https://ntfy.sh/<an-unguessable-topic>",
-//     "webhook":  "https://hooks.slack.com/services/..."           any URL that takes POST {"text": "..."}
+//     "webhook":  "https://hooks.slack.com/services/...",          any URL that takes POST {"text": "..."}
+//     "excerpt":  true                                              see below
 //   }
 // Every key is optional; every configured one gets every message. A plain string under "discord" is
 // read as the URL with no mention.
 //
+// The excerpt - the last 500 characters of the chat's final message - can carry code, data or secrets the
+// chat printed. It goes to every channel except the public ntfy.sh server, where it is off unless
+// "excerpt": true. "excerpt": false turns it off everywhere.
+//
 // What the hook does with an armed session:
-//   Stop          send "<project>: <label> finished" plus the tail of the last message, then disarm.
-//                 A last message ending in a question is reported as waiting for an answer instead.
+//   Stop          send "<project>: <label> finished" plus the end of the last message, then disarm.
+//                 A last message ending in a question is reported as waiting for an answer instead, and
+//                 the marker stays: the work is not done, and the real finish still gets its message.
 //   StopFailure   the turn died on an API error: say so, keep the marker for the resumed chat.
 //   Notification  permission_prompt and the other "needs a person" kinds: one ping per five minutes,
 //                 marker kept, because the work is not done.
+//   A --next marker ignores Stop, StopFailure and Notification until the next prompt makes it live.
 //   SessionStart  source resume only. A message that was written but never delivered is sent now, and
 //                 a chat reopened before it finished is told, in context, to check whether the work is
 //                 already complete before it does anything else.
 //   UserPromptSubmit   turns a --next marker into a live one.
 //
-// Cost: the hook command in plugin.json only starts node when a marker file exists at all, so a session
-// nobody armed pays one `ls` per event and never a node start. A marker is removed on delivery; one
+// Cost: the hook command in plugin.json only starts node when a marker file exists in this config dir, so
+// a session nobody armed pays one shell glob per event and never a node start. A marker is removed on delivery; one
 // older than seven days is pruned at the next --arm, so a chat that died unreopened cannot keep that
 // guard open for good.
 //
 // A finish that could not be delivered - no channel yet, network down - stays on disk as the marker, and
 // goes out at the next chance: the chat reopening, or the setup wizard saving a channel.
+//
+// Network: a transient failure (network, 5xx, 429) is retried while the hook's time budget lasts - 15 s,
+// under the 20 s hook timeout, and 4 s at SessionStart, which the chat waits on.
 //
 // NOTIFY_DRY_RUN=<file> appends what would be sent to that file instead of sending. The self-test uses it.
 
@@ -61,11 +71,12 @@ const dir = join(home, 'makarasty');
 const configFile = join(dir, 'notify.json');
 const markerDir = join(dir, 'notify');
 const markerFile = (session) => join(markerDir, `${session}.json`);
+const validSession = (s) => typeof s === 'string' && /^[\w-]+$/.test(s); // a path would reach the config file
 const now = () => new Date().toISOString();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const readJSON = (file) => { try { return JSON.parse(readFileSync(file, 'utf8')); } catch { return null; } };
-const writeJSON = (file, o) => { mkdirSync(join(file, '..'), { recursive: true }); writeFileSync(file, JSON.stringify(o, null, 2) + '\n'); };
+const writeJSON = (file, o) => { mkdirSync(join(file, '..'), { recursive: true }); writeFileSync(file, JSON.stringify(o, null, 2) + '\n', { mode: 0o600 }); };
 
 // One shape on disk whatever the wizard or a hand wrote.
 function normalise(o) {
@@ -77,15 +88,38 @@ function normalise(o) {
   if (t && !/^https?:\/\//.test(t)) t = 'https://ntfy.sh/' + t;
   if (t) c.ntfy = t;
   if (o.webhook?.trim()) c.webhook = o.webhook.trim();
+  if (typeof o.excerpt === 'boolean') c.excerpt = o.excerpt;
   return c;
 }
 const config = () => normalise(readJSON(configFile) || {});
-const channels = (cfg) => Object.keys(cfg);
+const CHANNELS = ['telegram', 'discord', 'ntfy', 'webhook'];
+const channels = (cfg) => CHANNELS.filter((k) => cfg[k]);
+const withExcerpt = (cfg, name) => cfg.excerpt ?? !(name === 'ntfy' && /^https?:\/\/ntfy\.sh\//i.test(cfg.ntfy));
+
+// Every request shares one deadline, so retries can never outlast the hook's own timeout.
+let deadline = Infinity;
+const left = () => deadline - Date.now();
+
+// A transient failure (network, 5xx, 429) is retried up to twice; any other 4xx is the config's fault.
+async function post(url, body, headers) {
+  for (let i = 0; ; i++) {
+    const ms = Math.min(6000, left());
+    try {
+      if (ms < 500) throw Object.assign(new Error('out of time'), { final: true });
+      const r = await fetch(url, { method: 'POST', headers, body, signal: AbortSignal.timeout(ms) });
+      if (r.ok) return r;
+      const text = (await r.text()).slice(0, 200);
+      let why = text; try { why = JSON.parse(text).description || text; } catch { /* not JSON */ }
+      throw Object.assign(new Error(`${r.status} ${why}`), { final: r.status < 500 && r.status !== 429 });
+    } catch (e) {
+      if (e.final || i >= 2 || left() < 1500) throw e;
+      await sleep(1000);
+    }
+  }
+}
 
 async function telegram(token, method, body) {
-  const r = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body || {}), signal: AbortSignal.timeout(10000),
-  });
+  const r = await post(`https://api.telegram.org/bot${token}/${method}`, JSON.stringify(body || {}), { 'content-type': 'application/json' });
   const o = await r.json();
   if (!o.ok) throw new Error(o.description || `${r.status}`);
   return o.result;
@@ -99,26 +133,16 @@ async function telegramChat(token) {
   throw new Error('the bot has not heard from you yet: open it in Telegram, press Start, then try again');
 }
 
-// A transient failure is retried twice; a 4xx is the config's fault and is not.
-async function post(url, body, headers) {
-  for (let i = 0; ; i++) {
-    try {
-      const r = await fetch(url, { method: 'POST', headers, body, signal: AbortSignal.timeout(10000) });
-      if (!r.ok) { const e = new Error(`${r.status} ${(await r.text()).slice(0, 200)}`); e.final = r.status < 500; throw e; }
-      return;
-    } catch (e) {
-      if (e.final || i >= 2) throw e;
-      await sleep(2000);
-    }
-  }
-}
-
 // Returns { sent: [names], failed: [{ name, error }] }. Partial delivery counts as delivered. A Telegram
-// chat_id learnt on the way is written into cfg, and into the file when cfg came from it.
-async function sendWith(cfg, text, persist) {
+// chat_id learnt on the way is written into cfg, and into the file when cfg came from it. The excerpt goes
+// under the text on the channels withExcerpt allows.
+async function sendWith(cfg, text, persist, excerpt = '') {
+  const full = (name) => (excerpt && withExcerpt(cfg, name) ? `${text}\n${excerpt}` : text);
   const dry = process.env.NOTIFY_DRY_RUN;
   if (dry) {
-    try { appendFileSync(dry, text.replace(/\n/g, ' | ') + '\n'); return { sent: ['dry-run'], failed: [] }; }
+    const names = channels(cfg);
+    const line = excerpt && (!names.length || names.some((n) => withExcerpt(cfg, n))) ? `${text}\n${excerpt}` : text;
+    try { appendFileSync(dry, line.replace(/\n/g, ' | ') + '\n'); return { sent: ['dry-run'], failed: [] }; }
     catch (e) { return { sent: [], failed: [{ name: 'dry-run', error: e.message }] }; }
   }
   if (typeof fetch !== 'function') return { sent: [], failed: [{ name: 'node', error: 'node 18 or newer is needed' }] };
@@ -127,14 +151,14 @@ async function sendWith(cfg, text, persist) {
     telegram: async () => {
       const t = cfg.telegram;
       if (!t.chat_id) { t.chat_id = await telegramChat(t.token); if (persist) writeJSON(configFile, cfg); }
-      await telegram(t.token, 'sendMessage', { chat_id: t.chat_id, text: text.slice(0, 4000), disable_web_page_preview: true });
+      await telegram(t.token, 'sendMessage', { chat_id: t.chat_id, text: full('telegram').slice(0, 4000), disable_web_page_preview: true });
     },
     discord: () => post(cfg.discord.url, JSON.stringify({
-      content: (cfg.discord.everyone ? '@everyone ' : '') + text.slice(0, 1900),
+      content: (cfg.discord.everyone ? '@everyone ' : '') + full('discord').slice(0, 1900),
       allowed_mentions: { parse: cfg.discord.everyone ? ['everyone'] : [] },
     }), json),
-    ntfy: () => post(cfg.ntfy, text.slice(0, 4000), { Title: 'Claude Code', 'content-type': 'text/plain; charset=utf-8' }),
-    webhook: () => post(cfg.webhook, JSON.stringify({ text: text.slice(0, 4000) }), json),
+    ntfy: () => post(cfg.ntfy, full('ntfy').slice(0, 4000), { Title: 'Claude Code', 'content-type': 'text/plain; charset=utf-8' }),
+    webhook: () => post(cfg.webhook, JSON.stringify({ text: full('webhook').slice(0, 4000) }), json),
   };
   const names = channels(cfg);
   const results = await Promise.allSettled(names.map((n) => jobs[n]()));
@@ -143,7 +167,7 @@ async function sendWith(cfg, text, persist) {
   if (!names.length) out.failed.push({ name: 'config', error: `no channel yet: run "notify.mjs setup" in a terminal (${configFile})` });
   return out;
 }
-const send = (text) => sendWith(config(), text, true);
+const send = (text, excerpt) => sendWith(config(), text, true, excerpt);
 
 // Finishes that were written but never delivered, sent now. The wizard saving a channel and a reopened
 // chat both call this.
@@ -151,15 +175,21 @@ async function flushUnsent(cfg) {
   let files = []; try { files = readdirSync(markerDir).filter((f) => f.endsWith('.json')); } catch { return 0; }
   let n = 0;
   for (const f of files) {
-    const m = readJSON(join(markerDir, f));
+    const file = join(markerDir, f);
+    const m = readJSON(file);
     if (!m?.done) continue;
-    const r = await sendWith(cfg, `${m.text}\n(finished at ${m.done}; this could not be delivered at the time)`, false);
-    if (r.sent.length) { rmSync(join(markerDir, f), { force: true }); n++; }
+    const r = await sendWith(cfg, `${m.text}\n(${m.question ? 'asked' : 'finished'} at ${m.done}; this could not be delivered at the time)`, false, m.excerpt);
+    if (!r.sent.length) continue;
+    n++;
+    // A question that finally went out leaves the chat armed for its real finish.
+    if (m.question) { clearDone(m); writeJSON(file, m); } else rmSync(file, { force: true });
   }
   return n;
 }
 
-const tail = (s, n = 500) => s.replace(/\s+/g, ' ').trim().slice(0, n);
+// The END of the message: that is where a reply puts its verdict.
+const tail = (s, n = 500) => { const t = s.replace(/\s+/g, ' ').trim(); return t.length > n ? '...' + t.slice(-n) : t; };
+const clearDone = (m) => { for (const k of ['text', 'excerpt', 'done', 'question', 'unsent']) delete m[k]; };
 
 // The transcript is the fallback when the event carries no last_assistant_message. It is written
 // asynchronously, so it may lag; the field is preferred.
@@ -176,8 +206,9 @@ function lastFromTranscript(file) {
   return '';
 }
 
-function report(r) {
-  if (r.sent.length) console.log(`notify: sent to ${r.sent.join(', ')}`);
+// quiet: hook mode, where stdout is context the chat reads; there failures go to stderr and success is silent.
+function report(r, quiet) {
+  if (r.sent.length && !quiet) console.log(`notify: sent to ${r.sent.join(', ')}`);
   for (const f of r.failed) console.error(`notify: ${f.name} failed: ${f.error}`);
   return r.sent.length ? 0 : 1;
 }
@@ -186,10 +217,11 @@ async function hook() {
   let p = {};
   try { const raw = readFileSync(0, 'utf8'); p = raw ? JSON.parse(raw) : {}; } catch { return; }
   const session = p.session_id;
-  if (!session) return;
+  if (!validSession(session)) return;
   const file = markerFile(session);
   const m = readJSON(file);
   if (!m) return;
+  deadline = Date.now() + (p.hook_event_name === 'SessionStart' ? 4000 : 15000);
   const who = `${basename(m.cwd || p.cwd || process.cwd())}${m.label ? ': ' + m.label : ''}`;
 
   switch (p.hook_event_name) {
@@ -199,25 +231,31 @@ async function hook() {
     case 'Stop': {
       if (m.pending) return;
       const last = (p.last_assistant_message || lastFromTranscript(p.transcript_path) || '').trim();
-      const head = /\?\s*$/.test(last) ? `${who} is waiting for your answer` : `${who} finished`;
+      const question = /\?\s*$/.test(last);
+      const head = question ? `${who} is waiting for your answer` : `${who} finished`;
       const note = m.resumed ? ' (the chat had been reopened after an interruption)' : '';
-      m.text = `${head}${note}\n${tail(last)}`;
+      m.text = `${head}${note}`;
+      m.excerpt = tail(last);
       m.done = now();
+      if (question) m.question = true; else delete m.question;
       writeJSON(file, m); // durable before the network: a message that never arrives loses nothing
-      const r = await send(m.text);
-      if (r.sent.length) rmSync(file, { force: true });
-      else { m.unsent = r.failed; writeJSON(file, m); report(r); }
+      const r = await send(m.text, m.excerpt);
+      if (!r.sent.length) { m.unsent = r.failed; writeJSON(file, m); report(r, true); return; }
+      if (!question) { rmSync(file, { force: true }); return; }
+      clearDone(m); m.asked = now(); writeJSON(file, m); // a question is not the finish: stay armed
       return;
     }
     case 'StopFailure':
+      if (m.pending) return;
       m.failed = now(); writeJSON(file, m);
-      report(await send(`${who} stopped on an error: ${p.error || 'unknown'}. Reopen the chat to continue.`));
+      report(await send(`${who} stopped on an error: ${p.error || 'unknown'}. Reopen the chat to continue.`), true);
       return;
     case 'Notification': {
+      if (m.pending) return;
       if (!/^(permission_prompt|agent_needs_input|elicitation_dialog|elicitation_url_dialog)$/.test(p.notification_type || '')) return;
       if (m.waited && Date.now() - Date.parse(m.waited) < 5 * 60 * 1000) return;
       m.waited = now(); writeJSON(file, m);
-      report(await send(`${who} needs you: ${p.message || p.notification_type}`));
+      report(await send(`${who} needs you: ${p.message || p.notification_type}`), true);
       return;
     }
     case 'SessionStart': {
@@ -332,6 +370,7 @@ async function main() {
   const list = channels(config());
   const session = take('--session') || process.env.CLAUDE_CODE_SESSION_ID;
   if (!session) { console.error('notify: no session id. Run this inside the chat, or pass --session <id>.'); return 1; }
+  if (!validSession(session)) { console.error(`notify: "${session}" is not a session id (letters, digits, - and _ only)`); return 1; }
   const file = markerFile(session);
 
   if (cmd === '--status') {
