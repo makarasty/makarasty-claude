@@ -30,6 +30,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { execSync, spawnSync } from 'node:child_process';
+import { cal, FILE_RE } from '../hooks/run-dir.mjs';
 
 const args = process.argv.slice(2);
 const cmd = args[0];
@@ -54,17 +55,6 @@ const readJsonl = (p) => {
 const append = (p, obj) => fs.appendFileSync(p, JSON.stringify(obj) + '\n');
 const now = () => new Date().toISOString();
 
-// A constant a script reads cannot go stale the way one retyped into prose does, so both ceilings the
-// clustering applies live in calibration.json beside every other number this plugin acts on.
-const cal = (key, fallback) => {
-  for (const dir of [path.join(import.meta.dirname ?? '.', '..'), process.cwd()]) {
-    try {
-      const v = JSON.parse(fs.readFileSync(path.join(dir, 'calibration.json'), 'utf8'))[key];
-      if (typeof v === 'number') return v;
-    } catch { /* fall through to the default */ }
-  }
-  return fallback;
-};
 
 // ---------------------------------------------------------------------------------------------------
 // surface - the list of names this project has promised to somebody outside it.
@@ -161,9 +151,7 @@ const identifiers = (f) => {
   }
   return out;
 };
-// A path, not any dotted word: `scope.launch` is a call and `Commands.kt` is a file, and only an extension
-// this list knows separates them.
-const FILE_RE = /\b((?:[\w-]+[/\\])*[\w-]+\.(?:ts|tsx|js|jsx|mjs|cjs|vue|svelte|java|kt|kts|scala|go|rb|py|php|cs|rs|swift|sql|graphql|proto|ya?ml|toml|json|properties|css|scss|html))\b(?::\d+)?/gi;
+// FILE_RE lives in hooks/run-dir.mjs, so the fix queue's twins and these clusters read one spelling.
 const filesOf = (f) => new Set([...String(f.evidence || '').matchAll(FILE_RE)].map((x) => x[1].split('\\').join('/')));
 
 // Two ceilings, both of them the difference between a cause and a neighbourhood.
@@ -205,7 +193,10 @@ function cluster(runDir, queueDir) {
   }
 
   for (const f of take) {
-    for (const file of filesOf(f)) if (canon.has(file)) add(`file:${canon.get(file)}`, 'file', f);
+    // Canonicalise before adding: one finding citing `Timer.java` and `util/Timer.java` is one member, not
+    // two, or a two-finding root counts three and is filed as a hotspot.
+    const files = new Set([...filesOf(f)].filter((x) => canon.has(x)).map((x) => canon.get(x)));
+    for (const file of files) add(`file:${file}`, 'file', f);
     for (const id of identifiers(f)) add(`name:${id}`, 'name', f);
   }
 
@@ -361,21 +352,39 @@ say so, not to write a second fix for a defect that is gone.
 // mid-run once returned BUILD SUCCESSFUL over a tree whose fix had been reverted, and only a forced
 // rebuild found it. A green whose tree is identical to the red's proves nothing at all.
 function treeState(cwd) {
-  const git = (c) => { try { return execSync(c, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch { return ''; } };
-  const head = git('git rev-parse HEAD') || 'no-head';
+  const git = (c, input) => {
+    try {
+      return execSync(c, { cwd, encoding: 'utf8', input, maxBuffer: 256 * 1024 * 1024, stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'ignore'] });
+    } catch { return ''; }
+  };
+  const head = git('git rev-parse HEAD').trim() || 'no-head';
   // The run's own directory is excluded, or this never compares equal: recording the `before` proof writes
   // a file, so the tree has always moved by the time `after` reads it and the check that catches a green
   // built over unfixed code would pass every time.
-  const dirty = git('git status --porcelain -- . ":(exclude).fleet"');
-  return { head, digest: crypto.createHash('sha256').update(head + '\n' + dirty).digest('hex').slice(0, 16) };
+  //
+  // Contents, not names. `git status --porcelain` says ` M src/a.ts` for a half-made change and for the
+  // finished fix alike, so a fix landing in a file that was already dirty at `before` read as a tree that
+  // never moved. The diff against HEAD covers tracked files, and untracked ones are hashed without being
+  // written to the object store.
+  const scope = '-- . ":(exclude).fleet"';
+  const diff = git(`git diff HEAD --binary ${scope}`);
+  const untracked = git(`git ls-files -o --exclude-standard ${scope}`);
+  const blobs = untracked.trim() ? git('git hash-object --stdin-paths', untracked) : '';
+  const digest = crypto.createHash('sha256').update([head, diff, untracked, blobs].join('\n\0')).digest('hex').slice(0, 16);
+  return { head, digest };
 }
+
+// One command line from what followed `--`. A single argument is a command the caller already quoted and
+// runs as written; several are re-quoted, since joining them bare re-split `-t "login flow"` into two words.
+const commandLine = (args) => (args.length === 1 ? args[0]
+  : args.map((a) => (/^[\w@%+=:,./\\-]+$/.test(a) ? a : JSON.stringify(a))).join(' '));
 
 function prove(runDir, taskId, phase, command) {
   if (phase !== 'before' && phase !== 'after') usage();
   if (!command.length) die('nothing to run: put the reproduction after --');
   const claim = path.join(runDir, 'tasks', 'claimed', taskId);
   if (!fs.existsSync(claim)) die(`no claim at ${claim} - claim the task before proving it`);
-  const line = command.join(' ');
+  const line = commandLine(command);
   const r = spawnSync(line, { shell: true, stdio: 'inherit' });
   const st = treeState(process.cwd());
   const rec = { phase, exit: r.status === null ? 124 : r.status, when: now(), head: st.head, digest: st.digest, cmd: line };

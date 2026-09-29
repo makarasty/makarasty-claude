@@ -27,7 +27,9 @@ const SEV = ['blocker', 'major', 'minor', 'polish'];
 // The three files this script writes into the run directory. They are output, and a second merge that read
 // one back as a chip file would count its own backlog as findings.
 const GENERATED = ['backlog.jsonl', 'skipped.jsonl', 'unreached.jsonl'];
-const read = (f) => fs.readFileSync(path.join(runDir, f), 'utf8').split('\n').filter(Boolean);
+// A blank or whitespace-only line (a stray `\r`, an editor's trailing newline) is no finding and no torn
+// one either; counting it torn refused the whole merge over nothing.
+const read = (f) => fs.readFileSync(path.join(runDir, f), 'utf8').split('\n').filter((l) => l.trim());
 const rows = (f) => (fs.existsSync(path.join(runDir, f)) ? read(f).map((l) => JSON.parse(l)) : []);
 const key = (o) =>
   `${String(o.area || '').toLowerCase().trim()}|${String(o.observed || '').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60)}`;
@@ -210,9 +212,18 @@ if (cmd === 'fixqueue') {
   const merged = read('backlog.jsonl').map((l) => JSON.parse(l));
   const take = merged.filter((m) => m.severity === 'blocker' || m.severity === 'major');
   const dir = path.join(path.dirname(path.resolve(runDir)), `fix-${runId}`, 'tasks', 'ready');
+  // Tasks are numbered by backlog position, so a second fixqueue over a re-merged backlog would write
+  // `task-003-*` for another finding beside the old one, and overwrite the `after:` gates `fleet-gate.mjs
+  // cluster` put on the members while its root task stays. Refuse rather than mix two generations.
+  if (fs.existsSync(dir) && fs.readdirSync(dir).some((f) => f.endsWith('.md'))) {
+    console.error(`REFUSED: ${dir} already holds tasks. Remove ${path.dirname(path.dirname(dir))} to write the queue again.`);
+    process.exit(1);
+  }
   fs.mkdirSync(dir, { recursive: true });
-  // Twins: entries whose evidence names the same file are one seam, so they carry each other's ids.
-  const fileOf = (m) => [...String(m.evidence).matchAll(/([\w./-]+\.(?:ts|tsx|vue|js|mjs|sql|rules))/g)].map((x) => x[1]);
+  // Twins: entries whose evidence names the same file are one seam, so they carry each other's ids. Read
+  // only here, so a merge run from a copy of this file (the selftest's sabotaged ones) never needs it.
+  const { FILE_RE } = await import('../hooks/run-dir.mjs');
+  const fileOf = (m) => [...String(m.evidence || '').matchAll(FILE_RE)].map((x) => x[1].split('\\').join('/'));
   const byFile = new Map();
   for (const m of take) for (const f of fileOf(m)) byFile.set(f, [...(byFile.get(f) || []), m.id]);
   take.forEach((m, i) => {

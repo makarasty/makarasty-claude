@@ -17,22 +17,14 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { findRuns } from './run-dir.mjs';
+import { findRuns, cal } from './run-dir.mjs';
 
 const bail = () => process.exit(0);
 
 // How long after a claim this hook still treats silence as death. Past it, a quiet claim is long work and
 // belongs to the planner's sweep. Read from calibration.json so it has one spelling, like every other
 // constant here.
-const windowMin = (() => {
-  for (const dir of [path.join(import.meta.dirname ?? '.', '..'), process.cwd()]) {
-    try {
-      const v = JSON.parse(fs.readFileSync(path.join(dir, 'calibration.json'), 'utf8')).hook_claim_window_minutes;
-      if (typeof v === 'number') return v;
-    } catch { /* fall through to the default */ }
-  }
-  return 10;
-})();
+const windowMin = cal('hook_claim_window_minutes', 10);
 
 let payload = {};
 try {

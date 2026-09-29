@@ -20,9 +20,10 @@
 // shell call would otherwise pay for a process spawn.
 
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { findRuns, chipOf } from './run-dir.mjs';
+import { findRuns, chipOf, rel } from './run-dir.mjs';
 
 const bail = () => process.exit(0);
 
@@ -37,22 +38,39 @@ const input = payload.tool_input || {};
 const session = payload.session_id || process.env.CLAUDE_CODE_SESSION_ID || '';
 if (!session) bail();
 
-const BROWSER = /^mcp__.*[Bb]rowser__(navigate|preview_start|browser_batch|computer)$/;
-if (tool !== 'Bash' && !BROWSER.test(tool)) bail();
+// Both shell tools: on Windows the PowerShell tool is often the primary one, and a suite run through it
+// costs the machine exactly what the same run through Bash does. `preview_start` is deliberately absent:
+// the refusal below tells the worker to reopen a pane with it, so refusing it would be a loop.
+const SHELL = tool === 'Bash' || tool === 'PowerShell';
+const BROWSER = /^mcp__(.*[Bb]rowser|claude-in-chrome)__(navigate|browser_batch|computer)$/;
+if (!SHELL && !BROWSER.test(tool)) bail();
 
-// A whole-repository run of one of these. The scoping arguments are the ones that make it bounded: a path,
-// a project, a name filter, or the changed set. `--watch` is excluded because a watcher is the operator's
-// own long-running process and refusing it mid-run helps nobody.
-const RUNNERS = /\b(vitest|jest|pytest|vue-tsc|tsc|gradlew?|mvn|cargo\s+test|go\s+test|npm\s+(run\s+)?test|pnpm\s+(run\s+)?test|yarn\s+test)\b/;
-const SCOPED = /(--changed|--project|--testPathPattern|--test-name-pattern|-t\s|--tests\s|--watch|--related|\.(test|spec)\.[jt]sx?|\/[\w.-]+\.(ts|tsx|js|py|kt|java)\b|--noEmit\s+[^-])/;
+// A whole-repository run of one of these, in command position: `cat vitest.config.ts`, `npm i -D vitest`
+// and a commit message that mentions jest name a runner without running one. The scoping arguments are the
+// ones that make it bounded: a path, a project, a name filter, or the changed set. `--watch` is excluded
+// because a watcher is the operator's own long-running process - but `--watch=false` is a full run.
+const RUNNERS = /(?:^|[;&|(]|\bthen|\bdo)\s*(?:[A-Z_][A-Z0-9_]*=\S*\s+)*(?:(?:npx|bunx|pnpm\s+(?:exec|dlx)|yarn(?:\s+run)?|python3?\s+-m)\s+(?:--?[\w-]+(?:=\S+)?\s+)*)?(vitest|jest|pytest|vue-tsc|tsc|(?:\.[\\/])?gradlew(?:\.bat)?|gradle|mvn|cargo\s+test|go\s+test|(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?test)(?![\w.-])/;
+const SCOPED = /(--changed|--project|--filter|--testPathPattern|--test-name-pattern|(?:^|\s)-[tp]\s|--tests\s|--watch(?:All)?(?!=false)\b|--related|\.(test|spec)\.[jt]sx?|[\\/][\w.-]+\.(ts|tsx|js|py|kt|java)\b|--noEmit\s+[^-])/;
 
-const cmd = tool === 'Bash' ? String(input.command || '') : '';
-if (tool === 'Bash' && (!RUNNERS.test(cmd) || SCOPED.test(cmd))) bail();
+const cmd = SHELL ? String(input.command || '') : '';
+if (SHELL && (!RUNNERS.test(cmd) || SCOPED.test(cmd))) bail();
 
 const { fleetDir, runs } = findRuns(payload.cwd || process.cwd());
 if (!fleetDir) bail();
 const { run, chip } = chipOf(runs, session);
 if (!run || !chip) bail();
+
+// A browser action is not rare the way a full suite is: every click and screenshot lands here, and the
+// census costs two PowerShell spawns - 0.7 s on an idle box, past its own timeout on a paging one. Free
+// physical memory is one stdlib call, and the census cannot call the box tight while it is above the
+// release line. `FLEET_LOAD` skips this, since a stub census is the only way to test the refusal.
+const CLEAR_GB = 4;
+if (BROWSER.test(tool) && !process.env.FLEET_LOAD && os.freemem() / 2 ** 30 >= CLEAR_GB) bail();
+
+// A browser refusal is said once per session, like the one for a suite below: a worker refused on every
+// click stops reading the reason and starts working around it.
+const browserOnce = path.join(run, 'chips', `${session}.browser-warned`);
+if (BROWSER.test(tool) && fs.existsSync(browserOnce)) bail();
 
 // Only now, with a fleet worker about to do something expensive, is the census worth its spawn.
 //
@@ -73,16 +91,11 @@ if (loader) {
   } catch { /* a census that will not answer is not a reason to block work */ }
 }
 
-// A relative path that climbs out of the tree is worse than the absolute one it saved characters on.
-const rel = (d) => {
-  const r = path.relative(process.cwd(), d);
-  return !r || r.startsWith('..') ? d.split(path.sep).join('/') : r.split(path.sep).join('/');
-};
-
 const say = (msg) => { process.stderr.write(msg + '\n'); process.exit(2); };
 
 if (BROWSER.test(tool)) {
   if (!census || !census.tight) bail();
+  try { fs.writeFileSync(browserOnce, new Date().toISOString()); } catch { bail(); }
   const heaviest = census.groups?.['browser pane or window']?.maxMB;
   say(
     `The machine is down to ${census.freeGB} GB free and this session is driving a browser pane` +
@@ -90,7 +103,7 @@ if (BROWSER.test(tool)) {
     `A pane holds its renderer until the tab is closed, and a reload returns none of it - one tab measured ` +
     `132 MB empty and 2,061 MB after a large page [M34]. Close the pane, then do this again:\n\n` +
     `  tabs_close on every tab of yours, then preview_start when you next need one.\n\n` +
-    `Reopening costs a second and a login. Holding it costs the fleet.`
+    `Reopening costs a second and a login. Holding it costs the fleet. This will not be raised again in this session.`
   );
 }
 
@@ -125,7 +138,7 @@ if (fs.existsSync(once)) bail();
 try { fs.writeFileSync(once, new Date().toISOString()); } catch { bail(); }
 
 say(
-  `A full run of \`${(cmd.match(RUNNERS) || [''])[0].trim()}\` is the whole machine, and the machine is not free right now` +
+  `A full run of \`${(cmd.match(RUNNERS) || [])[1] || 'the suite'}\` is the whole machine, and the machine is not free right now` +
   (census ? `: ${census.freeGB} GB left` : '') +
   (live ? `, with ${live} typecheck or test process(es) already running` : '') + `.\n\n` +
   `Scope it, or claim the verify lane. The verify lane is one worker wide and it exists for this:\n\n` +

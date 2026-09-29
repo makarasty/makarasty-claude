@@ -40,9 +40,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
-
-const here = path.dirname(fileURLToPath(import.meta.url));
+import { cal } from '../hooks/run-dir.mjs';
 const argv = process.argv.slice(2);
 const cmd = argv[0], target = argv[1];
 const opt = (name, dflt) => { const i = argv.indexOf('--' + name); return i >= 0 && i + 1 < argv.length ? argv[i + 1] : dflt; };
@@ -59,18 +57,8 @@ const DEFAULT_FRAME = { w: 1440, h: 900 };
 const GAP_X = 120, GAP_Y = 160, PER_ROW = 3;
 const EMOJI_RE = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{1F000}-\u{1F2FF}]/u;
 
-// Constants live in calibration.json beside this checkout or in an installed copy, never retyped here.
-function cal(key, dflt) {
-  const candidates = [path.join(here, '..', 'calibration.json')];
-  try {
-    const cache = path.join(os.homedir(), '.claude', 'plugins', 'cache');
-    for (const m of fs.readdirSync(cache)) for (const p of fs.readdirSync(path.join(cache, m)).filter((x) => x === 'makarasty'))
-      for (const v of fs.readdirSync(path.join(cache, m, p))) candidates.push(path.join(cache, m, p, v, 'calibration.json'));
-  } catch { /* no cache */ }
-  const existing = candidates.filter((c) => fs.existsSync(c)).sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
-  for (const c of existing) { try { const v = JSON.parse(fs.readFileSync(c, 'utf8'))[key]; if (typeof v === 'number') return v; } catch { /* next */ } }
-  return dflt;
-}
+// Constants live in calibration.json beside the running plugin, never retyped here and never taken from a
+// cache snapshot that happens to be newer by mtime (e774c09) - `cal` reads the sibling first.
 const GATE = cal('frame_gate_min_fps', 60);
 
 // ---------------------------------------------------------------------------------------------------

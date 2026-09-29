@@ -75,16 +75,30 @@ function posix() {
 
 // Which process is which. The agent host is the only one that needs classifying by argument: one OS
 // process per session, one renderer per displayed browser pane, and the rest is the app's own scaffolding.
-const HOSTS = /^(claude|Claude|electron|Code)(\.exe)?$/;
+//
+// A host can be installed under a renamed copy (`Claude-dev2.exe` on the box this was measured on), so the
+// name is a prefix. Toolchains are read only off node processes and only as whole path segments: a
+// Chromium renderer's command line carries feature strings like "Android emulator is disabled", and
+// `--tsconfig` is not `tsc` - either one used to put a 600 MB pane or a dev server into the wrong row, and a
+// phantom typecheck row makes the memory hook refuse a full run on a machine with room for it.
+const HOSTS = /^(claude[\w-]*|electron|code)(\.exe)?$/i;
+const seg = (names) => new RegExp(`(^|[\\\\/\\s"'])(${names})(\\.(c|m)?js|\\.cmd)?(?=[\\\\/\\s"']|$)`);
+const VITE = seg('vite|esbuild'), TSC = seg('tsc|vue-tsc'), TESTS = seg('vitest|jest|jest-worker'), EMU = /firebase|emulators?:/;
 function classify(p) {
   const cmd = p.CommandLine || '';
-  if (!HOSTS.test(p.Name || '')) {
-    if (/vite|esbuild/.test(cmd)) return 'toolchain: vite';
-    if (/tsc|vue-tsc/.test(cmd)) return 'toolchain: typecheck';
-    if (/vitest|jest/.test(cmd)) return 'toolchain: tests';
-    if (/firebase|emulator|java/.test(cmd)) return 'toolchain: emulator';
-    if (/^node/.test(p.Name || '')) return 'node, other';
-    return null;
+  const name = p.Name || '';
+  if (!HOSTS.test(name)) {
+    if (/^esbuild(\.exe)?$/i.test(name)) return 'toolchain: vite';
+    if (/^(java|javaw|qemu[\w-]*|emulator[\w-]*)(\.exe)?$/i.test(name)) return 'toolchain: emulator';
+    if (!/^node(\.exe)?$/i.test(name)) return null;
+    if (VITE.test(cmd)) return 'toolchain: vite';
+    // A language server or a watcher is resident, not a run: `tsc --lsp` sat under the typecheck row on
+    // the box this was measured on and would have refused every full run for as long as the editor was open.
+    if ((TSC.test(cmd) || TESTS.test(cmd)) && /["\s]--(lsp|watch\w*)\b(?!["=]?false)/.test(cmd)) return 'toolchain: resident';
+    if (TSC.test(cmd)) return 'toolchain: typecheck';
+    if (TESTS.test(cmd)) return 'toolchain: tests';
+    if (EMU.test(cmd)) return 'toolchain: emulator';
+    return 'node, other';
   }
   const t = cmd.match(/--type=([a-zA-Z-]+)/);
   if (!t) return 'agent session';           // no --type: one per chat session

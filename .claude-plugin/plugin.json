@@ -1,7 +1,7 @@
 {
   "name": "makarasty",
   "description": "Run one mission across several Claude Code sessions at once, with a gate between what a run finds and what it changes. Workers hold their own context and browser, gate what they can actually see, and report by writing files.",
-  "version": "1.5.0",
+  "version": "1.5.2",
   "author": {
     "name": "makarasty",
     "url": "https://github.com/makarasty"
@@ -21,7 +21,7 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "matcher": "Edit|Write|MultiEdit",
         "hooks": [
           {
             "type": "command",
@@ -32,7 +32,7 @@
         ]
       },
       {
-        "matcher": "Bash|mcp__.*[Bb]rowser__(navigate|preview_start|browser_batch|computer)",
+        "matcher": "^(Bash|PowerShell)$|^mcp__(.*[Bb]rowser|claude-in-chrome)__(navigate|browser_batch|computer)$",
         "hooks": [
           {
             "type": "command",

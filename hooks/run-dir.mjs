@@ -13,6 +13,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { execSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 // Every spelling of one directory this host might hand us.
 function spellings(dir) {
@@ -77,3 +78,32 @@ export function chipOf(runs, session) {
   }
   return { run: null, chip: null };
 }
+
+// ---------------------------------------------------------------------------------------------------
+// The helpers the hooks and the scripts beside them share, so each rule keeps one spelling.
+
+const pluginRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
+
+// A number this plugin acts on, from calibration.json. The copy beside this code comes first: a cache
+// snapshot or a working directory never outranks the plugin that is actually running (e774c09).
+export function cal(key, fallback) {
+  for (const dir of [pluginRoot, process.cwd()]) {
+    try {
+      const v = JSON.parse(fs.readFileSync(path.join(dir, 'calibration.json'), 'utf8'))[key];
+      if (typeof v === 'number') return v;
+    } catch { /* fall through to the next copy, then the default */ }
+  }
+  return fallback;
+}
+
+// A path as a person should type it: relative when it sits under the working directory, absolute with
+// forward slashes when a relative one would have to climb out of the tree.
+export function rel(d) {
+  const r = path.relative(process.cwd(), d);
+  return !r || r.startsWith('..') || path.isAbsolute(r) ? d.split(path.sep).join('/') : r.split(path.sep).join('/');
+}
+
+// A source file named in evidence. A path, not any dotted word: `scope.launch` is a call and `Commands.kt`
+// is a file, and only an extension this list knows separates them. Either separator, and the extension has
+// to end the name, or `Button.tsx` reads as `Button.ts` and `app.json` as `app.js`.
+export const FILE_RE = /\b((?:[\w-]+[/\\])*[\w-]+\.(?:ts|tsx|js|jsx|mjs|cjs|vue|svelte|java|kt|kts|scala|go|rb|py|php|cs|rs|swift|sql|rules|graphql|proto|ya?ml|toml|json|properties|css|scss|html))\b(?::\d+)?/gi;

@@ -67,7 +67,7 @@ else if (!Object.keys(doneAt).length) console.error(`no .done or .blocked marker
 // `fix-2026-09-08-full-audit` and charges them against the parent run's completion markers, which is where
 // this project's telemetry got its 1935 minutes of life after done.
 const WHOLE_RUN = new RegExp(`(^|[^\\w-])${run.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^\\w-])`);
-const BROWSER = /^mcp__.*[Bb]rowser__/;
+const BROWSER = /^mcp__(.*[Bb]rowser|claude-in-chrome)__/;
 const rows = [];
 let unattributed = 0;
 
@@ -237,7 +237,6 @@ if (sum('limitFails')) console.log(`${sum('limitFails')} tool calls failed on a 
 // panes the next run should open, and it cannot be guessed from the task list.
 const paneRows = rows.filter((r) => r.lane === 'pane' && r.spans.length);
 if (paneRows.length) {
-  const start = Math.min(...rows.map((r) => r.spans[0]?.[0] ?? Infinity, ...[Infinity]));
   const lo = Math.min(...paneRows.map((r) => r.spans[0][0]));
   const hi = Math.max(...paneRows.map((r) => r.spans[r.spans.length - 1][1]));
   const hist = {}; let n = 0;
@@ -253,5 +252,4 @@ if (paneRows.length) {
     console.log(`  ${k} pane(s) driven at once: ${hist[k]} min (${Math.round(100 * hist[k] / n)}%)`);
   }
   console.log(`  that is ${(drivenTotal / ((hi - lo) / 60000)).toFixed(2)} panes' worth of demand; open that many next time, plus one`);
-  void start;
 }

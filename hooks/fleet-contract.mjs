@@ -24,7 +24,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { findRuns, chipOf } from './run-dir.mjs';
+import { findRuns, chipOf, rel } from './run-dir.mjs';
 
 const bail = () => process.exit(0);
 
@@ -35,13 +35,13 @@ try {
 } catch { bail(); }
 
 const tool = payload.tool_name || '';
-if (!/^(Edit|Write|MultiEdit|NotebookEdit)$/.test(tool)) bail();
+if (!/^(Edit|Write|MultiEdit)$/.test(tool)) bail();
 
 const session = payload.session_id || process.env.CLAUDE_CODE_SESSION_ID || '';
 if (!session) bail();
 
 const input = payload.tool_input || {};
-const target = input.file_path || input.notebook_path || '';
+const target = input.file_path || '';
 
 const { fleetDir, runs } = findRuns(payload.cwd || process.cwd());
 if (!fleetDir) bail();
@@ -53,7 +53,7 @@ if (!run || !chip) bail();
 let surface = [];
 try {
   surface = fs.readFileSync(path.join(fleetDir, 'contract-surface.txt'), 'utf8')
-    .split('\n')
+    .split(/\r?\n/) // the file is committed, and a checkout with autocrlf hands it back with CRLF
     .filter((l) => l && !l.startsWith('#'))
     .map((l) => { const [kind, token] = l.split('\t'); return { kind, token }; })
     .filter((s) => s.token);
@@ -62,14 +62,29 @@ if (!surface.length) bail();
 
 // A name is at risk when the edit removes it from the text it was in. Present on both sides is a line being
 // worked around it; present on neither is an edit that never touched it.
+//
+// Whole files are compared, not the edit's two fragments: a narrow `old_string` - `/status'` becoming
+// `/statistics'` - never holds the whole token, so its fragments say nothing was removed. The fragments are
+// only the fallback, for a file this cannot read or one that does not hold the text the edit names.
+let existing = null;
+try { existing = fs.readFileSync(path.resolve(payload.cwd || process.cwd(), target), 'utf8'); } catch { /* new, or unreadable */ }
+
+// One replacement the way the Edit tool makes it; null when the text does not hold `old_string`.
+const apply = (text, { old_string: o = '', new_string: n = '', replace_all: all } = {}) => {
+  if (text === null || !o || !text.includes(o)) return null;
+  return all ? text.split(o).join(n) : text.replace(o, () => n);
+};
+
 const sides = [];
-if (tool === 'Edit') sides.push([input.old_string || '', input.new_string || '']);
-else if (tool === 'MultiEdit') for (const e of input.edits || []) sides.push([e.old_string || '', e.new_string || '']);
-else if (tool === 'Write') {
-  let existing = '';
-  try { existing = fs.readFileSync(target, 'utf8'); } catch { bail(); } // a new file promises nothing yet
+if (tool === 'Write') {
+  if (existing === null) bail(); // a new file promises nothing yet
   sides.push([existing, input.content || '']);
-} else bail();
+} else {
+  const edits = tool === 'Edit' ? [input] : input.edits || [];
+  const after = edits.reduce(apply, existing);
+  if (after !== null) sides.push([existing, after]);
+  else for (const e of edits) sides.push([e.old_string || '', e.new_string || '']);
+}
 
 // Every kind needs its end guarded, not only identifiers. A plain substring count says `/api/server/status`
 // survived an edit that replaced it with `/api/server/statistics`, which is the rename most likely to be
@@ -115,17 +130,17 @@ const first = unaccounted.find((s) => {
 });
 if (!first) bail();
 
-const rel = path.relative(process.cwd(), run).split(path.sep).join('/') || run;
+const runPath = rel(run);
 process.stderr.write(
   `This edit removes \`${first.token}\` from ${path.basename(target) || 'the file'}, and that name is on this project's ` +
   `contract surface as a ${first.kind}: something outside this repository may be reading it. ` +
   `Nothing here says you are wrong - it says nobody outside your context knows yet.\n\n` +
   `Take one of the two, then make the edit again:\n\n` +
   `  Ask, if a person's answer would change what you do:\n` +
-  `    write ${rel}/ask/${chip}-<n>.md naming ${first.token}, what breaks, and your recommendation, then take another task\n\n` +
+  `    write ${runPath}/ask/${chip}-<n>.md naming ${first.token}, what breaks, and your recommendation, then take another task\n\n` +
   `  Decide, if it would not:\n` +
   `    echo '{"token":"${first.token}","why":"<why this is safe, and what would have to be true for it not to be>"}' |\n` +
-  `      node <plugin>/scripts/fleet-gate.mjs decide ${rel} ${chip}\n\n` +
+  `      node <plugin>/scripts/fleet-gate.mjs decide ${runPath} ${chip}\n\n` +
   `Both are one line and both put the change in front of the operator before the run lands. ` +
   `Either one lets this edit through; this name will not be raised again in this session.\n`
 );
