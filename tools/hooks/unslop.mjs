@@ -27,6 +27,9 @@ if (arg === '--enable') {
   console.log('unslop: off');
 } else if (arg === '--status') {
   console.log(existsSync(stateFile) ? 'unslop: on' : 'unslop: off');
+} else if (arg !== undefined) {
+  console.error('usage: node unslop.mjs [--enable | --disable | --status]');
+  process.exit(1);
 } else if (existsSync(stateFile)) {
   process.stdout.write(rules());
 }

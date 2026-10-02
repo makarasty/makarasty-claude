@@ -1,7 +1,7 @@
 #!/bin/sh
 # notify-selftest.sh - the notifier against a temporary config dir and a dry-run sink. No outside network,
-# no tokens, about six seconds (four of them the SessionStart time budget against a local server that never
-# answers). It feeds the hook the events Claude Code would, through the exact commands plugin.json runs,
+# no tokens, about fifteen seconds (four of them the SessionStart time budget against a local server that
+# never answers, three a local server that answers slowly, three the wait a Stop with a transcript makes). It feeds the hook the events Claude Code would, through the exact commands plugin.json runs,
 # drives the wizard through a pipe, and asserts what reached the sink and what stayed on disk. The unslop
 # switch and its SessionStart hook are checked at the end.
 #
@@ -64,14 +64,19 @@ hook '{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"once
 count "the next Stop sends nothing" 2
 
 echo
-echo "a question is reported as waiting"
+echo "a question still finishes the arming"
 node "$n" --arm >/dev/null
 hook '{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"Should I delete the old branch?"}'
-check "a last message ending in ? is waiting for an answer" "is waiting for your answer" "$(tail -1 "$sink")"
-[ -e "$marker" ] && ok "and the marker stays for the real finish" || bad "and the marker stays for the real finish"
+check "a last message ending in ? says finished, with a question" "finished, with a question for you" "$(tail -1 "$sink")"
+check "and carries the question" "Should I delete the old branch?" "$(tail -1 "$sink")"
+[ -e "$marker" ] && bad "and consumes the marker: one message per arming" || ok "and consumes the marker: one message per arming"
+node "$n" --arm >/dev/null
+hook '{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"All done. Want me to **push**?)`"}'
+check "markdown after the ? still reads as a question" "with a question for you" "$(tail -1 "$sink")"
+node "$n" --arm >/dev/null
 long="start-of-reply $(printf 'x%.0s' $(seq 1 600)) VERDICT: all green"
 hook "{\"hook_event_name\":\"Stop\",\"session_id\":\"s1\",\"last_assistant_message\":\"$long\"}"
-check "the answered chat's finish still sends" "finished | ..." "$(tail -1 "$sink")"
+check "a plain finish sends" "finished | ..." "$(tail -1 "$sink")"
 check "with the END of a long message" "VERDICT: all green" "$(tail -1 "$sink")"
 case "$(tail -1 "$sink")" in *start-of-reply*) bad "and not its start";; *) ok "and not its start";; esac
 
@@ -82,10 +87,10 @@ check "status says next turn" "for the next turn" "$(node "$n" --status)"
 hook '{"hook_event_name":"Notification","session_id":"s1","notification_type":"permission_prompt","message":"arming turn"}'
 hook '{"hook_event_name":"StopFailure","session_id":"s1","error":"overloaded"}'
 hook '{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"armed"}'
-count "the arming turn's prompt, error and Stop send nothing" 4
+count "the arming turn's prompt, error and Stop send nothing" 5
 hook '{"hook_event_name":"UserPromptSubmit","session_id":"s1","prompt":"go"}'
 hook '{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"went"}'
-count "the next turn's Stop sends" 5
+count "the next turn's Stop sends" 6
 check "with the label" "later finished" "$(tail -1 "$sink")"
 
 echo
@@ -95,9 +100,9 @@ NOTIFY_DRY_RUN="$tmp/no/such/dir/sink" hook '{"hook_event_name":"Stop","session_
 [ -e "$marker" ] && ok "an undelivered message keeps the marker" || bad "an undelivered message keeps the marker"
 check "with the text written before the send" '"done"' "$(cat "$marker" 2>/dev/null)"
 hook '{"hook_event_name":"SessionStart","session_id":"s1","source":"startup"}'
-count "a plain startup resends nothing" 5
+count "a plain startup resends nothing" 6
 hook '{"hook_event_name":"SessionStart","session_id":"s1","source":"resume"}'
-count "a resume resends it" 6
+count "a resume resends it" 7
 check "and says when it had finished" "could not be delivered at the time" "$(tail -1 "$sink")"
 [ -e "$marker" ] && bad "and consumes the marker" || ok "and consumes the marker"
 
@@ -110,7 +115,7 @@ check "an API error is reported" "stopped on an error: rate_limit" "$(tail -1 "$
 out=$(hook '{"hook_event_name":"SessionStart","session_id":"s1","source":"resume","seconds_since_last_response":5400}')
 check "a resume before the finish tells the chat to check its work" "check whether the task it was on is already complete" "$out"
 check "and how long it was gone" "90 minutes" "$out"
-count "and sends nothing itself" 7
+count "and sends nothing itself" 8
 hook '{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"The migration had already run; nothing left to do."}'
 check "the finish after a reopen says so" "reopened after an interruption" "$(tail -1 "$sink")"
 
@@ -134,6 +139,118 @@ node "$n" --arm the secret >/dev/null
 hook '{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"API_KEY=abc123"}'
 check "the head still goes out" "the secret finished" "$(tail -1 "$sink")"
 case "$(tail -1 "$sink")" in *API_KEY*) bad "but ntfy.sh gets no excerpt by default";; *) ok "but ntfy.sh gets no excerpt by default";; esac
+for u in https://www.ntfy.sh/selftest https://ntfy.sh:443/selftest https://ntfy.sh./selftest https://NTFY.SH/selftest; do
+  printf '{"ntfy":"%s"}\n' "$u" > "$conf"
+  node "$n" --arm the secret >/dev/null
+  hook '{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"API_KEY=abc123"}'
+  case "$(tail -1 "$sink")" in *API_KEY*) bad "nor does $u, the same server";; *) ok "nor does $u, the same server";; esac
+done
+
+echo
+echo "config values that are not URLs"
+printf '{"webhook":"hooks.slack.com/services/T0/B0/SECRETSECRET","discord":{"url":42},"telegram":{"token":["x"]},"ntfy":"https://ntfy.sh/selftest","excerpt":true}\n' > "$conf"
+out=$(node "$n" --test 2>&1); rc=$?
+code "values of the wrong type do not crash it" 0 "$rc"
+check "a webhook with no scheme is named" "the webhook value is not an http(s) URL" "$out"
+case "$out" in *SECRETSECRET*) bad "and its value is never printed" "$out";; *) ok "and its value is never printed";; esac
+check "the good channel still sends" "sent to dry-run" "$out"
+printf '{"ntfy":{"url":"https://ntfy.example.com/SECRETTOPIC"},"discord":{"url":42},"telegram":{"token":["x"]}}\n' > "$conf"
+out=$(node "$n" --status 2>&1)
+check "a channel written as an object, not a string, is named" "the ntfy value is not a string" "$out"
+check "and so is a discord url that is not a string" "the discord url value is not a string" "$out"
+check "and a telegram token that is not a string" "the telegram token value is not a string" "$out"
+case "$out" in *SECRETTOPIC*) bad "with no value printed" "$out";; *) ok "with no value printed";; esac
+
+echo
+echo "a marker file Windows holds for a moment (EPERM on rename or read)"
+# notify.mjs loaded in one process with node:fs's renameSync and readFileSync swapped for ones that fail
+# with EPERM a set number of times, the way a second writer or an antivirus scan makes them fail.
+flaky(){ node --input-type=module -e '
+const { readFileSync } = await import("node:fs");
+const [file, marker] = process.argv.slice(1);
+const src = readFileSync(file, "utf8").replace(/^main\(\)\.then.*$/m, "")
+  .replace(/^import \{[^}]*\} from .node:fs.;$/m, (l) => l.replace(/\breadFileSync\b/, "readFileSync as realRead").replace(/\brenameSync\b/, "renameSync as realRename"));
+const harness = `let rf = +process.env.RENAME_FAILS, rd = +process.env.READ_FAILS;
+const eperm = () => Object.assign(new Error("busy"), { code: "EPERM" });
+const renameSync = (a, b) => { if (rf-- > 0) throw eperm(); return realRename(a, b); };
+const readFileSync = (f, e) => { if (f === ${JSON.stringify(marker)} && rd-- > 0) throw eperm(); return realRead(f, e); };
+`;
+await import("data:text/javascript," + encodeURIComponent(src.replace(/^(import [^\n]*\n)+/m, (i) => i + harness) + `
+writeJSON(${JSON.stringify(marker)}, { armed: "x" });
+console.log(JSON.stringify(readJSON(${JSON.stringify(marker)})));`));' "$(cygpath -m "$n" 2>/dev/null || echo "$n")" "$(cygpath -m "$1" 2>/dev/null || echo "$1")"; }
+fl="$tmp/flaky"; mkdir -p "$fl"
+out=$(RENAME_FAILS=3 READ_FAILS=1 flaky "$fl/a.json" 2>&1)
+check "a rename refused three times lands on a retry, and a read refused once is retried" '{"armed":"x"}' "$out"
+out=$(RENAME_FAILS=99 READ_FAILS=0 flaky "$fl/b.json" 2>&1)
+check "a rename refused for good falls back to writing in place" '{"armed":"x"}' "$out"
+[ "$(ls "$fl" | tr '\n' ' ')" = "a.json b.json " ] && ok "and no temp file is left behind" || bad "and no temp file is left behind" "$(ls "$fl")"
+out=$(RENAME_FAILS=0 READ_FAILS=2 flaky "$fl/c.json" 2>&1)
+check "a read refused twice reads as not armed, not as a crash" 'null' "$out"
+
+echo
+echo "not a finish yet"
+printf '{"ntfy":"https://ntfy.sh/selftest","excerpt":true}\n' > "$conf"
+node "$n" --arm the job >/dev/null
+b=$(lines)
+hook '{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"Started it in the background.","background_tasks":[{"id":"b1","status":"running"}],"session_crons":[]}'
+hook '{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"Looping.","background_tasks":[],"session_crons":[{"id":"c1"}]}'
+count "a Stop with a background job or a loop sends one pause message, not a finish" "$((b + 1))"
+check "which says paused and how many jobs" "the job paused: 1 background job still running" "$(tail -1 "$sink")"
+[ -e "$marker" ] && ok "and keeps the marker for the turn they wake" || bad "and keeps the marker for the turn they wake"
+hook '{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"Build done, server still up.","background_tasks":[{"id":"b1","status":"running"}],"session_crons":[{"id":"c1"}]}'
+check "a later Stop with only the jobs seen at the pause is the finish" "the job finished" "$(tail -1 "$sink")"
+[ -e "$marker" ] && bad "and consumes the marker" || ok "and consumes the marker"
+node "$n" --arm the job >/dev/null
+b=$(lines)
+wt="$tmp/w.jsonl"; wp=$(cygpath -m "$wt" 2>/dev/null || echo "$wt")
+printf '%s\n' '{"type":"user","message":{"role":"user","content":"take task 1"}}' \
+  '{"type":"assistant","message":{"content":[{"type":"text","text":"Stopping here."}]}}' \
+  '{"type":"user","message":{"role":"user","content":"Stop hook feedback:\n[guard]: You still hold task-1"}}' > "$wt"
+hook "{\"hook_event_name\":\"Stop\",\"session_id\":\"s1\",\"stop_hook_active\":false,\"transcript_path\":\"$wp\",\"last_assistant_message\":\"Stopping here.\"}"
+count "a Stop that another plugin's hook blocked sends nothing" "$b"
+[ -e "$marker" ] && ok "and keeps the marker" || bad "and keeps the marker"
+printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"text","text":"Released task-1. Done."}]}}' >> "$wt"
+hook "{\"hook_event_name\":\"Stop\",\"session_id\":\"s1\",\"stop_hook_active\":true,\"transcript_path\":\"$wp\",\"last_assistant_message\":\"Released task-1. Done.\"}"
+count "the Stop that really ends that turn sends" $((b + 1))
+node "$n" --arm --next later >/dev/null
+out=$(hook '{"hook_event_name":"SessionStart","session_id":"s1","source":"resume"}')
+[ -z "$out" ] && ok "a resume does not tell a --next chat to check work it has not started" || bad "a resume does not tell a --next chat to check work" "$out"
+hook '{"hook_event_name":"UserPromptSubmit","session_id":"s1","source":"system","prompt":"<task-notification>done</task-notification>"}'
+hook '{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"The background job finished."}'
+count "a task notification does not make a --next marker live" $((b + 1))
+hook '{"hook_event_name":"UserPromptSubmit","session_id":"s1","source":"sdk","prompt":"go"}'
+hook '{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"went"}'
+count "a prompt typed in the desktop app (source sdk) does" $((b + 2))
+node "$n" --arm >/dev/null
+hook '{"hook_event_name":"StopFailure","session_id":"s1","error":"overloaded"}'
+hook '{"hook_event_name":"StopFailure","session_id":"s1","error":"overloaded"}'
+count "a second API error inside five minutes sends nothing" $((b + 3))
+node "$n" --disarm >/dev/null
+
+echo
+echo "arming another chat"
+(cd "$tmp" && node "$n" --arm --session s9 their build >/dev/null)
+case "$(cat "$tmp/makarasty/notify/s9.json")" in *cwd*) bad "--session stores no cwd of the arming chat";; *) ok "--session stores no cwd of the arming chat";; esac
+hook '{"hook_event_name":"Stop","session_id":"s9","cwd":"/x/theirproj","last_assistant_message":"done"}'
+check "and the finish names that chat's project" "theirproj: their build finished" "$(tail -1 "$sink")"
+
+echo
+echo "a slow send, and error text that carries a secret"
+node -e 'require("http").createServer((q, r) => { q.resume(); setTimeout(() => { r.writeHead(400); r.end("no such hook https://hooks.example/T0/SECRETSECRET 123456:ABCDEFGHIJKLMNOPQRSTUVWXYZ"); }, 1500); }).listen(0, "127.0.0.1", function () { require("fs").writeFileSync(process.argv[1], String(this.address().port)); })' "$tmp/port2" &
+srv2=$!
+for i in 1 2 3 4 5 6 7 8 9 10; do [ -s "$tmp/port2" ] && break; sleep 0.2; done
+printf '{"ntfy":"http://127.0.0.1:%s/t"}\n' "$(cat "$tmp/port2")" > "$conf"
+node "$n" --arm first >/dev/null
+NOTIFY_DRY_RUN= hook '{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"done"}' 2>"$tmp/err"
+check "a failed send says what failed" "ntfy failed: 400 no such hook <url> <token>" "$(cat "$tmp/err")"
+case "$(cat "$tmp/err" "$marker")" in *SECRETSECRET*|*ABCDEFGHIJ*) bad "with no URL or token in the error or the marker";; *) ok "with no URL or token in the error or the marker";; esac
+node "$n" --arm first >/dev/null
+( NOTIFY_DRY_RUN= hook '{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"done"}' 2>/dev/null ) & sp=$!
+sleep 0.7; node "$n" --arm second >/dev/null; wait "$sp"
+check "a re-arm during a slow send survives it" '"label": "second"' "$(cat "$marker")"
+case "$(cat "$marker")" in *unsent*) bad "and takes none of the old send's state" "$(cat "$marker")";; *) ok "and takes none of the old send's state";; esac
+kill "$srv2" 2>/dev/null
+node "$n" --disarm >/dev/null
 
 echo
 echo "the SessionStart time budget, against a local server that never answers"
@@ -170,6 +287,17 @@ old="$tmp/makarasty/notify/dead.json"; printf '{"armed":"2026-01-01T00:00:00Z"}'
 node -e 'const t=Date.now()/1000-8*86400;require("fs").utimesSync(process.argv[1],t,t)' "$old"
 node "$n" --arm >/dev/null
 [ -e "$old" ] && bad "arm prunes a marker older than seven days" || ok "arm prunes a marker older than seven days"
+printf '{"armed":"2026-01-01T00:00:00Z"}' > "$old"
+node -e 'const t=Date.now()/1000-8*86400;require("fs").utimesSync(process.argv[1],t,t)' "$old"
+hook '{"hook_event_name":"Stop","session_id":"nobody","last_assistant_message":"x"}'
+[ -e "$old" ] && bad "and so does any hook run" || ok "and so does any hook run"
+end_cmd=$(cmd_of SessionEnd notify.mjs 2>/dev/null)
+[ -n "$end_cmd" ] && [ "$end_cmd" = "$notify_cmd" ] && ok "SessionEnd runs the same guarded command" || bad "SessionEnd runs the same guarded command" "$end_cmd"
+node "$n" --arm >/dev/null
+printf '{"hook_event_name":"SessionEnd","session_id":"s1","reason":"prompt_input_exit"}' | sh -c "$end_cmd"
+[ -e "$marker" ] && ok "closing an armed chat keeps its marker for the resume" || bad "closing an armed chat keeps its marker for the resume"
+printf '{"hook_event_name":"SessionEnd","session_id":"s1","reason":"clear"}' | sh -c "$end_cmd"
+[ -e "$marker" ] && bad "/clear drops it" || ok "/clear drops it"
 node "$n" --disarm >/dev/null
 
 echo
@@ -205,6 +333,47 @@ out=$(node "$here/unslop.mjs" --enable); check "enable prints the rules for this
 out=$(sh -c "$unslop_cmd" </dev/null); check "the hook injects the same rules" "UNSLOP MODE ON" "$out"
 node "$here/unslop.mjs" --disable >/dev/null
 out=$(sh -c "$unslop_cmd" </dev/null); [ -z "$out" ] && ok "disable stops it" || bad "disable stops it" "$out"
+out=$(node "$here/unslop.mjs" --help 2>&1 >/dev/null); rc=$?
+code "an unknown argument exits 1" 1 "$rc"
+check "with usage on stderr" "usage: node unslop.mjs" "$out"
+[ -e "$tmp/makarasty/unslop.on" ] && bad "and leaves the switch alone" || ok "and leaves the switch alone"
+[ "$(wc -l < "$here/unslop.txt")" -le 30 ] && ok "the injected rules stay within 30 lines" || bad "the injected rules stay within 30 lines" "$(wc -l < "$here/unslop.txt") lines"
+
+echo
+echo "context reminder"
+ctx_cmd=$(cmd_of UserPromptSubmit context.mjs)
+tr="$tmp/t.jsonl"
+turn(){ printf '{"type":"assistant","isSidechain":%s,"message":{"usage":{"input_tokens":%s,"cache_read_input_tokens":%s,"cache_creation_input_tokens":0}}}\n' "$1" "$2" "$3" >> "$tr"; }
+ctx(){ printf '{"session_id":"c1","transcript_path":"%s","prompt":"%s"}' "$(cygpath -m "$tr" 2>/dev/null || echo "$tr")" "${1:-go on}" | sh -c "$ctx_cmd"; }
+pad(){ { printf '{"type":"user","pad":"'; head -c "$1" /dev/zero | tr '\0' x; printf '"}\n'; } >> "$tr"; }
+turn false 10 100000
+out=$(ctx); [ -z "$out" ] && ok "silent under the threshold" || bad "silent under the threshold" "$out"
+turn false 10 420000; turn true 10 900000
+out=$(ctx); check "fires past it, reading the main chain only" "context is at 420k" "$out"
+out=$(ctx); [ -z "$out" ] && ok "once per level" || bad "once per level" "$out"
+turn false 10 520000
+out=$(ctx); [ -z "$out" ] && ok "silent inside the same step" || bad "silent inside the same step" "$out"
+turn false 10 560000
+out=$(ctx); check "again one step higher" "560k" "$out"
+turn false 10 90000
+out=$(ctx); turn false 10 410000
+out=$(ctx); check "a compact re-arms it" "410k" "$out"
+printf '{"type":"system","subtype":"compact_boundary","compactMetadata":{"preTokens":720000,"postTokens":15000}}\n' >> "$tr"
+out=$(ctx); [ -z "$out" ] && [ ! -e "$tmp/makarasty/context/c1" ] && ok "a compact boundary after the last turn reads as the compacted size" || bad "compact boundary read" "$out"
+turn false 10 720000
+out=$(MAKARASTY_HANDOFF_AT=0 ctx); [ -z "$out" ] && ok "0 turns it off" || bad "0 turns it off" "$out"
+out=$(ctx '/makarasty-tools:handoff'; ctx 'сделай хенд-офф'; ctx 'хенд-офф'); [ -z "$out" ] && ok "silent when the prompt asks for the handoff" || bad "silent when the prompt asks for the handoff" "$out"
+out=$(ctx 'fix the handoff reminder text in context.mjs'); check "a prompt that only mentions it still fires, the level unused" "720k" "$out"
+turn false 10 870000; pad 2200000
+out=$(ctx); check "a reading behind a 2 MB line is still found" "870k" "$out"
+turn false 10 90000; pad 17000000
+out=$(ctx); [ -z "$out" ] && [ -e "$tmp/makarasty/context/c1" ] && ok "no reading in the last 16 MB keeps the marker" || bad "no reading in the last 16 MB keeps the marker" "$out"
+out=$(printf 'not json' | sh -c "$ctx_cmd"; echo "exit $?"); check "bad input exits 0" "exit 0" "$out"
+compact_cmd=$(cmd_of SessionStart context.mjs)
+out=$(printf '{"hook_event_name":"SessionStart","source":"compact","session_id":"c1","transcript_path":"/x/t.jsonl"}' | sh -c "$compact_cmd")
+check "after a compact it names the full transcript" "still on disk, one JSON object per line: /x/t.jsonl" "$out"
+out=$(printf '{"hook_event_name":"SessionStart","source":"resume","session_id":"c1","transcript_path":"/x/t.jsonl"}' | node "$here/context.mjs")
+[ -z "$out" ] && ok "and says nothing on a plain resume" || bad "and says nothing on a plain resume" "$out"
 
 echo
 rm -rf "$tmp"
