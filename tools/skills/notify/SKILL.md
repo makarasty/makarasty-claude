@@ -3,9 +3,9 @@ description: Send one message to the person's phone when this chat, another chat
 argument-hint: [what the person is waiting for] | setup | test | status | off | --session <id>
 ---
 
-The chat cannot tell whether the person is still at the screen, so it never decides to message them on
-its own. The person arms it, once, and the hook sends exactly one message when the turn they are waiting
-for ends. Arming is a marker on disk keyed by session id. The hook runs in every session where this plugin
+The chat cannot tell whether the person is still at the screen, so it never decides on its own to message
+them. The person arms it once, and the hook sends exactly one message when the turn they are waiting for
+ends. Arming is a marker on disk keyed by session id. The hook runs in every session where this plugin
 is installed; while no marker exists in this Claude config dir it is one shell glob, and node never starts.
 
 ```bash
@@ -52,8 +52,8 @@ typing, and from a tool it only prints that line.
 node "${CLAUDE_PLUGIN_ROOT}/hooks/notify.mjs" setup
 ```
 
-Then answer in one line - armed, for what, to which channels - and go on with the work. No summary of how
-the hook works: the person asked to be told when it ends, not how.
+Then answer in one line - armed, for what, to which channels - and go on with the work. Do not explain how
+the hook works; the person asked to be told when the work ends.
 
 ## The wizard, in the person's language
 
@@ -78,13 +78,13 @@ http(s) URL is skipped with a line naming the key, never the value.
 
 **Never ask the person to paste a token or a webhook URL into the chat, and never write one into a project
 file.** The wizard exists so the secret goes from their keyboard to
-`${CLAUDE_CONFIG_DIR:-~/.claude}/makarasty/notify.json` and nowhere else. Each config dir, so each account, has its own channels. `test` afterwards,
-or any time, proves every saved channel still works.
+`${CLAUDE_CONFIG_DIR:-~/.claude}/makarasty/notify.json` and nowhere else. Each config dir, so each account, has its own channels. `test`, afterwards
+or at any time, checks that every saved channel still works.
 
 ## What the person gets
 
 One message, once, in the form `<project>: <label> finished`, with the last 500 characters of the chat's
-final message under it, so the lock screen shows the verdict rather than "task done". The public ntfy.sh
+final message under it, so the lock screen shows the verdict and not just "task done". The public ntfy.sh
 server gets no excerpt unless `notify.json` holds `"excerpt": true`; `"excerpt": false` turns it off on
 every channel. Say so when the work handles data that should not leave the machine.
 
@@ -99,7 +99,7 @@ already running at the pause is the finish. A turn another plugin's Stop hook
 blocked (a fleet worker that still holds a task) is not the finish either, and sends nothing; its real end
 is.
 
-Three other messages exist besides that pause, and each is a state rather than progress:
+Three other messages exist besides that pause, and each reports a state, not progress:
 
 - **needs you** - a permission prompt or a question dialog is up. One ping per five minutes, and the
   marker stays: the work is not done.
@@ -121,7 +121,7 @@ If it is not, continue; the message fires when it ends. That line is the only th
 a chat.
 
 The host's own `PushNotification` reaches the phone through Remote Control when that is connected, and it
-is skipped while the person is at the terminal; this command is for the person who wants a message where
+is skipped while the person is at the terminal. This command is for a person who wants a message where
 their messages already are, with nothing else connected. The two do not conflict.
 
 ## Done when

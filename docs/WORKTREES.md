@@ -3,11 +3,11 @@
 A worker whose brief writes code runs in its own git worktree, so two sessions never edit one tree. The
 worktrees pile up: one per code worker, each with a branch. One project on this machine links
 `node_modules` into every worktree by its own setup script, to skip a second install; nothing in this
-plugin creates such a link, and every one of them is a hole a recursive delete follows. At the end of a run the
-run has pushed its work and the worktrees are dead weight on the disk. Removing them is the right thing to
-do, and removing them wrong is how an agent deletes something it should not.
+plugin creates such a link, and every one of them is a hole a recursive delete follows. At the end of a run
+the work is pushed and the worktrees are dead weight on the disk. Removing them is right, and removing them
+wrong is how an agent deletes something it should not.
 
-The obvious command is not the safe one, which is what the rest of this page is about.
+The obvious command is not the safe one.
 
 ## The measurement this whole document is built on [M32]
 
@@ -30,7 +30,7 @@ git worktree remove <wt>        # now there is no link to follow
 ```
 
 So the rule is not "avoid `rmdir /S`". It is **unlink every reparse point inside a worktree before anything
-recursively deletes that worktree** - `git worktree remove`, the harness's `ExitWorktree`, a hand-rolled
+recursively deletes that worktree**: `git worktree remove`, the harness's `ExitWorktree`, a hand-rolled
 `rm -rf` or `rmdir /S` alike. A link left in place is a hole through which a delete reaches the rest of the
 disk. `rmdir /S` is only the part that looks dangerous. `git worktree remove` looks safe and is not, while the
 link is still there.

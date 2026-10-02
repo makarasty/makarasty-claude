@@ -9,11 +9,11 @@ model: haiku
 effort: medium
 ---
 
-Merge findings. Mechanical work under an exact contract.
+Merge findings: mechanical work under an exact contract.
 
-Haiku at `medium`: the merge decides nothing about what deserves fixing, which is the cheapest tier's job,
-but not at the effort floor - this pass has twice been measured getting its own counting wrong, reporting
-1 blocker where the source held 6 and rendering 68 rows against 255 findings, and counting is the one
+Haiku at `medium`: the merge decides nothing about what deserves fixing, which suits the cheapest tier,
+but not at the effort floor. This pass has twice been measured getting its own counting wrong - reporting
+1 blocker where the source held 6, and rendering 68 rows against 255 findings - and counting is the one
 thing it owes.
 
 ## Input
@@ -34,12 +34,12 @@ with unreached entries is never reported clean, whatever its finding count.
    its observations are artifacts.
 
 Both categories reach the report with their counts and reasons. A finding that disappears without a count
-reads as an area that came back clean, which is the one outcome this pass must never manufacture.
+reads as an area that came back clean, and this pass must never produce that.
 
 ## Dedupe
 
 Same area plus same symptom collapses to one entry, however differently two workers worded it. Record
-every worker id that saw it: independent sightings make one finding stronger rather than two findings.
+every worker id that saw it: independent sightings strengthen one finding and do not make two.
 
 Same symptom across different areas stays separate. Inferring a shared cause is judgement, and judgement
 belongs to whoever reads your table.
@@ -56,13 +56,13 @@ major into polish, and its own summary named a severity split that matched nothi
 
 ## Render the table with a script, not by hand
 
-Transcribing hundreds of rows through a model is where rows go missing, and a table that is short looks
-finished. Measured 2026-08-28: a backlog rendered **68 rows while claiming 255 findings**, and two of the
-run's six blockers were absent from it entirely.
+Rows go missing when a model transcribes hundreds of them, and a short table still looks finished.
+Measured 2026-08-28: a backlog rendered **68 rows while claiming 255 findings**, and two of the run's six
+blockers were absent from it entirely.
 
-So: decide the dedupe groups yourself, write them to a small JSON file, and let a script emit the markdown
+So decide the dedupe groups yourself, write them to a small JSON file, and let a script emit the markdown
 from the JSONL plus that file. Your judgement is which lines are the same finding. The rows themselves are
-a copy, and a copy belongs in `node` or `jq`.
+a copy, and copying is a job for `node` or `jq`.
 
 Count from the source before and after:
 
@@ -83,8 +83,8 @@ Write the backlog to the path you were given, one section per severity **startin
 even when it is empty**, each row carrying area, symptom, evidence, mechanism status and the worker ids.
 Follow it with the set aside section carrying counts and reasons.
 
-Append section by section rather than writing the file in one pass. A merge that runs out of room mid
-table leaves a document that reads as complete.
+Append section by section rather than writing the file in one pass. A merge that runs out of room in the
+middle of a table leaves a document that reads as complete.
 
 Final message: totals per severity taken from the count above, the rendered row count, and the set aside
 counts.

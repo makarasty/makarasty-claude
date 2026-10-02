@@ -5,8 +5,7 @@ Every rule in this plugin came from a run that went wrong in a specific, counted
 produced.
 
 Read it when you disagree with a rule, when you are about to remove one, or when you want to know whether
-a number still describes the world. Do not read it to work a task: the rules are written to be obeyed
-without it.
+a number still describes the world. Do not read it to work a task; the rules can be followed without it.
 
 **Format.** Each entry has an id (`M01`), the date and run, the numbers, the method, the rule it produced,
 and a status. `current` means the last measurement still supports it. `superseded by Mnn` means a later
@@ -372,8 +371,7 @@ a path containing the shell's working directory as unsafe and a path contains it
 registration refused itself for the same reason, and across every run on this machine the number of
 worktrees registered was zero, so `clean` never had one to act on either. The guard is right for a
 command that deletes the tree and wrong for two that do not; both now pass a flag that drops that term,
-and `clean` keeps it. A rule enforced by something that has never once succeeded is a rule in prose with
-extra steps.
+and `clean` keeps it.
 **Status:** current.
 
 ## M33 — What actually stops a pane compositing is the tab and the taskbar, not the screen
@@ -509,8 +507,8 @@ of the tokens that moved.
 Three things that follow, and one that does not:
 
 **Compressing what a worker says is not the lever.** Of everything the models emitted, chat prose was
-**5% by characters**; the other 95% was tool input. The worker economy paragraph is still right — nobody reads that
-narration — but it is worth roughly nothing, so do not trade clarity for it.
+**5% by characters**; the other 95% was tool input. The worker economy paragraph is still right, since nobody reads that
+narration, but it saves roughly nothing, so do not trade clarity for it.
 
 **Bulk belongs around the model, not through it.** In the 26 workers of 2026-09-01 the emitted bytes were:
 2 647 KB `Write` into repository source, 2 045 KB of `Bash` heredocs over 2 KB each, 1 022 KB `Write` into
@@ -570,7 +568,7 @@ minutes**, so 1,782 worker-minutes were available.
 | Between tasks | 102 | 6% |
 | Startup, pane gating, and workers idle after their own queue drained | 395 | 22% |
 
-Four things follow, and they are the whole speed story.
+Four things follow.
 
 **The stalls are the run.** Without them the queue drains around 20:30 local instead of 22:19: they cost
 roughly an hour and fifty minutes of a five hour run, and they also produced the two thinnest workers of
@@ -600,7 +598,6 @@ chose it and it is the largest single line in what a run costs.
 One eight worker run over a large application, 2026-08-26: **94 findings, three of them blockers, in
 roughly one to two hours of wall clock, for about six percent of a weekly maximum subscription allowance.**
 
-The comparison that matters is not against a cheaper fleet. It is against reading the codebase to find the
-same defects, which costs orders of magnitude more tokens and cannot find the ones that only exist at
-runtime: a request sent with an empty parameter, a catch that turns a thrown query into an empty result
+The fair comparison is not a cheaper fleet but reading the codebase to find the same defects, which costs
+orders of magnitude more tokens and cannot find the ones that only exist at runtime: a request sent with an empty parameter, a catch that turns a thrown query into an empty result
 labelled as no data, a count branch and a select branch disagreeing under one filter.

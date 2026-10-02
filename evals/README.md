@@ -4,7 +4,7 @@
 refused, a clock stops itself. It cannot prove the part that decides whether a run is any good: whether a
 worker reading these documents *does the thing they ask*.
 
-That is what these cases are for. Each one puts a model in a prepared run directory with a real prompt and
+These cases cover that part. Each one puts a model in a prepared run directory with a real prompt and
 scores what it did.
 
 ```bash
@@ -39,8 +39,8 @@ for the three runs each case asks for.
 | `no-init-in-a-worker` | a worker starting fleet-init's operator interview over a missing `FLEET.md` |
 | `blocked-is-not-clean` | a collection reporting a blind worker's area as clean |
 
-A case that starts failing is worth more than a case that passes: it means a document drifted away from
-the behaviour it was written to produce.
+A case that starts failing tells you more than one that passes: a document has drifted away from the
+behaviour it was written to produce.
 
 Not covered: the pane gate, because an eval run has no Browser pane, and the memory refusal (`next` exit
 6), because a scaffold cannot make the machine short of memory.

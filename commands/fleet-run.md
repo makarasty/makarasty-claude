@@ -12,7 +12,7 @@ that produced no observation [M05].
 f="${CLAUDE_PLUGIN_ROOT}/scripts/fleet.sh"
 ```
 
-**Read a doc by the sections named here, never whole.** Whole, the files this command points at are about
+**Read a doc by the sections named here, never whole.** Whole, the files this command points at come to about
 36k tokens that sit in your context for every turn of the run; the named sections are under half that. One
 section, `## <heading>` to the next `## `:
 
@@ -28,11 +28,11 @@ interviews the operator, and a worker gets one question (below). If nothing in t
 without it, write `<chip-id>.blocked` naming what is missing and stop.
 
 A missing directory gets created, an accelerator that is not installed gets noted once and worked around,
-and a brief naming a screen the project does not have becomes a question in `ask/` rather than a stop.
+and a brief naming a screen the project does not have becomes a question in `ask/`, not a stop.
 Otherwise stop for exactly two things, because neither can be produced by working harder: a **credential or account
 only the operator can provide**, and a **reserved control** that would cost money or reach a real person.
 
-You are one worker in a fleet. Your whole job is the brief at `$ARGUMENTS`. Read it first, frontmatter
+You are one worker in a fleet. Your job is the brief at `$ARGUMENTS`. Read it first, frontmatter
 included. An empty or missing path ends this here: say which path you tried.
 
 You report by writing files. No session messages you and you message none, so everything you learn has to
@@ -40,10 +40,10 @@ reach the disk.
 
 ## The pane comes first, before anything else here
 
-Your brief's frontmatter, or your chip's prompt, names your lane, and that is all you need to start. If it
+Your brief's frontmatter, or your chip's prompt, names your lane; that is all you need to start. If it
 is `pane`, everything below this section waits: reading `FLEET.md`, the project's documentation and the
-brief's steps each take a turn during which the operator is still standing in front of your chat, and every
-one of those turns is a minute added to how long they wait to be asked. Over six pane workers the question
+brief's steps each take a turn while the operator is still standing in front of your chat, and each of
+those turns adds a minute to how long they wait to be asked. Over six pane workers the question
 landed between **1 and 34 minutes** after the chip, so the operator answered them one at a time across half
 an hour instead of in one pass [M20].
 
@@ -60,13 +60,13 @@ an hour instead of in one pass [M20].
 3. Blind: ask **in that same turn**, by the procedure in "Gate the pane before trusting it" below. Target:
    the question is on screen inside a minute of the chip being clicked.
 
-Then read `FLEET.md` properly and confirm the services it names are listening, while you wait for the pane
-rather than before asking for it. Those processes belong to the operator, so a missing one is a report
-rather than something to start. Once the gate reads live, run `/makarasty:fleet-login`, or the project's
+Then read `FLEET.md` properly and confirm the services it names are listening, while you wait for the pane,
+not before asking for it. Those processes belong to the operator, so report a missing one and do not start
+it. Once the gate reads live, run `/makarasty:fleet-login`, or the project's
 runbook directly.
 
-`docs/BROWSER.md` carries the symptom list and what a blind pane still returns convincingly. None of it is
-worth a turn before the question is on screen; once the gate reads live, read its "Blind", "Delegating
+`docs/BROWSER.md` carries the symptom list and what a blind pane still returns convincingly. Spend no
+turn on it before the question is on screen; once the gate reads live, read its "Blind", "Delegating
 browser work", "Instruments that return a confident zero" and "The viewport is not the operator's
 browser". The rest of it sizes panes for the planner and the operator.
 
@@ -95,7 +95,7 @@ the planner's - and then loop:
 4. Past twice the task's `budget`, stop that task: write what you have, record the rest as unreached with
    the reason, and take the next one. An unbounded task starves the queue.
 
-   **Arm that limit rather than intending it.** `sh "$f" clock .fleet/<run-id> <chip> <task-id> <budget>`
+   **Arm that limit; do not just intend it.** `sh "$f" clock .fleet/<run-id> <chip> <task-id> <budget>`
    prints a loop; background exactly what it prints. Nothing else in this system measures elapsed time, and
    a worker deep in a scenario has no idea whether eight minutes have passed or eighty. That loop watches
    for its own task closing, so it rings only if the budget really elapsed.
@@ -152,10 +152,10 @@ that never returns, an answer that never comes, a pane nobody displays. When wha
 
 Ask the operator exactly one thing, ever: to display your Browser pane. Their eyes are on the planner's
 chat, not yours, so a second interactive question waits unanswered while you hold a claimed task. Every
-other question goes in `ask/<chip>-<n>.md`, and then you keep working and read
-`answers/<chip>-<n>.md` at your next task boundary. Blocking on an answer turns a question into a stall.
-A pane that is not displayed is the exception, and that goes to the operator through `.waiting` and
-`AskUserQuestion`, because the planner cannot open a pane.
+other question goes in `ask/<chip>-<n>.md`; then keep working and read `answers/<chip>-<n>.md` at your
+next task boundary. Blocking on an answer turns a question into a stall. A pane that is not displayed is
+the exception: it goes to the operator through `.waiting` and `AskUserQuestion`, because the planner
+cannot open a pane.
 
 **A question about a reserved action is not asked at all**, in either channel. A production write, a
 vendor call that costs money, a message to a real person: no answer makes those yours to do, so record the
@@ -164,7 +164,7 @@ whether a writing band was sanctioned and blocked four minutes twenty six second
 answer that could not have changed what it was allowed to do.
 
 **Edit with what you read with.** In the auto permission mode the harness asks you to read with `cat` and
-`sed -n`; `Edit` then refuses that file with "File has not been read yet", three round trips instead of
+`sed -n`; `Edit` then refuses that file with "File has not been read yet", costing three round trips instead of
 one, on every run so far [M31]. A file the shell read is changed with `sed -i`, a heredoc or a short
 script. `Edit` is for a file this session `Read`. Never both on one file.
 
@@ -180,7 +180,7 @@ repo lane, never in the pane lane". The rest of that file sizes lanes, which is 
   [M16], and filling it roughly doubles what this session produces without a second pane.
 - `needs: repo` - fan out. `fanout_default` in the plugin's `calibration.json` (three subagents in one
   message) is the default width, and a task's `fanout:`
-  line raises or lowers it. No script reads that field: it is a planner's instruction to you, so honour it.
+  line raises or lowers it. No script reads that field: it is a planner's instruction to you, so follow it.
   You do not need to weigh it against free memory - `next` refuses your next task when the box is full.
   The parts must not read each other's output. **On a long queue, delegate whole tasks, not parts:**
   each task you work inline leaves 20-30 k of context behind, and four workers who never spawned anything
@@ -229,20 +229,20 @@ node "$g" prove .fleet/<run-id> <task-id> after  -- <the same command>
 ```
 
 A `before` that passes means the finding is refuted: record that, finish the task, and take the next one.
-That is a complete result and roughly 15 findings in every 100 end that way.
+That is a complete result, and roughly 15 findings in every 100 end that way.
 
 **A `kind: root` task owns a seam several findings reach**, and every task listed in its `gates:` is held
 until it lands. Rule on the cause first and be willing to refute it; a refutation releases the members to
 be fixed on their own evidence and is the right answer more often than it feels. If you are working one of
 those members instead, the root has already finished by the time you can claim it, so re-run your
-reproduction before editing - it may already pass, and confirming that is your job rather than writing a
-second fix for a defect that is gone.
+reproduction before editing. It may already pass, and confirming that is your job; do not write a second
+fix for a defect that is gone.
 
 **If an edit is refused because it drops a name from the contract surface**, the hook has found something
 outside this repository that may be reading it. Do one of the two things it names - file the `ask/`, or
 record the decision with `fleet-gate.mjs decide` - and make the edit again. Both take one line and both
-put the change in front of the operator before the run lands. Working around the refusal by editing the
-name some other way is the failure it exists to catch. `docs/GATE.md` if you want the reasoning.
+put the change in front of the operator before the run lands. Editing the name some other way to get
+around the refusal is the failure it exists to catch. `docs/GATE.md` has the reasoning.
 
 **Register your worktree at your first claim**, so the run can clean it up afterwards and no sweep ever
 guesses which tree belonged to whom:
@@ -257,7 +257,7 @@ Unlinking that tree is the last thing you do, in section 5; removing it is `flee
 
 ## 1b. When the machine refuses you
 
-Three refusals exist and none of them is about you. `next` exits 6 when free memory is under the floor.
+Three refusals exist, and none of them is about you. `next` exits 6 when free memory is under the floor.
 A hook refuses a full test suite or a full typecheck, from Bash or PowerShell, unless you hold the verify
 lane. A hook refuses a browser call, in the Browser pane or through claude-in-chrome, when the box is full
 and tells you to close your pane. Each one prints what to do next.
@@ -266,13 +266,13 @@ and tells you to close your pane. Each one prints what to do next.
 turn with that pending. A session that finishes because it was refused is a dead chat, and nothing in a
 fleet can restart one [M03].
 
-**While you are held, give memory back rather than waiting for someone else to.** A pane holds its
+**While you are held, give memory back; do not wait for someone else to.** A pane holds its
 renderer until the tab is closed - a reload returns nothing, and one tab measured 2,061 MB [M34]. Closing
 it costs a second and a login when you next need one.
 
 ## 2. Gate the pane before trusting it
 
-The expression and its threshold are at the top of this file. This section is what you do with the reading.
+The expression and its threshold are at the top of this file. This section covers what to do with the reading.
 
 Blind: in **one turn**, write `.fleet/<run-id>/<chip-id>.waiting` holding one line saying the pane is not
 displayed and naming the viewport you measured, **ask the operator right there with `AskUserQuestion`**,
@@ -292,31 +292,29 @@ Gate again before each later batch of visual work.
 
 ## 3. Do the whole brief
 
-Work every step of the brief before writing your final report. Depth is why a session was spent on this.
+Work every step of the brief before writing your final report. The session was spent for depth.
 
 **File each finding through `find` the moment its evidence is complete**, not at the end. A worker that is
 killed, compacted or closed at ninety percent of a two hour brief must leave those ninety percent behind;
-holding them in context until the last minute is how a crashed worker reads as a clean area. The `.done`
+holding them in context until the last minute makes a crashed worker read as a clean area. The `.done`
 marker says you finished, never the existence of the file.
 
 Delegate the scenario to one subagent, using the brief's `model:`. One spawn per brief, and if the brief
 needs a second the brief was too big: browser subagents share this session's single pane, so a second
-spawn runs strictly after the first while you sit idle: one worker spent **74 percent** of its life queued
-behind three of them [M14]. One spawn for the whole scenario
-rather than one per step: the fixed overhead per spawn makes small delegations cost more than doing the
-work inline. The economics and the exact numbers are in
-`docs/MODELS.md`; the subagent's required brief lines, tool
-loading included, are in `BROWSER.md`.
+spawn runs strictly after the first while you sit idle. One worker spent **74 percent** of its life queued
+behind three of them [M14]. Make one spawn for the whole scenario, not one per step: the fixed overhead
+per spawn makes small delegations cost more than doing the work inline. The economics and the exact
+numbers are in `docs/MODELS.md`; the subagent's required brief lines, tool loading included, are in
+`BROWSER.md`.
 
 A `fleet-scenario` or `fleet-profiler` agent returning `[{"blocked": ...}]` means the pane stopped
-compositing after your own gate passed, usually because the operator collapsed it. Treat that exactly like
+compositing after your own gate passed, usually because the operator collapsed it. Treat that as
 failing the gate yourself: write `.waiting`, ask the operator to display it, re-measure, and re-run the
 agent. Do not accept the empty result as a finding.
 
 Use the `fleet-scenario` agent for browser work. Strip any code fence from its final message before
 parsing: it returns the contract faithfully and fences it often. It already carries the gate, the output
-contract, and the
-rule that keeps bulk out of your context.
+contract, and the rule that keeps bulk out of your context.
 
 Read state through expressions that return small JSON. Reserve screenshots for questions that are about
 pixels.
@@ -331,7 +329,7 @@ verdict pass at that model over the returned observations. Ruling "yourself" can
 own model was fixed when this session started and you cannot change it, so a brief asking for Opus
 verdicts from a Sonnet session gets Sonnet verdicts and paperwork that says otherwise.
 
-When it matches, rule on the returned observations yourself rather than adopting the
+When it matches, rule on the returned observations yourself and do not adopt the
 executor's severities. Observing and judging are different jobs, and the brief separates them deliberately.
 
 ## 4. Write findings
@@ -375,7 +373,7 @@ Two things are then left:
    title is the only thing about you visible from the chat the operator is actually sitting in.
 2. **Stop.** Let the banner stand as your report: no closing summary of the application, no advice about
    what to fix. That marker was the last thing you owed the disk, so nothing of yours may still be
-   pending: a clock left armed past its obligation fires anyway, re-invokes a session with nothing to do,
+   pending. A clock left armed past its obligation fires anyway, re-invokes a session with nothing to do,
    and leaves the operator looking at a chat whose task panel says running an hour after the work ended
    [M04]. Your own clocks read that marker and exit within thirty seconds; anything else in the panel is
    yours to stop.
@@ -385,7 +383,7 @@ If something wakes you afterwards, print the banner again and stop. Nothing else
 ## Done when
 
 Before writing your findings, re-read your brief's Steps and its Correct-looks-like section. You read them
-once, dozens of tool calls ago, and end-of-run duties are the kind of instruction a long run drifts from.
+once, dozens of tool calls ago, and a long run drifts away from end-of-run duties.
 Then walk this list:
 
 - Every step worked, or recorded as unreached with its reason.
@@ -404,4 +402,4 @@ Then walk this list:
 ## Report
 
 The banner from `fleet.sh summary`, and at most two lines under it naming what you could not reach. The
-app already has documentation; your summary of it helps nobody.
+app already has documentation; do not summarise it.

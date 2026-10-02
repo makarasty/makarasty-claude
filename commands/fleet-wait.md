@@ -4,9 +4,8 @@ argument-hint: <run-id> [expected worker count]
 allowed-tools: Bash, Read, Write, Glob, Grep, Monitor, Agent, TaskStop, PushNotification
 ---
 
-Watch `.fleet/<run-id>/` for workers finishing. The waiting belongs in the shell, where it is free, rather
-than in a re-read each turn, which costs a model turn per empty check and needs the operator to prod you
-between them.
+Watch `.fleet/<run-id>/` for workers finishing. Do the waiting in the shell, where it is free. A re-read
+each turn costs a model turn per empty check and needs the operator to prod you between them.
 
 The loop below emits on silence as well as on progress, because a watch that fires only when a file appears
 cannot tell a busy fleet from a dead one and a stalled fleet writes no files [M17]. Every `quiet` seconds with
@@ -54,7 +53,7 @@ done
 ```
 
 Run it with `Monitor`, `timeout_ms: 1800000`, the most a monitor can be given. A fleet run outlasts that,
-so **re-arm the same loop on every expiry notice** until it prints `run complete` or `run landed`; a watch
+so **re-arm the same loop on every expiry notice** until it prints `run complete` or `run landed`. A watch
 that is not re-armed dies silently at thirty minutes and the run never collects. `seen` persists
 across re-arms, so nothing already reported is reported twice.
 
@@ -62,7 +61,7 @@ For a run with fixed briefs and no queue, drop the three `tasks/` globs from the
 else, the stall timer included, still applies.
 
 **A claim is tracked but not announced.** It is entered in `seen`, which resets the quiet timer, and it
-shows up by name in the stall report, but it does not wake you on its own: a claim needs nothing from the
+shows up by name in the stall report, but it does not wake you on its own. A claim needs nothing from the
 planner: of 62 notifications one planner received, 13 were claims it took no action on, each costing a full
 model turn to read and dismiss [M18].
 
@@ -71,8 +70,8 @@ replaced let the presence of `task-22b` silently suppress every event for `task-
 pair a reclaimed task produces.
 
 **A stall report whose counts moved since the last one is a fleet doing long tasks; one whose counts are
-identical is a fleet that has stopped.** That distinction is made without opening a worker chat, and it is
-what the next section acts on.
+identical is a fleet that has stopped.** You can tell them apart without opening a worker chat, and the next
+section acts on the difference.
 
 ## The run ends by declaration, not by a count that may never arrive
 
@@ -82,7 +81,7 @@ watch never breaks, collection never runs, no notification ever fires, and the r
 never ending on paper. From the operator's side that is indistinguishable from a run still working, which
 is exactly the state the 2026-08-31 run left its operator in for an hour.
 
-So keep the count as the happy path and give yourself a fallback with a threshold rather than a feeling:
+So keep the count as the happy path and give yourself a fallback with a threshold, not a feeling:
 
 > **After three consecutive stall reports naming the same unmoving claims and the same counts**, the run
 > is over whether or not every marker landed. Message the workers holding those claims once, with
@@ -112,7 +111,7 @@ the watch's task id. `fleet-collect` stops it as its last act.
 
 ## While waiting
 
-The wait is free only if you spend it on something. In pull mode there is real work: answer the questions
+Use the wait. In pull mode there is real work: answer the questions
 in `ask/`, re-file the remainders workers hand back, add tasks when a finding points somewhere new, check
 claims against the three-term dead test in `docs/PULL.md`.
 
@@ -132,7 +131,7 @@ entirely in forgetting.
 
 It means that worker's pane never composited, so it wrote no findings. Say so in the summary, by name. A
 run reporting clean while a third of it saw nothing is worse than no run, and the marker is the only place
-that shows.
+that shows it.
 
 ## Done when
 
@@ -141,7 +140,7 @@ for how long.
 
 **When the whole run has landed, invoke `/makarasty:fleet-collect <run-id>` yourself.** Do not print it as
 a command for someone else to run. A finished run that nobody merges is a directory of JSONL files, and
-the operator who clicked the chips has already moved on: measured 2026-08-26, seven finished workers and
+the operator who clicked the chips has moved on: measured 2026-08-26, seven finished workers and
 74 findings sat unread because the next step was printed rather than taken.
 
 If the operator asked to review the raw findings before merging, say so and stop instead.

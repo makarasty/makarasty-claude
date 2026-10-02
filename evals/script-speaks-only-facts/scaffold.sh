@@ -22,21 +22,21 @@ cat > "$run/call/CALL.md" <<'CALL'
 - Window: 2026-07-24 to 2026-08-12
 CALL
 cat > "$run/call/facts/02-northwind.md" <<'FACTS'
-## F02-1 · Northwind refuses about a third of our second checks with error 43
-- what: 35 of 109 second checks to Northwind came back ErrorCode 43 "Invalid/Missing Account ID"; zero such errors at any other carrier
+## F02-1 · Northwind refuses about a third of our second rate checks with error 43
+- what: 35 of 109 second rate checks to Northwind came back ErrorCode 43 "Invalid/Missing Account ID"; zero such errors at any other carrier
 - how known: measured
 - evidence: select count(*) from responses where carrier like 'NORTHWIND%' and error_code = 43, direct-account traffic 2026-07-24 to 2026-08-12
 - when: 2026-08-12
 - say: About one Northwind check in three comes back with error forty three. No other carrier gives us this error.
 
-## F02-2 · We send the organisation account ID to every carrier, Northwind included
-- what: the second check carries the company's organisational account ID, the same value for every carrier
+## F02-2 · We send our company account number to every carrier, Northwind included
+- what: the second rate check carries our company account number, the same value for every carrier
 - how known: read
-- evidence: src/contoso/secondCheck.ts:41
+- evidence: src/rates/secondCheck.ts:41
 - when: 2026-08-12
 
 ## F02-3 · The vendor's letter says a retry after "not available" is pointless
-- what: the 2026-08-19 letter says a carrier marked not available cannot be verified that day
+- what: the 2026-08-19 letter says a carrier marked not available cannot be rated that day
 - how known: told
 - evidence: the vendor's letter of 2026-08-19, paragraph 3
 - when: 2026-08-19

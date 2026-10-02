@@ -17,16 +17,15 @@ stays in the chat's transcript on disk.
 ## 1. Find the project's runbook
 
 Probe the session before reading anything. Three workers in the 2026-08-26 run read 58 KB of login runbook
-after they had already established they were signed in, which is a whole document of context bought for
-nothing. Read `FLEET.md` for the origin and probe; open the runbook only when the probe says signed out.
+after they had already established they were signed in, a whole document of context spent for nothing. Read `FLEET.md` for the origin and probe; open the runbook only when the probe says signed out.
 
 `FLEET.md` at the repository root carries the login runbook path, the origin, and the services that must
 be running. Without it, look for `docs/HOW_TO_LOGIN_AS_AI.md`, then any `*LOGIN*AS*AI*` or
 `docs/**/login*.md`.
 
 Nothing found ends this: name what you searched for and say the project has no documented agent login path.
-A scripted fill against an undocumented form is the classic hour with nothing to show, because framework
-inputs commonly ignore synthetic events and the form then blocks submit in silence.
+A scripted fill against an undocumented form costs an hour and shows nothing: framework inputs commonly
+ignore synthetic events, and the form then blocks submit in silence.
 
 ## 2. Confirm the services are up
 
@@ -35,7 +34,7 @@ Check that the ports the runbook names are listening, using the command for this
 
 **Which of them you may start is the project's call, not a rule of this command.** A dev server the
 operator runs is theirs; a backend or emulator the project hands you a launch entry for is yours, and
-reporting it as missing when the runbook told you how to start it is a failed run, not a careful one.
+reporting it as missing when the runbook told you how to start it is a failed run.
 `FLEET.md` says which is which.
 
 Re-check this whenever a login fails later. A service that was up at the start of a run can be down by
@@ -44,8 +43,7 @@ the middle of it, and nothing in the app announces that.
 ## 3. Open the pane
 
 `preview_start` at the runbook's origin, honouring its literal host. Some projects must be reached as
-`[::1]` rather than `localhost`, and getting that wrong lands on an error page whose title still looks
-correct.
+`[::1]` rather than `localhost`; the wrong host lands on an error page whose title still looks correct.
 
 **A second host is a second session.** Where a project serves an admin or operator surface on its own
 hostname, that origin authenticates separately, and the pane will not `navigate` across the boundary —
@@ -82,7 +80,7 @@ proving less than the store read.
 **The message the app shows is not a diagnosis.** A login form has one failure toast and every cause
 arrives wearing it: a refused connection to the API, a backend that cannot reach its own datastore, a
 second-factor rule that redirected the account to email — all of them render as "invalid credentials".
-The call itself is often no better; an app's own login helper commonly rejects with a bare `undefined`,
+The call itself is often no help: an app's own login helper commonly rejects with a bare `undefined`,
 carrying no status and no message.
 
 So read the request. `read_network_requests` filtered to the login path separates the four cases in one
@@ -94,7 +92,7 @@ emailed step is the wrong account for an agent; say so and name the account the 
 
 ## Done when
 
-The auth state reads a non-empty identity, read after the sign in rather than assumed from it.
+The auth state reads a non-empty identity, read after the sign in and not assumed from it.
 
 ## Report
 

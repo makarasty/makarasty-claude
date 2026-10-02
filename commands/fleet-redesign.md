@@ -14,13 +14,13 @@ the screen it replaces, and the operator sees both on one page. No `design/canva
 screens in `$ARGUMENTS` means the capture has to happen first, and **you cannot start it yourself**:
 `fleet-design` carries `disable-model-invocation: true`, so the harness blocks a model that tries. Say in
 one line which screens have no artboard, print the exact line for the operator to run -
-`/makarasty:fleet-design <those screens>` - and stop there rather than refusing or improvising a capture.
+`/makarasty:fleet-design <those screens>` - and stop there; do not refuse and do not improvise a capture.
 
 ## What this is
 
 `fleet-design` with the `propose` stage. Read `docs/DESIGN.md`, section "Redesign", for what a proposal
-is and what it must keep; everything about the queue, the chips and the watch is `fleet-design`'s and
-`fleet-plan`'s. The design model owns every proposal end to end, per `docs/MISSIONS.md`, and that model is
+is and what it must keep; the queue, the chips and the watch come from `fleet-design` and
+`fleet-plan`. The design model owns every proposal end to end, per `docs/MISSIONS.md`, and that model is
 the top tier `docs/MODELS.md` names for design.
 
 ## 1. Ground yourself

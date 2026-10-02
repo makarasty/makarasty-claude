@@ -5,8 +5,8 @@ description: Prepare a project to run fleets: app origin, services, an agent log
 The `docs/*` and `scripts/*` files named below live in this plugin's own directory,
 `${CLAUDE_PLUGIN_ROOT}`, not in the project you are working on.
 
-Set this project up so a fleet can run against it. Everything here is discovered from the project and
-confirmed with the operator; nothing is assumed.
+Set this project up so a fleet can run against it. Discover everything here from the project and
+confirm it with the operator; assume nothing.
 
 Run it once per project, and again when the answers change.
 
@@ -30,9 +30,9 @@ project needs one, and writing it is most of what this command exists for:
 
 - **Ask the operator for a throwaway account** the fleet may use, on a local or sandbox environment only.
   Never a production account, and never their own. If the project has no such environment, say so and stop:
-  a fleet against production is not a thing this plugin will help set up.
+  this plugin will not help set up a fleet against production.
 - **Ask them to put the credentials in a gitignored file** and tell you its path. You do not handle the
-  values, you name the file.
+  values; you name the file.
 - **Work out the sign-in path by reading the code**, and prove it from the browser once. Scripted form
   filling frequently fails in silence, because framework inputs ignore synthetic events and validation then
   blocks submit with no message, so a runbook that has never been executed is a guess.
@@ -54,7 +54,7 @@ At the project root, in the shape `docs/PROTOCOL.md` gives. It carries the origi
 be running, the login runbook path, the naming rules, the controls reserved for the operator, and the cost
 of the project's verification commands.
 
-**The reserved controls list is the part to get right.** Walk the project for anything that leaves the
+**Get the reserved controls list right.** Walk the project for anything that leaves the
 machine: telephony, payments, email and messaging, shipping, any vendor API, production writes and
 migrations. List those controls by the label a person sees, not by a general warning. Ask the operator
 whether the list is complete, because they know what costs money and you are guessing from imports.
@@ -97,8 +97,8 @@ Then say **two** numbers, one per lane, and write both on `FLEET.md`'s concurren
 - **The pane lane**, which is a display question and not a memory one: how many Browser panes fit the
   operator's screen at a readable size. Five, or ten. Ask them; you cannot measure a monitor.
 - **The repo lane**, which is a machine question: workers that never open a pane, sized from free physical
-  memory and cores by `docs/LANES.md`. This number is usually larger than the pane number and there is no
-  reason for it to be the same.
+  memory and cores by `docs/LANES.md`. This number is usually larger than the pane number, and nothing
+  makes them equal.
 
 Ask once, here, and record the answers so no planner has to ask again: the display width, and whether the
 operator's subscription tier makes rate limits a binding constraint. Both change what a plan may spend and
@@ -123,7 +123,7 @@ re-detecting it.
 
 The rule for what belongs here: **prefer a tool that removes a round trip, not one that is faster at the
 same round trip.** Every tool call is a model turn, and a model turn is seconds. Saving milliseconds
-inside one changes nothing; replacing four calls with one changes the run.
+inside one call changes nothing; replacing four calls with one changes the run.
 
 Worth having, in that order:
 
@@ -138,7 +138,7 @@ Worth having, in that order:
 - **`bun`**, when hooks are involved. Measured 2026-08-26: a node hook costs about 41 ms per prompt even
   when it does nothing, and that is paid on every prompt of every session.
 
-Report the missing ones with the single command that installs each, and say plainly that none of them are
+Report the missing ones with the single command that installs each, and say that none of them are
 required. This is an offer, not a gate: a fleet runs fine without any of them, and a worker that stops
 because `fd` is absent has invented a dependency.
 
@@ -148,7 +148,7 @@ name, because a worker cannot guess that a repository ships a query tool of its 
 ## 6. Prove it once
 
 Sign in through the runbook you just wrote, in this session, and report the identity you read back. An
-untested runbook is the thing every worker in every future run will trust blindly.
+untested runbook is what every worker in every future run will trust blindly.
 
 ## Done when
 

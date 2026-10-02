@@ -44,4 +44,4 @@ Lines someone will say aloud to a vendor or their support are a different regist
 ## Done when
 
 The text says the same things, keeps every fact, and no longer opens with a compliment, closes with a
-summary, or announces its own structure. For the toggle, one state line.
+summary, or announces its own structure. For the toggle, the reply is one state line.

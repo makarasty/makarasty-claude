@@ -1,7 +1,7 @@
 # Design: critique, canvas, redesign
 
-The design half of this plugin. Three mission kinds and one loop, each with the same property the rest
-of the plugin has: it measures before it trusts.
+The design half of this plugin: three mission kinds and one loop, each of which measures before it
+trusts, like the rest of the plugin.
 
 | step | kind | what comes out | gate |
 |---|---|---|---|
@@ -10,9 +10,8 @@ of the plugin has: it measures before it trusts.
 | 3 | `redesign` | proposed artboards beside the captured ones, on the same canvas | a proposal sits on a page next to the screen it replaces, states included |
 | 4 | `design` | the approved artboards implemented in code, by the design model, end to end | numbers before and after from the same instrument; see `MISSIONS.md` |
 
-Run them in that order or pick one. A critique is the cheapest first step on any application; a canvas is
-what makes a redesign discussable; a redesign is what makes the fourth step a specification rather than a
-mood.
+Run them in that order or pick one. A critique is the cheapest first step on any application; a canvas
+makes a redesign discussable; a redesign turns the fourth step into a specification rather than a mood.
 
 The canvas is a file-based one: `<Screen>.dc.html` artboards plus a `canvas.json` in the project, seeded
 into the editor that the harness's `design` skill carries, and published as an artifact page where the
@@ -21,9 +20,9 @@ argues with them.
 
 ## The gate, in design terms
 
-A screenshot is the most expensive read in this plugin and the least trustworthy one: measured across an
-eight worker run, four workers took 120 screenshots for 207,000 image tokens, and a model shown any of
-them and asked what is wrong will answer [M22]. So each design kind names what its evidence is instead:
+A screenshot is the most expensive read in this plugin and the least trustworthy one: across an eight
+worker run, four workers took 120 screenshots for 207,000 image tokens, and a model shown any of them and
+asked what is wrong will answer [M22]. So each design kind names its own evidence:
 
 - **Critique:** a probe result with a selector and a rectangle, or a computed value with a threshold. The
   screenshot confirms a candidate the probe returned; it never finds one.
@@ -54,9 +53,9 @@ bounded JSON with a selector and a rectangle on every entry:
   families, weights, radii and colours the page actually uses, with counts - and `landmarks`, which the
   canvas kind reads.
 
-Verified on a fixture carrying nine planted defects beside ten controls built to look like defects and
-not be: nine found, zero of the ten reported, one candidate beyond the nine (a heading that is the page's
-only 20 px text, which `offScale` is right to list and a reader is right to drop) [M29]. The fixture is
+Checked on a fixture carrying nine planted defects beside ten controls built to look like defects and
+not be: nine found, none of the ten reported, and one candidate beyond the nine (a heading that is the
+page's only 20 px text, which `offScale` is right to list and a reader is right to drop) [M29]. The fixture is
 `scripts/fixtures/design-probe.html`; serve the repository over http and paste the probe to re-verify it
 on a different browser.
 
@@ -70,7 +69,7 @@ the scale from the page and says so in `scale.source`; treat `offScale` as candi
 Wrong colours in harmony terms, optical misalignment inside a correctly sized box, paint order, and
 whether a screen reads as one product or as parts stitched together. Those get a zoomed screenshot with
 one named question each, in the agent's own context. "Look at this page and report visual defects" is
-not a task shape; it is where invention lives.
+not a task shape; it invites invention.
 
 A judgement finding - hierarchy, rhythm, consistency, copy - is admissible when it cites the number that
 made the agent look: `distinctTypeCombos: 23`, `distinctTextColors: 14`, three buttons styled as primary
@@ -108,7 +107,7 @@ and the panel behind it, the target and its parent.
 
 Severity is the agent's, with the screen in front of it, on the table in its brief. Collection copies it.
 
-**States are screens.** The 2026-09-01 design sweep found that every visual defect lived in a state nobody
+**States are screens.** In the 2026-09-01 design sweep every visual defect lived in a state nobody
 designed - the skeleton, the transition, the empty list. So a critique task names the states it wants
 looked at, and the worker files an `unreached` line for any it could not reach rather than reporting the
 loaded screen and calling the screen clean.
@@ -147,13 +146,13 @@ version and the capability rule that move with the harness.
 ### Where the files live
 
 `design/canvas/` at the project root, or the directory `FLEET.md` names on a `Canvas:` line. It is the
-project's design file base: the artboards are the durable thing, the seeded `.html` is generated from them
-and can be regenerated. Whether to commit either is the operator's decision; the plugin writes there and
-never commits.
+project's design file base: the artboards are the durable files, and the seeded `.html` is generated from
+them and can be regenerated. Whether to commit either is the operator's decision; the plugin writes there
+and never commits.
 
 Isolation is `none`. A capture task reads source and writes exactly one new file no other task names, so
-there is nothing to merge. It is the one kind that writes into the tree without a worktree, and the
-reason is the one-file rule; a task that finds itself editing anything else has left its brief.
+there is nothing to merge. It is the one kind that writes into the tree without a worktree, because of the
+one-file rule; a task that finds itself editing anything else has left its brief.
 
 ### Recon
 
@@ -221,7 +220,7 @@ any dimension is a `minor` finding against the artboard; more than 8 px, or a la
 `major`. Evidence is the two rectangles and the two selectors. The artboard is still assembled - the
 findings say where it lies.
 
-Skip it when the canvas is wanted as a sketch to argue over rather than a record. Say which in the plan.
+Skip it when the canvas is a sketch to argue over rather than a record. Say which in the plan.
 
 ### Assemble
 
@@ -229,7 +228,7 @@ One repo task, after every screen task:
 
 ```bash
 node scripts/fleet-canvas.mjs layout design/canvas --title "Acme"     # canvas.json, and a cover Main.dc.html when there is none
-node scripts/fleet-canvas.mjs check  design/canvas                          # the gate, over every artboard
+node scripts/fleet-canvas.mjs check  design/canvas                      # the gate, over every artboard
 node scripts/fleet-canvas.mjs seed   design/canvas --title "Acme screens" --out design/acme-screens.html
 ```
 
@@ -277,7 +276,7 @@ Provenance still applies: `source:` names the captured artboard and the source f
 screen, no `viewport:` because nothing was measured. `check` reports a proposal as unmeasured, which is
 correct.
 
-The honest line from `MISSIONS.md` holds here too, reversed: a proposal can satisfy every constraint and
+The caveat from `MISSIONS.md` holds here too, reversed: a proposal can satisfy every constraint and
 still be wrong for this product, because taste is the design model's judgement and the operator's call.
 The canvas is where that argument happens, and the fleet's job ends at putting the pieces on it.
 
@@ -301,4 +300,4 @@ median, roughly twenty of them the spawn. A recon task is one probe and no spawn
 task is repo lane and pays no pane at all; its cost is the source it reads and the artboard it writes,
 which passes through the model once as output. A proposal task is the top tier for the whole task, by
 design, and it is the one place in this plugin where that is the cheap choice: a proposal from a weaker
-model is a redesign the operator has to redesign.
+model is a redesign the operator has to redo.

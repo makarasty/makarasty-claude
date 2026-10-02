@@ -78,7 +78,7 @@ under 150 lines; the next chat reads the whole file before it does anything.
 ### 5. Check for secrets
 
 Never a password, token, key or connection string, even one the person pasted: name where it lives. No
-customer or customer data either - no names, contacts or records; describe the case instead. Before the
+personal or customer data either - no names, contacts or records; describe the case instead. Before the
 chip, grep the file and the patch's added lines:
 `grep -niE 'key|token|secret|password|passwd|Bearer|://[^ ]*@|\?token='`. Read each hit; a real value in
 the file is replaced by where it lives. A real value in the patch means delete the patch and say so in
@@ -113,9 +113,9 @@ transcript, or ask the person."
 ### 7. Reply and stop
 
 Two lines in the person's language: the chip is up, and which model to open it on, with the reason in a
-few words. Then stop working on the task: two chats editing the same files is the failure this avoids. Do
-not archive this chat; the person does that once the new chat has given its readback. Questions arriving
-from the next chat are answered from what this chat knows, briefly.
+few words. Then stop working on the task, so two chats never edit the same files. Do not archive this
+chat; the person does that once the new chat has given its readback. Answer questions from the next chat
+briefly, from what this chat knows.
 
 ## Receiving: `from <chat>`
 
@@ -128,11 +128,11 @@ one candidate: ask, listing them. `get_session` on the match gives its working d
 git check below runs with `git -C <that path>`, not in this session's cwd.
 
 A chat that is still running, or was active in the last few minutes, is someone's live work: report its
-state and ask before continuing it, or two chats edit the same files.
+state and ask before continuing it, so two chats do not edit the same files.
 
 A handoff file in `<handoff dir>` naming it is read first; it saves reading the transcript. It may be
 stale: compare its HEAD and time with `git -C <path> log`, and read the transcript after the file's time.
-Work done after the file wins.
+Work done after the file takes precedence.
 
 ### 2. Read only what answers three questions
 

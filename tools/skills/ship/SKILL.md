@@ -4,8 +4,8 @@ argument-hint: [branch ... | all] [mine] [tag [<name>]] [notes]
 allowed-tools: Bash(git:*), Bash(gh:*), Read, Grep, Glob, Edit, Agent, ToolSearch, mcp__ccd_session_mgmt__list_sessions, mcp__ccd_session_mgmt__list_events
 ---
 
-Ship means: the user's work committed as separate commits under their own name, the requested branches
-merged in, everything pushed. Before the first commit, Read `${CLAUDE_PLUGIN_ROOT}/skills/commit/SKILL.md`
+Ship does three things: commits the user's work as separate commits under their own name, merges the
+requested branches in, and pushes everything. Before the first commit, Read `${CLAUDE_PLUGIN_ROOT}/skills/commit/SKILL.md`
 and apply all of it to every commit: the state check, committing by path in the shared index, the
 message, identity and hook rules, and the check and amend rule for the commit just made.
 
@@ -32,7 +32,7 @@ The state as this command was invoked, so the first look costs no tool calls:
 
 ## 0. Other chats in this checkout
 
-A file another chat is halfway through is not this commit's to make. The session tools are often
+A file another chat is halfway through does not belong in this commit. The session tools are often
 deferred: load them with ToolSearch `select:mcp__ccd_session_mgmt__list_sessions,mcp__ccd_session_mgmt__list_events`,
 and use the fallback below only when that finds nothing. `list_sessions` with `limit: 50`, kept to the
 ones whose `cwd` is this checkout and that were active in the last day. Give those to one `Agent` with
@@ -106,8 +106,8 @@ Note the pre-merge sha (`git rev-parse HEAD`), then `git merge --no-edit <b>`. O
 4. Run the narrowest check that covers the file (its test, or a typecheck of its project), respecting the
    machine's verify budget.
 
-**Asking during a merge**: `git merge --abort` first, then show both sides in a few lines and ask. A merge
-left open while waiting gets finished by the next commit any other chat makes in this checkout. After
+**Asking during a merge**: `git merge --abort` first, then show both sides in a few lines and ask. The
+next commit any other chat makes in this checkout would finish a merge left open while waiting. After
 the answer, merge again and apply it.
 
 Then `git add -- <resolved paths>` and `git commit --no-edit`. A merge commit cannot be limited to paths,

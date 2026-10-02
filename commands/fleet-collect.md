@@ -28,12 +28,11 @@ fails the run, and refuses a blocker that landed on a lower-severity row. On a f
 files it generated, because `landed` gates on `backlog.jsonl` existing and a half-written one would let a
 broken run land.
 
-The previous shape of this paragraph claimed the check was verified against a 254 finding run. It was not:
-both comparisons were made between two things that could not disagree - the sightings were summed from the
-groups that had just been built out of the input, and the blocker keys were the group keys themselves - so
-the check passed by construction and would have passed over a lost finding. It was rewritten when a
-deliberately sabotaged merge, writing one row fewer than it grouped, still reported that every finding was
-accounted for.
+An earlier version of this paragraph claimed the check was verified against a 254 finding run. It was not.
+Both comparisons were between two things that could not disagree: the sightings were summed from the groups
+just built out of the input, and the blocker keys were the group keys themselves. The check passed by
+construction and would have passed over a lost finding. It was rewritten when a deliberately sabotaged
+merge, writing one row fewer than it grouped, still reported that every finding was accounted for.
 
 **Your judgement goes on top of that file, never instead of it.** Rank, annotate, name the twins, say what
 you would fix first. Do not retype rows into a markdown table: measured 2026-08-28, a merge written by hand
@@ -45,9 +44,9 @@ spawn costs more than the work. Either way the JSONL comes from the script.
 
 ## Confirm observations, not mechanisms
 
-Roughly 15 of every 100 findings are refuted when somebody tries to fix them, and the refutations are
-almost always of the mechanism rather than the symptom. Confirming mechanisms here would pay twice for
-what the fix kind does anyway, so confirm the part that is executable:
+Roughly 15 of every 100 findings are refuted when somebody tries to fix them, and almost always it is the
+mechanism that falls, not the symptom. Confirming mechanisms here would pay twice for what the fix kind
+does anyway, so confirm the part that is executable:
 
 - Re-run the `repro` expression. Re-read the `file:line`. Re-intersect the `rects`.
 - **Every blocker and every major.** Sample the minors. Skip the polish.
@@ -78,9 +77,9 @@ node "$g" cluster .fleet/<run-id> --queue .fleet/fix-<run-id>
 
 Findings from different areas that reach one file, or that name one identifier in their mechanism, become
 one `kind: root` task with the rest gated behind it on `after:`. Without this the queue hands each surface
-of a shared defect to a different worker, none of whom may touch the seam, and the result is what three
-separate run documents recorded across three runs and nobody was allowed to act on: one cause, patched
-three times, in three files. `docs/GATE.md` has the ceilings and why a candidate wider than six findings
+of a shared defect to a different worker, and none of them may touch the seam. Three separate run documents
+recorded the result across three runs, and nobody was allowed to act on it: one cause, patched three times,
+in three files. `docs/GATE.md` has the ceilings and why a candidate wider than six findings
 is a hotspot rather than a root.
 
 A finding that carries `rects` or a `probe` field - the shape a critique run files - becomes a `kind: design`
@@ -90,15 +89,15 @@ hand-patched by a cheaper model is how the next critique finds the same screen w
 ## Read only what is finished
 
 A worker with findings but no `.done` and no `.blocked` is still running. List it as outstanding and do
-not merge its file: reading a JSONL mid-append gives you a torn last line, which is either a parse error
-or a finding silently dropped.
+not merge its file: a JSONL read mid-append has a torn last line, which is either a parse error or a
+finding silently dropped.
 
 ## An unreached area is never clean
 
 Collect the `{"unreached": ...}` lines alongside the findings, and report them per area. An area carrying
 unreached entries appears in the backlog as incomplete, whatever its finding count. A worker that stopped
-at twice its budget covered part of its area, and a backlog that says otherwise is the failure this whole
-plugin is built against.
+at twice its budget covered part of its area, and a backlog that says otherwise is the failure this
+plugin exists to prevent.
 
 Read each worker's `<chip>.notes.md` for claims it raised and then refuted. Do not re-file a refuted
 claim, and carry the refutation into the backlog: the next run meets the same misleading evidence.
@@ -113,8 +112,8 @@ the failure it was written for.
 
 ## Land the run: notify, then stop the watch
 
-These are one act, done once, when the run is **genuinely** finished. That is a checkable state rather than
-a feeling, and the script checks it:
+These are one act, done once, when the run is **genuinely** finished. That state can be checked, and the
+script checks it:
 
 ```bash
 sh "$f" landed .fleet/<run-id> <expected-chips>
@@ -122,20 +121,20 @@ sh "$f" landed .fleet/<run-id> <expected-chips>
 
 It passes when every chip has a `.done` or `.blocked`, every claim has a done marker, every task in
 `ready/` was claimed by somebody, `backlog.jsonl` exists and is not empty, and no `.waiting` marker is on
-disk. "The workers went quiet" is not the same state, and the whole reason this plugin has a stall rule is
-that silence is ambiguous between finished and dead.
+disk. "The workers went quiet" is a different state: silence is ambiguous between finished and dead, which
+is why this plugin has a stall rule.
 
 It writes `FINISHED` into the run directory when it passes. That file, not anybody's memory of a
-notification, is the durable answer to "did this run end".
+notification, answers "did this run end".
 
 The same call sends the headline to the operator's phone when the `makarasty-tools` plugin is installed and
 `~/.claude/makarasty/notify.json` names a channel (Telegram, Discord, ntfy, a webhook): run id and counts,
 once, the first time `FINISHED` is written, and never findings text. Findings can carry data from the
-application under test, and a webhook is egress. There is nothing for you to do for it; it is mentioned so
+application under test, and a webhook is egress. You have nothing to do for it; it is mentioned so
 you do not send a second one by hand.
 
-Then, in this order. The order is the point: a notification is an event and events get missed, so
-everything durable is already on disk before one is sent.
+Then, in this order. A notification is an event and events get missed, so everything durable is already
+on disk before one is sent.
 
 1. **Print the run banner**, generated rather than written:
 
@@ -147,13 +146,13 @@ everything durable is already on disk before one is sent.
    the run totals and the backlog path, then one `fleet-summary: {...}` JSON line a later script can read.
    Read `decisions.jsonl` out loud beside it if the run has one - those are the contract changes workers
    took without asking, one line each, and this is the last moment before they land.
-   This block is the last thing in the planner's chat, and it is what the operator sees when they come
+   This block is the last thing in the planner's chat, and the first the operator sees when they come
    back to a screen full of chats they left hours ago. Do not retype it into prose underneath.
 2. **`PushNotification`**, carrying the verdict rather than the event: `run <id> FINISHED: 246 findings,
    32 blockers, worker 05 blind, backlog at .fleet/<id>/backlog.md`. It reaches the operator's phone when
    Remote Control is connected, and it is skipped automatically if they are sitting at the terminal, which
-   is the behaviour you want. **Exactly one per run, and it means finished** - that is the whole operator
-   contract, and it only holds if nothing else in the run ever pushes. The phone channels got the same
+   is what you want. **Exactly one per run, and it means finished** - that is the whole operator contract,
+   and it holds only if nothing else in the run ever pushes. The phone channels got the same
    headline from `landed` a moment ago; this one is for the host's own push.
 3. **`TaskStop`** the run's `fleet-wait` monitor, and every other background task this session armed.
    Measured 2026-08-27: a watch left armed after its run finished kept polling for five hours and forty two
@@ -174,15 +173,15 @@ everything durable is already on disk before one is sent.
    A run that wrote code leaves one worktree and one branch per code worker, and they are dead weight once
    the work is pushed. `clean` acts only on the worktrees this run registered, only under
    `.claude/worktrees/`, and it **keeps** any tree with uncommitted changes or commits neither merged nor
-   pushed - print those lines rather than working around them, because each one is somebody's unpushed
+   pushed - print those lines and do not work around them: each one is somebody's unpushed
    work. It unlinks junctions before removing anything, which is what stops the delete reaching the main
    checkout [M32], and it deletes a branch only with `git branch -d`. Never clean before the run has
    landed: a worktree removed early takes findings that were never filed with it.
 
 Exactly two other things are worth waking someone for, and both belong to the planner rather than here: a
 fleet still stalled after a revive attempt failed, and nothing else. A worker asking for its pane must
-never page at night, because a sleeping operator cannot open a pane; that is what the paneless lane and the
-panes-open-before-bed rule in `fleet-plan` are for.
+never page at night, because a sleeping operator cannot open a pane; the paneless lane and the
+panes-open-before-bed rule in `fleet-plan` exist for that.
 
 **A channel URL belongs outside the repository.** `landed` already posted the headline to every channel in
 `~/.claude/makarasty/notify.json`; a `FLEET.md` that names a webhook is the old shape, and the operator
@@ -194,8 +193,8 @@ Keep findings whose `evidence` is a `file:line`, a reproducing expression, or th
 and machine load. Set aside the rest.
 
 Flag, without setting aside, any layout or timing finding whose `conditions` is empty. It is unreproducible
-until someone supplies the viewport and zoom it was seen at, and it belongs in the backlog marked as such
-rather than ranked beside findings that carry theirs.
+until someone supplies the viewport and zoom it was seen at, so it goes in the backlog marked as such, not
+ranked beside findings that carry theirs.
 
 Set aside every finding from a worker that also wrote `.blocked`. That worker observed through a pane that
 never composited, so frozen transitions, empty rows and hung requests are artifacts of the blind pane.
@@ -206,8 +205,8 @@ reads as an area that came back clean.
 ## Dedupe
 
 Same area plus same symptom collapses to one entry even when two workers worded it differently, and it
-carries the list of workers that saw it. Independent sightings make one finding stronger rather than
-making two findings.
+carries the list of workers that saw it. Independent sightings strengthen one finding; they do not make
+two.
 
 Same symptom across different areas stays separate. Proving a shared cause is judgement, and this pass is
 mechanical.
@@ -222,8 +221,8 @@ The script sorts on the first two. The next two are **your** pass over its outpu
    is proven is closer to a fix than one whose cause is guessed.
 4. Evidence type, with `file:line` above a reproducing expression.
 
-Carry `mechanism_status` into the backlog table. A hypothesis presented as a diagnosis is how a fix
-mission spends its time disproving the report instead of repairing the product: measured 2026-08-26,
+Carry `mechanism_status` into the backlog table. A hypothesis presented as a diagnosis makes a fix
+mission spend its time disproving the report instead of repairing the product: measured 2026-08-26,
 three of eight blockers and majors changed diagnosis the moment somebody tried to fix them.
 
 ## Write
@@ -241,8 +240,8 @@ set aside section, and `backlog.md` exists.
 ## Report
 
 The banner from `fleet.sh summary`, then the set aside counts and the top three findings by severity under
-it. Nothing else: this is the last message of the run, and a wall of prose is how the one table that
-matters gets scrolled past. Fixing is a separate session's job, and in most projects a fix ships with a
+it. Nothing else: this is the last message of the run, and a wall of prose gets the one table that
+matters scrolled past. Fixing is a separate session's job, and in most projects a fix ships with a
 reproduction that failed before it.
 
 ## A thin review is a signal
@@ -253,8 +252,8 @@ bearing questions unanswered, and both were about the parts that most needed ans
 across a daylight saving transition, and the acknowledgement semantics of an endpoint deciding what every
 user sees as new.
 
-A clean review that cost a fraction of what its siblings cost has not cleared the work, it has skimmed it.
-Re-ask the specific question yourself, on the specific lines, rather than accepting the verdict.
+A clean review that cost a fraction of what its siblings cost has skimmed the work, not cleared it.
+Re-ask the specific question yourself, on the specific lines, and do not accept the verdict.
 
 The planner in that mission did exactly this and it held: the modules turned out sound, and the check took
-minutes. The value is not in catching the reviewer out, it is in knowing which verdicts were bought.
+minutes. The point is to know which verdicts were bought, not to catch the reviewer out.

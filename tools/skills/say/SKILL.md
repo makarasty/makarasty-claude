@@ -4,8 +4,8 @@ argument-hint: <what you want to say, in any language, what the vendor just said
 ---
 
 Write lines a person will read aloud, or paste, to someone across a company boundary: a vendor, a
-partner, their support desk. The speaker is good at technology and not at conversation, and English is
-not their first language. Every line has to be sayable, or readable, at first sight.
+partner, their support desk. The speaker is good at technology, not at conversation, and English is not
+their first language. Every line must be easy to say, or to read, at first sight.
 
 The gist is always in the person's main language, the one they usually write to you in, even when this
 request came in English. Only when that language is English is there no gist.
@@ -48,10 +48,10 @@ The script opens with these lines, so the speaker has them before they are neede
 
 A point that reports a problem takes three steps, and only these:
 
-1. **What we do.** "For a priority customer we send a rate check with carrier code <carrier code>."
+1. **What we do.** "For an international order we send a shipping-rate check with SKU <SKU>."
 2. **What we get.**
-   "The answer names the plan as text."
-   "It never has a code for that plan."
+   "The answer names the carrier as text."
+   "It never has a code for that carrier."
 3. **One question, then wait.**
    "How should we get that code?"
    *(stop - their turn)*
@@ -65,7 +65,7 @@ cannot add a field, and asking them to is how a call ends with nothing. "How sho
 your other customers do here?" is a question a support desk can answer.
 
 **Leave them the exit.** Close a hard question with "Maybe we send it wrong, or read the wrong field. Please
-tell me." People answer that. They defend against an accusation.
+tell me." People answer that, whereas an accusation makes them defend themselves.
 
 **Ask, then stop.** After the line with the question, the next line is theirs. One question per step. No
 new fact until they have answered.
@@ -74,8 +74,8 @@ new fact until they have answered.
 the word means: "we save every answer exactly as it comes". Say, get, send, wrong, works - never state,
 receive, transmit, incorrect, functions. If the speaker would look a word up, it is the wrong word.
 
-**Every answer in writing.** After an oral answer: "Can you send that to me in writing?" A month later the
-oral answer does not exist.
+**Every answer in writing.** After an oral answer, ask: "Can you send that to me in writing?" A month
+later the oral answer is gone.
 
 **Argue only with their own identifiers.** A request number, a ticket number, a field name from their own
 document. Never "it does not work"; "here is the request number, please look at it on your side".
@@ -126,5 +126,5 @@ id, number and field name matches the source character for character.
 ## Done when
 
 A person reading only the English lines aloud, one per breath, sounds like someone asking how to do it
-right and not like someone filing a complaint; every number in a spoken line is a word; no line holds a
+right, not like someone filing a complaint; every number in a spoken line is a word; no line holds a
 word the speaker would have to look up; and nothing in the text is a fact the person did not give.

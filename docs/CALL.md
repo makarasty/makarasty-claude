@@ -8,12 +8,11 @@ language beside every line; and during the call a fresh chat answers from the sa
 languages, in one turn.
 
 The premise is the plugin's: a number said aloud to a vendor that nobody measured is a blind pane. The
-reference is the Contoso script of 2026-08-21, whose first version proposed in every item and was
-rewritten the same day around asking how it is meant to work. What the interpreting research adds is
-narrow and worth having: numbers are the words most often dropped or mangled when a person speaks under
-load, and a pre-verified list of them on screen is the largest accuracy gain measured (Desmet et al.,
-56.5 to 86.5 percent), which is why the script carries a numbers table and the gate refuses a digit in a
-spoken line.
+reference is the vendor-call script of 2026-08-21, whose first version proposed in every item and was
+rewritten the same day around asking how it is meant to work. The interpreting research adds one thing:
+numbers are the words most often dropped or mangled when a person speaks under load, and a pre-verified
+list of them on screen is the largest accuracy gain measured (Desmet et al., 56.5 to 86.5 percent). That
+is why the script carries a numbers table and the gate refuses a digit in a spoken line.
 
 ## The run on disk
 
@@ -49,8 +48,8 @@ The facts model is Opus rather than the Sonnet `MODELS.md` gives a clear spec, b
 not clear: "every number about this topic, and what each depends on" is the kind of task a weaker model
 finishes early and quietly. A wrong number on a call costs the call, and a tier costs cents.
 
-The script model is the design model: copy meant to be read aloud is copy meant to be seen, and a script
-from a weaker model is one the speaker rewrites at the table.
+The script model is the design model: copy meant to be read aloud is copy meant to be seen, and the
+speaker rewrites a weaker model's script at the table.
 
 ## A fact
 
@@ -58,13 +57,13 @@ One per heading, in the source's file, with an id that is unique across the run:
 a dash, a counter.
 
 ```markdown
-## F02-7 · Northwind refuses about a third of our second checks with error 43
-- what: 35 of 109 second checks to Northwind's three entities came back ErrorCode 43 "Invalid/Missing Account ID"; zero such errors at any other carrier
+## F02-7 · Acme Freight refuses about a third of our second checks with error 43
+- what: 35 of 109 second checks to Acme Freight's three entities came back ErrorCode 43 "Invalid/Missing Account ID"; zero such errors at any other carrier
 - how known: measured
-- evidence: select count(*) ... where carrier like 'NORTHWIND%' and error_code = 43, direct-account traffic 2026-07-24 to 2026-08-12
+- evidence: select count(*) ... where carrier like 'ACME%' and error_code = 43, direct-account traffic 2026-07-24 to 2026-08-12
 - when: 2026-08-12
-- depends on: the organisation account ID we send, the same one to every carrier
-- say: About one Northwind check in three comes back with error forty three. No other carrier gives us this error.
+- depends on: the account ID we send, the same one to every carrier
+- say: About one Acme check in three comes back with error forty three. No other carrier gives us this error.
 ```
 
 `how known` is one of four words, and the script treats each differently:
@@ -88,9 +87,9 @@ them, and the script's traps are written from them.
 
 ## The script
 
-One page, `call/script.html`, built on `templates/call-script.html` in this plugin. The styles are the
-Contoso page's and the structure is fixed, so the script task fills sections rather than designing a
-page. The sections, in reading order:
+One page, `call/script.html`, built on `templates/call-script.html` in this plugin. The styles come from
+the 2026-08-21 vendor-call page and the structure is fixed, so the script task fills sections rather than
+designing a page. The sections, in reading order:
 
 1. **How to run it** - the rules of the register, stated for the speaker in the read language, and the
    repair lines: the fixed sentences to say when lost. Air traffic control keeps five and a meeting needs
@@ -139,8 +138,8 @@ Every line has to be sayable at first sight.
 - **Ask, then stop.** After the line with the question, the next line is theirs.
 - **Plain words, one meaning each.** Say, get, send, wrong, works; never state, receive, transmit,
   incorrect, functions. No idiom, no phrasal verb where a plain verb exists ("start" over "kick off"). If
-  the speaker would look a word up, it is the wrong word. The Contoso speaker stopped on `verbatim`,
-  `canonical`, `envelope`.
+  the speaker would look a word up, it is the wrong word. The speaker of the 2026-08-21 script stopped on
+  `verbatim`, `canonical`, `envelope`.
 - **Numbers as words, with a pause before and after.** "about eight hundred", "one in three", "error forty
   three". A request number in threes: "two seven three - one four three - five six eight". A code digit
   by digit: "zero zero one one two". A date by name: "August first". The exact figure stays in digits in
@@ -214,7 +213,7 @@ The paste is what the speaker heard, and it may be half a sentence, a mix of two
 transcription with the wrong words in it. Take it as it comes; asking the speaker to retype it costs them
 the call. The top block starts with the most likely reading. When two readings compete, name both in one
 line and make the bottom block the clarifying question: "Sorry, do you mean the carrier list, or the
-second check?" A guess at what they meant, answered confidently, sends the speaker down the wrong
+second check?" Answering a guess at what they meant, confidently, sends the speaker down the wrong
 question.
 
 ### Digging
@@ -256,6 +255,6 @@ anything.
 ## What this costs
 
 A facts task is a repo task on Opus: the source it reads and one file out. The script task is the top
-tier once, for a page that passes through the model as output. The live chat is the cheap part by
-design: a small context and one turn per question, and the whole point of the facts stage is that the
-expensive reading was done before anyone was on the line.
+tier once, for a page that passes through the model as output. The live chat is cheap by design: a small
+context and one turn per question, because the facts stage did the expensive reading before anyone was on
+the line.

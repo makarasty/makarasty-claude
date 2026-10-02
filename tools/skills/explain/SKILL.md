@@ -13,10 +13,10 @@ no topic was given: ask in one line what to explain.
 
 ## Check before you say it
 
-Every claim is something the person may repeat to someone else. Before writing a claim that is cheap to
-check now - committed or not, a test passing, what a function does, what is deployed - check it: `git
-status`, `git log`, one narrow test, the file. Three such checks at most, and no whole test suite or
-typecheck: they cost gigabytes on a machine other chats share. A claim you did not check is said as
+The person may repeat every claim to someone else. Before writing a claim that is cheap to check now -
+committed or not, a test passing, what a function does, what is deployed - check it: `git status`,
+`git log`, one narrow test, the file. Three such checks at most, and no whole test suite or typecheck:
+they cost gigabytes on a machine other chats share. Say plainly that a claim you did not check is
 unchecked.
 
 ## The answer
@@ -33,10 +33,10 @@ Short paragraphs or a few plain lines, in this order, skipping any that do not a
 5. **Can it ship.** Yes, no, or yes once something happens - only when shipping is the question.
 6. **Not checked.** What you did not verify, plainly. Nothing: leave it out.
 
-No headings, no tables, no emoji, no `file:line` unless asked. Keep the specifics - numbers, names, IDs -
-since plain is not vague. Around five to twelve lines; longer only when the person asked for detail.
+No headings, no tables, no emoji, no `file:line` unless asked. Keep the specifics - numbers, names, IDs;
+plain does not mean vague. Around five to twelve lines; longer only when the person asked for detail.
 
 ## Done when
 
 Each of the six points that applies is answered for this chat's own work, every claim was checked or is
-marked unchecked, and the person could repeat the answer without opening the code.
+marked unchecked, and the person can repeat the answer without opening the code.

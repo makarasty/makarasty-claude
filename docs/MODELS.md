@@ -1,7 +1,7 @@
 # Which model runs which stage
 
-Every claim here that is a measurement says so and gives the number. Everything else is a judgement call,
-and says that too.
+A claim here that is a measurement says so and gives the number. Everything else is a judgement call, and
+says so.
 
 ## The roster
 
@@ -30,16 +30,16 @@ Two conclusions that point in different directions:
   probe is cheaper inline. Give a subagent a whole scenario, fifteen steps returning ten lines, rather than
   one step at a time.
 
-What that measurement does not show: that Haiku can judge an interface. It ran a fixed probe and described
-a login screen. Read it as evidence about mechanics alone.
+The measurement does not show that Haiku can judge an interface. It ran a fixed probe and described a
+login screen, so read it as evidence about mechanics alone.
 
 Measured again on a real scenario rather than a probe, 2026-08-26: a Sonnet `fleet-scenario` executor
 walking two screens spent **57,103 tokens over 33 tool calls in 219 seconds**, and returned roughly **750
-tokens** to the parent. That is **1.3 percent**, and it is the case the fixed overhead was always waiting
-for. The screenshots, DOM reads and settle polling stayed in the subagent.
+tokens** to the parent. That is **1.3 percent**, the case the fixed overhead was always waiting for. The
+screenshots, DOM reads and settle polling stayed in the subagent.
 
 Confirmed at scale, 2026-08-26: executor return ratios across eight workers ran 0.96 to 2.04 percent,
-bracketing that reference. The ratio is stable and it is not the lever. **The denominator varies by an
+bracketing that reference. The ratio is stable and is not the lever. **The denominator varies by an
 order of magnitude**: the cheapest executor made 30 tool calls, took no screenshots and read 4.0 M cached
 tokens; the most expensive made 194, took 51 screenshots and read 55.6 M. Both returned about the same
 number of lines. What a run costs is decided by how much the executor looked at, never by how much it
@@ -49,8 +49,8 @@ The same run read 311 M cached tokens against 8.31 M non-cached, a ratio of 37 t
 fleet moves is cache rather than new context.
 
 The parent then spent six inline probes ruling on what came back, which was cheaper than a second spawn.
-That is the rule stated from the other side: one probe inline beats a spawn, one scenario delegated beats
-running it inline.
+The rule from the other side: one probe inline beats a spawn, and one scenario delegated beats running it
+inline.
 
 ## How a stage picks its model
 
@@ -72,7 +72,7 @@ Guidance:
 - **Fixed probe, extraction, counting, reformatting**: Haiku under an exact output contract.
 - **A screen that has to look right, or a proposal for how it should**: `model: fable`, end to end, and
   it is the one place where the top tier is the cheap choice - a proposal from a weaker model is a redesign
-  the operator has to redesign. Capturing a screen from source is not that job; the strong general model
+  the operator has to redo. Capturing a screen from source is not that job; the strong general model
   copies exact values well. Reviewing a screen for design defects is the same tier: `fleet-design-eye` runs
   the geometry probes and rules on what they return in one pass, on `fable`, because what is left after the
   probes is a taste verdict nobody downstream re-decides.
@@ -101,12 +101,11 @@ both the per-invocation parameter and the frontmatter; with `FORCE` set and no `
 alongside it, every subagent runs on the main conversation's model. That ordering holds from Claude Code
 v2.1.251. Before it the environment variable came first on its own.
 
-What the ordering costs this plugin: `fleet-run` spawns its pane agents with the brief's `model:` as a
-per-invocation parameter, and that is the top of the order, so the `model:` line in `fleet-scenario`,
-`fleet-profiler` and `fleet-design-eye` is the fallback for a brief that omits one rather than the tier
-those agents actually run at. `fleet-triage` is spawned by `fleet-collect` with no model, so its
-frontmatter is what runs. The `effort:` line is load-bearing in all four, because nothing overrides it per
-call.
+What the ordering means for this plugin: `fleet-run` spawns its pane agents with the brief's `model:` as a
+per-invocation parameter, which is the top of the order, so the `model:` line in `fleet-scenario`,
+`fleet-profiler` and `fleet-design-eye` is the fallback for a brief that omits one, not the tier those
+agents actually run at. `fleet-triage` is spawned by `fleet-collect` with no model, so its frontmatter is
+what runs. The `effort:` line matters in all four, because nothing overrides it per call.
 
 ## What the operator sets once
 
@@ -128,7 +127,7 @@ Most waste is not the tier. In order of size:
    in one message.
 4. **Unscoped verification.** In a large repository a full test suite and a full typecheck dwarf every
    token decision on this page, and two of them at once put the machine this was written on into the page
-   file. This one is no longer yours to remember: a hook refuses a full suite or a full typecheck from a
+   file. You do not need to remember this one: a hook refuses a full suite or a full typecheck from a
    worker that does not hold the verify lane, and names the scoped form in the refusal.
 
 ## Writing for the models you dispatch

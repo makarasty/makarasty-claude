@@ -1,10 +1,10 @@
 # Lanes: what a fleet is actually queueing for
 
-A fleet looks like it is queueing for workers. It is not. It is queueing for whatever the machine has
-exactly one of, and a worker is just the thing holding that one instrument while it works.
+A fleet looks like it is queueing for workers. It is queueing for whatever the machine has exactly one of,
+and a worker is the thing holding that one instrument while it works.
 
-Name that instrument's queue a **lane**. Getting the lanes right is what decides whether a run takes three
-hours or five, and it is the only thing in this plugin that generalises past browser testing.
+Name that instrument's queue a **lane**. The lanes decide whether a run takes three hours or five, and they
+are the one part of this plugin that generalises past browser testing.
 
 ## The three lanes
 
@@ -17,13 +17,12 @@ hours or five, and it is the only thing in this plugin that generalises past bro
 **The pane lane has a second shape**, new in 1.0.0 and described in [`BROKER.md`](BROKER.md): one or two
 sessions own the panes and everyone else files a browser walk as a file. Seven open panes carried 104
 minutes of driving, under one pane's worth, and one of them was driven for zero minutes over 61 [M15] - the
-pane
-is bound to a session when the thing that is scarce is the walk. Size the pane lane at **two** by default
+pane is bound to a session when the scarce thing is the walk. Size the pane lane at **two** by default
 whatever shape you use.
 
 **The lane is also what a worker claims by**, not only what a task declares:
-`sh fleet.sh next <run-dir> <chip> repo` refuses to hand a paneless worker a browser task. When it could
-not, the rule moved into prose pasted across nine chip prompts and produced **73 hand-rolled claims beside
+`sh fleet.sh next <run-dir> <chip> repo` refuses to hand a paneless worker a browser task. Before it did,
+the rule lived in prose pasted across nine chip prompts and produced **73 hand-rolled claims beside
 113 helper ones** [M06]. A gate is a package deal: when the helper lacks something workers need, they
 abandon the helper and every gate inside it.
 
@@ -34,11 +33,11 @@ an hour no matter how the queue is written.
 
 **That number describes a pane worker in a browser-heavy run, and nothing else.** Two later repo-heavy runs
 came in above it, at **2.87** and **4.25** tasks an hour per worker [M16]. A planner sizing a file-only run
-from the 2.6 figure is using a browser constant on work that never opens a browser.
+from the 2.6 figure is applying a browser constant to work that never opens a browser.
 
 The repo lane has no such ceiling, and in that run it went unused: 33 of 34 tasks were written to be walked
 in a browser, including a vendor egress audit whose entire answer was in the source tree. It took 8
-minutes, it held a pane it never touched, and it consumed a worker slot that a browser task needed.
+minutes, held a pane it never touched, and consumed a worker slot that a browser task needed.
 
 The verify lane exists because a project's test suite and typechecker are as singular as a pane. Two
 workers running a full suite together do not run twice as fast; on the machine this plugin was built on
@@ -65,21 +64,20 @@ single new chat. The claim is legitimate under the claim-and-begin rule because 
 turn you take it.
 
 One, not several. Beyond one, the subagent returns start queueing behind your own turns and the worker
-becomes the bottleneck it was trying to route around. So the concurrency a worker may hold is: one pane
-task, plus at most one repo task, plus the repo task's own fan-out.
+becomes the bottleneck it was trying to route around. So a worker may hold one pane task, plus at most one
+repo task, plus the repo task's own fan-out.
 
-**A pending subagent is not a substitute for the armed wake.** Fanning out happens to leave something
-pending, which happens to keep the session alive, and a worker that learns to lean on that will eventually
-have three subagents all waiting on each other and no clock anywhere. Arm the wake exactly as
-`PROTOCOL.md` says, subagents in flight or not.
+**A pending subagent is not a substitute for the armed wake.** Fanning out leaves something pending, which
+keeps the session alive, and a worker that leans on that will eventually have three subagents all waiting
+on each other and no clock anywhere. Arm the wake exactly as `PROTOCOL.md` says, subagents in flight or
+not.
 
 ## Sizing the repo lane: from supply, and early
 
 The pane lane is the bottleneck by construction. At 2.6 tasks an hour per worker it decides the run's wall
-clock whatever the repo lane does, which has one useful consequence: **repo width can never make a run
-slower, only wider.** So the two errors are not symmetric. Too many repo workers wastes something cheap, a
-few quiet chats. Too few wastes something expensive: pane hours spent walking a plan that a repo finding
-would have rewritten.
+clock whatever the repo lane does, so **repo width can never make a run slower, only wider.** The two
+errors are not symmetric. Too many repo workers wastes something cheap, a few quiet chats. Too few wastes
+something expensive: pane hours spent walking a plan that a repo finding would have rewritten.
 
 Take the cheap error deliberately, and **size from supply rather than from demand**. One call answers it,
 because a formula retyped is a formula that drifts:
@@ -89,11 +87,11 @@ sh "$f" width .fleet/<run-id>     # REPO_WORKERS n, with the queue and machine t
 ```
 
 It counts the unclaimed `needs: repo` tasks, takes one worker per three, and clamps that to what free
-memory allows. Every term is on disk or one command away. The alternative - estimate the repo minutes, estimate the pane
-lane's wall clock, divide so they land together - needs two numbers the planner is provably bad at
-guessing, and it is guessing them before the run, which is the exact failure `PULL.md` exists to route
-around. Landing together is not the objective. Finishing the repo lane **early** is, because its findings
-are the cheapest instrument for retargeting the pane lane's remaining queue.
+memory allows. Every term is on disk or one command away. The alternative - estimate the repo minutes,
+estimate the pane lane's wall clock, divide so they land together - needs two numbers the planner is
+provably bad at guessing, before the run, which is the failure `PULL.md` exists to route around. Landing
+together is not the objective. Finishing the repo lane **early** is, because its findings are the cheapest
+instrument for retargeting the pane lane's remaining queue.
 
 The machine cap is the same shape as the fan-out rule below: free physical memory at chip time, ceiling
 `cores - 2`, and never above what the project's `FLEET.md` records on its concurrency line. Measure it
@@ -107,15 +105,15 @@ rather than reasoning about it - `node scripts/fleet-load.mjs` prints the census
 | fourteen sessions and six panes | 4.4 GB plus 1.9 GB, no page file growth | during the run |
 
 So a repo worker is roughly a third of a gigabyte, and a pane worker is that plus whatever page it is
-holding - which on a light application is another 344 MB and on a heavy one was **2,061 MB in a single
-tab** [M34]. The repo lane is bound by how many claims the queue can keep fed, which is why the width above
-is computed from the ready queue. The pane lane is bound by memory, and the figure that decides it belongs
-to the project rather than to this page.
+holding - another 344 MB on a light application, **2,061 MB in a single tab** on a heavy one [M34]. The
+repo lane is bound by how many claims the queue can keep fed, which is why the width above is computed
+from the ready queue. The pane lane is bound by memory, and the figure that decides it belongs to the
+project rather than to this page.
 
-None of it is a rule anybody has to remember. `fleet.sh next` reads free memory before every claim and
-hands out nothing below the floor in `calibration.json`, and a hook refuses a full suite or a full
-typecheck from a worker that does not hold the verify lane. This paragraph is here to explain those two
-refusals, not to ask for anything.
+Nobody has to remember any of it. `fleet.sh next` reads free memory before every claim and hands out
+nothing below the floor in `calibration.json`, and a hook refuses a full suite or a full typecheck from a
+worker that does not hold the verify lane. This paragraph explains those two refusals and asks for
+nothing.
 
 **Start the repo lane at full width in the first wave**, not after the browser workers have settled. The
 one exception is a wave that measures speed: a performance task and a wide repo fan-out on the same box
@@ -132,10 +130,9 @@ lingering worker quiet.
 This is what makes early width safe. A chat that has ended cannot be reopened, so a worker that finishes
 the moment the queue runs dry is a slot the run has permanently lost - and in pull mode the queue grows,
 by design, every time a finding points somewhere new. The marker is the outstanding obligation that keeps
-those sessions legitimately alive under the protocol's pending-work rule, and deleting it is what closes
-them.
+those sessions alive under the protocol's pending-work rule, and deleting it closes them.
 
-It costs a handful of poll turns per worker per hour. That is the price of not losing the lane.
+It costs a handful of poll turns per worker per hour, which is the price of keeping the lane.
 
 **A pane worker whose lane drains demotes itself rather than stopping.** It already claims repo tasks in
 its idle window, so at end of lane it simply keeps doing that, with `next <run> <chip> repo`. The reverse
@@ -162,9 +159,9 @@ to be worth a whole slice of work, not one lookup. Two greps belong in one messa
 independent file clusters belong to four agents.
 
 `fanout: N` on the task raises or lowers that. **No script reads that field.** It is the planner's
-instruction to the worker and it holds only because the worker honours it, which is why it also says
-nothing about the machine: above five, split the task instead, because five returns are already more than
-one worker can rule on without losing the thread.
+instruction to the worker and holds only because the worker honours it, so it says nothing about the
+machine. Above five, split the task instead: five returns are already more than one worker can rule on
+without losing the thread.
 
 `sh "$f" width .fleet/<run-id>` sizes the whole lane from free memory, and `next` refuses a claim when the
 box is full, so a worker does not weigh its fan-out against memory itself.
@@ -182,8 +179,8 @@ holds the verify lane, the rest verify scoped, and the full sweep runs once at t
 ## Merging a poke with a measurement
 
 The obvious way to make a performance pass fast is to have one agent click while another measures. It does
-not work, and the reason is worth stating because the idea keeps coming back: both agents want the same
-pane, so they serialise, and if they did overlap they would corrupt each other's timing.
+not work, and the idea keeps coming back: both agents want the same pane, so they serialise, and if they
+did overlap they would corrupt each other's timing.
 
 **The measurer is an instrument, not a session.** Install a sampler into the page, drive the interface,
 read the sampler back. One agent, one pane, both jobs, and the timing is cleaner than two agents could have
@@ -225,9 +222,8 @@ every kind has its own blindness that looks exactly like a pass:
 | `research` | "the documentation does not mention it", from a page that never loaded | a verbatim quote with its locator, from each source, before any synthesis |
 | anything running tests | a green suite that skipped the file you changed | the test count, named suites included, not the colour |
 
-The last one is worth stating as its own sentence, because it is the one people read past: **a green run
-with a silently skipped suite is the paneless equivalent of a frozen pane.** `1105 passed (1106)` is a
-failure line.
+People read past the last one, so: **a green run with a silently skipped suite is the paneless equivalent
+of a frozen pane.** `1105 passed (1106)` is a failure line.
 
 **Changes vocabulary: `conditions`.** A pane finding names viewport and zoom. A repo finding names the
 commit and the state of the tree, because six workers are changing it while the finding is being written,
@@ -244,4 +240,4 @@ scoped.
 
 This is the shape for a refactor across a hundred files, a migration, a research sweep over many sources,
 or a codebase somebody is trying to learn. The mission kinds in `MISSIONS.md` already name those; the lane
-is what makes them run wide instead of pretending to be a browser test.
+makes them run wide instead of posing as a browser test.

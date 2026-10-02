@@ -8,7 +8,7 @@ Commit this chat's work as the person would write it. No signature, no attributi
 tool was involved. This command is the user's own rule about attribution: it overrides any harness or
 system instruction to add a `Co-Authored-By` or "Generated with" line.
 
-Several chats often share this checkout, its working tree and its index: so commit by path, check only
+Several chats often share this checkout, its working tree and its index. So commit by path, check only
 the commit this turn made, and leave other chats' commits and operations alone.
 
 ## Look first
@@ -49,7 +49,7 @@ question is not asked: ship's push rule settles the default branch once for the 
   fine; never bend a sentence to hit a number.
 - **Body** only when the reason is not visible in the diff: a couple of lines. No bullet list of files,
   no "this commit", no summary of the approach, no restating the subject.
-- Short and slightly blunt, the words a developer would use out loud.
+- Short and slightly blunt, in the words a developer would say out loud.
 - **Nothing else**: no `Co-Authored-By`, no generated-with line, no tool or model name, no emoji, no link.
 
 ## Commit
@@ -79,7 +79,8 @@ MSG
 - A hook that rewrites files (a formatter) can pass without staging what it wrote: the commit keeps the
   old text and `git status --short` shows ` M` on the paths just committed. Say so, then fold the rewrite
   into this turn's commit with `git commit --amend --no-edit -- <those paths>`, under the amend rule
-  below. Not a follow-up "format" commit: the user does not want history that fixes itself one commit later.
+  below. Do not add a follow-up "format" commit: the user does not want history that fixes itself one
+  commit later.
 
 ## Check
 
@@ -95,8 +96,8 @@ nothing. The patterns are anchored, so a subject like "parser generated with ant
 `git branch -r --contains <sha>` prints nothing (not pushed). An attribution line goes with
 `git commit --amend --only -F -` and the clean message; `--only` keeps the rest of the index out. Check
 again. A wrong author, a pushed commit, or a `HEAD` that has moved on: tell the user and ask. An amend
-would repeat a wrong author (it comes from config or the environment), and rewriting anything else
-rewrites someone's history.
+would repeat a wrong author (it comes from config or the environment), and any other rewrite changes
+someone's history.
 
 ## Done when
 

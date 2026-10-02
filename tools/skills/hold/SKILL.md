@@ -5,8 +5,8 @@ argument-hint: [codeword, default абрикос]
 
 The codeword is `$ARGUMENTS`, or `абрикос` when empty. An argument that is a sentence ("молчи пока не
 скажу апельсин") holds it as the word after "скажу" or "say", else its last word. The person is walking the app and dictating what is
-wrong, one message at a time. Acting on the first item while they are still on the fifth costs them a
-re-read and costs the fix the pattern the later items would have shown.
+wrong, one message at a time. If you act on the first item while they are on the fifth, they have to
+re-read your change, and the fix misses the pattern the later items would have shown.
 
 ## While collecting
 
@@ -35,7 +35,7 @@ only when it is the whole message.
 1. **List** every item once, numbered, duplicates merged. No items: say so in one line and stop.
 2. **Group by cause**, not by screen. Items that share a component, a style token or a layout primitive
    are one group: the fix goes into the shared piece, then every place that uses it is checked. Fixing only
-   the screen the person happened to look at is the correction they make most often.
+   the screen the person happened to look at is the correction they have to make most often.
 3. **Reuse what the project has**. Find its own button, popup, table, skeleton and spacing primitives
    before writing any; no new global style overrides.
 4. **Fan out** when groups touch disjoint files: one subagent per group with `model: "sonnet"`, each

@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "makarasty",
-  "description": "Fleet tooling for Claude Code: run one mission across several sessions, each gating what it can actually see, all reporting through files.",
+  "description": "Two Claude Code plugins: makarasty runs one job across several sessions with evidence gates, makarasty-tools is nine everyday commands for git, review, handoff and notifications.",
   "owner": {
     "name": "makarasty",
     "url": "https://github.com/makarasty"
@@ -9,13 +9,13 @@
   "plugins": [
     {
       "name": "makarasty",
-      "description": "Split a mission across worker sessions, then gate what they change: a fix is refused without a reproduction that failed before it, a cause several findings share is ruled on once before any of them is patched, and an edit that drops a name something outside the repository reads is blocked until a question or a recorded decision names it. Ten mission kinds, gated browser checks, per stage model selection, file based reporting.",
+      "description": "Run one job across several Claude Code sessions: a shared task queue, reports written to files, a frame-count check before every browser observation, and a gate that refuses a fix without a reproduction that failed first. Ten mission kinds, from test sweeps and fixes to refactors, research and design.",
       "source": "./",
       "category": "workflow"
     },
     {
       "name": "makarasty-tools",
-      "description": "Commit under your own name, review a diff with evidence, hand a chat off to a fresh one before its context runs out, explain plainly, strip assistant tics out of writing, say what you mean in simple English for a call or a vendor, and get a Telegram, Discord or ntfy message when a chat or a fleet run finishes. Versioned apart from the fleet.",
+      "description": "Nine everyday commands: commit and ship under your own name, review a diff with evidence, hand a chat off before its context runs out, collect bugs until a codeword, explain plainly, strip assistant tics from text, phrase a vendor call in simple English, and get a phone message when a chat finishes.",
       "source": "./tools",
       "category": "productivity"
     }

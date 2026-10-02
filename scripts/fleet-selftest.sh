@@ -838,7 +838,7 @@ cl="$here/fleet-call.mjs"
 if [ -f "$cl" ] && command -v node >/dev/null 2>&1; then
   ldir="${TMPDIR:-/tmp}/fleet-call-$$"; mkdir -p "$ldir/call/facts"
   printf '# Call\n- Read: ru\n- Speak: en\n' > "$ldir/call/CALL.md"
-  printf '## F02-1 · Northwind refuses a third of the second checks\n- how known: measured\n- evidence: select count(*) over 2026-07-24..08-12\n- when: 2020-01-01\n\n## F02-2 · the retry helps\n- how known: guess\n- evidence: nobody checked\n- when: 2026-08-20\n' > "$ldir/call/facts/02-northwind.md"
+  printf '## F02-1 · Northwind refuses a third of the second rate checks\n- how known: measured\n- evidence: select count(*) over 2026-07-24..08-12\n- when: 2020-01-01\n\n## F02-2 · the retry helps\n- how known: guess\n- evidence: nobody checked\n- when: 2026-08-20\n' > "$ldir/call/facts/02-northwind.md"
   page() { # page <data-facts> <spoken line>
     printf '<article class="q" data-facts="%s"><div class="say"><span class="lbl">Say</span><p>%s</p></div></article>\n<table><tr><td class="say-cell">about eight hundred</td></tr></table>\n' "$1" "$2" > "$ldir/call/script.html"
   }

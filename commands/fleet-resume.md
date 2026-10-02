@@ -52,7 +52,7 @@ Then the queue: how many ready tasks nobody holds, and how many released tasks a
 re-filed under a new id.
 
 `recover` reads the host's own `CLAUDE_CONFIG_DIR` when it is set, and `CLAUDE_PROJECTS_DIR` overrides
-both. If it finds no transcripts at all it says so, because that absence is its own blindness rather than
+both. If it finds no transcripts at all it says so, because that absence is a blind spot in the check, not
 a fact about the workers - and it **refuses `--release` outright** in that state, since releasing on no
 evidence would free the claims of workers that are alive. `fleet.sh sweep --release` is the instrument for
 a machine with no transcripts: it asks the heartbeat question instead.
@@ -64,7 +64,7 @@ in a terminal; a resumed session comes back with its context and its claim, and 
 `fleet.sh beat` to prove it is alive.
 
 Do this **before** releasing anything. A worker that comes back to find its task handed to somebody else
-has to be told to stop, and two workers on one task is the failure the claim exists to prevent.
+has to be told to stop, and two workers on one task is what the claim exists to prevent.
 
 ### 3. Release only what cannot come back
 

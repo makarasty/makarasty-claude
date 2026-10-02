@@ -51,7 +51,7 @@ Isolation: worktree, always. Two sessions editing one tree produce a merge nobod
 that reverts a path can destroy another session's uncommitted work.
 
 Demand: each worker ships its slice with the test the project's conventions require, and reports which
-verification it ran. Scoped verification during the work, full sweep once at the end, by the operator.
+verification it ran. Scoped verification during the work, and a full sweep once at the end, run by the operator.
 
 Pairs with the `tdd` skill when installed.
 
@@ -64,7 +64,7 @@ twelve unrelated fixes does the first three well.
 
 Isolation: worktree.
 
-**One kind of task is exempt from that split, and it has to be.** A defect whose cause is shared lives in
+**One kind of task is exempt from that split.** A defect whose cause is shared lives in
 a file somebody else owns, so exclusive ownership - the thing that stops two workers colliding - is also
 what stops the cause being fixed once. Measured on one project: a duplicated guard was named for
 consolidation in three separate run documents across three runs and deferred every time as "out of scope
@@ -82,8 +82,7 @@ writes a fix for a defect nobody had.
 **Name the twins before fixing a shared seam.** `fixqueue` lists the twins that share your files, and
 `cluster` puts a root in front of the ones that share a cause; neither finds the third surface that shares
 neither. When a defect lives in something more than one surface uses, find every other user of it first
-and say which ones share the flaw. A fix applied to one side of a
-seam and not the other leaves two surfaces behaving differently under the same input, and that divergence
+and say which ones share the flaw. A fix applied to one side of a seam and not the other leaves two surfaces behaving differently under the same input, and that divergence
 is worse than the original defect because nothing looks broken from either side alone. Measured in the
 same mission: fixing a filter on the client left its server twin and its export twin untouched, so one
 call was labelled three ways.
@@ -98,8 +97,8 @@ is a change, not a fix.
 That was prose here from the day this kind existed, and a fix run landed 164 changes without anything
 checking it. It is checkable, so `fleet.sh finish` now checks it: `fleet-gate.mjs prove` runs the
 reproduction rather than recording a claim about it, before the change and after, and `finish` refuses the
-task unless the first failed, the second passed, and the tree moved between them. That last condition is
-not pedantry - a build daemon that died mid-run returned `BUILD SUCCESSFUL, 0 failures` over a tree whose
+task unless the first failed, the second passed, and the tree moved between them. That last condition
+matters: a build daemon that died mid-run returned `BUILD SUCCESSFUL, 0 failures` over a tree whose
 fix had been reverted. A `before` that passes is a refutation, which is the cheapest good news a fix run
 gets.
 
@@ -113,6 +112,7 @@ repaired. All three were reasoned about carefully and none was asked about. `doc
 The regression that mission shipped closest to production was invisible to every worker and every review,
 and only the full run caught it: a new import in one store pulled a realtime graph into a test whose mock
 had never needed it.
+
 ## design
 
 Rework a screen so it is right to look at, not merely correct to click.
@@ -151,8 +151,8 @@ marker exists; a worker that finds only gated work is told `QUEUE WAITING` and p
 its `.done`. Which paths a screen task may not touch is still prose, and this repository's record on prose
 rules is poor - see the known limits in the README.
 
-Demand: numbers before and after, from the same instrument, filed with the change. And the honest caveat
-stated in the finding — a screen can satisfy every number and still be ugly, because hierarchy, colour,
+Demand: numbers before and after, from the same instrument, filed with the change. And the caveat,
+stated in the finding: a screen can satisfy every number and still be ugly, because hierarchy, colour,
 rhythm and copy are the design model's judgement and nothing else's.
 
 What this gives up: the primitive wave is one session on the critical path, and each verification round

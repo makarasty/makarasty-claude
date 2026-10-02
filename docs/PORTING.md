@@ -3,7 +3,7 @@
 The pattern here outlives any particular tool: several agent sessions working one job, each holding its
 own context, each able to see a real running system, coordinating through a substrate none of them owns.
 
-The tool changes. The pattern should not have to. This page names every assumption the plugin makes about
+This page names every assumption the plugin makes about
 the thing running it, what breaks when that assumption fails, and what to put in its place. Porting to a
 different harness is then a checklist rather than a rewrite.
 
@@ -38,7 +38,7 @@ until that tab closes.
 
 **4. A session can start another session.**
 
-Weakly held today, and worth knowing it is weak: sessions are offered as a chip and started by a human
+Weakly held today: sessions are offered as a chip and started by a human
 click. An automatic spawn would remove the operator from the loop entirely.
 
 If a harness offers real programmatic spawning, the only thing that changes is how tasks are handed out.
@@ -135,7 +135,7 @@ them elsewhere.
    claimers, exactly one winner, later attempts refused.
 4. Re-measure the delegation ratio in `MODELS.md`. It is a number from one host, not a law.
 5. Re-measure the concurrency ceiling **per lane**. On this one the pane lane's ceiling was the operator's
-   screen and the repo lane's was the machine, and the two numbers are years apart in size.
+   screen and the repo lane's was the machine, and the two numbers differ enormously in size.
 6. Keep the finding schema and the evidence contract unchanged. They are the part with no host dependency
    at all, and they are why a run from a year ago can still be read.
 
@@ -217,7 +217,7 @@ put the `cd` and the work in the same call.
 written. With `jq` present, `jq -e . file.jsonl` does it in one call; without it, append one object per
 line and trust the schema rather than writing a validator. Either way it is not worth a script.
 
-The one genuinely platform bound trick is growing a window past the edges of the display, which is
+The one platform-bound trick is growing a window past the edges of the display, which is
 described for Windows in [`BROWSER.md`](BROWSER.md). macOS has no equivalent through the window manager,
 though a virtual display via `displayplacer` or a second Space serves the same purpose. On Linux it depends
 entirely on the compositor.

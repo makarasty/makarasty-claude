@@ -90,7 +90,7 @@ git's own refusals are, on the paths that reach them; and the section above says
 ## On writing the reason before the rule
 
 This plugin writes the reason above the destructive code and above the destructive instruction. The
-evidence for that convention is split, and worth stating accurately.
+evidence for that convention is split.
 
 **For text a model generates, the ordering has a controlled ablation behind it.** Wei et al. put the chain
 of thought *after* the answer and it performed like no chain of thought at all

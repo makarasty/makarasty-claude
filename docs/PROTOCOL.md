@@ -14,9 +14,9 @@ by message**, because a file has an address and a session handle does not: a wor
 findings behind, and one that finishes needs nobody's attention.
 
 Messaging has exactly one job, in the other direction. The planner may send a worker a status check
-(`mcp__ccd_session_mgmt__send_message`) to **revive** it, and that is the only thing that brings back a session which ended a turn with nothing
+(`mcp__ccd_session_mgmt__send_message`) to **revive** it. Nothing else brings back a session which ended a turn with nothing
 pending. Measured 2026-08-27: three workers dead for nearly three hours came back within seconds of a
-cross-session message and finished their tasks. Nothing else in the system can do that, so keep the
+cross-session message and finished their tasks. Keep the
 handles usable, and never let a finding or an answer ride that channel.
 
 **That channel dies with the machine, and the disk does not** [M27]. Measured 2026-09-01: after a
@@ -52,7 +52,7 @@ is a question for the planner, answered at the worker's next task boundary.
 call that costs money, a production write, deleting stored data: none of those become permitted by an
 answer, so there is nothing to wait for. Record the step as unreached with the reason and take the next
 one. If the operator wants it done they do it themselves, which keeps the judgement with them and costs
-the run nothing. Measured 2026-08-27: one worker put a "is this writing band sanctioned" question to the
+the run nothing. Measured 2026-08-27: one worker put an "is this class of write sanctioned" question to the
 operator through `AskUserQuestion` and blocked for four minutes twenty six seconds holding a claimed task,
 for an answer that could not have changed what it was allowed to do.
 

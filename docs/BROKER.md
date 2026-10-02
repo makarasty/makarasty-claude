@@ -22,11 +22,11 @@ once:
 Sampled once a minute: **no pane busy for 75 of 153 minutes, one busy for 55, two for 19, three for 4.**
 Peak three. Total pane-driven time 104 minutes - **0.68 panes' worth of demand measured against the whole
 153 minute run, 0.80 against the 129 minutes in which any pane was driven at all** - spread across seven
-open panes, each of which the operator had to open, keep on screen, and answer a question for. Both
-denominators are honest and neither reaches one pane; `scripts/fleet-retro.mjs` prints the second.
+open panes, each of which the operator had to open, keep on screen, and answer a question for. Neither
+denominator reaches one pane; `scripts/fleet-retro.mjs` prints the second.
 
-**Low utilisation is not the finding.** A walk's wall clock is dominated by model round trips, so a pane
-driven in bursts is intrinsic and always will be. Three other things are the finding:
+Low utilisation is not the finding. A walk's wall clock is dominated by model round trips, so a pane
+driven in bursts is intrinsic. Three other things are the finding:
 
 1. **The split is decided at plan time, and the planner is measured bad at it, twice.** 2026-08-27: 33 of
    34 tasks written as browser tasks, several of which never needed a pane. 2026-08-31: seven panes opened
@@ -62,17 +62,17 @@ sh "$f" pane-status .fleet/<run-id>                  # backlog depth and the old
 ```
 
 The requester reads `pane/results/<id>.json` at its next task boundary. It does not block: it claims a
-repo task while the walk is being run, which is the idle-window rule from `LANES.md` moved to where it
+repo task while the walk is being run, which is the idle-window rule from `LANES.md` applied where it
 belongs.
 
 ## Why this does not damage the trust in a browser finding
 
-Because the trust never lived in the requesting session. What makes a browser finding trustworthy is the
+The trust never lived in the requesting session. What makes a browser finding trustworthy is the
 frame gate, the `conditions` it was measured under, and the evidence contract - all of which live in the
 executor. A worker already hands a self-contained brief to a `fleet-scenario` subagent and reads back a
 bounded result; the broker is the same brief travelling as a file rather than as a spawn.
 
-The boundary is in fact **stronger** than a subagent's, and `pane-serve` is where that is enforced: a
+The boundary is **stronger** than a subagent's, and `pane-serve` enforces it: a
 result without a numeric `gate`, or with a gate under sixty, is refused rather than filed. A parent
 session cannot check that about its own subagent today. A requester can now refuse a walk measured blind.
 
@@ -82,9 +82,9 @@ Same test as merging tasks in `LANES.md`: if the second question can be answered
 installed during the first walk, it is one request; if it needs its own navigation, it is two.
 
 Named checkpoints across requests do not exist. The queue cannot promise page state between leases, and a
-request that assumes "the state the last walk left behind" is a request that will silently be answered
-against a different state. The one legitimate pinned state is a **host property**, not request addressable:
-a host logs in once, and two hosts can hold two roles.
+request that assumes "the state the last walk left behind" will silently be answered against a different
+state. The one legitimate pinned state is a **host property**, not addressable by a request: a host logs
+in once, and two hosts can hold two roles.
 
 ## What it gives up
 
@@ -97,8 +97,8 @@ a host logs in once, and two hosts can hold two roles.
   are two panes for the operator to keep alive instead of seven, and one asker instead of seven.
 - **Peripheral vision.** A requester sees only what it asked. Keep the standing "report anything anomalous
   en route, tagged incidental" line in every walk, and accept that the loss is real.
-- **Adoption risk.** The failure mode is a politely deadlocked run: walks filed, no host pane open. The
-  planner's watch reports `pane-status` on its stall line for exactly this reason.
+- **Adoption risk.** The failure mode is a deadlocked run: walks filed, no host pane open. The
+  planner's watch reports `pane-status` on its stall line for this reason.
 
 ## Sizing, from three file stats rather than a guess
 
@@ -112,8 +112,8 @@ a host logs in once, and two hosts can hold two roles.
 **Start with one host. When the oldest unanswered walk has waited longer than one median lease, offer the
 operator one more host chip.** Until a first walk has been served there is no lease to compare against, so
 `pane-status` falls back to a flat twenty minutes and says so. Cap at what the display holds. Every term is
-on disk, which is the whole point: under session binding the planner sizes against a memory of the last
-run, and here it sizes against a directory.
+on disk: under session binding the planner sizes against a memory of the last run, and here it sizes
+against a directory.
 
 The 2026-08-31 run resolves to **two hosts** against the seven panes it opened.
 
@@ -126,6 +126,6 @@ The 2026-08-31 run resolves to **two hosts** against the seven panes it opened.
   session-bound worker first; a broken runbook behind a broker fails as a stalled backlog, which is a
   worse way to learn it.
 
-**And do not run both shapes for the same evidence in one run.** A pane host and a session-bound pane
+Do not run both shapes for the same evidence in one run. A pane host and a session-bound pane
 worker walking the same screens will file the same finding twice, and collection will read the pair as two
-independent sightings, which is exactly the corroboration this plugin refuses to manufacture.
+independent sightings - corroboration this plugin refuses to manufacture.

@@ -1,5 +1,20 @@
 # Changelog
 
+## makarasty 1.5.4, makarasty-tools 1.5.1 — 2026-10-02
+
+The first public release. No rule, threshold, command or exit code changed.
+
+- **README rewritten** for a reader who has never seen the plugin: what each plugin does, install,
+  requirements, a quick start, the commands, how a fleet works, what it may delete, the known limits.
+  The release-by-release history that lived in it is here.
+- **A style pass over every document, command, agent brief and skill.** Filler, decorative repetition and
+  sentences that took two reads were rewritten; two checking passes compared every hunk with the previous
+  text and restored six places where a rewording had changed a claim.
+- **Examples from a real project replaced** with neutral ones: a shipping carrier instead of the original
+  vendor, `Acme` as the canvas title, a generic home path in `docs/SAFETY.md`. The self-test and the
+  `script-speaks-only-facts` eval use the new example and test the same thing.
+- **Manifests** have shorter descriptions and carry `homepage`, `repository`, `license` and `keywords`.
+
 ## makarasty-tools 1.5.0, makarasty 1.5.3 — 2026-10-02
 
 Read from 6,793 prompts typed by hand across 1,411 chats (2026-06-28 to 2026-10-01). The commands below
@@ -28,7 +43,7 @@ being worked in.
   of every commit, and `mine` commits only this chat's files. It follows the repository's own update-log
   format and reads the last two entries. "Учти параллельную работу" was retyped in about 34 chats.
 - **`fleet-login`** triggers on "залогинься", and takes credentials from the runbook, never from the chat:
-  a login password was pasted into 43 prompts, each now in a transcript on disk.
+  a password typed into a prompt stays in that chat's transcript on disk.
 
 Then a red team: six Sonnet agents, two reading Anthropic's skill, hook and plugin docs and open-source
 analogs, four running the commands against throwaway repositories, transcripts and a dry-run notifier.
@@ -117,9 +132,8 @@ prose while nothing on the path enforces it.
   unauthenticated monitoring nobody in the run could see began getting 401; a history clear moved onto an
   event that also fires on a console `load`, so a restart plus an autosave load truncated history that had
   survived it; a detector deleted rather than repaired, whose rewritten config comment forced six servers
-  to rewrite their configuration on next boot. All three were reasoned about carefully. The same runs asked
-  86 questions and got 85 answers, so the operator was there the whole time — taste was not the missing
-  piece. `hooks/fleet-contract.mjs` runs on `PreToolUse` and blocks an edit that removes a token listed in
+  to rewrite their configuration on next boot. All three were reasoned through carefully. The same runs asked
+  86 questions and got 85 answers, so the operator was there throughout, and the gap was not taste. `hooks/fleet-contract.mjs` runs on `PreToolUse` and blocks an edit that removes a token listed in
   `.fleet/contract-surface.txt`, offering two ways past, both one line: file the `ask/`, or record the
   decision. `decisions.jsonl` is read out at landing. It is timid like `fleet-guard`: no fleet, no chip, or
   no surface file and it exits 0, and it raises a given name once per session, ever.
@@ -277,7 +291,7 @@ sends the worker back to ask for a pane that is already open - read zero, wait a
 And a **minimised window emits stray seconds of 2 to 4 frames**, which is the mechanism behind the
 existing rule that a reading between 1 and 59 is blind: a `frames > 0` check would have passed that worker.
 
-`setInterval` divides on the same line and fails worse than silence. With the pane not laid out it ticked
+The same two pane states also split `setInterval`, and it fails worse than silence. With the pane not laid out it ticked
 3 times in a minute. With the pane laid out but not compositing it ticked **142 times in 142 seconds**,
 one per second, exactly on time, while the page drew nothing. `PERF.md` told workers to sample with it;
 now it tells them to put the frame gate beside every series it produces.
@@ -327,7 +341,7 @@ possible: every refusal above reads that census.
 panes — with what dangles when each is removed. Call is clean: four files and one mission section. Design
 leaks two conditional lines into core. Worktrees take the path gate with them, which is reason enough to
 keep both. The browser half cannot be cut by deleting files, and does not need to be: every pane document
-is behind a branch pointer, so a paneless project already pays prose on a shelf rather than turns in a run.
+is behind a branch pointer, so a paneless project pays only for prose sitting on a shelf, not for turns in a run.
 
 
 ## 1.4.0 — 2026-09-08
@@ -374,7 +388,7 @@ improvisation looks like `rmdir /S` on screen, which is the moment an operator s
   `/c/...` where git prints `C:/...`, so the comparison never matched - which is the plugin's own
   failure mode, a guard that looks like protection and is not.
 - **`docs/SAFETY.md`**: the closed list of what an unattended fleet may delete, which slip each guard
-  catches, and - the part worth reading - **where the guards stop**: a worker's own exit is not gated, an
+  catches, and **where the guards stop**: a worker's own exit is not gated, an
   agent's own shell is not gated, and the measurement is one machine. It also states what the evidence for
   writing the reason above the rule does and does not support. The ordering has a controlled ablation
   behind it for text a model **generates** (Wei et al.; Turpin et al. on rationalising a pre-committed
@@ -418,7 +432,7 @@ blind pane - so the gate is on the facts.
   behind it, a page that cites nothing, a missing `CALL.md`, and a digit inside a line meant to be read
   aloud; `--stale <days>` lists the measured facts older than the window, for the footer's "re-measure
   before the call". Twelve self-test checks.
-- **`templates/call-script.html`**: the Contoso page's styles and fixed sections, so the script task
+- **`templates/call-script.html`**: the styles and fixed sections of the earlier vendor-call page, so the script task
   fills a page rather than designing one. What the interpreting research added to the page: a numbers
   table, because numbers are the words dropped first under load (Desmet et al., 56.5 to 86.5 percent
   with numbers on screen), and the five repair lines air traffic control keeps - say again, confirm,
@@ -459,8 +473,8 @@ blind pane - so the gate is on the facts.
   sink and no network. Measured on the development machine: a node start is 32 MB and about 50 ms, the
   hook with a marker peaks at 39 MB for that long, and the guard alone is about a millisecond. Not measured yet: whether the desktop app's queued-message path makes `--next`
   unnecessary, and the wizard against a real Telegram bot.
-- **Not done, written down:** no fleet has prepared a real call yet; the Contoso page this is modelled
-  on was written by hand in one chat.
+- **Not done, written down:** no fleet has prepared a real call yet; the vendor-call page this is
+  modelled on was written by hand in one chat.
 
 ## 1.2.0 — 2026-09-03
 
@@ -527,7 +541,7 @@ a blind pane.
 - **`makarasty-tools` 1.1.0: `/makarasty-tools:say`**, the spoken register: lines a person who is not a
   native speaker reads aloud to a vendor or its support. One sentence per line, numbers as words, "what
   we do, what we get, the question" in place of a proposal, and the exit "maybe we do it wrong".
-  Distilled from the Contoso call script of 2026-08-21 and the two corrections that produced it. `unslop`
+  Distilled from a vendor call script of 2026-08-21 and the two corrections that produced it. `unslop`
   gains one cut, the word the reader would have to look up, and points at `say` for the spoken case.
 
 
@@ -607,8 +621,8 @@ middle of them are what this release answers.
 ## 1.0.0 — 2026-08-31
 
 First release. The version numbers before this one were development markers in an unpublished manifest,
-never installed by anyone but the author, and they are not part of any history worth keeping: nothing was
-released, so nothing was ever upgraded. This is version one.
+never installed by anyone but the author. Nothing was released, so nothing was ever upgraded; this is
+version one.
 
 What it is: a plugin for running one mission across several Claude Code sessions at once. Each worker
 holds its own context, claims one task at a time from a queue on disk, gates whether it can actually see

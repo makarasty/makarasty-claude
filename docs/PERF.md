@@ -15,7 +15,7 @@ batch. A slow reading taken with eleven node processes live is a hypothesis.
 
 **Report a difference, not a number.** Compare this screen against a lighter one, this navigation against
 the same navigation over fewer rows, this interaction against a quiet moment. Both sides measured the same
-way, on the same machine state. Without a comparison arm there is a number, and a number is not a finding.
+way, on the same machine state. Without a comparison arm you have a number, not a finding.
 
 **Give the measuring workers their own wave.** They are measuring a machine the other workers are loading.
 

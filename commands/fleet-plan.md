@@ -16,7 +16,7 @@ and a brief naming a screen the project does not have becomes a question in `ask
 Stop for exactly two things, because neither can be produced by working harder: a **credential or account
 only the operator can provide**, and a **reserved control** that would cost money or reach a real person.
 
-A person reads this chat and only this chat, so write for them rather than for a parser. If the
+A person reads this chat and only this chat, so write for them, not for a parser. If the
 `makarasty-tools` plugin is installed, `/makarasty-tools:unslop on` does it for you.
 
 Split the mission in `$ARGUMENTS` into briefs, one per worker session, then offer a chip for each and
@@ -25,7 +25,7 @@ stop. You write briefs. You do not do the mission.
 Read `docs/PROTOCOL.md`'s "Directory layout", "Brief format" and "Finding schema" before you write one -
 those three are the run's shape and the contract you restate in every brief - and the section of
 `docs/MISSIONS.md` for the kind you are planning. Neither file is short, and the rest of both is worker
-material or a kind you are not running.
+material or covers a kind you are not running.
 
 ## 1. Ground yourself in the project
 
@@ -41,7 +41,7 @@ searches in one message, since each round trip costs a full model turn.
 
 ## 2. Choose the kind, then the axis
 
-The mission's kind decides how it splits, and the wrong axis is what makes a fleet run worthless. Take the
+The mission's kind decides how it splits, and the wrong axis makes a fleet run worthless. Take the
 axis from `MISSIONS.md`: screen ownership for verify, hypothesis for investigate, seam for implement, file
 cluster for fix, source for research, one screen for design, critique, canvas and redesign.
 
@@ -60,13 +60,13 @@ what the task carries: the screens and their states, the token file, and the ass
 Count the independent slices the axis produces. That is your worker count, and **it is capped per lane,
 never once for the whole fleet.** The repo lane is capped by the machine and sized from the queue, by the
 rule in `docs/LANES.md`; the verify lane is one; and the pane lane has three numbers that are not
-interchangeable. **The default is two** and it is where you start: `pane_workers_default` in the plugin's
+interchangeable. **The default is two**, and you start there: `pane_workers_default` in the plugin's
 `calibration.json`. `pane_workers_display_ceiling` in the same file is the **usable** ceiling, what tiles
-side by side at a readable width with nothing stacked below, a number to plan against rather than to start
-from. **Ten is the physical ceiling**, where panes stop being panes; between the usable ceiling and ten
-they stack in a second row at half height, which is a decision the operator makes rather than a slope.
-Read both values from `calibration.json` rather than retyping them, and read the project's `FLEET.md`
-concurrency line for the widths this machine and this display were actually measured at.
+side by side at a readable width with nothing stacked below; plan against it, do not start from it. **Ten
+is the physical ceiling**, where panes stop being panes; between the usable ceiling and ten they stack in a
+second row at half height, which is a decision for the operator, not a gradual slope. Read both values from
+`calibration.json` and do not retype them, and read the project's `FLEET.md` concurrency line for the
+widths this machine and this display were actually measured at.
 
 A single cap across both lanes is how a run ends up eight browser workers wide and two files wide.
 Measured 2026-08-31: fourteen workers ran on a box sized for it, six on panes and eight on files, and the
@@ -78,7 +78,7 @@ work needs costs the operator a question, a piece of their screen, and the stand
 displayed, and buys nothing while nobody is driving it. If the mission is large enough that two panes will
 queue, read `docs/BROKER.md` and file browser walks against one or two hosts instead of opening more.
 
-Two workers on one slice cost twice and then agree with each other, which reads as corroboration and is
+Two workers on one slice cost twice and then agree with each other, which reads as corroboration but is
 not.
 
 **Then give every slice a lane**, from `docs/LANES.md`: `pane` for work that needs the running interface,
@@ -93,18 +93,19 @@ pane slices at all is a normal mission, not a special case.
 
 ## 2b. Interview the operator until the plan stops changing
 
-The operator writes a mission in plain words from a fresh chat that knows nothing. Your job is to turn
-that into a plan good enough to run unattended, and the only way there is to ask. Default to depth: an
-argument of `fast` means bail out after the first round with whatever the draft says, and its absence
-means keep going until the plan stops moving.
+The operator writes a mission in plain words from a fresh chat that knows nothing. Turn that into a plan
+good enough to run unattended; the only way is to ask. Default to depth: an argument of `fast` means stop
+after the first round with whatever the draft says, and without it you keep going until the plan stops
+moving.
 
 **Hold a complete draft plan from the first exchange.** Not a list of open questions, a plan: run id, kind,
-axis, the slices with their lanes, what correct looks like for each, the reserved actions. It is allowed
-to be wrong. It is not allowed to be absent, because the draft is what makes the interview terminate.
+axis, the slices with their lanes, what correct looks like for each, the reserved actions. It may be
+wrong. It may not be absent, because the draft is what makes the interview terminate.
 
 **Ask only questions whose answer would change a named line of that draft.** Then the stop condition is
-mechanical: **a round that changes nothing ends the interview.** Questions-exhausted is a form; plan-stops-
-moving is a decision procedure, and in practice it takes three to five rounds.
+mechanical: **a round that changes nothing ends the interview.** Stopping when the questions run out is a
+formality; stopping when the plan stops moving is a decision procedure, and in practice it takes three to
+five rounds.
 
 Ask a whole round at once, numbered, each with your recommended answer, so the operator can reply "all
 yours" and lose nothing:
@@ -115,12 +116,12 @@ Q1 - Axis: I am splitting by screen ownership, six slices. The alternative is by
      -> Recommend screen ownership.
 ```
 
-Order the rounds by **invalidation radius**, largest first, because a wrong answer high up throws away
+Order the rounds by **invalidation radius**, largest first, since a wrong answer high up throws away
 everything below it:
 
 1. **Kind and axis.** One wrong choice here makes the whole run worthless.
 2. **The slice list**, presented enumerated and concrete, to be corrected rather than answered. Correcting
-   a wrong list is fast and generative; "which areas matter to you" is slow and produces mush.
+   a wrong list is fast and produces ideas; "which areas matter to you" is slow and produces mush.
 3. **What correct looks like, per slice.** This is where the depth belongs and where most rounds go. The
    operator says something vague, you convert it into an assertion and offer it back: "the Completed tab's
    count equals the rows it lists" is checkable, "the tabs work" is not.
@@ -130,8 +131,8 @@ everything below it:
 **Three classes of question are refused outright.**
 
 Anything discoverable. The origin, the login path, which screens exist, what a component is called, how
-long the suite takes: you have a repository, a `FLEET.md` and search tools, and asking is a confession
-that step 1 was skipped. Dispatch a subagent to find it and ask the rest of the round meanwhile.
+long the suite takes: you have a repository, a `FLEET.md` and search tools, and asking shows that step 1
+was skipped. Dispatch a subagent to find it and ask the rest of the round meanwhile.
 
 Anything policy already answers. A question whose answer cannot change what is permitted is not a
 question: production writes, vendor calls that cost money, messages to real people are reserved whatever
@@ -142,8 +143,8 @@ Budgets and worker counts. You have the measurements: the median task runs 23 mi
 panes. State those and move on.
 
 **The failure mode is interview theatre**: good questions, answers collected, and then the plan you would
-have written anyway. The guard is that every answer visibly edits a named line of the draft, and you show
-the edit. If an answer changes nothing, that question should not have been asked, and the round it was in
+have written anyway. The guard: every answer visibly edits a named line of the draft, and you show the
+edit. If an answer changes nothing, that question should not have been asked, and the round it was in
 was the last one.
 
 ## 3. Write the briefs
@@ -154,14 +155,14 @@ Every brief carries:
 
 - **Exclusive ownership.** `owns` lists what this worker may touch, and the out of scope section names the
   areas the other workers hold, by number.
-- **Assertions rather than intentions.** "The Completed tab's count equals the number of rows it lists"
+- **Assertions, not intentions.** "The Completed tab's count equals the number of rows it lists"
   gives a worker something to be right or wrong about. "Check the tabs work" does not.
 - **The evidence contract**, restated in one line: a finding carries a `file:line`, a reproducing
   expression, or three readings with spread and machine load.
 - **A model choice per stage.** `model:` walks the work and `verdict-model:` rules on it. Take the tiers
-  from `docs/MODELS.md` rather than defaulting.
-- **Whole brief demand.** The worker completes its entire brief before writing findings, rather than
-  stopping at the first interesting thing.
+  from `docs/MODELS.md`; do not default.
+- **Whole brief demand.** The worker completes its entire brief before writing findings and does not
+  stop at the first interesting thing.
 
 Briefs that write code carry `isolation: worktree`.
 
@@ -171,8 +172,8 @@ Eight briefs freeze one guess about where the defects are for the whole run. Ove
 the plan, write a **queue** instead: read `docs/PULL.md` and put tasks in `tasks/ready/` rather than briefs
 in the run root.
 
-Pull mode changes four things for you. Order the queue **longest task first**, because workers taking long
-work first and short work last land within minutes of each other while the reverse leaves one worker alone
+Pull mode changes four things for you. Order the queue **longest task first**: workers taking long
+work first and short work last land within minutes of each other, while the reverse leaves one worker alone
 with a forty minute task. Give every task a `budget` in minutes, since a worker past twice its budget stops
 and hands the remainder back. And expect to stay awake: you answer `ask/`, re-file unreached remainders,
 add tasks when a finding points somewhere new, and reclaim claims whose heartbeat went stale.
@@ -199,13 +200,13 @@ including click to call from a row" survives contact with a curious model where 
 does not.
 
 Close it with the escape hatch: a screen that reveals its behaviour only by firing a reserved control is a
-limit of this run, recorded as unreached. Without that sentence the boundary reads as a puzzle to route around.
+limit of this run, recorded as unreached. Without that sentence the model reads the boundary as a puzzle to route around.
 
 ## 5. Give verify briefs their sweeps
 
 A verify brief that only says "look at these screens" produces a worker that reads the first row of each
 and calls it fine. Name the sweeps it must run, from `docs/SWEEPS.md`, and say which screens each applies
-to. Open that file at this point and not before: a mission with no verify slices never needs it.
+to. Open that file at this point and not before; a mission with no verify slices never needs it.
 
 The interaction posture belongs in the brief in one line: exercise every control that neither mutates
 shared state nor leaves the machine, open dialogs and cancel them, and record every control that produced
@@ -222,8 +223,8 @@ claimed total where a count is involved.
 
 ## 6. Add measurement rules when speed is in scope
 
-A brief that measures speed carries a "How to measure" section built from `docs/PERF.md`, which is worth
-opening only once a brief actually measures something: three runs with median and spread, machine load
+A brief that measures speed carries a "How to measure" section built from `docs/PERF.md`; open that file
+only once a brief measures something. The section holds: three runs with median and spread, machine load
 recorded beside every number, a named comparison arm, `setInterval` for sampling.
 
 Schedule those workers in their own wave. They are measuring a machine the other workers are loading.
@@ -301,15 +302,15 @@ Say the pane arithmetic out loud, because the operator is about to discover it t
 and do not blur them: **the default of two is what the work has needed** in both measured runs, and the
 display ceiling above it is what tiles at a readable width before panes stack below at half height. The
 second is a ceiling for a mission that genuinely queues, not a target, and both are in `calibration.json`.
-Pass on the three ergonomics as well: drag the planning chat out into its own floating window, zoom the
+Pass on three ergonomics as well: drag the planning chat out into its own floating window, zoom the
 application window out to buy a column, and on Windows a window can be sized past the monitors by pushing
 it off one edge and pulling the opposite one. Nobody thinks of any of that with eight chats already open.
 
 You do not have to ration memory between waves any more, and you should not try: `fleet.sh next` reads the
 machine before every claim and refuses to hand out a task below the floor, so a wave that is too wide stops
-itself at the queue rather than in the page file. What is still worth saying out loud, once, is that a
-speed number taken while the box is paging describes the page file rather than the application - so a wave
-that measures anything schedules where nothing else is running.
+itself at the queue, not in the page file. Say out loud, once, that a speed number taken while the box is
+paging describes the page file, not the application - so a wave that measures anything schedules where
+nothing else is running.
 
 ## Done when
 

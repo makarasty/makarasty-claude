@@ -75,12 +75,11 @@ JSON.stringify({ w: innerWidth, h: innerHeight, dpr: devicePixelRatio,
   zoom: getComputedStyle(document.documentElement).zoom })
 ```
 
-**Zoom.** Use the application own scale control when it has one. Many applications do not: the zoom is a
+**Zoom.** Use the application's own scale control when it has one. Many applications do not: the zoom is a
 build time constant applied to `html`, with nothing to click. Then set it yourself with
 `document.documentElement.style.zoom` and record in the finding that the change was simulated rather than
 operated, because a simulated zoom exercises the layout without exercising whatever the real control also
-does. Repeat the key assertions at the default,
-one step down and one step up.
+does. Repeat the key assertions at the default, one step down and one step up.
 
 **Viewport.** `resize_window` emulates a size on the tab: presets `mobile` (375x812), `tablet` (768x1024),
 `desktop` (clears emulation), or a custom width and height together. Check the default, one width narrow
@@ -123,20 +122,19 @@ browser already knows every box's exact rectangle, and a rectangle cannot be tal
 
 `scripts/visual-probe.js` in this plugin is that sweep. Paste it into `javascript_tool` and it returns a
 bounded JSON object: collisions, clipped, escaping, offscreen, invisibleText, each entry carrying a
-selector and the rectangles. It ends with a hit test at the centre of every overlap, which is what
-separates a real collision from a dialog doing its job, and that hit test is the difference between a
-usable sweep and a page of false positives. Verified on a fixture carrying five planted defects: five
+selector and the rectangles. It ends with a hit test at the centre of every overlap, which separates
+a real collision from a dialog doing its job; without it the sweep returns a page of false positives. Verified on a fixture carrying five planted defects: five
 found, one collision reported, zero false positives, and the deliberately ellipsised label correctly
 ignored.
 
 Then screenshot the candidates it returned, zoomed to the region, and rule on those. Screenshot count is
-now bounded by the number of defects rather than by the number of screens, which matters: measured across
+bounded by the number of defects rather than by the number of screens. Measured across
 one run, the most expensive executor took 51 screenshots and read 55.6 M cached tokens.
 
 **Rule.** A collision finding carries `rects` with both rectangles, and `conditions` carries the viewport
 and the zoom. `fleet.sh find` refuses it otherwise, and it refuses rectangles that do not actually
 intersect whatever the screenshot seemed to show. Geometry lies under CSS zoom and transforms, which is
-exactly why the viewport is not optional.
+why the viewport is not optional.
 
 **What this sweep cannot do**, and where a screenshot is still the only instrument: wrong colours, optical
 misalignment inside a correctly sized box, and paint order. Those get a screenshot with one named question

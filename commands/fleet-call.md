@@ -24,8 +24,8 @@ else is a topic, and sections 1 to 5 plan the run that prepares it.
 `fleet-plan` with the kind, the axis and the stages fixed. The mission is `kind: call`: one facts task
 per source, then one script task on the top model, then the page in the operator's hands. Read
 `docs/CALL.md` for the fact shape, the page, the register and the gate; read `docs/PULL.md` for the
-queue. Everything not said here - the interview discipline, the chip prompts, the watch - is
-`fleet-plan`'s, sections 2b, 7 and 8, and you follow it.
+queue. Whatever this file leaves out - the interview discipline, the chip prompts, the watch - comes from
+`fleet-plan`, sections 2b, 7 and 8; follow it.
 
 You write the queue and deliver the page. You do not write a fact and you do not write a line of the
 script.
@@ -34,8 +34,8 @@ script.
 
 Read `FLEET.md`: the query tool, the accelerators, the reserved actions. Then the project's own
 documentation for the area the call is about, and whatever the mission names as already existing: the
-previous call's notes, the letters, the vendor's documents in the repository. Find them with `rg` rather
-than asking where they are.
+previous call's notes, the letters, the vendor's documents in the repository. Find them with `rg`; do not ask
+where they are.
 
 Work out the two languages from the mission text itself: the **read** language is the one the operator
 wrote in, and the **speak** language is the one they named, English when they named none.
@@ -48,14 +48,14 @@ home, the reserved topics, and where the page goes. Then ask one round, numbered
 recommended answer, so "all yours" loses nothing:
 
 ```
-Q1 - Counterpart: Contoso's support desk. They can explain a response and say what we send wrong; they
+Q1 - Counterpart: the carrier API's support desk. They can explain a response and say what we send wrong; they
      cannot add a field or promise a change. That decides the question shape: we do this, we get this,
      how should it work. An engineer or an interviewer changes the shape, so correct this first.
      -> Recommend support desk, from the mission text.
 Q2 - Languages: read Russian, speak English.
      -> Recommend as read from the mission.
-Q3 - Sources: five, listed above, each with a path or a query. Correct the list rather than answering a
-     question about it.
+Q3 - Sources: five, listed above, each with a path or a query. Correct the list; there is no question to
+     answer.
      -> Recommend all five; the previous call's notes are the cheapest one and the one most often skipped.
 Q4 - Answers to bring home: the four listed. Without them the call did not happen.
      -> Recommend the four; add or strike.

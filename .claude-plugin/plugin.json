@@ -1,11 +1,22 @@
 {
   "name": "makarasty",
-  "description": "Run one mission across several Claude Code sessions at once, with a gate between what a run finds and what it changes. Workers hold their own context and browser, gate what they can actually see, and report by writing files.",
-  "version": "1.5.3",
+  "description": "Run one job across several Claude Code sessions: a shared task queue, reports written to files, a frame-count check before every browser observation, and a gate that refuses a fix without a reproduction that failed first. Ten mission kinds, from test sweeps and fixes to refactors, research and design.",
+  "version": "1.5.4",
   "author": {
     "name": "makarasty",
     "url": "https://github.com/makarasty"
   },
+  "homepage": "https://github.com/makarasty/makarasty-claude",
+  "repository": "https://github.com/makarasty/makarasty-claude",
+  "license": "MIT",
+  "keywords": [
+    "multi-agent",
+    "parallel-sessions",
+    "testing",
+    "browser",
+    "worktrees",
+    "evidence"
+  ],
   "hooks": {
     "Stop": [
       {

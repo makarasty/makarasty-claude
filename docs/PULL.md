@@ -133,9 +133,11 @@ refuses. `--release` therefore moves the dependents aside with it, transitively,
 with consistent ids rather than the one task you meant to release.
 
 **A released task is then yours to close.** `fleet.sh landed` refuses a run while anything sits in
-`tasks/released/`, and there are two honest ways out: re-file the work under a new id and delete the
+`tasks/released/`, and there are two ways out: re-file the work under a new id and delete the
 released file, or delete the released file alone, which says the task was written off on purpose. A run
-that lands over abandoned work is the failure this whole plugin is built against. Atomic claiming stops two workers taking one task and does nothing about a worker that
+that lands over abandoned work is the failure this whole plugin is built against.
+
+Atomic claiming stops two workers taking one task and does nothing about a worker that
 died holding one, which is the same gap a maildir has in `tmp/`: without a sweeper, a dead claim is a task
 the run never finishes and nobody notices.
 
@@ -150,7 +152,7 @@ one a task that had finished [M08].
 The heartbeat signature alone cannot separate "died at the claim" from "finished without heartbeating",
 and those two need opposite responses. The `done` marker is the term doing the real work.
 
-**Note what that measurement says about heartbeats: they are optional in practice.** A worker completed
+**That measurement says heartbeats are optional in practice.** A worker completed
 five tasks without writing one. Either heartbeating becomes load bearing and something enforces it, or
 reclaim logic must not lean on it. Until then, treat a missing heartbeat as no evidence rather than as
 evidence of death.
@@ -184,11 +186,11 @@ tasks that genuinely need 50 carry 50.
 
 **The planner writes the queue longest task first.** Workers that take the longest work first and the
 short work last finish within a few minutes of each other; the reverse order leaves one worker holding a
-forty minute task while the rest idle. This is the whole answer to making a fleet land together, and it
+forty minute task while the rest idle. This is how a fleet lands together, and it
 costs nothing but the order of the files.
 
-Order the files by
-budget descending when you publish them, because the numeric prefix is fixed once a worker can see it.
+Order the files by budget descending when you publish them, because the numeric prefix is fixed once a
+worker can see it.
 
 ## One browser spawn per task
 

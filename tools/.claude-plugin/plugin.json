@@ -1,11 +1,22 @@
 {
   "name": "makarasty-tools",
-  "description": "Nine small commands that travel with the fleet plugin but are versioned apart from it: commit under your own name, ship (merge branches in, split the work into your own commits, push, tag with patch notes), review a diff and report only findings with evidence, or loop until none are left, hand a chat's work to a fresh chat as a chip or pick up another chat's work from its history, collect dictated bugs quietly until a codeword, explain where things stand in plain words, strip assistant tics out of writing, say what you mean in simple English a person can read aloud to a vendor, and get one message on your phone when a chat you walked away from finishes. A hook reminds a chat to offer a handoff once its context passes 400k tokens.",
-  "version": "1.5.0",
+  "description": "Nine everyday commands: commit and ship under your own name, review a diff with evidence, hand a chat off before its context runs out, collect bugs until a codeword, explain plainly, strip assistant tics from text, phrase a vendor call in simple English, and get a phone message when a chat finishes. A hook suggests a handoff once a chat passes 400k tokens of context.",
+  "version": "1.5.1",
   "author": {
     "name": "makarasty",
     "url": "https://github.com/makarasty"
   },
+  "homepage": "https://github.com/makarasty/makarasty-claude",
+  "repository": "https://github.com/makarasty/makarasty-claude",
+  "license": "MIT",
+  "keywords": [
+    "git",
+    "commit",
+    "code-review",
+    "handoff",
+    "notifications",
+    "writing"
+  ],
   "hooks": {
     "UserPromptSubmit": [
       {

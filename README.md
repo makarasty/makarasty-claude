@@ -1,172 +1,183 @@
 # makarasty
 
-A Claude Code plugin for running one mission across several sessions at once, plus a few commands for the
-work around it.
+Two Claude Code plugins from one marketplace.
 
-Each worker session holds its own context, claims one task at a time, and reports by writing a file.
-Nothing messages anything, so a worker that dies leaves its findings behind and a worker that finishes
-needs nobody's attention.
+- **`makarasty`** runs one job across several Claude Code sessions at once: a test sweep of a live app, a
+  fix run over its backlog, a refactor across a hundred files, a research sweep, a design pass. You plan
+  once, click a chip per worker, and each worker claims tasks from a shared queue and reports by writing
+  files. Between what a run finds and what it changes there is a gate: no fix without a reproduction that
+  failed first.
+- **`makarasty-tools`** is nine everyday commands that have nothing to do with fleets: commit under your
+  own name, ship a branch, review a diff with evidence, hand a chat off before its context runs out, get a
+  phone message when a chat finishes, and a few more.
 
-The problem it exists for is narrow. An agent that cannot actually see what it is inspecting reports
-findings with complete confidence, and those findings are indistinguishable from real ones. A browser pane
-that stopped compositing is the sharpest case, but a green suite that skipped your file and a documentation
-page that never loaded produce the same confident nothing. Every path through this plugin measures before
-it trusts.
+Install one or both. They are versioned separately.
+
+## Why it exists
+
+An agent that cannot see what it is inspecting still reports findings, with full confidence, and they
+look exactly like real ones. A browser pane that stopped compositing is the sharpest case: it still
+navigates, still returns DOM, and every visual observation through it is false. A green suite that
+skipped your file and a docs page that never loaded produce the same confident nothing.
+
+So every path through this plugin measures before it trusts. A worker counts frames before it looks at a
+page, a finding without evidence is refused by a script rather than by a request in prose, and a run that
+had a blind worker says so by name instead of reporting its area as clean.
+
+The second reason is the one most multi-agent setups learn late: a session runs only while something
+invokes it. In one measured run, three of six workers ended a turn right after claiming their next task
+and sat dead for about three hours each, holding claims nobody else could take. The protocol here is built
+so that this can't happen silently. See [The other way a run dies](#the-other-way-a-run-dies).
 
 ## Install
 
-From a local checkout, which is the path this release was developed and tested on:
-
 ```
-/plugin marketplace add /path/to/makarasty-claude
+/plugin marketplace add makarasty/makarasty-claude
 ```
 
 ```
 /plugin install makarasty@makarasty
 ```
 
-The side commands are a second, optional plugin from the same marketplace:
-
 ```
 /plugin install makarasty-tools@makarasty
 ```
 
-Once the repository is published, the same two commands take its GitHub coordinates
-(`/plugin marketplace add makarasty/makarasty-claude`) instead of a path. That path has not been exercised
-yet - see "Known limits" below.
+Restart Claude Code afterwards; plugins load at session start. To install from a local checkout instead,
+pass its path to `marketplace add`.
 
-Restart Claude Code afterwards. Plugins load at session start.
+### Requirements
 
-Then, in the project you want to test: `/makarasty:fleet-init`. It discovers the app origin and services,
-sets up a login path an agent can use on its own, writes `FLEET.md`, and tells you how many workers this
-machine will carry. The other commands run it themselves when they find a project uninitialised.
+- Claude Code. The fleet's browser checks and worker chips use the desktop app's Code tab (the built-in
+  browser pane and the task chips); a fleet with no browser tasks runs anywhere Claude Code does.
+- A POSIX shell. On Windows that is Git Bash, which Claude Code already needs. The self-test passes under
+  `bash` and `dash`.
+- Node.js for the hooks and four `fleet.sh` subcommands (`sweep`, `recover`, `pane-status`, and the proof
+  check in `finish`). Everything else degrades to a warning without it.
+- Nothing else. `rg`, `sg`, `jq` and similar tools are offered by `fleet-init` and never required.
 
-## Commands
+### Check that it works on your machine
 
-| Command | Who reaches it | What it does |
-|---|---|---|
-| `/makarasty:fleet` | you | Names the other commands and when to use each |
-| `/makarasty:fleet-init` | you or Claude | Prepares a project: origin, services, agent login, `FLEET.md`, machine sizing |
-| `/makarasty:fleet-plan <mission> [fast]` | you | Interviews you into a plan, splits it into a queue or briefs, offers one chip per worker |
-| `/makarasty:fleet-run <brief or run dir>` | you click the chip, the worker invokes it | Runs one brief, or works a queue until it is drained |
-| `/makarasty:fleet-login` | you or Claude | Opens and authenticates the project's local app |
-| `/makarasty:fleet-wait <run-id> [n]` | you or Claude | Waits without spending model turns, then collects |
-| `/makarasty:fleet-collect <run-id>` | you or Claude | Merges, enforces the evidence contract, dedupes, ranks |
-| `/makarasty:fleet-resume <run-id>` | you or Claude | Cold start after a crash: reopens the workers whose context survived, respawns the rest |
-| `/makarasty:fleet-design <screens> [fast]` | you | Plans a canvas run: the application's screens as artboards on disk, assembled into a Claude Design canvas and published |
-| `/makarasty:fleet-redesign <screens and direction> [fast]` | you | Plans a redesign over that canvas: proposals beside the captured screens, states included, directions sketched first when none was given |
-| `/makarasty:fleet-call <who and what about> [fast]` | you | Plans a call run: the facts dug out of the project with their evidence, then the bilingual page a non-native speaker reads aloud; `live <run-id>` in a fresh chat answers beside them during the call |
-
-Nine more commands ship as a **separate plugin**, `makarasty-tools`, from the same marketplace: they are
-useful beside a fleet and have nothing to do with its contract, so they version apart from it.
-
-| Command | Who reaches it | What it does |
-|---|---|---|
-| `/makarasty-tools:commit` | you or Claude | Commits under your own name, short message, no tool signature |
-| `/makarasty-tools:ship [branches\|all] [mine] [tag <name>]` | you or Claude | Merges branches in, splits the tree into your own commits, leaves files a parallel chat is still editing, pushes, tags with notes |
-| `/makarasty-tools:review [--fix\|--loop]` | you or Claude | One line per finding, and only findings that name a failing input; `--loop` fixes and re-reviews until a round finds nothing. on a split review Sonnet finds and the verify pass judges |
-| `/makarasty-tools:handoff [focus] \| from <chat>` | you or Claude | Writes a handoff file and offers the next chat as a chip, with this chat's id so the next one can read or ask it; `from` takes over another chat's work after checking its claims |
-| `/makarasty-tools:hold [codeword]` | you or Claude | Collects dictated bugs one line each without acting, then on the codeword fixes them grouped by shared cause |
-| `/makarasty-tools:explain [topic]` | you or Claude | What happened, why, what was done, what is left, can it ship, what was not checked - in plain words, claims checked first |
-| `/makarasty-tools:unslop [on\|off\|text]` | you or Claude | Toggles humanised replies, or rewrites a given text |
-| `/makarasty-tools:say <what to say>` | you or Claude | Turns what you mean into simple English to say on a call or send to a vendor, source-language gist beside each line |
-| `/makarasty-tools:notify [what you are waiting for]` | you or Claude | One message to your phone when this chat, another chat, or a fleet run finishes: Telegram, Discord, ntfy or a webhook |
-
-The same plugin carries a context hook: once a chat's context passes 400k tokens, and again every 150k
-above that, the chat is told to offer `/makarasty-tools:handoff` in one line. `MAKARASTY_HANDOFF_AT` and
-`MAKARASTY_HANDOFF_STEP` move the levels; `MAKARASTY_HANDOFF_AT=0` turns it off.
-
-`fleet`, `fleet-plan`, `fleet-design`, `fleet-redesign` and `fleet-call` carry
-`disable-model-invocation: true`, so only you can start them: they spawn paid work and depend on your
-clicks. `fleet-run` is the deliberate exception. You start it by clicking a chip, and then the worker's
-own model invokes it in that new session, so it must stay model-invocable - giving it the flag would
-block every worker the moment it tried to begin.
-
-`/makarasty-tools:commit` fires on plain phrasing rather than a slash, so "commit as me" or "commit from my
-name" reaches it, in whatever language you asked in. It commits by path, so a file another chat staged in
-the same checkout stays out of the commit; several commits, merging or pushing is `ship`.
-
-`/makarasty-tools:notify` is the answer to "did it finish" for a chat you are not sitting in. Say "ping me
-when the tests are done" in the chat doing the work and it arms a marker for that session; a hook sends
-one message when the turn ends, the last 500 characters of the reply under the verdict, then disarms. A
-chat that ends on a question is reported as finished with a question for you; one that leaves a background
-job or a loop running is not finished yet and keeps its marker; one that dies on a rate limit says so; one reopened after a crash checks whether the work was already done and, if it was, tells you it was
-done before the restart. `fleet.sh landed` posts a run's headline the same way. Setting up is one command
-in the terminal (the first "ping me" hands it to you with a Run button): a wizard asks which channel,
-prints the steps for Telegram (a BotFather token), Discord (a channel webhook URL) or ntfy (an app and a
-topic, no account), takes the one value, and saves only once a test message has arrived on the phone.
-The secret goes from your keyboard to `~/.claude/makarasty/notify.json` and never through a chat, and no
-browser tab is opened. A finish that happens before the wizard is done is delivered the moment a channel
-is saved. The hooks start nothing while no chat is armed: one `ls` per event, no node. The host's own
-`PushNotification` reaches the phone only while Remote Control is connected; this one needs nothing
-connected.
-
-## Agents
-
-- **`fleet-scenario`** walks a multi step browser scenario and returns bounded JSON. The screenshots and
-  DOM reads stay in its context; roughly eighty tokens come back to the parent.
-- **`fleet-profiler`** measures load, interaction and stability, returning readings with their spread and
-  the machine load beside them.
-- **`fleet-triage`** merges and ranks a run's findings, on Haiku.
-- **`fleet-design-eye`** reviews one screen for design defects: two geometry probes first, a zoomed
-  screenshot of each candidate second, and findings that carry the rectangles behind them, on the design
-  model (`fable`). The pictures stay in its context.
-
-## The pane gate
-
-This plugin calls a mechanical refusal a gate and has four of them: this one, the finding gate in
-`fleet.sh find`, the path gate every deletion passes ([`docs/SAFETY.md`](docs/SAFETY.md)), and the stage
-between a finding and a change ([`docs/GATE.md`](docs/GATE.md)). They have nothing in common except the
-shape - something is refused rather than asked for.
-
-A browser pane that is not displayed on screen stops compositing. It still navigates, still loads pages,
-still returns plausible DOM, and every visual observation made through it is false:
-
-| Symptom | Cause |
-|---|---|
-| screenshot times out after 5s | pane not displayed |
-| `requestAnimationFrame` never fires | nothing is scheduled without compositing |
-| transitions frozen at their start value | `transitionend` never fires |
-| virtualized rows read as empty text | they need layout that never runs |
-| in-page requests hang to their timeout | measured: an axios POST sat 180s while `curl` answered in 4s |
-| `preview_start` returns navOk with the right title | navigation and titles survive blindness; only frames do not |
-
-So every path measures first:
-
-```js
-new Promise(res => { let f = 0; requestAnimationFrame(function t(){ f++; requestAnimationFrame(t); }); setTimeout(() => res(f), 1000); })
+```bash
+sh scripts/fleet-selftest.sh
 ```
 
-Sixty or more is live. Anything below, zero included, is blind. That worker asks you to open its pane,
-then measures again, because the reading is the proof and not the reply. A worker that stays blind writes
-`.blocked` and no findings at all, and collection reports blocked workers by name. A run that says clean
-while a third of it saw nothing is worse than no run.
+From an install rather than a checkout, the plugin's path is `installPath` for `makarasty` in
+`~/.claude/plugins/installed_plugins.json`. The self-test runs the whole protocol (claims, lanes, the
+schema gate, the clocks, the markers, the landing check) against a temporary directory in about a second,
+with no sessions, no browser and no tokens. It should end with `N passed, 0 failed`.
 
-Two concurrent live panes are measured working in separate sessions, with the second chat greyed out and
-unfocused: the gate is the pane being displayed, not chat focus.
+## Quick start
 
-## The other way a run dies
+In the project you want to work on:
 
-A pane going blind is loud once you know the symptom. This one is silent.
+```
+/makarasty:fleet-init
+```
 
-A session runs only while something invokes it. When a turn ends with no subagent running and no
-backgrounded command pending, that session has stopped, and nothing in a fleet types into a worker's chat
-to restart it. It does not crash, it does not report anything, and its last message usually says what it
-was about to do next.
+It finds the app's origin and services, sets up a login path an agent can use on its own, writes
+`FLEET.md`, and tells you how many workers this machine will carry. Then:
 
-Measured 2026-08-27: three of six workers ended a turn immediately after claiming their next task and sat
-dead for 169, 171 and 176 minutes, each holding a claim nobody else could take. The planner slept through
-it, because its watch reported new files and there were none. A single cross-session status check brought
-all three back within seconds.
+```
+/makarasty:fleet-plan <what you want done>
+```
 
-So a worker claims and begins in the same turn, arms `sleep 120; echo wake` in the background when it must
-stop anywhere else, and the planner's watch reports silence as well as progress. Full rules in
-[`docs/PROTOCOL.md`](docs/PROTOCOL.md).
+The planner interviews you, splits the job into a queue, and offers one chip per worker. Click them. When
+the workers land, `/makarasty:fleet-collect <run-id>` merges their findings into one ranked backlog.
 
-## Mission kinds
+[`docs/WALKTHROUGH.md`](docs/WALKTHROUGH.md) is a first fleet in fifteen minutes, with two workers and no
+browser.
 
-A fleet is not only for testing. Each task declares its `kind`, which decides the working style and
-the axis the mission splits along.
+## Fleet commands
+
+| Command | Started by | What it does |
+|---|---|---|
+| `/makarasty:fleet` | you | Lists the other commands and when to use each |
+| `/makarasty:fleet-init` | you or Claude | Prepares a project: origin, services, agent login, `FLEET.md`, machine sizing |
+| `/makarasty:fleet-plan <mission> [fast]` | you | Interviews you into a plan, splits it into a queue or briefs, offers one chip per worker |
+| `/makarasty:fleet-run <brief or run dir>` | the worker, after you click its chip | Runs one brief, or works a queue until it is drained |
+| `/makarasty:fleet-login` | you or Claude | Opens and logs in to the project's local app, with credentials from the runbook, never from the chat |
+| `/makarasty:fleet-wait <run-id> [n]` | you or Claude | Waits without spending model turns, then collects |
+| `/makarasty:fleet-collect <run-id>` | you or Claude | Merges, enforces the evidence contract, dedupes, ranks |
+| `/makarasty:fleet-resume <run-id>` | you or Claude | After a crash: reopens the workers whose context survived, respawns the rest |
+| `/makarasty:fleet-design <screens> [fast]` | you | Captures the app's screens as artboards on disk and assembles them into a Claude Design canvas |
+| `/makarasty:fleet-redesign <screens and direction> [fast]` | you | Proposes redesigns beside the captured screens, loading and error states included |
+| `/makarasty:fleet-call <who and what about> [fast]` | you | Digs the facts for a vendor call out of the project, with evidence, and builds a bilingual page to read aloud; `live <run-id>` answers beside you during the call |
+
+`fleet`, `fleet-plan`, `fleet-design`, `fleet-redesign` and `fleet-call` carry
+`disable-model-invocation: true`: they start paid work and wait on your clicks, so only you can start
+them. `fleet-run` is the exception on purpose. The worker's own model invokes it in the new session, and
+the flag would stop every worker the moment it tried to begin.
+
+### Agents
+
+- **`fleet-scenario`** walks a multi-step browser scenario and returns bounded JSON. Screenshots and DOM
+  reads stay in its context; about eighty tokens come back to the parent.
+- **`fleet-profiler`** measures load, interaction and stability, with the spread of each reading and the
+  machine load beside it.
+- **`fleet-triage`** merges and ranks a run's findings, on Haiku.
+- **`fleet-design-eye`** reviews one screen for design defects: geometry probes first, a zoomed screenshot
+  of each candidate second, and every finding carries the rectangles behind it.
+
+## Tools commands
+
+| Command | What it does |
+|---|---|
+| `/makarasty-tools:commit` | Commits this chat's files under your own name, short message, no AI trailer. Commits by path, so a file another chat staged stays out |
+| `/makarasty-tools:ship [branches\|all] [mine] [tag <name>]` | Merges branches in, splits the tree into your own commits, leaves files a parallel chat is still editing, pushes, tags with notes |
+| `/makarasty-tools:review [--fix\|--loop]` | Reports only findings that name an input that breaks the code, each one checked by a pass that tries to disprove it. `--loop` fixes and re-reviews until a round finds nothing |
+| `/makarasty-tools:handoff [focus] \| from <chat>` | Writes a handoff file and offers the next chat as a chip that can read or ask this one; `from` takes over another chat's work after checking its claims |
+| `/makarasty-tools:hold [codeword]` | Collects dictated bugs one line each without acting, then on the codeword fixes them grouped by shared cause |
+| `/makarasty-tools:explain [topic]` | What happened, why, what was done, what is left, whether it can ship and what was not checked, in plain words |
+| `/makarasty-tools:unslop [on\|off\|text]` | Turns humanised replies on or off, or rewrites a given text without assistant tics |
+| `/makarasty-tools:say <what to say>` | Turns what you mean into simple English to say on a call or send to a vendor, with a gist in your language beside each line |
+| `/makarasty-tools:notify [what you are waiting for]` | Sends one message to your phone when this chat, another chat or a fleet run finishes: Telegram, Discord, ntfy or a webhook |
+
+All nine can be started by you or by Claude, and most trigger on plain phrasing in any language: "commit
+as me", "закоммить от меня", "ping me when the tests are done".
+
+**Context hook.** Once a chat's context passes 400k tokens, and again every 150k above that, the chat is
+told to offer a handoff in one line. `MAKARASTY_HANDOFF_AT` and `MAKARASTY_HANDOFF_STEP` move the levels;
+`MAKARASTY_HANDOFF_AT=0` turns it off.
+
+**Notifications.** Say "ping me when it's done" in the chat doing the work. It arms a marker for that
+session, and a hook sends one message when the turn ends, with the last 500 characters of the reply under
+the verdict. A chat that ends on a question is reported as waiting for you; one that leaves a background
+job running is not finished and keeps its marker; one that dies on a rate limit says so. Setup is one
+command in your terminal: a wizard asks for the channel, takes one value (a bot token, a webhook URL or an
+ntfy topic), and saves it to `~/.claude/makarasty/notify.json` only after a test message reaches your
+phone. The secret never passes through a chat. While no chat is armed the hooks cost one `ls` per event
+and start no Node process.
+
+## How a fleet works
+
+### Two shapes
+
+**Assigned**: the planner writes one brief per worker, and the run ends when the briefs do.
+
+**Pull**: the planner writes a queue, workers claim tasks when free, and the planner keeps adding tasks
+while they run. A claim is a directory, because `mkdir` fails atomically on one that exists; with eight
+concurrent claimers, exactly one won. Use pull when the job is bigger than the plan, which is most of the
+time. Details in [`docs/PULL.md`](docs/PULL.md).
+
+### Lanes
+
+A fleet queues for whatever the machine has exactly one of. Each task declares a **lane**: `pane` for the
+browser, `verify` for the test suite and typechecker, `repo` for work that only reads and writes files.
+The lanes are capped separately. The pane lane is capped by your display, ten at most; the repo lane by
+the machine. Capping file work at the width of a monitor is how a run ends up eight browsers wide and two
+files wide.
+
+That one field is what makes the plugin more than a browser tool. A run with no pane tasks is a refactor,
+a migration or a research sweep, and the gate changes its evidence instead of disappearing: a reproduction
+that fails before a fix and passes after, a verbatim quote with its locator from each source, a test count.
+
+A pane worker spends about 20 of its 23 minutes waiting on one scenario subagent, so it claims one repo
+task and works it during the wait. Details in [`docs/LANES.md`](docs/LANES.md).
+
+### Mission kinds
+
+Each task declares its `kind`, which sets the working style and the axis the job splits along.
 
 | Kind | Splits by | Isolation |
 |---|---|---|
@@ -175,367 +186,226 @@ the axis the mission splits along.
 | `investigate` | hypothesis | worktree when instrumenting |
 | `implement` | seam | worktree |
 | `research` | source | none |
-| `design` | one screen, in three waves: recon, then the primitives, then the screens | worktree |
-| `critique` | one screen; a rectangle or a ratio is the evidence, never a screenshot alone | none |
-| `canvas` | one screen per artboard, in stages: recon, the primitives sheet, the screens, compare, assemble | none |
+| `design` | one screen, in three waves: recon, primitives, screens | worktree |
+| `critique` | one screen; the evidence is a rectangle or a ratio, never a screenshot alone | none |
+| `canvas` | one screen per artboard: recon, primitives sheet, screens, compare, assemble | none |
 | `redesign` | one screen; proposals beside the captured ones, directions sketched first | none |
-| `call` | source, in two stages: the facts with their evidence, then the page a non-native speaker reads aloud; a fresh chat answers live from the same facts | none |
+| `call` | source: the facts with their evidence first, then the page you read aloud | none |
 
-Splitting along the wrong axis is what makes a fleet run worthless. Two workers on one slice cost twice
-and then agree with each other, which reads as corroboration and is not.
+Splitting along the wrong axis is what makes a fleet run worthless. Two workers on one slice cost twice as
+much and then agree with each other, which reads as corroboration and isn't.
 
-The last three are the design half, and they form a loop: critique what runs, capture it as a canvas,
-propose beside it, then implement the approved artboards with the `design` kind. The canvas is a
-file-based one - `<Screen>.dc.html` artboards and a `canvas.json` in the project - seeded into the editor
-the harness's `design` skill carries and published as a page where the operator clicks, drags and saves.
-[`docs/DESIGN.md`](docs/DESIGN.md) has the loop and the gates.
+The last four kinds form a loop: critique what runs, capture it as a canvas, propose beside it, then
+implement the approved artboards with the `design` kind. See [`docs/DESIGN.md`](docs/DESIGN.md) and
+[`docs/MISSIONS.md`](docs/MISSIONS.md).
 
-## What it is allowed to delete
+### The pane gate
 
-A fleet runs unattended across a dozen sessions, so what it may remove from the disk is a short, closed
-list rather than a matter of each worker's judgement:
+A browser pane that is not on screen stops compositing, and nothing tells you:
 
-1. **Its own scratch**, under `.fleet/<run-id>/`, which is declared scratch and belongs in the ignore file.
-2. **The worktrees its own workers created**, under `.claude/worktrees/`, and only through
-   `fleet.sh clean`.
+| Symptom | Cause |
+|---|---|
+| screenshot times out after 5s | pane not displayed |
+| `requestAnimationFrame` never fires | nothing is scheduled without compositing |
+| transitions frozen at their start value | `transitionend` never fires |
+| virtualized rows read as empty text | they need layout that never runs |
+| in-page requests hang to their timeout | measured: an axios POST sat 180s while `curl` answered in 4s |
+| `preview_start` returns navOk with the right title | navigation and titles survive; only frames don't |
+
+So every pane worker counts frames first:
+
+```js
+new Promise(res => { let f = 0; requestAnimationFrame(function t(){ f++; requestAnimationFrame(t); }); setTimeout(() => res(f), 1000); })
+```
+
+Sixty or more is live; anything below, zero included, is blind. A blind worker asks you to open its pane
+and measures again, because the reading is the proof, not your reply. A worker that stays blind writes
+`.blocked` and no findings, and collection lists blocked workers by name. Two panes in separate sessions
+were measured live at the same time, with the second chat unfocused: what matters is that the pane is
+displayed, not which chat has focus. More in [`docs/BROWSER.md`](docs/BROWSER.md).
+
+### The other way a run dies
+
+A blind pane is loud once you know the symptom. This one is silent. When a turn ends with no subagent
+running and no background command pending, the session stops, and nothing in a fleet types into a
+worker's chat to restart it. Its last message usually says what it was about to do next.
+
+Measured on 2026-08-27: three of six workers ended a turn right after claiming their next task and sat dead
+for 169, 171 and 176 minutes. The planner slept through it, because its watch reported new files and there
+were none. One cross-session status check brought all three back within seconds.
+
+So a worker claims and starts work in the same turn, arms `sleep 120; echo wake` in the background when it
+has to stop anywhere else, and the planner's watch reports silence as well as progress. A `Stop` hook
+catches the case of a fresh claim whose heartbeat never moved. Full rules in
+[`docs/PROTOCOL.md`](docs/PROTOCOL.md).
+
+### The gate between a finding and a fix
+
+About 15 findings in 100 were refuted once somebody tried to fix them. So a `fix` task is refused by
+`finish` unless a reproduction ran through `fleet-gate.mjs prove`, failing before the change and passing
+after. A cause several findings share is ruled on once, before any of them is patched. An edit that drops a
+name something outside the repository reads (a route, a config key) is blocked by a hook until a question
+or a recorded decision names it. See [`docs/GATE.md`](docs/GATE.md).
+
+## What it may delete
+
+A fleet runs unattended across a dozen sessions, so what it may remove is a short closed list, not each
+worker's judgement:
+
+1. Its own scratch, under `.fleet/<run-id>/`.
+2. The worktrees its own workers created, under `.claude/worktrees/`, and only through `fleet.sh clean`.
 
 Nothing else. There is no `git reset --hard`, no `git clean`, no `git checkout --` anywhere in the plugin,
 and no recursive force-delete of a path it did not create.
 
-`fleet.sh clean` is a dry run unless it is given `--remove`. It touches only worktrees this run registered
-for itself, it **keeps** any tree carrying uncommitted changes or commits neither merged nor pushed, and it
-deletes a branch only with `git branch -d`, the form that refuses unmerged work. Everything it skips is
-printed with the reason.
+`fleet.sh clean` is a dry run unless given `--remove`. It touches only worktrees this run registered,
+keeps any tree with uncommitted changes or with commits neither merged nor pushed, and deletes a branch
+only with `git branch -d`, which refuses unmerged work. Every deletion passes a path gate: absolute, no
+`..` or `.` segments, at least four levels below the root, inside `.claude/worktrees/` with something
+after it, and never a directory that contains the shell's working directory.
 
-Every deletion passes a path gate: absolute, free of `..` and of `.` segments, at least four levels below
-the root, inside `.claude/worktrees/` with something after it, and never a directory containing the
-shell's own working directory. Containment does most of the work; the depth floor is a second, independent
-guard for the case containment cannot see, such as a worktree somebody created at `C:/wtmerge`, one slip
-from the drive root. A path the gate refuses is reported as a stray, never deleted and never ignored.
+One step here is not obvious, and it was measured [M32]: a worktree usually has a `node_modules` junction
+into the main checkout, and `git worktree remove` **follows that junction and deletes what it points at**.
+Eight runs out of eight on Windows, at the top level and nested, `--force` included, exit code 0 every
+time. So `clean` unlinks every junction and symlink inside a worktree before anything recursive touches
+it. The same applies to the harness's own `ExitWorktree` and to any hand-written `rm -rf`. See
+[`docs/WORKTREES.md`](docs/WORKTREES.md) and [`docs/SAFETY.md`](docs/SAFETY.md).
 
-The step that makes it safe is not obvious, and it is measured [M32]. A worktree usually has a
-`node_modules` **junction** into the main checkout, and `git worktree remove` **follows that junction and
-deletes what it points at** - eight runs out of eight on this machine, at the top level and nested,
-`--force` included, exit code 0 every time. So `clean` unlinks every junction and symlink inside a worktree before anything recursive
-touches it, which kept the main checkout intact in every paired run. The same applies to the harness's own
-`ExitWorktree` and to any hand-rolled `rm -rf` or `rmdir /S`: unlink first, or the delete reaches past the
-tree you meant. [`docs/WORKTREES.md`](docs/WORKTREES.md) has the full procedure. [`docs/SAFETY.md`](docs/SAFETY.md) is the whole
-safety story: the closed list, the gate, the dry run, and why a gate beats a rule written in prose.
+## What a run costs, measured
 
-## Lanes, and why this is not only a browser tool
+| | 8 workers, assigned, 2026-08-26 | 6 workers, pull, 2026-08-27 |
+|---|---|---|
+| Findings | 94 (3 blockers, 33 major) | 254 (6 blockers), plus 58 unreached |
+| Wall clock | 63 minutes | 4 h 57 min, 34 tasks from a growing queue |
+| Tokens | 8.3 M non-cached, 311 M cached | |
+| Subscription | about 6% of a weekly maximum allowance | |
 
-A fleet queues for whatever the machine has exactly one of, and a worker is the thing holding it. Name that
-a **lane**: `pane` for the browser, `verify` for the test suite and the typechecker, `repo` for work that
-only reads files and is therefore not scarce at all.
+Most of the cost is turns multiplied by context: over three later runs, 19,535 turns against 6,421 M
+cached reads, with output at 0.3% of the tokens that move. One executor made 30 calls and read 4.0 M
+cached tokens, another made 194 and read 55.6 M, and both returned about the same number of lines. What a
+run costs depends on how much each worker looked at, not on how much it said. The full ledger, with every
+measurement a rule cites, is [`docs/MEASUREMENTS.md`](docs/MEASUREMENTS.md).
 
-Every task declares its lane, and every worker claims in one. A pane task is strictly serial per worker,
-because browser subagents drive the parent session's pane. A repo task fans out. A verify task takes the
-machine.
-
-**The lanes are capped separately, which is the point of naming them.** The pane lane is capped by the
-operator's display, ten at the outside. The repo lane is capped by the machine and sized from the queue,
-and there is no reason for the two numbers to match: capping file work at the width of a monitor is how a
-run ends up eight browsers wide and two files wide.
-
-That one field is what makes the tool general. A run with no pane tasks is an ordinary run whose pane lane
-happens to be empty: a refactor across a hundred files, a migration, a research sweep, a codebase somebody
-is learning. The gate travels with it, changing only its referent - a reproduction that fails before a fix
-and passes after, a verbatim quote with its locator from each source, a test count rather than a colour.
-
-The largest measured lever lives here too. A pane worker spends about 20 of its 23 minutes waiting on one
-scenario subagent, so it claims one repo task and works it during the wait. Full rules in
-[`docs/LANES.md`](docs/LANES.md).
-
-## Two shapes
-
-**Assigned**: the planner writes one brief per worker and the run ends when the briefs do.
-
-**Pull**: the planner writes a queue, workers claim tasks when free, and the planner keeps adding while
-they run. The claim is a directory, because `mkdir` fails atomically on an existing one, verified with
-eight concurrent claimers where exactly one won. Fleet size stops being a number anyone picks and becomes
-however many panes are open. Use it when the surface is larger than the plan, which is most of the time.
-
-## What it costs, measured
-
-One eight worker run over a large application, 2026-08-26:
-
-| | |
-|---|---|
-| Findings | 94, of which 3 blockers and 33 major |
-| Wall clock | 63 minutes, first worker to last |
-| Tokens | 8.3 M non-cached, 311 M cached, a 37:1 ratio |
-| Subscription | roughly 6 percent of a weekly maximum allowance |
-| Blind on first gate | 8 workers of 8 |
-| Blocked time | 70 percent of summed elapsed |
-| Avoidable tool calls | 259 of 1,350 conservatively, 473 at the upper bound |
-| Executor return ratio | 0.96 to 2.04 percent |
-| Refuted when someone tried to fix them | roughly 15 of 100 |
-
-The return ratio is stable and is not the lever. The denominator varies by an order of magnitude: one
-executor made 30 calls and read 4.0 M cached tokens, another made 194 and read 55.6 M, and both returned
-about the same number of lines. What a run costs is decided by how much the executor looked at, never by
-how much it said.
-
-A six worker pull mode run over the same application, 2026-08-27, is the counterweight:
-
-| | |
-|---|---|
-| Findings | 254, of which 6 blockers, plus 58 unreached entries |
-| Tasks worked | 34, claimed from a queue the planner kept extending |
-| Wall clock | 4 hours 57 minutes, first claim to last `.done` |
-| Worker time lost to dead sessions | 516 minutes of 1,782, 29 percent, in three simultaneous stalls |
-| Planner time lost to the same cause | 65 minutes, ended by the operator typing "I think the chat has hung" |
-| Operator interruptions | 8 interactive prompts across six chats, 7 of them the same pane question |
-| Planner wake-ups | 62, of which 13 were claims it took no action on |
-| Watch left running after the run finished | 5 hours 42 minutes |
-
-Every row below the findings is a defect in this plugin rather than in the application, and every one of
-them was fixed before this release, and the lanes landed on 2026-08-28. The queue itself worked: 34 tasks
-off a queue that did not exist when the run started is the shape a fixed set of briefs cannot produce.
-
-A fourteen worker pull mode run over the same application, 2026-08-31, is what 1.0.0 is answering:
-
-| | |
-|---|---|
-| Findings | 246, of which 32 blockers and 120 major, over 54 tasks |
-| Workers | 14, six on panes and eight on files, all landed, none blind |
-| Turns | 4,580 assistant turns, 3.8 M output tokens, 1.2 B cached reads |
-| Session life after the worker's own `.done` | 703 minutes and 108 turns, across 13 of the 14 workers |
-| Abort clocks armed | 52, of which zero were ever stopped |
-| Longest tail | one worker still being woken 74 minutes after it finished |
-| Pane question, chip clicked to question on screen | 1 to 34 minutes, answered one chat at a time |
-| Claims made by hand around a missing `next` lane filter | 73, beside 113 through the helper |
-
-The last row is the instructive one. `fleet.sh next` had no lane argument, so a paneless worker could
-claim a browser task; the planner worked around that by telling nine workers to walk the queue by hand,
-and the hand rolled path skips the one place the finding schema is enforced. A missing argument took the
-contract down with it, and nothing went red.
-
-The same day's second run - eight workers repairing what the first one found, 32 tasks, 132 findings,
-741 files changed - reproduced both defects independently, which is what makes them design faults rather
-than one bad afternoon: **387 minutes and 174 turns of session life after the workers' own `.done`
-markers**, 35 clocks armed and none stopped, and **two panes opened for three minutes of browser driving**.
-It also finished without being collected: 132 findings sat in eight JSONL files with no backlog until
-somebody ran `merge` by hand two hours later.
-
-1.0.0 gives `next` its lane, makes every clock name the obligation it guards so `finish` can stop it,
-ends a run with a generated banner plus one notification plus a `FINISHED` file, has each chat rename
-itself in the sidebar when it lands, and asks for a pane in the first minute after the chip rather than
-the thirty-fourth.
-
-**1.1.0 answers three runs on 2026-09-01 - 12, 13 and 6 workers, 1,500 / 256 / 43 backlog rows - and the
-restart that killed them.** After it, the 26 worker sessions were listed nowhere the host could still
-address: a message needs a live receiver, so the only recovery this plugin had could not reach anything.
-`fleet.sh recover` reads the chip register, the claims and the host's transcripts instead, and says which
-workers can be reopened with their context (`claude -r`) rather than replaced. The same runs paid for the
-cost accounting now in `docs/MEASUREMENTS.md`, "Appendix: what a pull run spends":
-the bill is turns multiplied by context - 19,535 turns against
-6,421 M cached reads - and output is 0.3% of the tokens that move. And the sixth mission kind, `design`,
-exists because every visual defect that sweep found lived in a state nobody designed: the loaded screen
-had a designer, the loading state and the transition did not.
-
-**1.2.0 adds the design half.** A `critique` kind whose evidence is a rectangle and a ratio: two probes
-run before any screenshot, and the design probe was verified on a fixture - nine planted defects found,
-zero of ten look-alikes reported (M29). A `canvas` kind that recreates the application's screens as
-artboards on disk, each carrying the source files and the frame count it came from, and assembles them
-into a Claude Design canvas; the pipeline ran end to end on a fixture project through the design skill's
-own helper and check. A `redesign` kind that proposes beside the captured screens, states included. No
-fleet has yet captured a real application this way; see "Known limits".
-
-## Reference
-
-- [`docs/WALKTHROUGH.md`](docs/WALKTHROUGH.md) your first fleet in fifteen minutes, for somebody who has
-  never run one
-- [`docs/PROTOCOL.md`](docs/PROTOCOL.md) run layout, brief format, finding schema, project configuration
-- [`docs/PULL.md`](docs/PULL.md) the task queue, claiming, heartbeats, budgets, asking the planner
-- [`docs/MISSIONS.md`](docs/MISSIONS.md) the ten kinds and the axis each splits along
-- [`docs/DESIGN.md`](docs/DESIGN.md) the design half: critique with geometry probes, the canvas on disk,
-  redesign beside it, and the loop back to code
-- [`docs/CALL.md`](docs/CALL.md) the call half: the facts with their evidence, the page a non-native speaker
-  reads aloud, and the live chat that answers beside them
-- [`docs/WORKTREES.md`](docs/WORKTREES.md) worktrees: registration, the junction measurement, and the only
-  path in this plugin that deletes one
-- [`docs/SAFETY.md`](docs/SAFETY.md) what an unattended fleet may delete, the path-depth gate, and the
-  evidence behind writing the reason beside the rule
-- [`docs/COMMANDS.md`](docs/COMMANDS.md) who may invoke each command, what `allowed-tools` actually
-  grants, and the checklist before adding one
-- [`docs/BROWSER.md`](docs/BROWSER.md) blindness, the gate, panes, viewports, round trips
-- [`docs/GATE.md`](docs/GATE.md) the stage between a finding and a change: the reproduction executed, the shared cause ruled on first, the contract surface
-- [`docs/SWEEPS.md`](docs/SWEEPS.md) checks that catch a class of defect rather than one bug
-- [`docs/MOCKING.md`](docs/MOCKING.md) reaching states the sandbox data will not produce, and the line
-  between a scene and a shared write
-- [`docs/LANES.md`](docs/LANES.md) what a fleet is really queueing for, fan-out, and a run with no browser
-- [`docs/MEASUREMENTS.md`](docs/MEASUREMENTS.md) the ledger every rule cites: what was run, what was
-  counted, and which rule it produced
-- [`docs/BROKER.md`](docs/BROKER.md) the pane as a shared instrument work is filed against, and the
-  measurement that says seven open panes carried less than one pane's worth of demand
-- [`scripts/fleet.sh`](scripts/fleet.sh) the queue's bookkeeping in one call per boundary, and the only
-  place the finding schema is enforced rather than requested
-- [`scripts/fleet-merge.mjs`](scripts/fleet-merge.mjs) findings to a reconciled backlog, and a backlog to a
-  queue a fix fleet can claim
-- [`scripts/fleet-selftest.sh`](scripts/fleet-selftest.sh) the whole protocol against a temporary directory
-  in about a second, with no sessions, no browser and no tokens: checks over the lane filter, the atomic
-  claim, the schema gate, the clocks, the completion markers and the landing test. Run it before trusting a
-  change to the plugin
-- [`scripts/fleet-load.mjs`](scripts/fleet-load.mjs) what the machine is carrying right now, by class, and
-  `--watch` to record it through a run. The sizing rules are derived from these numbers; this is how they
-  get re-measured instead of remembered
-- [`scripts/visual-probe.js`](scripts/visual-probe.js) visual defects found by geometry, so a screenshot
-  confirms rather than invents
-- [`scripts/design-probe.js`](scripts/design-probe.js) design defects found by geometry and computed
-  style: a crooked control, an uneven row, unreadable text, a target too small, plus the page's own scale
-  and its landmarks. Verified on [`scripts/fixtures/design-probe.html`](scripts/fixtures/design-probe.html)
-- [`scripts/fleet-canvas.mjs`](scripts/fleet-canvas.mjs) the canvas gate and its assembly: provenance
-  stamped and checked, artboards laid out, a static one rendered plain for measuring, the design skill's
-  helper driven to seed the page
-- [`docs/PERF.md`](docs/PERF.md) measuring speed on a machine the fleet is loading
-- [`docs/MODELS.md`](docs/MODELS.md) which model per stage, and the delegation economics
-- [`docs/PORTING.md`](docs/PORTING.md) every assumption this makes about its host, and its substitute; the per-OS commands and shell traps
+Every defect those runs exposed in the plugin itself is in [`CHANGELOG.md`](CHANGELOG.md), with the fix.
 
 ## What the version number covers
 
-A version is a promise about a surface, and this one is deliberately narrow. Under semver, 1.x will not
-break:
+Under semver, 1.x will not break:
 
-- **The run directory layout** - `tasks/ready`, `tasks/claimed/<id>/owner`, `tasks/claimed/<id>/proof`,
+- **The run directory layout**: `tasks/ready`, `tasks/claimed/<id>/owner`, `tasks/claimed/<id>/proof`,
   `tasks/done`, `ask/`, `answers/`, `pane/`, `decisions.jsonl`, `clusters.jsonl`, and the
-  `<chip>.jsonl` / `.notes.md` / `.done` / `.blocked` / `.waiting` files. `.fleet/contract-surface.txt`
-  sits beside the runs rather than inside one, because it belongs to the project and is committed with it.
-  Each run stamps `RUN_FORMAT` at its first write, and a `fleet.sh` that reads an older format refuses a
-  newer run rather than misreading it.
-- **`fleet.sh`'s subcommands and their exit codes**: 0 done; 1 a line the schema gate refused, a walk
-  served from a blind pane, or a run that has not landed; 2 wrong usage or a run this version cannot read;
-  3 the queue is drained for that lane, nothing left and nothing waiting; 4 the claim is no longer yours;
-  5 from `drained`, not finished: the planner has not closed the queue, or a ready task nobody holds is
-  still waiting; 6 free memory is under the floor; 7 from `next`, QUEUE WAITING: tasks exist but an
-  `after:` or a held verify lane holds them.
-- **The four line shapes** a findings file may hold: a finding, `unreached`, `created`, `state_changed` -
+  `<chip>.jsonl`, `.notes.md`, `.done`, `.blocked` and `.waiting` files. `.fleet/contract-surface.txt`
+  sits beside the runs because it belongs to the project and is committed with it. Each run stamps
+  `RUN_FORMAT` at its first write, and a `fleet.sh` that reads an older format refuses a newer run rather
+  than misreading it.
+- **`fleet.sh` subcommands and exit codes**: 0 done; 1 a line the schema gate refused, a walk served from
+  a blind pane, or a run that has not landed; 2 wrong usage or a run this version cannot read; 3 the queue
+  is drained for that lane; 4 the claim is no longer yours; 5 from `drained`, not finished (the planner
+  has not closed the queue, or a ready task nobody holds is still waiting); 6 free memory is under the
+  floor; 7 from `next`, tasks exist but an `after:` or a held verify lane holds them.
+- **The four line shapes** a findings file may hold (a finding, `unreached`, `created`, `state_changed`)
   and the fields the schema gate enforces on each.
-- **The marker semantics**: `.done` means finished, `.blocked` means it never saw, `.waiting` means it is
-  stopped on a person, `FINISHED` means the run was landed by declaration.
+- **The markers**: `.done` means finished, `.blocked` means it never saw, `.waiting` means it is stopped on
+  a person, `FINISHED` means the run was landed by declaration.
 
-Everything else is **calibration, not contract**: every prose rule, every agent brief, and every number in
-this README. Those change whenever a run measures something better, and a minor version may rewrite all of
-them.
+Everything else is calibration, not contract: prose rules, agent briefs, and the numbers in
+`calibration.json` and in this README. A minor version may change any of them when a run measures
+something better. [`scripts/fleet-selftest.sh`](scripts/fleet-selftest.sh) is the contract in
+executable form.
 
-[`scripts/fleet-selftest.sh`](scripts/fleet-selftest.sh) is that contract's executable form: it runs the
-whole protocol against a temporary directory in about a second, with no browser and no tokens, and ends by
-printing `N passed, 0 failed`. Run it after installing, and on any machine before trusting a fleet on it —
-it is also the portability probe this plugin has instead of a test matrix.
+## Known limits
+
+The sample is small, and it is written down so you can decide how far to trust it.
+
+- **Every number here comes from one machine, one operator and one application**, over a few weeks. Only
+  Windows has run a real fleet. The shell half is better covered: the self-test passes under `bash` and
+  `dash`, but no macOS or Linux fleet has run.
+- **The pane states in [M33] were driven by hand, once, on Windows.** macOS and Linux may stop a pane for
+  reasons this never met.
+- **The memory refusals have never fired in a real run.** The throttle in `next` and the hooks that refuse
+  a full test suite or a browser call on a full machine are covered by self-test cases against a stub, and
+  their two thresholds in `calibration.json` were chosen, not measured. The heavy-page figure (2,061 MB)
+  came from a synthetic fixture of 150,000 DOM nodes; measure your own app with
+  `node scripts/fleet-load.mjs`, once with it open and once without.
+- **No fleet has run with the finding-to-fix gate on.** `fleet-gate.mjs` and `fleet-contract.mjs` are
+  covered by 36 self-test cases, and the clustering was built against a real backlog of 436 findings, but
+  no worker has yet been stopped by the contract hook in a live run.
+- **The contract surface is a regular expression over text.** It misses a route built by concatenation and
+  a config key read through a variable. Edit `.fleet/contract-surface.txt` by hand and commit it.
+- **No fleet has captured a real application as a canvas yet.** `fleet-canvas.mjs` ran end to end on a
+  fixture project; the compare stage's 2 px tolerance is a starting number. Publishing the canvas is a
+  manual step through the `design` skill.
+- **The design probe was verified in one browser on one fixture** [M29]: nine planted defects found, zero
+  of ten look-alikes reported. It can't see an overlapping sibling when it reads contrast, and its
+  `offScale` and `ghostBoxes` results are candidates, not findings.
+- **The pane broker** in [`docs/BROKER.md`](docs/BROKER.md) has never run live.
+- **`recover` can't confirm a resume happened.** It prints the command; you run it in a terminal. A
+  resumed session is a terminal with no browser pane, so repo-lane workers come back and pane-lane workers
+  don't.
+- **The evals in [`evals/`](evals/) have not been run against this release.** They need Linux or macOS,
+  because `claude plugin eval` refuses a shell tool it can't sandbox, and on Windows it can't.
+- **The largest cost measured is not this plugin's to fix.** A permission mode that adds 1.5 to 2 s to
+  every gated call accounted for 16.55 h of a 211 h tool wall [M28]. Only an allowlist or a different
+  permission mode removes it.
 
 ## When something looks broken
 
-Four failures that are not in this plugin, in the order they actually happen.
+**A change to the plugin did not take effect.** The install is a cache, and `claude plugin update` can say
+"already at latest version" while the source has moved. Bump the version, or run
+`claude plugin uninstall makarasty@makarasty` and install again.
 
-**A change to the plugin did not take effect.** The install is a cache, and `claude plugin update` can
-report "already at latest version" while the source has moved — this is a repeatedly reported Claude Code
-behaviour, not a fleet one. `claude plugin uninstall makarasty@makarasty` then `install` rebuilds it. If
-the version number did not change, that is the only thing that will.
+**The run directory is in Dropbox, OneDrive or iCloud.** The atomic claim is `mkdir`, which means nothing
+once a sync client is renaming and copying the directory behind you. Keep `.fleet/` on a local disk; the
+same goes for network shares.
 
-**A run directory inside Dropbox, OneDrive or iCloud.** The atomic claim is `mkdir`, which is honest on a
-local filesystem and meaningless once a sync client is rewriting the directory behind you: sync conflict
-resolution invents copies and renames on its own schedule. Keep `.fleet/` on local disk. A network share
-is the same answer for the same reason.
+**"bad interpreter" on Windows.** A `.sh` file checked out with CRLF endings. `.gitattributes` pins LF; a
+clone made before that file needs a fresh checkout.
 
-**"bad interpreter" on Windows.** A `.sh` file checked out with CRLF endings makes the shell look for an
-interpreter whose name ends in a carriage return. This repository pins `*.sh text eol=lf` in
-`.gitattributes`, so it should not happen here; if it does, your clone predates that file.
+**Git Bash not found.** Set `CLAUDE_CODE_GIT_BASH_PATH`. Nothing in the fleet can work around a shell the
+harness can't find.
 
-**Git Bash not found.** Claude Code's detection of it has broken and been fixed several times, and
-`CLAUDE_CODE_GIT_BASH_PATH` is the escape hatch. Nothing in the fleet can work around a shell the harness
-cannot find.
+## What it leaves out
 
-## Known limits of 1.5.0
-
-Written down rather than fixed, because a tool that hides its sample size is asking to be trusted further
-than it has been tested. Full list in [`CHANGELOG.md`](CHANGELOG.md).
-
-- **The memory refusals have never fired in a real run.** The throttle in `next`, the hook that refuses
-  a full suite, and the one that refuses a browser call on a full machine are covered by self-test cases
-  against a stub census, and the numbers behind them were measured on one machine on one afternoon
-  [M33, M34]. No worker has yet been held on memory during a mission, and the two thresholds in
-  `calibration.json` are chosen rather than measured.
-- **The heavy-page figure is synthetic.** 2,061 MB came from 150,000 DOM nodes built into a fixture,
-  not from an application anybody uses. It establishes that the cost is unbounded, and the shape of the
-  rule that follows from that; it is not any real project's number, which is why the rule says to
-  measure your own with `node scripts/fleet-load.mjs`, once with the application open and once without,
-  rather than quoting this one. **Nothing automates that yet**, and nothing stores the result: the pane
-  ceiling is currently held by the memory floor in `calibration.json` rather than by a per-project number.
-- **The pane states in [M33] were driven by hand, once, on Windows.** Six states, one operator, one
-  afternoon, one window manager. macOS and Linux may stop a pane for reasons this never met.
-- **No fleet has yet run with the gate on.** `fleet-gate.mjs` and `fleet-contract.mjs` are covered by 36
-  self-test cases and the clustering was built against a real 436-finding backlog, where it produced 42
-  candidate roots over 128 findings and the six-member ceiling had to be added because the first shape
-  offered one candidate 51 findings wide. But no worker has yet been stopped by the contract hook in a live
-  run, and no fix has yet been refused by `finish` for want of a proof. The numbers in
-  [`docs/GATE.md`](docs/GATE.md) are from replaying a finished run, not from running one.
-- **The contract surface is a regular expression over text.** It will miss a route built by concatenation
-  and a configuration key read through a variable, and it will offer tokens nothing depends on. The file is
-  meant to be edited by hand and committed; a project that does not edit it gets a gate that fires on the
-  wrong names.
-- **The clustering ceilings are calibration, not contract.** Six members and fifteen percent are two
-  numbers from one backlog on one project. They are in `calibration.json` because they will need moving.
-
-- **No fleet has captured a real application as a canvas yet.** `fleet-canvas.mjs` ran end to end on a
-  fixture project in one session - stamp, check, layout, plain, seed, and the design skill's own check on
-  the seeded page - and the commands that plan a canvas or a redesign run are written against that, not
-  against a run. The compare stage's 2 px tolerance is a starting number, not a measured one.
-- **The design probe was verified in one browser on one fixture** (M29): nine planted defects found, zero
-  of ten look-alikes reported, one extra candidate. Its contrast reading composites ancestor backgrounds
-  and cannot see an overlapping sibling; it says `approx` when it blended a translucent layer and gives up
-  on an image. `offScale` and `ghostBoxes` are candidates by design, and a reader who files them unlooked
-  at will file noise.
-- **Publishing a canvas is the planner's manual step**, through the `design` skill's own publish rule,
-  because the runtime version pin and the capability roster move with the harness and are deliberately
-  not copied into this plugin. A canvas run ends with a link only if the planner does that step, and the
-  skill's helper is on the machine only after `/design` has run there once.
-
-- Every number in this README was measured on **one machine, by one operator, against one application**,
-  over four runs in six days. Real measurements, weak sample.
-- The **pane broker** in [`docs/BROKER.md`](docs/BROKER.md) has never run live.
-- The **published install path is untested** - this release installs from a local directory marketplace.
-- **Portability is half exercised**: eleven host assumptions in [`docs/PORTING.md`](docs/PORTING.md), one
-  operating system actually run. The shell half is better than that — the self-test passes under both
-  `bash` and `dash`, which is what `sh` is on Debian and Ubuntu — but no macOS or Linux fleet has ever
-  run.
-- The self-test covers mechanics. Whether a worker claims in its lane, files through the gate, or lets the
-  generated banner stand is what [`evals/`](evals/) is for: eleven cases for `claude plugin eval`, not yet
-  run against this release. [`evals/README.md`](evals/README.md) has the command.
-- **`recover` cannot confirm a resume happened.** It prints the command, including the instruction that
-  makes the reopened worker write its heartbeat first, but the operator runs it in a terminal and nothing
-  writes anything on their behalf. That heartbeat moving in `fleet.sh status` is the only proof; until it
-  does, a chip reported as reopened may be a command nobody ran.
-- **A resumed session is a terminal, not the app.** It has no Browser pane and no chip tooling, and its
-  transcript is full of calls that no longer resolve. Repo-lane workers come back; pane-lane workers do
-  not, and nothing in `recover` says so yet.
-- **The `design` kind is half enforced.** The wave order is: `after:` holds a task until its dependency
-  lands, in the queue, where nobody has to remember it. Which paths a screen task may not touch, and which
-  model may write markup, are prose - and this repository's own history is unkind to prose rules, see
-  "Rules that stopped being rules" in [`CHANGELOG.md`](CHANGELOG.md).
-- **The largest cost this release measured is not this plugin's to fix.** A session mode in which every
-  permission-gated call carries a fixed extra 1.5-2 s accounts for 16.55 h of a 211 h tool wall, and 22%
-  of the heaviest day (M28). It lives in the harness's permission path. Fewer shell calls reduce the
-  exposure; only an allowlist or a different permission mode removes it.
-- The `Stop` hook catches one shape of one failure: a claim taken within the last ten minutes whose
-  heartbeat has never moved. A worker that dies an hour into a task, or after one heartbeat, is the
-  planner's stall report and `fleet.sh sweep` to find, not the hook's. It also never fires for a worker in
-  its own worktree, whose working directory has no `.fleet/` in it.
-
-## What it deliberately leaves out
-
-- **Session to session messaging in the happy path.** Session handles are opaque, change between listings,
-  and reach other accounts on the same machine: a message aimed by handle once landed in an unrelated
-  account's release chat. Files have addresses; sessions do not. Claude Code's own Agent Teams may be a
-  better transport for waking a session sooner, but never for carrying the only copy of a result. The one
-  place messaging is now required is reviving a stalled worker, where nothing else works: see the section
-  above.
+- **Session-to-session messaging in the normal path.** Session handles change between listings and can
+  reach other accounts on the same machine; a message aimed by handle once landed in an unrelated
+  account's chat. Files have addresses, sessions don't. The one place messaging is used is reviving a
+  stalled worker, where nothing else works.
 - **Project specifics.** They live in the project, in `FLEET.md`.
-- **Required dependencies.** `rg`, `sg`, `jq` and friends are offered by `fleet-init` and none are needed.
-  A worker that stops because `fd` is absent has invented a dependency. **Node is the one exception, and
-  only for four subcommands**: `sweep`, `recover` and `pane-status` refuse with exit 2 without it rather
-  than reporting every age as zero - a dead fleet reading healthy is worse than an honest refusal - and
-  `finish` cannot check a fix's proof without it. Everything else degrades to a warning.
+- **Required dependencies**, apart from Node for the subcommands listed above. Without Node, `sweep`,
+  `recover` and `pane-status` exit 2 rather than report every age as zero, because a dead fleet that reads
+  healthy is worse than a refusal.
 
-## Licence
+## Documentation
 
-MIT.
+| Page | What's in it |
+|---|---|
+| [`WALKTHROUGH`](docs/WALKTHROUGH.md) | Your first fleet in fifteen minutes |
+| [`PROTOCOL`](docs/PROTOCOL.md) | Run layout, brief format, finding schema, project configuration |
+| [`PULL`](docs/PULL.md) | The task queue, claims, heartbeats, budgets, asking the planner |
+| [`LANES`](docs/LANES.md) | What a fleet queues for, fan-out, a run with no browser |
+| [`MISSIONS`](docs/MISSIONS.md) | The ten kinds and the axis each splits along |
+| [`GATE`](docs/GATE.md) | The stage between a finding and a change |
+| [`BROWSER`](docs/BROWSER.md) | Blindness, the frame gate, panes, viewports |
+| [`DESIGN`](docs/DESIGN.md) | Critique with geometry probes, the canvas on disk, redesign, the loop back to code |
+| [`CALL`](docs/CALL.md) | Facts with evidence, the page read aloud, the live chat beside the call |
+| [`SWEEPS`](docs/SWEEPS.md) | Checks that catch a class of defect rather than one bug |
+| [`MOCKING`](docs/MOCKING.md) | Reaching states the sandbox data won't produce |
+| [`WORKTREES`](docs/WORKTREES.md) | Registration, the junction measurement, the only path that deletes one |
+| [`SAFETY`](docs/SAFETY.md) | What an unattended fleet may delete, and the path gate |
+| [`COMMANDS`](docs/COMMANDS.md) | Who may invoke each command, what `allowed-tools` grants |
+| [`MODELS`](docs/MODELS.md) | Which model per stage, and the cost of delegating |
+| [`PERF`](docs/PERF.md) | Measuring speed on a machine the fleet is loading |
+| [`BROKER`](docs/BROKER.md) | The pane as a shared instrument work is filed against |
+| [`PORTING`](docs/PORTING.md) | Every assumption about the host, and its substitute |
+| [`MEASUREMENTS`](docs/MEASUREMENTS.md) | The ledger every rule cites |
+
+Scripts worth knowing: [`fleet.sh`](scripts/fleet.sh) does the queue's bookkeeping and is the only place
+the finding schema is enforced; [`fleet-merge.mjs`](scripts/fleet-merge.mjs) turns findings into a backlog
+and a backlog into a fix queue; [`fleet-load.mjs`](scripts/fleet-load.mjs) shows what the machine is
+carrying, by class; [`visual-probe.js`](scripts/visual-probe.js) and
+[`design-probe.js`](scripts/design-probe.js) find visual and design defects by geometry, so a screenshot
+confirms rather than invents.
+
+## License
+
+[MIT](LICENSE)

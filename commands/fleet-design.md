@@ -18,8 +18,8 @@ exactly two things: a credential only the operator can provide, and a reserved c
 `fleet-plan` with the kind, the axis and the stages fixed. The mission is `kind: canvas`: recreate the
 screens in `$ARGUMENTS` as `<Screen>.dc.html` artboards under the project's canvas directory, from source
 and from measurement, then assemble and publish one canvas. Read `docs/DESIGN.md`, section "Canvas", for
-what each stage produces; read `docs/PULL.md` for the queue. Everything not said here - the interview
-discipline, the chip prompts, the watch - is `fleet-plan`'s, sections 2b, 7 and 8, and you follow it.
+what each stage produces; read `docs/PULL.md` for the queue. Whatever this file leaves out - the interview
+discipline, the chip prompts, the watch - comes from `fleet-plan`, sections 2b, 7 and 8; follow it.
 
 You write the queue and publish the result. You do not write an artboard.
 
@@ -43,8 +43,8 @@ stage runs, and whether `propose` is in scope now. Then ask one round, numbered,
 recommended answer, so "all yours" loses nothing:
 
 ```
-Q1 - Screens: eleven, listed above, from mainNav and router meta.title. Correct the list rather than
-     answering a question about it.
+Q1 - Screens: eleven, listed above, from mainNav and router meta.title. Correct the list; there is no
+     question to answer.
      -> Recommend all eleven; the primitives sheet is one more task and worth it at this size.
 Q2 - Viewport: 1440x900, the desktop frame the design skill uses. The app has no phone layout.
      -> Recommend 1440x900.
@@ -105,7 +105,7 @@ reading source against the screen.
 Then the step no worker can do. Read the seeded page's path from the assemble worker's notes and
 **publish it with the Artifact tool by following the `design` skill's publish step**: load that skill
 with the `Skill` tool and do what its step 4 says, with the seeded file as `file_path`. The skill carries
-the runtime version pin and the capability rule; both move with the harness and neither is written down
+the runtime version pin and the capability rule; both move with the harness, so neither is written down
 here or in any brief. If the assemble worker filed an `ask/` because the helper was not on the machine,
 invoke `/design` once in this chat - that extracts it - answer the ask, and re-run
 `node scripts/fleet-canvas.mjs seed` yourself.

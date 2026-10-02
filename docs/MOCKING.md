@@ -5,14 +5,14 @@ to survive: the empty case, the single row, the four hundred rows, the name that
 the value that failed to load, the state that only exists for three seconds during a transition.
 
 Testing only what the data happens to show means testing the easy half. Mocking is how a worker reaches
-the rest, and it is the difference between a run that says "the list works" and one that says what the
-list does with forty rows of the longest name in the table.
+the rest, and separates a run that says "the list works" from one that says what the list does with forty
+rows of the longest name in the table.
 
 ## The line that matters
 
 **Injecting into your own pane is not changing shared state.** A store write, a route interception, a
-class toggled on an element: these live in one browser tab, vanish on reload, and no other worker can see
-them. The read-only posture is about the server and the shared account, not about the page in front of you.
+class toggled on an element live in one browser tab, vanish on reload, and no other worker can see them.
+The read-only posture covers the server and the shared account, not the page in front of you.
 
 **Anything that reaches the server is still off limits.** A mock that saves, sends, dials or deletes is
 not a mock.
@@ -32,15 +32,15 @@ like defects. The worker's own executor had reported the flip as a harmless no-o
 
 So before simulating a fault in a store, ask what the application repairs, syncs or persists in response
 to the state you are about to write. A store the application treats as authoritative for shared state is
-not a safe place to stage a scene, however local the write itself looks. When it happens anyway, say so in
+not a safe place to stage a scene, however local the write itself looks. If it happens anyway, say so in
 `ask/` immediately with the window it contaminated: findings measured inside that window are not
-worthless, but every one of them has to name the state it was measured under.
+worthless, but each one has to name the state it was measured under.
 
 ## What to inject, in order of usefulness
 
-**Store state.** The application's own reactive stores are the highest leverage surface: reach them
-through the framework's devtools handle, write the rows you want, and the whole screen re-renders around
-them. This is how you get four hundred rows into a list whose sandbox has seventeen.
+**Store state.** The application's own reactive stores are the best surface: reach them through the
+framework's devtools handle, write the rows you want, and the whole screen re-renders around them. This is
+how you get four hundred rows into a list whose sandbox has seventeen.
 
 **Route responses.** Intercepting a request lets you produce what the server will not: a 500, a slow
 response, an empty page, a page whose total disagrees with its rows. Include the CORS headers the
@@ -61,9 +61,9 @@ you reload. Findings after that point describe your scene, not the application. 
 say in the finding which state it was measured under.
 
 **A mock can hide the defect you were looking for.** Filling a store directly bypasses the loading path,
-the paging path and the error path, which is where a good half of interface defects live. Use injection to
-test what the screen does with data, and the real path to test how it gets there. Never conclude that
-loading works from a screen you filled by hand.
+the paging path and the error path, where a good half of interface defects live. Use injection to test
+what the screen does with data, and the real path to test how it gets there. Never conclude that loading
+works from a screen you filled by hand.
 
 **Made-up data is not a finding.** A rendering flaw is real: the column overflows, the count disagrees,
 the row overlaps. A value being wrong is not, when you wrote the value. Every finding from a mocked scene
@@ -77,5 +77,5 @@ mission spent its time proving no code could write it.
 ## Reporting
 
 A mocked finding carries, in `conditions`: what was injected, where, and whether the screen was reached
-through its normal path or filled directly. Without that, nobody can reproduce it, and the first person
-who tries will conclude the finding was imaginary.
+through its normal path or filled directly. Without that nobody can reproduce it, and the first person who
+tries will conclude the finding was imaginary.
