@@ -1,5 +1,5 @@
 ---
-description: Open and authenticate this project's app in this session's browser pane. Use before any visual check, or when a pane shows a login screen or reads empty.
+description: Open and authenticate this project's app in this session's browser pane. Use before any visual check, when a pane shows a login screen or reads empty, or on "залогинься", "зайди в приложение", "открой localhost", log in as AI.
 allowed-tools: Bash, Read, Glob, Grep, AskUserQuestion, mcp__Claude_Browser__preview_start, mcp__Claude_Browser__preview_logs, mcp__Claude_Browser__javascript_tool, mcp__Claude_Browser__navigate, mcp__Claude_Browser__read_network_requests
 ---
 
@@ -9,6 +9,10 @@ The `docs/*` and `scripts/*` files named below live in this plugin's own directo
 Get this session's Browser pane authenticated against the project's local app. Everything here runs on
 localhost against whatever account the project provisioned for agents, so it needs nothing from the
 operator except an open pane.
+
+Credentials come from where the runbook says they live, never from the chat. When the operator pastes a
+password into the message anyway, use the runbook's path regardless, and say once that a pasted password
+stays in the chat's transcript on disk.
 
 ## 1. Find the project's runbook
 
