@@ -57,16 +57,24 @@ machine will carry. The other commands run it themselves when they find a projec
 | `/makarasty:fleet-redesign <screens and direction> [fast]` | you | Plans a redesign over that canvas: proposals beside the captured screens, states included, directions sketched first when none was given |
 | `/makarasty:fleet-call <who and what about> [fast]` | you | Plans a call run: the facts dug out of the project with their evidence, then the bilingual page a non-native speaker reads aloud; `live <run-id>` in a fresh chat answers beside them during the call |
 
-Five more commands ship as a **separate plugin**, `makarasty-tools`, from the same marketplace: they are
+Nine more commands ship as a **separate plugin**, `makarasty-tools`, from the same marketplace: they are
 useful beside a fleet and have nothing to do with its contract, so they version apart from it.
 
 | Command | Who reaches it | What it does |
 |---|---|---|
 | `/makarasty-tools:commit` | you or Claude | Commits under your own name, short message, no tool signature |
-| `/makarasty-tools:review` | you or Claude | One line per finding, and only findings that name a failing input |
+| `/makarasty-tools:ship [branches\|all] [mine] [tag <name>]` | you or Claude | Merges branches in, splits the tree into your own commits, leaves files a parallel chat is still editing, pushes, tags with notes |
+| `/makarasty-tools:review [--fix\|--loop]` | you or Claude | One line per finding, and only findings that name a failing input; `--loop` fixes and re-reviews until a round finds nothing. on a split review Sonnet finds and the verify pass judges |
+| `/makarasty-tools:handoff [focus] \| from <chat>` | you or Claude | Writes a handoff file and offers the next chat as a chip, with this chat's id so the next one can read or ask it; `from` takes over another chat's work after checking its claims |
+| `/makarasty-tools:hold [codeword]` | you or Claude | Collects dictated bugs one line each without acting, then on the codeword fixes them grouped by shared cause |
+| `/makarasty-tools:explain [topic]` | you or Claude | What happened, why, what was done, what is left, can it ship, what was not checked - in plain words, claims checked first |
 | `/makarasty-tools:unslop [on\|off\|text]` | you or Claude | Toggles humanised replies, or rewrites a given text |
 | `/makarasty-tools:say <what to say>` | you or Claude | Turns what you mean into simple English to say on a call or send to a vendor, source-language gist beside each line |
 | `/makarasty-tools:notify [what you are waiting for]` | you or Claude | One message to your phone when this chat, another chat, or a fleet run finishes: Telegram, Discord, ntfy or a webhook |
+
+The same plugin carries a context hook: once a chat's context passes 400k tokens, and again every 150k
+above that, the chat is told to offer `/makarasty-tools:handoff` in one line. `MAKARASTY_HANDOFF_AT` and
+`MAKARASTY_HANDOFF_STEP` move the levels; `MAKARASTY_HANDOFF_AT=0` turns it off.
 
 `fleet`, `fleet-plan`, `fleet-design`, `fleet-redesign` and `fleet-call` carry
 `disable-model-invocation: true`, so only you can start them: they spawn paid work and depend on your
@@ -75,13 +83,14 @@ own model invokes it in that new session, so it must stay model-invocable - givi
 block every worker the moment it tried to begin.
 
 `/makarasty-tools:commit` fires on plain phrasing rather than a slash, so "commit as me" or "commit from my
-name" reaches it, in whatever language you asked in.
+name" reaches it, in whatever language you asked in. It commits by path, so a file another chat staged in
+the same checkout stays out of the commit; several commits, merging or pushing is `ship`.
 
 `/makarasty-tools:notify` is the answer to "did it finish" for a chat you are not sitting in. Say "ping me
 when the tests are done" in the chat doing the work and it arms a marker for that session; a hook sends
-one message when the turn ends, the first lines of the last reply under the verdict, then disarms. A chat
-that asks a question instead is reported as waiting for your answer; one that dies on a rate limit says
-so; one reopened after a crash checks whether the work was already done and, if it was, tells you it was
+one message when the turn ends, the last 500 characters of the reply under the verdict, then disarms. A
+chat that ends on a question is reported as finished with a question for you; one that leaves a background
+job or a loop running is not finished yet and keeps its marker; one that dies on a rate limit says so; one reopened after a crash checks whether the work was already done and, if it was, tells you it was
 done before the restart. `fleet.sh landed` posts a run's headline the same way. Setting up is one command
 in the terminal (the first "ping me" hands it to you with a Run button): a wizard asks which channel,
 prints the steps for Telegram (a BotFather token), Discord (a channel webhook URL) or ntfy (an app and a

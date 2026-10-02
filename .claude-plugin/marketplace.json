@@ -15,7 +15,7 @@
     },
     {
       "name": "makarasty-tools",
-      "description": "Commit under your own name, review a diff with evidence, strip assistant tics out of writing, say what you mean in simple English for a call or a vendor, and get a Telegram, Discord or ntfy message when a chat or a fleet run finishes. Versioned apart from the fleet.",
+      "description": "Commit under your own name, review a diff with evidence, hand a chat off to a fresh one before its context runs out, explain plainly, strip assistant tics out of writing, say what you mean in simple English for a call or a vendor, and get a Telegram, Discord or ntfy message when a chat or a fleet run finishes. Versioned apart from the fleet.",
       "source": "./tools",
       "category": "productivity"
     }

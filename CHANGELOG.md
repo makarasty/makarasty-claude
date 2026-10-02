@@ -1,5 +1,83 @@
 # Changelog
 
+## makarasty-tools 1.5.0, makarasty 1.5.3 — 2026-10-02
+
+Read from 6,793 prompts typed by hand across 1,411 chats (2026-06-28 to 2026-10-01). The commands below
+replace instructions that were being retyped, and the hook answers the limit that actually binds: over
+2026-09, 208 of 533 chats passed 400k tokens of context and 94 passed 600k, the size at which a chat stops
+being worked in.
+
+- **`/makarasty-tools:handoff`.** "Hand this to another chat, offer it as a chip" was typed in 64 chats and
+  "read the other chat's history" in 97. The command writes a handoff file outside the repository, offers
+  the next chat as a chip whose prompt carries this chat's id, so the next chat can read this one with
+  `list_events` or ask it with `SendMessage`, and stops. `from <chat>` is the receiving half: read the
+  other chat, check its "done" against the repository, continue. A `mattpocock-skills:handoff` was
+  invoked 9 times; it saved a document and stopped there.
+- **A context hook.** `tools/hooks/context.mjs` reads the last main-chain usage from the transcript tail on
+  each prompt and, at 400k and every 150k above, tells the chat to offer a handoff in one line. A
+  `/compact` re-arms it. About 50 ms per prompt, the cost of a node start, measured equal to a shell start
+  on this machine.
+- **`/makarasty-tools:hold`**, the codeword mode: "молчи, пока не скажу абрикос" appeared in about 30
+  chats. Items are collected one line each, then fixed grouped by shared component.
+- **`/makarasty-tools:explain`**: "простым языком на русском" in 187 chats, and "too long, too formal" as
+  the most repeated correction. A fixed answer shape, with each claim checked before it is said.
+- **`review --loop`** fixes and re-reviews until a round finds nothing, at most three rounds, and accepts a
+  directory. On a split review the finders run on Sonnet and the verify pass judges: "Sonnet agents for review, Opus checks their
+  findings" was retyped in dozens of chats.
+- **`ship` reads the other chats in the checkout first**: a file a still-running chat is editing stays out
+  of every commit, and `mine` commits only this chat's files. It follows the repository's own update-log
+  format and reads the last two entries. "Учти параллельную работу" was retyped in about 34 chats.
+- **`fleet-login`** triggers on "залогинься", and takes credentials from the runbook, never from the chat:
+  a login password was pasted into 43 prompts, each now in a transcript on disk.
+
+Then a red team: six Sonnet agents, two reading Anthropic's skill, hook and plugin docs and open-source
+analogs, four running the commands against throwaway repositories, transcripts and a dry-run notifier.
+About 90 findings; the ones that held were fixed, each fix re-checked by a second Sonnet pass.
+
+- **`commit` committed another chat's staged file.** A bare `git commit` takes the whole index, which
+  parallel chats share. It now commits by path (`git commit -F - -- <paths>`), checks attribution only on
+  the commit it just made, amends only that commit while unpushed (`--amend --only`), and stops on a merge,
+  rebase or detached HEAD instead of committing into it. `allowed-tools` is `Bash(git:*)`, not all of Bash.
+- **`ship` could push straight to a protected main and loop on the rejection.** A push rejection is now
+  read: fetch-first pulls, a protected branch or GH006 stops and says to open a PR, no remote finishes
+  locally. `all` previews each branch with `git merge-tree` (squash-merged branches are skipped, other
+  authors' branches asked about), a merge with more than ten conflicts or a contradiction is aborted
+  before asking, so a half-merge never sits in a shared checkout. `tag -f`, `stash`, `reset --hard`,
+  `clean` and `worktree remove` are named as off limits, with the reason.
+- **A handoff chip opens in a fresh worktree** with none of the uncommitted work. The new chat moves to
+  the original checkout with `change_directory`; where it cannot, a binary patch of tracked and untracked
+  changes, written through a temporary index so the real one is untouched, is applied on a branch at the
+  recorded commit. A compacted source chat is read up to its summary instead of paging forever; the file
+  name carries the session id; the file is grepped for secrets before the chip.
+- **The context hook** reads back in 2 MB chunks up to 16 MB, so a screenshot in the last turn no longer
+  hides the reading, and stays silent without spending its level when the prompt is itself a handoff.
+- **`notify`**: a turn that leaves a background job or loop running is not "finished"; `--next` no longer
+  goes live on a task notification; the public-ntfy guard parses the host (`www.ntfy.sh`, `:443` leaked the
+  excerpt); bad URLs in the config are rejected without echoing them and error text is redacted; markers
+  are written by rename; stale markers are pruned on every run and `SessionEnd clear` drops this chat's.
+  130 selftest checks; 24 of them fail against the previous `notify.mjs`.
+- **`review`** reads a branch or PR target from that ref, not the working tree; with no target, `--fix`
+  and `--loop` edit only this chat's files; the loop fixes `bug` and `risk [high]` only; a written list of
+  what is not a finding; finders get a brief, not the chat history; read-only `allowed-tools` again.
+- **`say`** has a live mode (one to three lines, gist after) and a written mode that keeps digits and ids
+  as they are; the sample no longer carries real-looking codes a model could copy.
+- **`unslop`** has Russian triggers and a Russian tic list, applies to replies for people only, and gives
+  way on length to a terse mode instead of fighting it.
+- **The nine commands are skills now**, `tools/skills/<name>/SKILL.md`, the layout Anthropic's plugin
+  reference recommends for new work; `commands/` is its older format. Names and invocation are unchanged.
+- **`commit` and `ship` start with the repository's state already in the prompt**: `git status`, the
+  branches, the remote and the recent log are injected with `!` lines when the skill loads, so the first
+  look costs no tool calls. Measured on this machine with a probe skill under `claude -p`: the injected
+  status reached the model on Windows.
+- **After a `/compact` the chat is told where the full conversation still is.** A `SessionStart` hook with
+  source `compact` names the transcript file, so a detail the summary dropped is searched for instead of
+  guessed or asked again.
+- **A chat that pauses on a background job now says so once** ("paused: 1 background job still running"),
+  so a job that never ends, a dev server, no longer means silence. A later turn whose jobs were all there at
+  the pause is the finish.
+- **`hold`** handles stop, remove and edit by number, and counts the codeword only alone or at the end of
+  a message; **`explain`** reports only this chat's work and drops the generic triggers.
+
 ## 1.5.0 — 2026-09-10
 
 A run finds well and decides badly. Seventeen runs on one application and six on another say the first
