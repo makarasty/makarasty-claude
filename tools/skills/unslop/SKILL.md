@@ -1,6 +1,7 @@
 ---
-description: Strip assistant tics out of writing so it reads as a person wrote it. Use for /unslop on or off (the humanised reply mode), or when asked to unslop, de-AI or humanise a given text, file or the last reply.
+description: Strip assistant tics out of writing so it reads as a person wrote it. Use for /unslop on or off (the humanised reply mode), or when asked to unslop, de-AI or humanise a given text, file or the last reply. Also on "очеловечь", "перепиши без воды", "убери нейростиль", "сделай живее", "без ИИ-стиля".
 argument-hint: on | off | status | <text, file path, or nothing to rewrite the last reply>
+allowed-tools: Bash(node:*), Bash(cat:*)
 ---
 
 The rules live in one file, `${CLAUDE_PLUGIN_ROOT}/hooks/unslop.txt`. The mode's hook and this command
@@ -27,11 +28,13 @@ a compaction), never per prompt.
 A file path, pasted text, or nothing, which means your previous reply. `/unslop on the README` is a rewrite
 of the README, not the toggle.
 
-1. `cat "${CLAUDE_PLUGIN_ROOT}/hooks/unslop.txt"` and apply its Cut and Keep lists.
+1. `cat "${CLAUDE_PLUGIN_ROOT}/hooks/unslop.txt"` and work in three passes: mark every tell it lists;
+   rewrite, keeping every claim; reread the result for tells that survived.
 2. Keep every number, unit, identifier, path, error string, code span and negation exactly as written.
    This is a style pass, never a fact pass: a rewrite that loses a "not" or rounds a measurement has failed.
 3. Keep length where the content earns it. A dense technical explanation is not slop because it is long.
 4. Keep the writer's own voice when the text is someone else's. Remove tics; do not impose a personality.
+   When the person gives a sample of their own writing, match its sentence length, punctuation and register.
 5. Return the rewritten text only, with no note about what changed. For a file, write it back and say
    which file in one line.
 

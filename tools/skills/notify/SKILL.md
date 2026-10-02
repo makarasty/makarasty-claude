@@ -1,5 +1,5 @@
 ---
-description: Send one message to the person's phone when this chat, another chat, or a fleet run finishes, through Telegram, Discord or ntfy. Use when asked to notify, ping, message or write when something is done, in any language ("напиши когда закончишь", "уведоми в телеграм", "скинь в дискорд когда будет готово"), to set up or test the channels, to ask whether a notification is armed, or to switch it off.
+description: Send one message to the person's phone when this chat, another chat, or a fleet run finishes, through Telegram, Discord, ntfy or a webhook. Use when asked to notify, ping, message or write when something is done, in any language ("напиши когда закончишь", "уведоми в телеграм", "скинь в телеграм когда закончишь", "скинь в дискорд когда будет готово", "пингани"), to set up or test the channels, to ask whether a notification is armed, or to switch it off ("выключи уведомления").
 argument-hint: [what the person is waiting for] | setup | test | status | off | --session <id>
 ---
 
@@ -15,9 +15,17 @@ node "${CLAUDE_PLUGIN_ROOT}/hooks/notify.mjs" --arm --session <id> <label>   # a
 node "${CLAUDE_PLUGIN_ROOT}/hooks/notify.mjs" --status | --test | --disarm
 ```
 
-Arguments map one to one: `status` runs `--status`, `test` runs `--test`, `off` runs `--disarm`, `setup`
-is the wizard below. Anything else is the label. Quote the label in single quotes; it is the person's words
-and may hold an apostrophe or a `$`.
+Arguments map one to one, only when the whole argument is that one word: `status` runs `--status`, `test`
+runs `--test`, `off` runs `--disarm`, `setup` is the wizard below. Anything longer is the label, even when
+it starts with one of them ("test suite", "off-site backup"). Asked in words to switch it off ("выключи
+уведомления", "stop pinging me"), run `--disarm`.
+
+The label is the person's words and may hold an apostrophe or a `$`. Put it in single quotes, and write each
+apostrophe inside it as `'\''` (close the quote, an escaped apostrophe, open it again):
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/hooks/notify.mjs" --arm 'Mike'\''s deploy'
+```
 
 ## Arm first, then do the work
 
@@ -32,7 +40,7 @@ plain arm would fire the moment this turn ends, which is now, with nothing done.
 
 **When the person names another chat**, find its session id and arm with `--session`. A session-listing
 tool, when the host offers one, gives the id beside the title. Arming a chat that has already finished
-waits for its next turn, so say so.
+waits for its next turn, so say so. The message names that chat's project, not this one's.
 
 **When `--arm` prints `channels: none yet`**, the person has never set a channel up. Give them the setup
 command below in its own `bash` block, so the app shows a Run button, tell them in one line what it will
@@ -61,6 +69,13 @@ the phone, and saves. Tell them only the card they asked for:
 - **ntfy** - no account. Install the app (the wizard prints both store links), press +, type the topic
   the wizard shows, press Enter. The topic is the password; the wizard made one nobody can guess.
 
+The Telegram card has one more step: the wizard names whoever last wrote to the bot and asks whether that is
+them, because a bot anyone can find may have heard from a stranger first.
+
+A webhook (Slack or anything else that takes a POST of `{"text": "..."}`) is not in the wizard. The person
+adds `"webhook": "https://..."` to `notify.json` by hand, then runs `test`. A value there that is not an
+http(s) URL is skipped with a line naming the key, never the value.
+
 **Never ask the person to paste a token or a webhook URL into the chat, and never write one into a project
 file.** The wizard exists so the secret goes from their keyboard to
 `${CLAUDE_CONFIG_DIR:-~/.claude}/makarasty/notify.json` and nowhere else. Each config dir, so each account, has its own channels. `test` afterwards,
@@ -73,20 +88,31 @@ final message under it, so the lock screen shows the verdict rather than "task d
 server gets no excerpt unless `notify.json` holds `"excerpt": true`; `"excerpt": false` turns it off on
 every channel. Say so when the work handles data that should not leave the machine.
 
-A last message that ends in a question is sent as `is waiting for your answer` instead, and the marker
-stays: the answer starts more work, and its finish gets the real message.
+A last message that ends in a question is sent as `finished, with a question for you`, the question at the
+end of the excerpt, and the marker goes like any other: one arming, one message. If the person answers and
+wants the next finish too, they ask again.
 
-Three other messages exist, and each is a state rather than progress:
+A turn that ends with a background job or a loop still due to wake the chat is not the finish: the marker
+waits for the turn the job wakes, and the first such pause sends one `paused: N background jobs still
+running` line, so a job that never ends (a dev server) is not silence. A later turn whose jobs were all
+already running at the pause is the finish. A turn another plugin's Stop hook
+blocked (a fleet worker that still holds a task) is not the finish either, and sends nothing; its real end
+is.
+
+Three other messages exist besides that pause, and each is a state rather than progress:
 
 - **needs you** - a permission prompt or a question dialog is up. One ping per five minutes, and the
   marker stays: the work is not done.
-- **stopped on an error** - the turn died on the API (rate limit, overload). The marker stays for the
-  reopened chat.
-
-A `--next` marker sends none of these during the turn that armed it.
+- **stopped on an error** - the turn died on the API (rate limit, overload). One per five minutes, and the
+  marker stays for the reopened chat.
 - **could not be delivered at the time** - the finish was written to disk and the send failed, or no
   channel existed yet. It goes out at the next chance: the chat reopening, or the wizard saving a channel.
   No model turn is spent on it.
+
+A `--next` marker sends none of these during the turn that armed it, and only a prompt the person sends
+starts its turn: a background task's notification or a loop waking the chat does not.
+
+`/clear` drops this chat's marker: the person is at the screen. Closing the chat, or a crash, keeps it.
 
 **A chat reopened before it finished** (the app crashed, the machine restarted) gets a line in its context
 at start, from the hook: check whether the task is already complete before doing anything else. If it is,
