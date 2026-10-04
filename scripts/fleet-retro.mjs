@@ -103,7 +103,7 @@ for (const name of fs.readdirSync(dir).filter((f) => f.endsWith('.jsonl'))) {
   // Peak context and compactions: a worker whose context reached the ceiling was summarised and restarted
   // by the harness, and the two hundred turns before that were the most expensive in the run [M30].
   let ctxMax = 0, compactions = 0;
-  const use = new Map(); const spans = []; const turnTimes = [];
+  const use = new Map(); const spans = []; const turnTimes = []; const seen = new Set();
 
   for (const o of objs) {
     if (o.type === 'user') {
@@ -133,12 +133,18 @@ for (const name of fs.readdirSync(dir).filter((f) => f.endsWith('.jsonl'))) {
       continue;
     }
     if (o.type !== 'assistant' || !o.message) continue;
-    turns++;
-    const u = o.message.usage || {};
-    out += u.output_tokens || 0; cacheRead += u.cache_read_input_tokens || 0;
-    const ctxNow = (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0) + (u.input_tokens || 0);
-    ctxTotal += ctxNow; if (ctxNow > ctxMax) ctxMax = ctxNow;
-    const t = Date.parse(o.timestamp); turnTimes.push(t);
+    // The host writes one line per content block and repeats the message's usage on each, so a turn is a
+    // message id, not a line. Counting lines read every turn and token total about 1.9x high.
+    const t = Date.parse(o.timestamp);
+    if (!o.message.id || !seen.has(o.message.id)) {
+      if (o.message.id) seen.add(o.message.id);
+      turns++;
+      const u = o.message.usage || {};
+      out += u.output_tokens || 0; cacheRead += u.cache_read_input_tokens || 0;
+      const ctxNow = (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0) + (u.input_tokens || 0);
+      ctxTotal += ctxNow; if (ctxNow > ctxMax) ctxMax = ctxNow;
+      turnTimes.push(t);
+    }
     for (const c of o.message.content || []) {
       if (c.type !== 'tool_use') continue;
       use.set(c.id, { name: c.name, t });
