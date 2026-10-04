@@ -45,8 +45,9 @@ tokens; the most expensive made 194, took 51 screenshots and read 55.6 M. Both r
 number of lines. What a run costs is decided by how much the executor looked at, never by how much it
 said.
 
-The same run read 311 M cached tokens against 8.31 M non-cached, a ratio of 37 to 1, so most of what a
-fleet moves is cache rather than new context.
+The same run read 163.8 M cached tokens against 4.21 M non-cached, a ratio of 39 to 1, so most of what a
+fleet moves is cache rather than new context. (An earlier count per transcript line gave 311 M and 8.31 M;
+every message spans about two lines.)
 
 The parent then spent six inline probes ruling on what came back, which was cheaper than a second spawn.
 The rule from the other side: one probe inline beats a spawn, and one scenario delegated beats running it

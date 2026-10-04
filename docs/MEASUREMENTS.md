@@ -28,9 +28,13 @@ frames.
 **Rule:** the frame gate, and only the frame count separates live from blind.
 **Status:** current.
 
-## M02 — Without the gate, eight of eight workers were blind
-**2026-08-26**, first eight-worker run. Every worker started blind and the run produced 94 confident
-findings that nobody could have observed.
+## M02 — Eight of eight panes opened blind, and the gate caught every one
+**2026-08-26**, first eight-worker run. All eight panes opened blind: `preview_start` returned `navOk: true`
+with the right title and the frame gate read 0 frames per second in every session. Every worker stopped,
+asked for its pane to be displayed (754 s of waiting in total), read 263 to 1,077 frames per second, and
+only then measured. Without the gate all eight would have filed findings from a pane that was not drawing.
+*Corrected 2026-10-04: this entry used to say the run produced 94 findings nobody could have observed. The
+run's own analysis shows the 94 were taken after a live reading.*
 **Rule:** gate before the first visual step and again before each later batch; a worker that stays blind
 writes `.blocked` and no findings.
 **Status:** current. Two later runs, 22 workers, zero blind after the gate landed.
@@ -212,7 +216,12 @@ the emitted bulk was the work itself: 2,647 KB of `Write` into repository source
 heredocs over 2 KB, 1,022 KB of `Write` into docs, 709 KB of `Edit` into source.
 **Rule:** cut turns and keep context flat; move bulk with the shell into files and read it back as a count
 or a slice. Do not spend effort compressing what a worker says.
-**Status:** current.
+**Status:** current. *Recounted 2026-10-04:* the host writes one transcript line per content block and
+repeats the message's usage on each, and these totals were most likely summed per line, as
+`fleet-retro.mjs` did until 1.5.5. Counted once per API message, the worker sessions of ten runs from the
+same dates read 5,407 M cached over 16,711 turns, against 8,992 M over 28,927 turns per line: about 1.7x
+fewer. Shares and per-turn figures hold, because the double count is uniform (324 k per turn against
+311 k). Dollars for every run since are in [`RUNS.md`](RUNS.md).
 
 ## M25 — Reading a file through the shell, and the ratio that is not what one day said
 **2026-09-01**, 26 workers, 9,924 tool calls: latency p50 `Read` 9 ms, `Grep` 60 ms, `Bash` **1,892 ms**
@@ -316,7 +325,9 @@ the traps into its notes, then hands each further task to ONE subagent and keeps
 `fleet.sh next` prints `DELEGATE` at that point, because the rule sits on a path the worker already walks
 and a prose rule about fan-out was obeyed zero times in 184.
 **Status:** current. The saving is derived and not yet measured on a run; `fleet-retro.mjs` now prints
-context per turn, peak context and compactions per worker, so the next run measures it.
+context per turn, peak context and compactions per worker, so the next run measures it. *Recounted
+2026-10-04* once per API message, with the resumed transcript counted once: 3,995 turns, 1,937 M cache
+read, 485 k per turn, $1,110.63 at list price, 87% of it cache reads.
 
 ## M31 — The shell reads came from the harness's own instruction, not from the workers
 **2026-09-04**, the same run: worker 01 made **1,095 `Bash` calls against 6 `Read`, 10 `Edit` and 62
@@ -499,6 +510,9 @@ Seven runs, 57 worker sessions, 2026-08-26 to 2026-09-01, read from the session 
 | output, of which thinking 5.7 M | 20.4 M |
 | turns | 19 535 |
 | tool calls | 11 450 |
+
+These totals are about 1.7x high: they were counted per transcript line, and a message spans about two
+lines. The shares and per-turn figures below hold [M24].
 
 **The bill is turns multiplied by context, and nothing else is close** [M24]. The average turn carried ~330 k
 cache-read tokens; per worker the average context ran 240 k to 530 k with a peak of 882 k. Output is 0.3%

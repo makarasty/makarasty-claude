@@ -1,7 +1,7 @@
 {
   "name": "makarasty",
   "description": "Run one job across several Claude Code sessions: a shared task queue, reports written to files, a frame-count check before every browser observation, and a gate that refuses a fix without a reproduction that failed first. Ten mission kinds, from test sweeps and fixes to refactors, research and design.",
-  "version": "1.5.4",
+  "version": "1.5.5",
   "author": {
     "name": "makarasty",
     "url": "https://github.com/makarasty"

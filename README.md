@@ -271,20 +271,31 @@ time. So `clean` unlinks every junction and symlink inside a worktree before any
 it. The same applies to the harness's own `ExitWorktree` and to any hand-written `rm -rf`. See
 [`docs/WORKTREES.md`](docs/WORKTREES.md) and [`docs/SAFETY.md`](docs/SAFETY.md).
 
-## What a run costs, measured
+## Real runs, and what they cost
 
-| | 8 workers, assigned, 2026-08-26 | 6 workers, pull, 2026-08-27 |
-|---|---|---|
-| Findings | 94 (3 blockers, 33 major) | 254 (6 blockers), plus 58 unreached |
-| Wall clock | 63 minutes | 4 h 57 min, 34 tasks from a growing queue |
-| Tokens | 8.3 M non-cached, 311 M cached | |
-| Subscription | about 6% of a weekly maximum allowance | |
+A selection of real runs, not all of them. They come from two different projects, a large private
+TypeScript web app and the public Kotlin plugin [Essentials](https://github.com/makarasty/Essentials), and
+cover different scenarios: browser sweeps of a live app, audits, fix runs, refactors and performance
+measurement. Each one is written up in [`docs/RUNS.md`](docs/RUNS.md) with how it was set up, what it
+produced, what went wrong, and the cost.
 
-Most of the cost is turns multiplied by context: over three later runs, 19,535 turns against 6,421 M
-cached reads, with output at 0.3% of the tokens that move. One executor made 30 calls and read 4.0 M
-cached tokens, another made 194 and read 55.6 M, and both returned about the same number of lines. What a
-run costs depends on how much each worker looked at, not on how much it said. The full ledger, with every
-measurement a rule cites, is [`docs/MEASUREMENTS.md`](docs/MEASUREMENTS.md).
+| Run | Workers | Wall clock | Result | Worker cost |
+|---|---|---|---|---|
+| First eight-worker browser sweep | 8 pane | 104 min | 94 findings, 3 blockers; all 8 panes opened blind and the gate caught every one | $137 |
+| Pull run, 34 tasks | 6 pane | 4 h 57 min | 254 findings; three workers sat dead for about 3 h each | not separable |
+| Audit, then fix | 14, then 8 | 132 + 80 min | 246 findings, then 38 fixed and merged, 3 refuted | $561 + $434 |
+| Eighty tasks across three lanes | 13 | 4 h 6 min | 80 tasks; third verify round green at 37,296 tests | $1,722 |
+| Read-only sweep, then a fix run | 12, then 4 | ~90 min active, then 3 h 51 min | 1,500 findings, then 175 tasks fixed | $743 + $1,111 |
+| Refactor, then shrink | 9, then 10 | 71 + 107 min | 96 fixed, 32 refuted; then −26,794 lines (−17.6% against a −25% target) | $484 + $735 |
+| Essentials, audit to green | 4-10 per run | ~50 h calendar | 436 findings; 251 tests with 20 failing to 383 with 0, ten green runs of ten | $2,233 |
+
+Dollars are API list prices for the same tokens; the runs themselves were made on a subscription, and the
+first one above used about 6% of a weekly maximum allowance. Across 21 runs and 186 sessions the total is
+about $11,000, and **74% of it is cache reads**. What a run costs is turns multiplied by the context each
+turn carries: the most expensive run per task, $6.35, had workers holding 485 k of context per turn, and
+the cheapest broad sweep, about $0.50 a finding, fanned its reading out to subagents. What a worker says
+costs almost nothing next to what it reads. The full ledger, with every measurement a rule cites, is
+[`MEASUREMENTS.md`](docs/MEASUREMENTS.md).
 
 Every defect those runs exposed in the plugin itself is in [`CHANGELOG.md`](CHANGELOG.md), with the fix.
 
@@ -397,6 +408,7 @@ harness can't find.
 | [`PERF`](docs/PERF.md) | Measuring speed on a machine the fleet is loading |
 | [`BROKER`](docs/BROKER.md) | The pane as a shared instrument work is filed against |
 | [`PORTING`](docs/PORTING.md) | Every assumption about the host, and its substitute |
+| [`RUNS`](docs/RUNS.md) | Real runs from two projects: setup, results, failures, cost |
 | [`MEASUREMENTS`](docs/MEASUREMENTS.md) | The ledger every rule cites |
 
 Scripts worth knowing: [`fleet.sh`](scripts/fleet.sh) does the queue's bookkeeping and is the only place

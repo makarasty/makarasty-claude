@@ -60,9 +60,10 @@ gate fired the instant an operator says they have opened the pane therefore read
 worker back to ask for a pane that is already open - which is the shape that cost six pane workers between
 1 and 34 minutes each [M20]. Read zero, wait a second, read again, and believe the second one.
 
-A blind worker asks the operator to display the pane, then **measures again**: before this gate existed,
-eight workers of eight ran blind and filed 94 findings nobody could have observed [M02]. The reading is the
-proof. An operator can open a different pane, or open one and collapse it, and both answers sound like yes.
+A blind worker asks the operator to display the pane, then **measures again**. All eight panes of the
+first eight-worker run opened blind, and the gate is what kept them from filing findings off a pane that
+was not drawing [M02]. The reading is the proof. An operator can open a different pane, or open one and
+collapse it, and both answers sound like yes.
 
 Page text length is not a gate. It measured 157 characters on the same page in both the live and the blind
 reading. The frame count is the only separator.
