@@ -41,7 +41,8 @@ screenshots, DOM reads and settle polling stayed in the subagent.
 Confirmed at scale, 2026-08-26: executor return ratios across eight workers ran 0.96 to 2.04 percent,
 bracketing that reference. The ratio is stable and is not the lever. **The denominator varies by an
 order of magnitude**: the cheapest executor made 30 tool calls, took no screenshots and read 4.0 M cached
-tokens; the most expensive made 194, took 51 screenshots and read 55.6 M. Both returned about the same
+tokens; the most expensive made 194, took 51 screenshots and read 55.6 M (both counted per transcript
+line, so about half that in absolute terms; the ratio holds). Both returned about the same
 number of lines. What a run costs is decided by how much the executor looked at, never by how much it
 said.
 

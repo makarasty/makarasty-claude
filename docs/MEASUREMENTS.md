@@ -95,7 +95,7 @@ that looked exactly like the evidence on the true ones: a real symptom with an i
 **Status:** current.
 
 ## M10 — A shared account makes a setting a fleet-wide write
-**2026-08-27**: the visible-column selection, the analytics dashboard card set and the general settings
+**2026-08-27**: the visible-column selection, the dashboard card set and the general settings
 group are stored per account, so one worker's save changed what five others were looking at. An active
 role changed mid-run and the rest of that run's lists returned 403 with badges reading 0 — indistinguishable
 from a defect until somebody named the window.
@@ -220,8 +220,8 @@ or a slice. Do not spend effort compressing what a worker says.
 repeats the message's usage on each, and these totals were most likely summed per line, as
 `fleet-retro.mjs` did until 1.5.5. Counted once per API message, the worker sessions of ten runs from the
 same dates read 5,407 M cached over 16,711 turns, against 8,992 M over 28,927 turns per line: about 1.7x
-fewer. Shares and per-turn figures hold, because the double count is uniform (324 k per turn against
-311 k). Dollars for every run since are in [`RUNS.md`](RUNS.md).
+fewer. Shares and per-turn figures hold, because the double count is uniform (324 k per message against
+311 k per line). Dollars for every run since are in [`RUNS.md`](RUNS.md).
 
 ## M25 — Reading a file through the shell, and the ratio that is not what one day said
 **2026-09-01**, 26 workers, 9,924 tool calls: latency p50 `Read` 9 ms, `Grep` 60 ms, `Bash` **1,892 ms**
@@ -511,8 +511,8 @@ Seven runs, 57 worker sessions, 2026-08-26 to 2026-09-01, read from the session 
 | turns | 19 535 |
 | tool calls | 11 450 |
 
-These totals are about 1.7x high: they were counted per transcript line, and a message spans about two
-lines. The shares and per-turn figures below hold [M24].
+These totals were most likely counted per transcript line, and a message spans about two lines, so they
+are probably about 1.7x high. The shares and per-turn figures below hold [M24].
 
 **The bill is turns multiplied by context, and nothing else is close** [M24]. The average turn carried ~330 k
 cache-read tokens; per worker the average context ran 240 k to 530 k with a peak of 882 k. Output is 0.3%

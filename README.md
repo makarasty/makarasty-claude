@@ -275,27 +275,28 @@ it. The same applies to the harness's own `ExitWorktree` and to any hand-written
 
 A selection of real runs, not all of them. They come from two different projects, a large private
 TypeScript web app and the public Kotlin plugin [Essentials](https://github.com/makarasty/Essentials), and
-cover different scenarios: browser sweeps of a live app, audits, fix runs, refactors and performance
+cover different scenarios: browser sweeps of a running app, audits, fix runs, refactors and performance
 measurement. Each one is written up in [`docs/RUNS.md`](docs/RUNS.md) with how it was set up, what it
 produced, what went wrong, and the cost.
 
 | Run | Workers | Wall clock | Result | Worker cost |
 |---|---|---|---|---|
-| First eight-worker browser sweep | 8 pane | 104 min | 94 findings, 3 blockers; all 8 panes opened blind and the gate caught every one | $137 |
+| First eight-worker browser sweep | 8 pane | 104 min | 94 findings, 3 blockers; all 8 panes opened blind and the gate caught every one | ~$140 |
 | Pull run, 34 tasks | 6 pane | 4 h 57 min | 254 findings; three workers sat dead for about 3 h each | not separable |
-| Audit, then fix | 14, then 8 | 132 + 80 min | 246 findings, then 38 fixed and merged, 3 refuted | $561 + $434 |
-| Eighty tasks across three lanes | 13 | 4 h 6 min | 80 tasks; third verify round green at 37,296 tests | $1,722 |
-| Read-only sweep, then a fix run | 12, then 4 | ~90 min active, then 3 h 51 min | 1,500 findings, then 175 tasks fixed | $743 + $1,111 |
-| Refactor, then shrink | 9, then 10 | 71 + 107 min | 96 fixed, 32 refuted; then −26,794 lines (−17.6% against a −25% target) | $484 + $735 |
-| Essentials, audit to green | 4-10 per run | ~50 h calendar | 436 findings; 251 tests with 20 failing to 383 with 0, ten green runs of ten | $2,233 |
+| Audit, then fix | 14, then 8 | 132 + 80 min | 246 findings, then 38 fixed and merged, 3 refuted | ~$560 + ~$430 |
+| Eighty tasks across three lanes | 13 | 4 h 6 min | 80 tasks; third verify round green at about 37,000 tests | ~$1,600 |
+| Read-only sweep, then a fix run | 12, then 4 | ~90 min active, then 3 h 51 min | 1,500 findings, then 175 tasks worked, 93 fixed | ~$740 + ~$1,110 |
+| Refactor, then shrink | 9, then 10 | 71 + 107 min | 96 fixed, 32 refuted; then about 27,000 lines removed (−17.6% against a −25% target) | ~$480 + ~$740 |
+| Essentials, audit to green | 4-10 per run | ~50 h calendar | 436 findings; 251 tests with 20 failing to 383 with 0, ten green runs of ten | ~$1,400, plus ~$820 planners |
 
-Dollars are API list prices for the same tokens; the runs themselves were made on a subscription, and the
-first one above used about 6% of a weekly maximum allowance. Across 21 runs and 186 sessions the total is
-about $11,000, and **74% of it is cache reads**. What a run costs is turns multiplied by the context each
-turn carries: the most expensive run per task, $6.35, had workers holding 485 k of context per turn, and
-the cheapest broad sweep, about $0.50 a finding, fanned its reading out to subagents. What a worker says
-costs almost nothing next to what it reads. The full ledger, with every measurement a rule cites, is
-[`MEASUREMENTS.md`](docs/MEASUREMENTS.md).
+Every number here is approximate and rounded; the point is the order of magnitude. Dollars are API list
+prices for the same tokens; the runs themselves were made on a subscription, and the first one above used
+about 6% of a weekly maximum allowance. Across 21 runs and 186 sessions the total is at most about
+$11,000, and **74% of it is cache reads**. What a run costs is turns multiplied by the context each turn
+carries: in one fix run the workers held about 500 k of context per turn and 87% of the money went on
+reading it back, while a broad sweep that fanned its reading out to subagents came to about 50 cents a
+finding. What a worker says costs almost nothing next to what it reads. The full ledger, with every
+measurement a rule cites, is [`MEASUREMENTS.md`](docs/MEASUREMENTS.md).
 
 Every defect those runs exposed in the plugin itself is in [`CHANGELOG.md`](CHANGELOG.md), with the fix.
 

@@ -3,18 +3,19 @@
 ## makarasty 1.5.5 — 2026-10-04
 
 - **`fleet-retro.mjs` counts a turn once.** The host writes one transcript line per content block and
-  repeats the message's usage on each line. The script counted lines, so turns, output, cache reads and
-  context per turn came out 1.5 to 1.9 times high. On one nine-worker run: 3,276 turns became 2,099 and
+  repeats the message's usage on each line. The script counted lines, so turns, output and cache reads came
+  out 1.5 to 1.9 times high. On one nine-worker run: 3,276 turns became 2,099 and
   1,027 M cache reads became 688 M. Tool-call counts, lanes, pane minutes and minutes after done were right
   and have not changed.
 - **`docs/RUNS.md`**: a selection of real runs from two projects, a private web app and the public
-  Essentials plugin, each with its setup, results, failures and cost at API list prices, counted once per
-  message. The README's cost section is now a summary of it.
+  Essentials plugin, each with its setup, results, failures and approximate cost at API list prices,
+  counted once per message, and checked by a red-team pass against the run directories. The README's
+  cost section is now a summary of it.
 - **Corrections to the ledger.** M02 said the first eight-worker run filed 94 findings nobody could have
   observed; its own analysis shows the gate caught all eight blind panes and the findings came after a
   live reading. The README's 311 M cached and 8.3 M non-cached for that run were per-line counts; per
   message they are 163.8 M and 4.21 M, also fixed in `MODELS.md`. M24, M30 and the pull-run appendix carry
-  a recount note.
+  a recount note. `SWEEPS.md` and M10 no longer carry details specific to the private project.
 
 ## makarasty 1.5.4, makarasty-tools 1.5.1 — 2026-10-02
 

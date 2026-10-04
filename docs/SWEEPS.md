@@ -31,8 +31,8 @@ navigation, no network request, no DOM difference, no toast. Say which of those 
 **Catches:** a list that holds a fraction of its own reported total and says nothing about it. The
 operator sees a full-looking page, works a quarter of the queue, and never learns the rest exists.
 
-Measured case, 2026-08-26: a queue reported 158 open in its header and its tab strip, loaded the first
-page of 40, and stopped. Scrolling added nothing. Counters were correct and internally consistent, so
+Measured case, 2026-08-26: a queue reported its full count in its header and its tab strip, loaded the
+first page, and stopped. Scrolling added nothing. Counters were correct and internally consistent, so
 nothing on screen contradicted anything else on screen.
 
 **Probe.** Open the list, note the total it claims, then scroll to the bottom, wait, and measure:

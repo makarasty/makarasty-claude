@@ -134,7 +134,7 @@ for (const name of fs.readdirSync(dir).filter((f) => f.endsWith('.jsonl'))) {
     }
     if (o.type !== 'assistant' || !o.message) continue;
     // The host writes one line per content block and repeats the message's usage on each, so a turn is a
-    // message id, not a line. Counting lines read every turn and token total about 1.9x high.
+    // message id, not a line. Counting lines read every turn and token total 1.5 to 1.9x high.
     const t = Date.parse(o.timestamp);
     if (!o.message.id || !seen.has(o.message.id)) {
       if (o.message.id) seen.add(o.message.id);
