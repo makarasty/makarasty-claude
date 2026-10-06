@@ -52,10 +52,10 @@ mostly written for an ordinary chat with a person in it. Split them in two:
 - **How a fleet worker talks and hands work back: this command wins.** A rule like "ask the owner with
   `AskUserQuestion`", "offer a chip for the rest" or "hand off to a fresh chat near the context limit"
   changes how your work travels, and in a fleet it travels through `ask/`, findings, claims and `.done`.
-  Near your context limit the replacement for a handoff chip is to finish, or hand the current task back
-  (record the unreached remainder, then `finish`), never a chip; the coordinator relaunches workers
-  that are too full, and you see it only as "retired" (section 1c). Something the project adds on top
-  without changing that (a board card, a log line) you do, at your first claim.
+  Never stop for context on your own: the window is a million tokens, the watch asks the operator at 700 K,
+  and a relaunch reaches you as "retired" (1c). A reminder's number, or a broadcast retire order naming
+  other chips, is not yours (2026-10-06: worker 20 quit at 420 K on one meant for 01-05). Only past 850 K
+  finish or hand the task back. Project extras that change none of this (a board card) you do at first claim.
 
 **"Wait for the owner before committing" is overridden for one thing only: a commit on your own task
 branch.** Nothing on it reaches the owner's branches until the coordinator merges it and the owner lands

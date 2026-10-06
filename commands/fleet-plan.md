@@ -370,7 +370,7 @@ wants its pane opened and kept on screen.
 
 ## 8b. Coordinate without becoming the bottleneck
 
-You are the one session the whole run depends on, and the one nothing restarts. Eight rules keep you light.
+You are the one session the whole run depends on, and the one nothing restarts. Nine rules keep you light.
 
 - **Review through a subagent, never in your own context.** When a task finishes, spawn one review agent
   at the task's `verdict-model` (your own tier when the task names none) with the branch, the task file
@@ -420,6 +420,11 @@ You are the one session the whole run depends on, and the one nothing restarts. 
   relaunch replaces the chain, and a `WORKER CONTEXT` line points at this same single ask, never at a
   relaunch of its own. **The procedure is in `docs/RELAUNCH.md`: read it when the mark comes**, before
   you ask: one notification, one `AskUserQuestion`, `fleet.sh relaunch` in two calls, then the chips.
+- **The broadcast is for every worker, including one that starts a day later.** Never put an order for
+  named chips in it, above all a retire order: it reads as a standing rule (2026-10-06: worker 20 retired at
+  420 K on "workers 01-05 retire, your context is past 400K", written eighteen hours before it started).
+  Replace workers with `relaunch`. A worker that stops for context below `worker_relaunch_k` (700) did not
+  run out: message it by title to carry on.
 - **A pause is `/makarasty:fleet-pause <run-id>`, never a sentence to the workers.** Telling them to pause
   stopped nobody (2026-10-05: they kept "wrapping up" for a long time). The command writes the file the
   hooks enforce; the watch prints `PAUSED`, `worker NN stopped` and `RESUMED`. A relaunch pauses by itself.

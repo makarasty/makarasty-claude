@@ -1,5 +1,18 @@
 # Changelog
 
+## makarasty 1.5.11 — 2026-10-06
+
+Worker 20 of the 2026-10-05 build stopped at 420 K of a million-token window, calling it "the coordinator's
+400K retire threshold". There was no such threshold: eighteen hours earlier a coordinator had broadcast
+"workers 01-05 and 11-13 retire, your context is past 400K", and every worker reads the whole broadcast.
+
+- **A worker never stops for context on its own** below 850 K; a reminder's number or a broadcast order
+  naming other chips is not its own. The coordinator's watch asks the operator at 700 K, and a relaunch
+  reaches the worker as "retired".
+- **`fleet.sh broadcast` stamps each entry with its time** and warns when one carries a retire order;
+  `fleet-plan` keeps orders for named chips out of the broadcast and has the coordinator tell a worker that
+  stopped early to carry on.
+
 ## makarasty 1.5.10, makarasty-tools 1.5.5 — 2026-10-06
 
 What the rest of the 2026-10-05 build showed, read from its run directory and its 24 chats: 200 of 234

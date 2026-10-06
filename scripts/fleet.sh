@@ -1437,8 +1437,15 @@ answer)
 broadcast)
   # Something every worker must read, rather than an answer to one of them. Workers read it at each task
   # boundary, so it is the cheapest way to stop five chats rediscovering the same broken tool.
+  # Every worker reads the whole file, including one that starts a day later, so each entry carries its
+  # time, and an order meant for named chips does not belong here: 2026-10-06, worker 20 retired at 420K on
+  # a "workers 01-05 retire, your context is past 400K" entry written eighteen hours before it started.
   mkdir -p "$run/answers"
-  cat >> "$run/answers/00-broadcast.md"
+  _b=$(cat)
+  case "$_b" in *[Rr][Ee][Tt][Ii][Rr][Ee]*)
+    echo "NOTE: a retire order in the broadcast is read by every worker, later ones too; retire chips with fleet.sh relaunch instead" >&2 ;;
+  esac
+  printf '\n## %s\n%s\n' "$(now)" "$_b" >> "$run/answers/00-broadcast.md"
   echo "BROADCAST appended to $run/answers/00-broadcast.md"
   ;;
 
