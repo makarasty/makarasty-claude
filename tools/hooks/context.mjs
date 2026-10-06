@@ -8,10 +8,11 @@
 //
 // Context, not quota, is the limit people hit: over 2026-09, 208 of 533 chats passed 400k tokens and 94
 // passed 600k. At 400k the reminder came too often for the operator's taste on 1M-context models, so since
-// makarasty-tools 1.5.5 it first fires at 600k; auto-compaction starts a little past 900k.
+// makarasty-tools 1.5.5 it fired at 600k, and since 1.5.6 at 700k, where the operator draws the yellow line;
+// auto-compaction starts a little past 900k.
 //
 // The size is the last main-chain assistant turn's input + cache read + cache creation tokens, read from
-// the tail of the transcript. The first reminder fires at MAKARASTY_HANDOFF_AT (default 600000), again
+// the tail of the transcript. The first reminder fires at MAKARASTY_HANDOFF_AT (default 700000), again
 // every MAKARASTY_HANDOFF_STEP (default 150000) above that, once each. A /compact that drops it under the
 // threshold, or by more than a step, re-arms it. 0 turns it off. A prompt that already asks for the
 // handoff gets no reminder and does not use the level up.
@@ -22,7 +23,7 @@ import { openSync, readSync, fstatSync, closeSync, readFileSync, writeFileSync, 
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 
-const at = Number(process.env.MAKARASTY_HANDOFF_AT ?? 600000);
+const at = Number(process.env.MAKARASTY_HANDOFF_AT ?? 700000);
 const step = Number(process.env.MAKARASTY_HANDOFF_STEP ?? 150000) || 150000;
 
 // The last assistant usage, or the size a /compact left when its boundary comes later (a /compact fires
