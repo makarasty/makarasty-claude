@@ -344,8 +344,15 @@ echo "context reminder"
 ctx_cmd=$(cmd_of UserPromptSubmit context.mjs)
 tr="$tmp/t.jsonl"
 turn(){ printf '{"type":"assistant","isSidechain":%s,"message":{"usage":{"input_tokens":%s,"cache_read_input_tokens":%s,"cache_creation_input_tokens":0}}}\n' "$1" "$2" "$3" >> "$tr"; }
-ctx(){ printf '{"session_id":"c1","transcript_path":"%s","prompt":"%s"}' "$(cygpath -m "$tr" 2>/dev/null || echo "$tr")" "${1:-go on}" | sh -c "$ctx_cmd"; }
+ctx(){ printf '{"session_id":"c1","transcript_path":"%s","prompt":"%s"}' "$(cygpath -m "$tr" 2>/dev/null || echo "$tr")" "${1:-go on}" | MAKARASTY_HANDOFF_AT=${MAKARASTY_HANDOFF_AT-400000} sh -c "$ctx_cmd"; }
 pad(){ { printf '{"type":"user","pad":"'; head -c "$1" /dev/zero | tr '\0' x; printf '"}\n'; } >> "$tr"; }
+turn false 10 560000
+out=$(printf '{"session_id":"c0","transcript_path":"%s","prompt":"go on"}' "$(cygpath -m "$tr" 2>/dev/null || echo "$tr")" | env -u MAKARASTY_HANDOFF_AT sh -c "$ctx_cmd")
+[ -z "$out" ] && ok "by default silent at 560k" || bad "by default silent at 560k" "$out"
+turn false 10 610000
+out=$(printf '{"session_id":"c0","transcript_path":"%s","prompt":"go on"}' "$(cygpath -m "$tr" 2>/dev/null || echo "$tr")" | env -u MAKARASTY_HANDOFF_AT sh -c "$ctx_cmd")
+check "and first fires at 600k" "context is at 610k" "$out"
+: > "$tr"
 turn false 10 100000
 out=$(ctx); [ -z "$out" ] && ok "silent under the threshold" || bad "silent under the threshold" "$out"
 turn false 10 420000; turn true 10 900000
@@ -362,6 +369,14 @@ printf '{"type":"system","subtype":"compact_boundary","compactMetadata":{"preTok
 out=$(ctx); [ -z "$out" ] && [ ! -e "$tmp/makarasty/context/c1" ] && ok "a compact boundary after the last turn reads as the compacted size" || bad "compact boundary read" "$out"
 turn false 10 720000
 out=$(MAKARASTY_HANDOFF_AT=0 ctx); [ -z "$out" ] && ok "0 turns it off" || bad "0 turns it off" "$out"
+mkdir -p "$tmp/makarasty/fleet-sessions" "$tmp/frun"; echo "$(cygpath -m "$tmp/frun" 2>/dev/null || echo "$tmp/frun")" > "$tmp/makarasty/fleet-sessions/c1"
+out=$(ctx); [ -z "$out" ] && ok "silent in a session fleet.sh recorded as a fleet chat" || bad "silent in a session fleet.sh recorded as a fleet chat" "$out"
+: > "$tmp/frun/FINISHED"; rm -f "$tmp/makarasty/context/c1"
+out=$(ctx); check "but not once that run has FINISHED" "context is at 720k" "$out"
+[ ! -e "$tmp/makarasty/fleet-sessions/c1" ] && ok "and the stale record is deleted" || bad "and the stale record is deleted"
+echo /no/such/run > "$tmp/makarasty/fleet-sessions/c1"; rm -f "$tmp/makarasty/context/c1"
+out=$(ctx); check "nor when its run directory is gone" "context is at 720k" "$out"
+rm -f "$tmp/makarasty/context/c1"
 out=$(ctx '/makarasty-tools:handoff'; ctx 'сделай хенд-офф'; ctx 'хенд-офф'); [ -z "$out" ] && ok "silent when the prompt asks for the handoff" || bad "silent when the prompt asks for the handoff" "$out"
 out=$(ctx 'fix the handoff reminder text in context.mjs'); check "a prompt that only mentions it still fires, the level unused" "720k" "$out"
 turn false 10 870000; pad 2200000

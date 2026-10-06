@@ -7,22 +7,22 @@
 //                        prints where the full pre-compaction transcript lives instead.
 //
 // Context, not quota, is the limit people hit: over 2026-09, 208 of 533 chats passed 400k tokens and 94
-// passed 600k, the size at which people stop working in a chat. A handoff written at 600k is written by a
-// chat that has already lost the start of its own task, so the reminder comes earlier.
+// passed 600k. At 400k the reminder came too often for the operator's taste on 1M-context models, so since
+// makarasty-tools 1.5.5 it first fires at 600k; auto-compaction starts a little past 900k.
 //
 // The size is the last main-chain assistant turn's input + cache read + cache creation tokens, read from
-// the tail of the transcript. The first reminder fires at MAKARASTY_HANDOFF_AT (default 400000), again
+// the tail of the transcript. The first reminder fires at MAKARASTY_HANDOFF_AT (default 600000), again
 // every MAKARASTY_HANDOFF_STEP (default 150000) above that, once each. A /compact that drops it under the
 // threshold, or by more than a step, re-arms it. 0 turns it off. A prompt that already asks for the
 // handoff gets no reminder and does not use the level up.
 //
 // State: ${CLAUDE_CONFIG_DIR:-~/.claude}/makarasty/context/<session_id>, the last level reminded at.
 
-import { openSync, readSync, fstatSync, closeSync, readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
+import { openSync, readSync, fstatSync, closeSync, readFileSync, writeFileSync, mkdirSync, rmSync, statSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 
-const at = Number(process.env.MAKARASTY_HANDOFF_AT ?? 400000);
+const at = Number(process.env.MAKARASTY_HANDOFF_AT ?? 600000);
 const step = Number(process.env.MAKARASTY_HANDOFF_STEP ?? 150000) || 150000;
 
 // The last assistant usage, or the size a /compact left when its boundary comes later (a /compact fires
@@ -95,9 +95,25 @@ try {
     new RegExp(`^(сделай|давай|do|make)\\s.{0,40}${word}`, 'i').test(p) ||
     new RegExp(`^(\\S+\\s+)?${word}(\\s+\\S+)?[.!?]*$`, 'i').test(p)
   ) process.exit(0);
+  const base = join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'makarasty');
+  const sid = String(ev.session_id).replace(/[^\w.-]/g, '_');
+  // A fleet coordinator or worker (makarasty's fleet.sh records it here): the run's own marks watch its
+  // context and the coordinator asks the operator once. This reminder there only produced handoff offers,
+  // twelve from one coordinator on 2026-10-05, and one handoff nobody asked for. A record outlives its run
+  // when the run is abandoned rather than landed: one whose run FINISHED, is gone, or was not rewritten for
+  // two days (every worker call rewrites it) is deleted, and the reminder comes back.
+  const rec = join(base, 'fleet-sessions', sid);
+  let fleetRun = null;
+  try { fleetRun = readFileSync(rec, 'utf8').split('\n')[0].trim(); } catch {}
+  if (fleetRun !== null) {
+    let live = false;
+    try { live = Date.now() - statSync(rec).mtimeMs < 2 * 86400000 && statSync(fleetRun).isDirectory() && !existsSync(join(fleetRun, 'FINISHED')); } catch {}
+    if (live) process.exit(0);
+    rmSync(rec, { force: true });
+  }
   const tokens = lastContext(ev.transcript_path);
   if (tokens === null) process.exit(0);
-  const dir = join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'makarasty', 'context');
+  const dir = join(base, 'context');
   const file = join(dir, String(ev.session_id).replace(/[^\w.-]/g, '_'));
   if (tokens < at) {
     rmSync(file, { force: true }); // back under after a /compact: the next crossing reminds again
@@ -115,7 +131,8 @@ try {
   console.log(
     `This chat's context is at ${k}k tokens. Answer the person's message as usual; then, unless this ` +
     `session is a fleet worker or the task ends within this turn, add one line offering to hand the rest ` +
-    `to a fresh chat with /makarasty-tools:handoff, in the person's language. Offer it at a natural break, ` +
+    `to a fresh chat with /makarasty-tools:handoff, in the person's language; a fleet coordinator ignores this ` +
+    `line; its marks come from the watch (COORDINATOR CONTEXT), and its relaunch is in fleet-plan 8b. Offer it at a natural break, ` +
     `not mid-edit: if this turn ends with work half-done, offer it at the next break. Do not run it unasked.`,
   );
 } catch {

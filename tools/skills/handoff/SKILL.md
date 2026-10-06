@@ -12,6 +12,17 @@ native path, so get the handoff dir once with
 `node -p "require('path').join(process.env.CLAUDE_CONFIG_DIR||require('os').homedir()+'/.claude','makarasty','handoff')"`
 and write it as `C:/Users/<name>/.claude/makarasty/handoff` from then on. Below it is `<handoff dir>`.
 
+## A fleet coordinator does not hand off, it relaunches
+
+When this chat is a fleet run's coordinator (the run's `coordinator` file names this session, or this chat
+armed `/makarasty:fleet-wait`), **do not write a handoff chip**. A chain of handoff chips re-reads the world at
+every hop, loses what was only in context, and never moves the workers whose context is large. Use the
+relaunch procedure in section 8b of `/makarasty:fleet-plan` instead: ask the operator once, then
+`fleet.sh relaunch` (in the background, in two calls with `STATE.md` updated between them; call 1 exits 1 with "STATE.md NOT CURRENT" on purpose), which pauses the
+run, hands back open work and prints one chip for a fresh coordinator and chips for fresh workers, all
+offered together; when only workers are over their mark, "Replace workers NN only" keeps this chat as the coordinator. Read that section, and stop here. Only a chat that is not
+coordinating a run, or an operator who explicitly asks for a handoff of a coordinator, takes the steps below.
+
 ## Sending
 
 The next chat knows only the chip's prompt and the file, on whichever model the person picks: it must not
@@ -22,6 +33,12 @@ need this chat's judgement to begin.
 Wait up to about two minutes for the agents and shells this chat started whose result the handoff needs.
 Stop only what this chat started and is not a server or a watcher, and ask before stopping an agent that
 is still writing. The person's dev servers are theirs. What still runs goes into State with PID and owner.
+
+**A fleet watch is the exception: stop it.** When this chat is a fleet's coordinator and the operator
+explicitly asked for a handoff anyway, its `fleet-wait` watch is a background task of this chat, and it shares `<run>/.watch-seen` with whatever watch the next chat arms.
+Left running, the old one reports each event first and marks it seen, and the new chat never hears it.
+Refresh `<run>/STATE.md` (step 4), then `TaskStop` the watch by its task id, then offer the chip. A chat
+that cannot stop it (the task id is lost) says so in State, so the next chat knows events may be swallowed.
 
 ### 2. Find this chat's id
 
@@ -75,6 +92,9 @@ The file must stand on its own: asking this chat later costs a turn at its full 
 Reference what already lives in a file (a spec, a plan, a findings list) by path; do not copy it. Aim
 under 150 lines; the next chat reads the whole file before it does anything.
 
+For a fleet coordinator, bring `<run>/STATE.md` up to date first and cite its path in Next and State: it
+is the file that holds what a re-arm needs (below), and this file does not repeat it.
+
 ### 5. Check for secrets
 
 Never a password, token, key or connection string, even one the person pasted: name where it lives. No
@@ -104,6 +124,22 @@ State: the next chat then works only from the checkout path.
 > language: the goal, the first step, and what is unverified. Then start with the first Next step. If a
 > fact is missing, read that chat with mcp__ccd_session_mgmt__list_events; ask it with SendMessage (to:
 > its id) only as a last resort, one precise question.
+
+When the next chat is to run a fleet (a coordinator relaunch builds its own chip, with its own prompt, and
+never reaches this step), the first Next step depends on whether a run exists. A new run:
+`/makarasty:fleet-plan` with the plan's path as its mission. A run already under way: read
+`<run>/STATE.md` (it holds the plan path, the run dir, the worker count `n`, the chips offered by lane, the
+integration checkout's path and URL, any extra watched URLs, whether the queue is open, the merges in
+order, the reviews in flight, the fix tasks and why, the operator's decisions and the pane check tasks
+filed with their state), re-arm `/makarasty:fleet-wait <run> <n>` with that `n` and the integration URL
+added to `svc` (which records the new chat as the coordinator), and use `/makarasty:fleet-resume` only if
+the worker chats are gone. Read sections 3b and 8b of `/makarasty:fleet-plan` before re-arming - the review,
+queue and pane-check rules live there - without re-running its interview or its chips. If `/makarasty:fleet-plan` does not resolve (a chat started before the plugin was
+updated keeps the old install until it restarts), read the command file at `<plugin root>/commands/fleet-plan.md`
+and follow it. Offer no new chips
+there, since the existing ones carry the same titles; the one exception is a lane `fleet.sh status` names
+as without a worker. Name `opus` in the Model line for a fleet coordinator. A coordinator that improvises
+the launch from docs gets the chips wrong, and the project's own rules fill the gaps.
 
 Without `spawn_task` (the CLI), print that prompt in a fenced block for the person to paste into a new
 chat started in the checkout, with the directory step dropped, the patch step kept, the transcript path
