@@ -1,5 +1,211 @@
 # Changelog
 
+## makarasty 1.5.10, makarasty-tools 1.5.5 — 2026-10-06
+
+What the rest of the 2026-10-05 build showed, read from its run directory and its 24 chats: 200 of 234
+tasks done in 20.9 hours, seven coordinators in a row, and a third of the tasks fix tasks.
+
+- **No handoff reminder in a fleet chat, and 600 K elsewhere.** Three of the six coordinator handoffs came
+  from the old 300 K mark (700 K since 1.5.9); the general 400 K reminder made one coordinator offer a
+  handoff twelve times, workers offered too, and one coordinator handed off at 448 K unasked. `fleet.sh`
+  now records every coordinator and worker session in `makarasty/fleet-sessions/`, and the reminder says
+  nothing there. A record whose run has `FINISHED`, is gone, or was not rewritten for two days (the watch
+  rewrites the coordinator's every minute) is dropped and the reminder comes back; `landed` removes the
+  run's records. Everywhere else it first fires at 600 K, not 400 K (`MAKARASTY_HANDOFF_AT` still moves
+  it): on 1M-context models it came too often.
+- **Waiting on the operator is a state, and `status` names what the queue waits on.** A task with
+  `operator: <what>` is asked at launch, held by `next` until `fleet.sh cleared <run> <id>`, and listed
+  under `== waiting on the operator`; `== bottlenecks` lists a task free to start that holds three or more
+  open tasks behind it, and `== waits for ever` an `after:` naming nothing filed or done. Every remaining
+  plan task had sat about two hours behind one permissions task, closing 8 and then 4 tasks an hour.
+- **`fleet.sh file <run> <id>`** files one task from stdin: refused, with the reason, when it is not UTF-8,
+  has no frontmatter, names a lane other than pane, repo or verify, disagrees with its `task-id:`, or reuses
+  an id; a byte order mark is dropped, and an `after:` naming nothing filed yet is noted. `status` runs the
+  same checks over task files written by hand. A hand-made filing script had lost two tasks behind a failed
+  `&&` and broken a third with cp1252.
+- **`fleet.sh stranded <run>`** lists done tasks whose branch holds commits the integration branch lacks,
+  `STRANDED` when they came after the branch was merged: certain from the tip `finish` now records, read
+  from the merge commit's message for older markers, and a marker with no branch line is matched by task
+  id. `landed` repeats those, or says the check could not run. Three such commits had needed a recovery
+  task; on the live run it found three more.
+- **Old workers are found and replaced without being asked.** `whoami` records the plugin version; `status`
+  says `OTHER PLUGIN` (older or newer) or `never ran whoami`, the watch prints `WORKER PLUGIN NN` for a worker
+  on an older makarasty than the installed one, and the coordinator puts it in the one relaunch ask and
+  offers the fresh chips. `pause` names holders whose hooks cannot hold them. 137 of 200 done markers had
+  come from 1.5.2 workers, and the operator had to ask the coordinator to look.
+- **`fleet.sh procs <run> [--kill]`** (`fleet-load.mjs --leftovers`) lists test runs and typechecks whose
+  chat or shell is gone, and kills only those; an orphaned dev server, watcher or emulator is listed and
+  left to the operator. A worker stops every run, server and background shell it started before `finish`.
+  The build's machine ran out of memory with leftovers nobody owned.
+- **`status` starts with `== now`**, the machine's clock, and `STATE.md` entries are stamped from it: one
+  coordinator wrote "~13:00" on a snapshot taken at 11:10.
+- A worker's own review before `finish` checks `answers/00-broadcast.md`'s recurring misses one by one.
+- `fleet-plan`'s relaunch procedure moved to `docs/RELAUNCH.md`, keeping the command under 500 lines.
+
+## makarasty 1.5.9, makarasty-tools 1.5.4 — 2026-10-06
+
+A pause that stops a fleet, and a relaunch in place of a chain of handoff chips. On the 2026-10-05 build the
+operator said "pause" and the workers kept "wrapping up" for a long time; the coordinator then handed off by
+chip at 300 K, and the next one again, each hop losing what lived only in its context.
+
+- **`/makarasty:fleet-pause <run> [off] [reason]`** and `fleet.sh pause|resume|paused`. A worker gets 30 s
+  (`pause_grace_seconds`) from its first call after the pause to finish the step in hand, commit work in
+  progress and stop its subagents and background shells; then the hooks refuse everything but git,
+  `fleet.sh` and the wake loop. New subagents are refused from the first second, a subagent's own calls
+  after the grace. `next`/`drained` exit 8 while paused; the abort clock stands still; `status` and the watch
+  name workers with no ack yet and, past 150 s, the ones still working.
+- **`fleet.sh contexts`** lists the context of the coordinator and of every worker; the watch prints
+  `WORKER CONTEXT` lines as well as `COORDINATOR CONTEXT`.
+- **Context marks moved up** at the operator's word: the coordinator asks at 700 K and again at 800 K,
+  workers at 700 K (`coordinator_handoff_k`, `worker_relaunch_k`); auto-compaction starts a little past 900 K.
+  The coordinator hands reviews, merges, conflict resolution, `STATE.md` updates and every large read to
+  subagents and keeps verdicts and decisions.
+- **`fleet.sh relaunch`**, after one ask to the operator: pause, wait for acks, hand back the replaced
+  workers' tasks (`<id>-r<n>` with `continue-from:`, `continued-from-chip:`, `handback-of:`; a dirty tree is
+  committed as `wip: handed back`, a fix task's proof is carried over), retire them (exit 9; held by the hooks
+  even after resume), then, once `STATE.md` is current, print the fresh worker chips and one coordinator chip
+  (`resume --take-over`). `--keep-coordinator` replaces only workers and resumes at once.
+- `/makarasty-tools:handoff` and the context reminder send a fleet coordinator to the relaunch instead.
+- Every worker-side call that names its chip registers the session, so a worker on an assigned brief is
+  held by the pause too and counted by `pause`, `status` and `relaunch` until its `.done`; a line refused for
+  its shell syntax (a backtick or `$(` in a note) says so, and a line refused for its commands does not.
+- Checked by three rounds of a Sonnet red team, the last an end-to-end run of pause, relaunch, take-over,
+  a handed-back fix task and landing; self-test 702 checks.
+
+## makarasty 1.5.8, makarasty-tools 1.5.3 — 2026-10-05
+
+Everything else the 2026-10-05 build run got wrong, measured on that run while it was live.
+
+- **The whole queue at launch, every lane's chips at launch.** `fleet-plan` files every wave up front and
+  holds the order with `after:`; filing one wave at a time idled about a third of worker time and left
+  Opus-only tasks unclaimed for nineteen minutes. `fleet.sh chips` records what it offered in `offered/`
+  and ends with `STILL WITHOUT A WORKER` for any lane that has ready work and no chip; `status` repeats it.
+- **Lanes are pane, repo and verify, never a model.** `chips` refuses any other lane, and `status` names a
+  `needs:` that no worker can ever claim. An `opus` lane had left four idle Opus workers unable to take a
+  waiting task. `model:` in a task is now documented as a wish: the operator's chip decides what runs.
+- **What each worker really runs.** `fleet.sh whoami` records model and effort at the first claim and
+  `status` lists every offered worker with it. The plan said Sonnet for 81 of 125 tasks; all seven
+  workers were Opus.
+- **The coordinator stops being the bottleneck.** `fleet-plan` 8b: review finished tasks through a
+  subagent and read only its verdict, keep `STATE.md` current, hand off at a mark. The watch records
+  whoever arms it as the coordinator and `fleet.sh ctx` prints `COORDINATOR CONTEXT <n>K` once per mark
+  from that session's own transcript (`coordinator_handoff_k`, 300 K). That coordinator had reached 510 K
+  at thirty percent of its plan.
+- **Budgets from measurement.** `status` prints the median work time against the median budget once
+  three tasks are done, and says `BUDGETS TOO LOOSE` when no abort clock could ever fire (four minutes of
+  work against budgets of 45 to 150).
+- **One commit, one review, before a code task is finished.** `fleet-run` step 5: the worker commits on
+  `fleet/<chip>/<task-id>`, a subagent at the task's `verdict-model` (its own tier when the task has none)
+  reviews that branch against its base, the worker fixes what shows an input, lists the rest as unreached,
+  and finishes. `fleet.sh finish <run> <chip> <task-id> [branch]` writes `branch <name>` into the done
+  marker so the coordinator knows what to merge (a second `finish` without a branch keeps that line, and a
+  branch that does not resolve is warned about). Twelve of the first 33 tasks came back as fix tasks.
+  `fleet-plan` 8b: a worker-reviewed task gets a short verdict review, not a second full one.
+- **`fleet.sh worktree <run> <chip> --create [base]`** (the worker passes the `base:` of its first task) makes the worker's tree under
+  `.claude/worktrees/`, excludes that directory locally, links every `node_modules` up to three levels
+  deep (monorepo `apps/web/node_modules` included; it warns when a link fails), and registers it. The base
+  defaults to the main checkout's current branch; a tree whose directory was deleted is pruned and made
+  again, not "reused". Chips had opened in the main checkout and a coordinator hand-wrote trees at
+  `C:/wtRM01..05`, which nothing could register or clean. `clean` now removes a detached tree whose commit
+  a branch already holds, and no longer prints `branch -d HEAD`.
+- **Screens are checked where they can be seen.** A build worker's pane shows the main checkout, not its
+  worktree; `fleet-run` says so, and `fleet-plan` files screen checks as `needs: pane` tasks against the
+  integration checkout, now defined (the worktree where the coordinator merges, with its own dev server),
+  each carrying `origin: <url>`. A worker that must see its own screens, a design task, serves its own
+  tree on a free port. A look a build worker cannot take is filed as `ask/<chip>-<n>.md`, which the watch
+  surfaces; a line in its notes was read by nobody.
+- **A chip is an offer, and a rule that names fleets does not cancel it.** The 1.5.7 fix for the coordinator that offered
+  paste lines was itself beaten by the project rule it was written against: "unless a project rule
+  names fleets" let a "never a fleet worker" rule win. `fleet-plan` and the `fleet.sh chips` trailer now
+  say a chip is declined with one click, so every one is offered, and a rule that seems to forbid them is
+  quoted to the operator in the same turn. `fleet-run`: a project rule about the tree wins over the protocol
+  and one about channels loses to it; a rule that forbids a tree-side protocol step is obeyed, filed in
+  `ask/` naming both rules, and the worker takes the next task. "No commit without asking" is overridden for
+  the worker's own task branch only. Near its context limit a worker finishes or hands the task back,
+  never a chip.
+- **`chips` is strict.** It refuses an empty, reversed or non-numeric range, a worker number below 1, and a number already offered
+  under a different lane, records `brief` for a brief worker, and prints the browser-pane sentence only for
+  lane `pane`. `lane_gaps` ignores a chip whose worker already wrote `.done` or `.blocked`; `drained`
+  refuses to finish (exit 5) while a ready task has a `needs:` no worker can claim, and `next` says so too.
+  `status` exits 0 whenever it printed its report.
+- **Every worker command takes the run's absolute path.** `fleet-run` defines one `$r` and uses it in every
+  command and in the wake loop; a relative `.fleet/<run>` that does not exist under the cwd resolves
+  against the main checkout in `fleet.sh`, and the hooks print an absolute run path from a worktree.
+  `fleet-run` also tests for a worktree with absolute `git rev-parse` paths, unlinks the registered path
+  (not `$(pwd)`), and defers pushing to the project's rules.
+- **The watch is fixed where it was wrong.** A service URL is no longer a regex: `http://[::1]:5173` is
+  removed from the down list and reports `SERVICE BACK`. The loop builds `svc` from one fixed `FLEET.md`
+  line, `- Services: <url> (start: <how>|operator); ...`, which `fleet-init` writes, and `start:` decides
+  whether the coordinator restarts a service or tells the operator; only a URL before an item's
+  `(start: ...)` is probed, and an empty list prints `WATCH: no '- Services:' line in FLEET.md, services are
+  not being checked` (`fleet-init` converts an old-format line). From a worktree it finds the run and
+  `FLEET.md` in the main checkout; where neither exists it prints `NO RUN DIR` and exits, and its stall
+  report ends with the lanes that have work and no worker.
+  Tasks may carry `origin:` and `verdict-model:`, documented in `PROTOCOL.md`.
+- **A handoff into a run under way does not re-offer chips.** `handoff`: read `STATE.md`, re-arm
+  `fleet-wait`, resume only if the worker chats are gone, and name `opus` for a fleet coordinator. The
+  outgoing coordinator refreshes `STATE.md` and stops its own watch (`TaskStop`) before it offers the chip:
+  two watches share `.watch-seen`, and the old one swallowed the events. `STATE.md` now holds what a
+  re-arm needs (plan path, run dir, worker count, chips by lane, integration checkout and URL, extra
+  watched URLs, queue-open, merges, reviews, fix tasks, decisions, pane check tasks); the handoff names
+  `fleet-plan`'s command file as the fallback for a chat that started before the plugin update.
+- **A task builds on what it waits for.** `after:` waits for the done marker, not for the coordinator's
+  merge, so a code task now carries `base: <integration branch>` (`PROTOCOL.md`), its branch is cut from
+  that, and the worker merges each predecessor's `branch <name>` (from the done marker) into it when it is
+  not in the base yet. A `needs: pane` check task first confirms the build branch is in the integration
+  checkout and otherwise files an `ask/` and takes another task.
+- **`fleet-login [origin]`** logs in at the origin it is given (a task's `origin:` or the worker's own
+  served URL) instead of `FLEET.md`'s; a refusal from the app's auth or CORS allow-list on a new port is an
+  `ask/`. A `design` task is `needs: pane` and serves its own worktree from a background dev server on a
+  free port, `preview_start` by url.
+- **A fix is proved in its own tree.** `prove` hashes the cwd and `--create` leaves it in the main
+  checkout, so `fleet-run` runs both calls and the scoped tests with `cd` into the worktree; before and after
+  were the same tree and `finish` said NOT PROVEN. `FLEET_REFUTED` is never the way past that.
+- **A task's `model:` is met by a spawn.** A worker below a task's tier delegates the task to one `Agent` at
+  that tier; `fleet-design` and `fleet-call` name the model for every chip, and the coordinator tells the
+  operator in the turn `status` shows a gap. An assigned brief that writes code records `branch
+  fleet/<chip>/brief` in its notes, `unlink` now comes before `drained` writes `.done`, and `PULL.md`'s code
+  blocks use the absolute `$r`.
+- Budgets in `fleet-plan` and `PULL.md` now give a stated default for a first wave and say the run's own
+  median replaces it. Every behaviour change above has a self-test check.
+- **`clean` in the middle of a run.** A task branch merged into another local branch (the integration
+  branch, before the owner lands it) counts as held, so its tree can be removed; the worker's merged
+  `fleet/<chip>/*` task branches go with it by the safe `branch -d`. A tree unlinked before `drained` gets
+  its links back from `worktree --create`. `chips` reports a `needs:` that is no lane as a task to fix, not
+  a chip to offer. A pane check whose build is not merged yet is handed back with `finish` and re-filed by
+  the coordinator, since a claim is never released. `fleet-plan` converts an old-format services line in
+  `FLEET.md` before arming the watch, and makes the integration checkout with `worktree --create`.
+- Checked by three rounds of a three-reviewer red team, each finding fixed and re-tested by the next round.
+  Self-test: 423 checks.
+
+## makarasty 1.5.7, makarasty-tools 1.5.2 — 2026-10-05
+
+A coordinator that reached its run by handoff offered its workers as paste lines, not chips. It had never
+loaded `fleet-plan` - the harness blocked it - so the chip rules were not in its context, and a project
+memory rule written about chip hygiene ("chips only for one real defect, never a fleet worker") decided
+instead. When the operator asked, it offered four chips titled `Fleet worker 02: ...`, which no
+`fleet <run-id> NN` lookup finds, pointing at a cached `fleet-run` two versions old.
+
+- **`fleet.sh chips <run-dir> <NN>[-<NN>] [lane]`** prints each worker's `spawn_task` title and prompt:
+  the `fleet <run-id> NN` title, the run's absolute path, and the path of the `fleet-run` actually
+  installed. `fleet-plan`, `fleet-resume`, `fleet-design` and `fleet-call` take chips from it rather than
+  retyping a template. Six self-test checks.
+- **`fleet-plan` no longer carries `disable-model-invocation`.** A chat told "launch the fleet", or made a
+  coordinator by handoff, can now load it. It writes files and offers chips; nothing is spent until the
+  operator clicks one. A plan that already exists skips the interview.
+- **Project rules and the protocol, split in writing** (`fleet-plan`, `fleet-run`): the project decides what
+  workers build and touch; the fleet decides how they launch, ask and hand work back, unless a project rule
+  names fleets. A rule that forbids a protocol step outright goes to `ask/`, not into a silent choice.
+- **The watch checks the services.** `fleet-wait`'s loop takes the run's service URLs from `FLEET.md` and
+  prints `SERVICE DOWN` once when one refuses connections, `SERVICE BACK` when it returns; the coordinator
+  restarts it or tells the operator in that turn. The functions emulator died twice during one run and
+  nobody in the fleet noticed.
+- **A blind pane is asked about, by anyone.** `BROWSER.md`: the coordinator too asks the operator to open
+  its pane in the same turn, with a push notification, rather than recording the check as a debt.
+  `fleet-plan`: screen checks in a build go to `needs: pane` tasks, not to the coordinator.
+- **`handoff`**: when the next chat is to run a fleet, its first step is `/makarasty:fleet-plan` or
+  `fleet.sh chips`, not a launch rebuilt from the docs.
+
 ## makarasty 1.5.5 — 2026-10-04
 
 - **`fleet-retro.mjs` counts a turn once.** The host writes one transcript line per content block and

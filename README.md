@@ -53,7 +53,8 @@ pass its path to `marketplace add`.
 - A POSIX shell. On Windows that is Git Bash, which Claude Code already needs. The self-test passes under
   `bash` and `dash`.
 - Node.js for the hooks and four `fleet.sh` subcommands (`sweep`, `recover`, `pane-status`, and the proof
-  check in `finish`). Everything else degrades to a warning without it.
+  check in `finish`). Everything else degrades to a warning without it, or skips a check: the UTF-8 check
+  in `file`, and the bottleneck and task-file lines of `status`.
 - Nothing else. `rg`, `sg`, `jq` and similar tools are offered by `fleet-init` and never required.
 
 ### Check that it works on your machine
@@ -94,19 +95,21 @@ browser.
 |---|---|---|
 | `/makarasty:fleet` | you | Lists the other commands and when to use each |
 | `/makarasty:fleet-init` | you or Claude | Prepares a project: origin, services, agent login, `FLEET.md`, machine sizing |
-| `/makarasty:fleet-plan <mission> [fast]` | you | Interviews you into a plan, splits it into a queue or briefs, offers one chip per worker |
+| `/makarasty:fleet-plan <mission> [fast]` | you or Claude, when asked | Interviews you into a plan, splits it into a queue or briefs, offers one chip per worker |
 | `/makarasty:fleet-run <brief or run dir>` | the worker, after you click its chip | Runs one brief, or works a queue until it is drained |
-| `/makarasty:fleet-login` | you or Claude | Opens and logs in to the project's local app, with credentials from the runbook, never from the chat |
+| `/makarasty:fleet-login` | you or Claude | Opens and logs in to the project's local app (or at an origin you pass it), with credentials from the runbook, never from the chat |
 | `/makarasty:fleet-wait <run-id> [n]` | you or Claude | Waits without spending model turns, then collects |
 | `/makarasty:fleet-collect <run-id>` | you or Claude | Merges, enforces the evidence contract, dedupes, ranks |
+| `/makarasty:fleet-pause <run-id> [off] [reason]` | you or Claude | Really stops every worker (a hook refuses their edits, browser and shell calls after a 30 s grace; they commit, stop their subagents and wait), or lifts the pause. "Pause the fleet" in plain words fires it |
 | `/makarasty:fleet-resume <run-id>` | you or Claude | After a crash: reopens the workers whose context survived, respawns the rest |
 | `/makarasty:fleet-design <screens> [fast]` | you | Captures the app's screens as artboards on disk and assembles them into a Claude Design canvas |
 | `/makarasty:fleet-redesign <screens and direction> [fast]` | you | Proposes redesigns beside the captured screens, loading and error states included |
 | `/makarasty:fleet-call <who and what about> [fast]` | you | Digs the facts for a vendor call out of the project, with evidence, and builds a bilingual page to read aloud; `live <run-id>` answers beside you during the call |
 
-`fleet`, `fleet-plan`, `fleet-design`, `fleet-redesign` and `fleet-call` carry
-`disable-model-invocation: true`: they start paid work and wait on your clicks, so only you can start
-them. `fleet-run` is the exception on purpose. The worker's own model invokes it in the new session, and
+`fleet`, `fleet-design`, `fleet-redesign` and `fleet-call` carry `disable-model-invocation: true`: they
+start paid work and wait on your clicks, so only you can start them. `fleet-pause` is the other one an agent can start. `fleet-plan` can also be started by
+Claude when you ask it to launch a fleet or hand a run to a new chat; it costs nothing until you click a
+chip. `fleet-run` is the exception on purpose. The worker's own model invokes it in the new session, and
 the flag would stop every worker the moment it tried to begin.
 
 ### Agents
@@ -136,9 +139,18 @@ the flag would stop every worker the moment it tried to begin.
 All nine can be started by you or by Claude, and most trigger on plain phrasing in any language: "commit
 as me", "закоммить от меня", "ping me when the tests are done".
 
-**Context hook.** Once a chat's context passes 400k tokens, and again every 150k above that, the chat is
-told to offer a handoff in one line. `MAKARASTY_HANDOFF_AT` and `MAKARASTY_HANDOFF_STEP` move the levels;
+**Context hook.** Once a chat's context passes 600k tokens, and again every 150k above that, the chat is
+told to offer a handoff in one line (a chat that coordinates or works a fleet run gets none: the run's own marks watch it, below). `MAKARASTY_HANDOFF_AT` and `MAKARASTY_HANDOFF_STEP` move the levels;
 `MAKARASTY_HANDOFF_AT=0` turns it off.
+
+**Relaunch instead of a chain of handoffs.** A fleet coordinator, or any worker, that nears the context limit
+(`coordinator_handoff_k` and `worker_relaunch_k` in `calibration.json`, both 700K as shipped, with a second
+ask at 800K; auto-compaction starts a little past 900K) makes the coordinator ask you once, with a
+notification you can see from another chat. On "Relaunch now" it pauses the run, writes the state, hands
+the open work of the over-full workers back (a worker's uncommitted work is committed for it as `wip: handed
+back`), and offers one coordinator chip and the fresh worker chips in one go. Click the coordinator first,
+then the workers; the run stays paused until the new coordinator resumes it. When only workers are over,
+"Replace workers NN only" offers just their chips and the coordinator carries on.
 
 **Notifications.** Say "ping me when it's done" in the chat doing the work. It arms a marker for that
 session, and a hook sends one message when the turn ends, with the last 500 characters of the reply under
@@ -306,7 +318,7 @@ Under semver, 1.x will not break:
 
 - **The run directory layout**: `tasks/ready`, `tasks/claimed/<id>/owner`, `tasks/claimed/<id>/proof`,
   `tasks/done`, `ask/`, `answers/`, `pane/`, `decisions.jsonl`, `clusters.jsonl`, and the
-  `<chip>.jsonl`, `.notes.md`, `.done`, `.blocked` and `.waiting` files. `.fleet/contract-surface.txt`
+  `<chip>.jsonl`, `.notes.md`, `.done`, `.blocked`, `.waiting` and `.retired` files, `PAUSED` and `stopped/<chip>`. `.fleet/contract-surface.txt`
   sits beside the runs because it belongs to the project and is committed with it. Each run stamps
   `RUN_FORMAT` at its first write, and a `fleet.sh` that reads an older format refuses a newer run rather
   than misreading it.
@@ -314,11 +326,13 @@ Under semver, 1.x will not break:
   a blind pane, or a run that has not landed; 2 wrong usage or a run this version cannot read; 3 the queue
   is drained for that lane; 4 the claim is no longer yours; 5 from `drained`, not finished (the planner
   has not closed the queue, or a ready task nobody holds is still waiting); 6 free memory is under the
-  floor; 7 from `next`, tasks exist but an `after:` or a held verify lane holds them.
+  floor; 7 from `next`, tasks exist but an `after:` or a held verify lane holds them; 8 from `next` or
+  `drained`, the run is paused; 9 from `next` or `drained`, the worker was retired by a relaunch.
 - **The four line shapes** a findings file may hold (a finding, `unreached`, `created`, `state_changed`)
   and the fields the schema gate enforces on each.
-- **The markers**: `.done` means finished, `.blocked` means it never saw, `.waiting` means it is stopped on
-  a person, `FINISHED` means the run was landed by declaration.
+- **The markers**: `.done` means finished, `.blocked` means it never saw, `.retired` means a relaunch replaced
+  it, `.waiting` means it is stopped on
+  a person, `PAUSED` means the run is paused, `FINISHED` means the run was landed by declaration.
 
 Everything else is calibration, not contract: prose rules, agent briefs, and the numbers in
 `calibration.json` and in this README. A minor version may change any of them when a run measures
@@ -394,6 +408,7 @@ harness can't find.
 | [`WALKTHROUGH`](docs/WALKTHROUGH.md) | Your first fleet in fifteen minutes |
 | [`PROTOCOL`](docs/PROTOCOL.md) | Run layout, brief format, finding schema, project configuration |
 | [`PULL`](docs/PULL.md) | The task queue, claims, heartbeats, budgets, asking the planner |
+| [`RELAUNCH`](docs/RELAUNCH.md) | Replacing the coordinator or workers past their context mark, in one ask |
 | [`LANES`](docs/LANES.md) | What a fleet queues for, fan-out, a run with no browser |
 | [`MISSIONS`](docs/MISSIONS.md) | The ten kinds and the axis each splits along |
 | [`GATE`](docs/GATE.md) | The stage between a finding and a change |

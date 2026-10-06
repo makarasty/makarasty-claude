@@ -60,7 +60,7 @@ interview, as in `fleet-plan`.
 
 ## 3. Write the queue
 
-Pull mode, under `.fleet/<run-id>/tasks/ready/`, stages gated with `after:` exactly as `docs/DESIGN.md`
+Pull mode, under `.fleet/<run-id>/tasks/ready/`, each task filed with `fleet.sh file` (`fleet-plan` 3b), stages gated with `after:` exactly as `docs/DESIGN.md`
 lays them out. Every task carries `kind: canvas`, its lane, a budget from the table there, and the model
 from `docs/MODELS.md`:
 
@@ -90,8 +90,13 @@ instead of finishing.
 ## 4. Offer the chips
 
 Two pane chips, `lane pane` - the recon stage is ten minutes a screen and the compare stage is twelve,
-so two panes drain either in a wave. Repo chips from `sh "$f" width .fleet/<run-id>`, `lane repo`. Chip
-titles and prompts exactly as `fleet-plan` section 7 gives them, worker identity and lane in the prompt.
+so two panes drain either in a wave. Repo chips from `sh "${CLAUDE_PLUGIN_ROOT}/scripts/fleet.sh" width .fleet/<run-id>`, `lane repo`. Chip
+titles and prompts verbatim from `sh "${CLAUDE_PLUGIN_ROOT}/scripts/fleet.sh" chips .fleet/<run-id> <NN>-<NN> <lane>`, one call per lane.
+
+Name the one model and effort to start every chip on. A chip cannot be split by model, so a task whose
+`model:` is above the worker's own tier is delegated by that worker to one `Agent` at that tier
+(`fleet-run`); starting every chip on the design model avoids those spawns, starting them on the cheaper
+tier spends them on the system and screen tasks. Say which you chose and why in the hand-over.
 
 Say the stage arithmetic out loud: repo workers will sit on `QUEUE WAITING` until the pane workers have
 recon'd their screens, which is a few minutes, and the operator should open the pane chips first.

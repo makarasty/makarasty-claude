@@ -19,7 +19,7 @@ open, and any worker with a live pane can take the next task.
     claimed/   task-07/                       a DIRECTORY, the claim itself
                  owner            chip id and the time it was taken
                  heartbeat        rewritten at every natural boundary
-    done/      task-07                        empty marker, written by the worker
+    done/      task-07                        marker written by the worker; a code task's holds a `branch <name>` line
   ask/         03-1.md                        a worker's question for the planner
   answers/     03-1.md                        the planner's reply
   03.jsonl     findings, per worker across every task it took
@@ -32,9 +32,12 @@ the unit whose blindness matters.
 
 ## Claiming
 
+In every command below, `$r` is the run's absolute directory (the chip prompt gives it): a relative
+`.fleet/<run-id>` does not exist from a worktree, where a worker that writes code stands.
+
 ```bash
-mkdir .fleet/<run-id>/tasks/claimed/task-07 2>/dev/null &&
-  printf 'chip %s\nclaimed %s\n' "$CHIP" "$(date -Iseconds)" > .fleet/<run-id>/tasks/claimed/task-07/owner
+mkdir "$r"/tasks/claimed/task-07 2>/dev/null &&
+  printf 'chip %s\nclaimed %s\n' "$CHIP" "$(date -Iseconds)" > "$r"/tasks/claimed/task-07/owner
 ```
 
 `mkdir` fails when the directory exists, and it fails atomically. Verified on NTFS 2026-08-26: eight
@@ -49,7 +52,9 @@ with the wake in `commands/fleet-run.md` rather than finishing.
 
 A task can also be **gated**: `after: <task-id>` in its frontmatter holds it until that task's done marker
 exists, which is how a mission with waves keeps wave three out of wave two's files without asking anybody
-to remember the order. `next` says `QUEUE WAITING` and exits 7, rather than `QUEUE DRAINED` and exit 3, when that
+to remember the order. The marker is the worker's, not the coordinator's merge, so a task that builds on a
+predecessor's code merges the predecessor's `branch <name>` (read from its done marker) into its own branch
+first; the task's `base:` is where that branch is cut from (`commands/fleet-run.md`, section 1). `next` says `QUEUE WAITING` and exits 7, rather than `QUEUE DRAINED` and exit 3, when that
 is why it handed you nothing, and the two mean opposite things - a gated queue opens again on its own, so
 poll it and do not call `drained`. Write `<chip>.done` only once that marker is gone: a session that ends cannot be
 reopened, and a queue that grows after its workers have closed has nobody left to work it.
@@ -67,17 +72,22 @@ ownerless for twelve minutes that way, and the planner reclaimed a live worker's
 rather than hand rolling the shell each time:
 
 ```bash
-f="<plugin>/scripts/fleet.sh"   # <plugin>: the root fleet-run named; $f is already set there
-sh "$f" next    .fleet/<run-id> 03 repo # claim IN YOUR LANE; exit 3 drained, exit 7 waiting (poll)
-sh "$f" clock   .fleet/<run-id> 03 task-07 25    # prints the self-disarming clock; background it
-sh "$f" beat    .fleet/<run-id> 03 task-07
-printf '%s' '<one JSON finding>' | sh "$f" find .fleet/<run-id> 03   # a pipe, not a herestring: `<<<` is a bashism
-sh "$f" finish  .fleet/<run-id> 03 task-07   # the clock guarding it exits on this marker
-sh "$f" drained .fleet/<run-id> 03 repo      # exit 5 = not finished (queue-open, or a ready task unheld): poll
-sh "$f" status  .fleet/<run-id>         # the planner's view: claims, ages, never-beat flags, open asks
-sh "$f" answer  .fleet/<run-id> 05-1 06-1    # planner: ONE answer, filed under every question it settles
-sh "$f" broadcast .fleet/<run-id>            # planner: something every worker reads at its next boundary
-sh "$f" summary .fleet/<run-id> 03      # the end banner, generated from disk
+f="<plugin>/scripts/fleet.sh"   # <plugin>: the root fleet-run named; $f and $r are already set there
+r="<the run's absolute directory>"
+sh "$f" next    "$r" 03 repo # claim IN YOUR LANE; exit 3 drained, exit 7 waiting (poll), exit 8 paused, exit 9 retired
+sh "$f" clock   "$r" 03 task-07 25    # prints the self-disarming clock; background it
+sh "$f" beat    "$r" 03 task-07
+printf '%s' '<one JSON finding>' | sh "$f" find "$r" 03   # a pipe, not a herestring: `<<<` is a bashism
+sh "$f" finish  "$r" 03 task-07   # the clock guarding it exits on this marker
+sh "$f" drained "$r" 03 repo      # exit 5 = not finished (queue-open, or a ready task unheld): poll
+sh "$f" status  "$r"         # the planner's view: claims, ages, never-beat flags, open asks
+sh "$f" answer  "$r" 05-1 06-1    # planner: ONE answer, filed under every question it settles
+sh "$f" broadcast "$r"            # planner: something every worker reads at its next boundary
+sh "$f" file    "$r" task-07 < task-07.md   # planner: file one task, checked; FILED or REFUSED
+sh "$f" stranded "$r"             # planner: done branches with commits integration lacks
+sh "$f" cleared "$r" task-07          # planner: the operator did its part; next hands the task out
+sh "$f" procs   "$r" [--kill]         # planner: orphaned test runs and typechecks; --kill ends only those
+sh "$f" summary "$r" 03      # the end banner, generated from disk
 ```
 
 **The lane argument is not optional.** Without it `next` hands a paneless worker a browser task, and the
@@ -122,7 +132,7 @@ will try to repair it, and two workers repairing one task is worse than either o
 successor's directory, refreshing the wrong liveness and marking work done that nobody did. Under a new
 id they land in a graveyard and change nothing.
 
-`sh "$f" sweep .fleet/<run-id>` lists the claims that look abandoned and changes nothing; `--release`
+`sh "$f" sweep "$r"` lists the claims that look abandoned and changes nothing; `--release`
 moves the claim **and its task file** aside, into `tasks/claimed/<id>.released-<time>` and
 `tasks/released/<id>.md`, so the same id cannot be handed straight back to the next claimer.
 
@@ -181,8 +191,11 @@ Every task carries `budget: <minutes>`, the planner's estimate.
 median task took **23 minutes** and the mean 23, against budgets the planner wrote as 40 and 45. Only
 three tasks of 36 came within five minutes of their budget. An inflated budget is not free: the abort rail
 is twice the budget, so a 45 minute estimate means a worker may run 90 minutes before it is required to
-hand anything back, which is longer than the entire tail of a healthy run. Write 25, and let the two
-tasks that genuinely need 50 carry 50.
+hand anything back, which is longer than the entire tail of a healthy run. For a first wave with nothing
+of its own to go on, write 25 and let the two tasks that genuinely need 50 carry 50; that is a stated
+default, and the run's own measurement replaces it: `fleet.sh status` prints the median work time against
+the median budget once three tasks are done, and a run whose tasks took four minutes against budgets of 45
+to 150 (2026-10-05) had no abort clock that could fire. Re-budget what is still ready from it.
 
 **The planner writes the queue longest task first.** Workers that take the longest work first and the
 short work last finish within a few minutes of each other; the reverse order leaves one worker holding a
@@ -213,7 +226,7 @@ with the reason, marks the task done, and takes the next one. An unbounded task 
 worker that quietly runs four times its estimate is indistinguishable from one that hung.
 
 That limit is armed, not intended: at claim time the worker backgrounds what
-`sh "$f" clock .fleet/<run-id> <chip> <task-id> <budget>` prints, and the notification when it fires is
+`sh "$f" clock "$r" <chip> <task-id> <budget>` prints, and the notification when it fires is
 both the clock and the thing keeping the session alive. Nothing else in a fleet measures elapsed time, and a worker three
 subagent rounds into a scenario cannot tell twenty minutes from eighty.
 
@@ -234,7 +247,7 @@ plan repair itself instead of being wrong for the entire run.
 
 ## Asking the planner
 
-A worker files a question with `sh "$f" ask .fleet/<run-id> <chip>`, reading it from stdin — one question
+A worker files a question with `sh "$f" ask "$r" <chip>`, reading it from stdin — one question
 with enough context to answer without the transcript — and then **keeps working**. The helper numbers the
 file and prints where the answer will appear; by hand it is `ask/<chip>-<n>.md`. It reads `answers/<chip>-<n>.md` at its next task boundary, and
 `answers/00-broadcast.md` at every boundary.

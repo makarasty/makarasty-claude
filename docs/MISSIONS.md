@@ -123,6 +123,14 @@ attachments for a decision worth a line.
 Isolation: worktree, always. Same reason as `implement`, plus one of its own — a design task edits shared
 primitives, and two workers restyling one primitive produce a merge nobody can arbitrate on taste.
 
+A design task is `needs: pane`: its gate is a screenshot of what it just built, so it is claimed from the
+pane lane. It has to see its own screens, and the shared Browser pane serves the main checkout, not its
+worktree. So it starts the project's dev server from its worktree, in the background (Bash with
+`run_in_background`), on a free port, and then calls `preview_start` with that `url` - not by launch-entry
+name, which would run the main checkout's entry and show somebody else's code - and the gate runs there; a
+task may name that address in `origin:`. That server is the worker's own and is not one of the run's shared
+services, which a worker never starts. The worker stops it before it finishes.
+
 **One model owns the screen end to end, and it is the design model.** Reading the code, writing the markup
 and the copy, driving the browser, running the instrument, deciding it is done. A worker session may start
 the dev server, log in, take the first screenshot, run the scoped suite and commit; it may not adjust a

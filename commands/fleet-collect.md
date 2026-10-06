@@ -63,7 +63,8 @@ re-observation.
 sh "$f" fixqueue .fleet/<run-id>   # -> .fleet/fix-<run-id>/tasks/ready/*.md
 ```
 
-One task per blocker and major, each carrying the finding id, the reproduction, the evidence, the
+Add `base: <the branch the fixes are merged into>` to every task it writes before offering chips; fixqueue
+does not know it. One task per blocker and major, each carrying the finding id, the reproduction, the evidence, the
 mechanism marked as a lead rather than a diagnosis, the lane it needs, and the twins that share its files.
 A second fleet claims that queue with `/makarasty:fleet-run .fleet/fix-<run-id>/`, or one chat works it
 alone. Either way the input is a queue, not a document somebody has to re-read.
@@ -170,8 +171,10 @@ on disk before one is sent.
    sh "$f" clean .fleet/<run-id> --remove
    ```
 
-   A run that wrote code leaves one worktree and one branch per code worker, and they are dead weight once
-   the work is pushed. `clean` acts only on the worktrees this run registered, only under
+   A run that wrote code leaves one worktree per code worker and one branch per task, and they are dead
+   weight once the work is merged. A task branch merged into the integration branch counts as held, so
+   its tree can go before the owner lands the integration branch; `clean` also deletes that worker's merged
+   `fleet/<chip>/*` task branches with the safe `branch -d`. `clean` acts only on the worktrees this run registered, only under
    `.claude/worktrees/`, and it **keeps** any tree with uncommitted changes or commits neither merged nor
    pushed - print those lines and do not work around them: each one is somebody's unpushed
    work. It unlinks junctions before removing anything, which is what stops the delete reaching the main

@@ -166,7 +166,7 @@ without losing the thread.
 `sh "$f" width .fleet/<run-id>` sizes the whole lane from free memory, and `next` refuses a claim when the
 box is full, so a worker does not weigh its fan-out against memory itself.
 
-**A repo worker is who claims it.** A chip is only ever told `lane pane` or `lane repo`, so a repo worker takes a verify task
+**A repo worker is who claims it.** A chip is told `lane pane` or `lane repo` unless the planner offers a dedicated `verify` chip (a valid lane for `fleet.sh chips`), so a repo worker takes a verify task
 when no other verify task is held, and `next` prints a `VERIFY LANE` line telling it that it holds the
 fleet's only one. That check is a width rather than a lock - the queue's atomicity is per task, so two
 workers reaching it in the same instant can both pass it.

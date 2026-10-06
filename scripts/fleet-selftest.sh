@@ -22,6 +22,10 @@ fleet="$here/fleet.sh"
 LC_ALL=C; export LC_ALL
 run=${TMPDIR:-/tmp}/fleet-selftest-$$
 mkdir -p "$run/tasks/ready"
+# Never the real config or the session running this: fleet.sh records sessions under the config dir, and
+# the session id of the chat that runs the test would otherwise be recorded as a fleet coordinator there.
+unset CLAUDE_CODE_SESSION_ID
+CLAUDE_CONFIG_DIR=${TMPDIR:-/tmp}/fleet-cfg-$$; export CLAUDE_CONFIG_DIR
 pass=0; fail=0
 
 ok()   { pass=$((pass + 1)); printf '  ok    %s\n' "$1"; }
@@ -45,6 +49,16 @@ if command -v node >/dev/null 2>&1; then
   [ -n "$mult" ] || mult=2
   [ -n "$poll" ] || poll=30
 fi
+# The context marks and the pause numbers come from the same file, for the same reason.
+calk() { # calk <key> <default>
+  _v=""
+  if command -v node >/dev/null 2>&1 && [ -n "${_cal:-}" ]; then
+    _v=$(node -e 'try{const v=require(process.argv[1])[process.argv[2]];if(typeof v==="number")console.log(v)}catch{}' "$_cal" "$1" 2>/dev/null)
+  fi
+  echo "${_v:-$2}"
+}
+HAT=$(calk coordinator_handoff_k 700); WAT=$(calk worker_relaunch_k 700); GRACE=$(calk pause_grace_seconds 30)
+CK=$((HAT + 40)); WK=$((WAT + 50))
 
 # Every `next` asks the machine for free memory before it claims, so on a box that is actually full the
 # queue checks below failed with exit 6 for a reason that had nothing to do with the queue. FLEET_LOAD
@@ -1583,8 +1597,821 @@ check "whose answer is the one it prints" "1.23 GB free" "$out"
 check "by the path beside the script" "beside/scripts/fleet-load.mjs" "$out"
 rm -rf "$tmp/beside"
 
+echo "== chips"
+out=$(sh "$fleet" chips "$run" 02-03 repo 2>&1); rc=$?
+code "chips prints the workers of a queue run" 0 "$rc"
+check "titled by the address every lookup uses" "title: fleet $(basename "$run") 03" "$out"
+check "with the lane" "of run $(basename "$run"), lane repo." "$out"
+case "$out" in *"fleet-run .fleet/"*) bad "and the run's absolute path, not a relative one" "$out";; *) ok "and the run's absolute path, not a relative one";; esac
+check "and the path of the fleet-run beside it" "commands/fleet-run.md" "$out"
+out=$(sh "$fleet" chips "$run" 04 2>&1); rc=$?
+code "a queue worker with no lane is refused" 2 "$rc"
+printf -- '---\nbrief\n---\n' > "$run/brief-05.md"
+out=$(sh "$fleet" chips "$run" 05 2>&1)
+check "a brief worker gets its brief, no lane needed" "$(basename "$run")/brief-05.md by following" "$out"
+[ "$(cat "$run/offered/05" 2>/dev/null)" = brief ] && ok "and is recorded as a brief, not as a lane it never works" || bad "and is recorded as a brief, not as a lane it never works" "$(cat "$run/offered/05" 2>&1)"
+rm -f "$run/brief-05.md"
+out=$(sh "$fleet" chips "$run" 06 opus 2>&1); rc=$?
+code "a model name is refused as a lane" 2 "$rc"
+check "and the refusal says what a lane is" "use pane, repo or verify" "$out"
+[ "$(cat "$run/offered/03" 2>/dev/null)" = repo ] && ok "an offered chip is recorded with its lane" || bad "an offered chip is recorded with its lane" "$(ls "$run/offered" 2>&1)"
+out=$(sh "$fleet" chips "$run" 02-03 pane 2>&1); rc=$?
+code "a number already offered for another lane is refused" 2 "$rc"
+check "and the refusal says lanes take disjoint ranges" "disjoint ranges" "$out"
+case "$out" in *"CHIP "*) bad "and nothing was printed before it" "$out";; *) ok "and nothing was printed before it";; esac
+[ "$(cat "$run/offered/03" 2>/dev/null)" = repo ] && ok "and the recorded lane is left alone" || bad "and the recorded lane is left alone" "$(cat "$run/offered/03" 2>&1)"
+out=$(sh "$fleet" chips "$run" 02-03 repo 2>&1); rc=$?
+code "the same numbers for the same lane are fine to offer again" 0 "$rc"
+for r in 5-3 x 02- -02 02-x; do
+  out=$(sh "$fleet" chips "$run" "$r" repo 2>&1); rc=$?
+  code "chips refuses the range '$r'" 2 "$rc"
+done
+cz=$tmp/chipzero; mkdir -p "$cz"
+out=$(sh "$fleet" chips "$cz" 3 repo 2>&1); rc=$?
+code "a single number is a chip, not a silent exit under set -e" 0 "$rc"
+check "and the chip is printed" "CHIP 03" "$out"
+check "the trailer says a chip is an offer the operator can decline" "A chip is an offer the operator can decline with one click, so offer every one of them." "$out"
+check "and that a rule forbidding chips is quoted, never swapped for paste lines" "never replace chips with paste lines" "$out"
+case "$out" in *"does not cover them"*) bad "and the old precedence sentence is gone" "$out";; *) ok "and the old precedence sentence is gone";; esac
+case "$out" in *"browser pane on screen"*) bad "a repo chip does not ask for a pane on screen" "$out";; *) ok "a repo chip does not ask for a pane on screen";; esac
+out=$(sh "$fleet" chips "$cz" 01 pane 2>&1)
+check "a pane chip does" "Keep its browser pane on screen" "$out"
+
+echo "== lane gaps, workers, budgets"
+lg=${TMPDIR:-/tmp}/fleet-lanes-$$
+mkdir -p "$lg/tasks/ready" "$lg/tasks/done" "$lg/tasks/claimed"
+printf -- '---\ntask-id: a\nneeds: pane\nbudget: 60\n---\n' > "$lg/tasks/ready/a.md"
+printf -- '---\ntask-id: b\nneeds: opus\nbudget: 60\n---\n' > "$lg/tasks/ready/b.md"
+printf -- '---\ntask-id: c\nbudget: 60\n---\n' > "$lg/tasks/ready/c.md"
+out=$(sh "$fleet" chips "$lg" 01 repo 2>&1)
+check "chips names the lane still without a worker" "lane pane: 1 task(s) ready, no chip offered" "$out"
+check "and a lane that is no lane" "needs: opus on 1 task(s) is not a lane" "$out"
+check "as a task to fix, not a chip to offer" "FIX THE TASK, not the chips" "$out"
+case "$out" in *"lane repo:"*) bad "a lane with a chip is not reported" "$out";; *) ok "a lane with a chip is not reported";; esac
+sh "$fleet" whoami "$lg" 01 claude-opus-5-5 medium >/dev/null
+out=$(sh "$fleet" status "$lg" 2>&1)
+check "status lists each offered worker with its model" "01  lane repo  started no  claude-opus-5-5 medium" "$out"
+check "status repeats the lane gap" "== lanes with work and no worker" "$out"
+: > "$lg/01.done"
+out=$(sh "$fleet" status "$lg" 2>&1)
+check "a lane whose only chip wrote .done is a gap again" "lane repo: 1 task(s) ready, no chip offered" "$out"
+rm -f "$lg/01.done"; : > "$lg/01.blocked"
+out=$(sh "$fleet" status "$lg" 2>&1)
+check "and so is one whose chip wrote .blocked" "lane repo: 1 task(s) ready, no chip offered" "$out"
+rm -f "$lg/01.blocked"
+for t in d e f; do
+  mkdir -p "$lg/tasks/claimed/$t"
+  printf 'chip 01\nclaimed %s\n' "$(date -u -d '-4 minutes' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%SZ)" > "$lg/tasks/claimed/$t/owner"
+  printf -- '---\ntask-id: %s\nbudget: 90\n---\n' "$t" > "$lg/tasks/ready/$t.md"
+  : > "$lg/tasks/done/$t"
+done
+out=$(sh "$fleet" status "$lg" 2>&1)
+check "status measures work against budget" "3 tasks done: median" "$out"
+check "and calls loose budgets loose" "BUDGETS TOO LOOSE" "$out"
+
+echo "== coordinator context"
+ch=${TMPDIR:-/tmp}/fleet-home-$$
+mkdir -p "$ch/projects/p"
+printf '{"type":"assistant","message":{"usage":{"input_tokens":5,"cache_read_input_tokens":%s,"cache_creation_input_tokens":0}}}\n' "$((CK * 1000))" > "$ch/projects/p/sess-1.jsonl"
+echo sess-1 > "$lg/coordinator"
+out=$(CLAUDE_CONFIG_DIR="$ch" sh "$fleet" ctx "$lg" 2>&1)
+check "ctx speaks past the mark" "COORDINATOR CONTEXT ${CK}K" "$out"
+out=$(CLAUDE_CONFIG_DIR="$ch" sh "$fleet" ctx "$lg" 2>&1)
+[ -z "$out" ] && ok "and only once per mark" || bad "and only once per mark" "$out"
+printf '{"type":"assistant","message":{"usage":{"input_tokens":5,"cache_read_input_tokens":120000}}}\n' >> "$ch/projects/p/sess-1.jsonl"
+out=$(CLAUDE_CONFIG_DIR="$ch" sh "$fleet" ctx "$lg" 2>&1)
+[ -z "$out" ] && ok "and is silent under the mark" || bad "and is silent under the mark" "$out"
+out=$(CLAUDE_CONFIG_DIR="$ch" sh "$fleet" status "$lg" 2>&1); rc=$?
+code "status exits 0 with the coordinator below the handoff mark" 0 "$rc"
+check "and still prints its context" "== coordinator context: 120K" "$out"
+rm -rf "$lg" "$ch"
+
+echo "== a lane that is no lane, a branch on finish, a run seen from a worktree's cwd"
+bl=$tmp/badlane; mkdir -p "$bl/tasks/ready"
+printf -- '---\ntask-id: b\nneeds: opus\nbudget: 5\n---\n' > "$bl/tasks/ready/b.md"
+out=$(sh "$fleet" drained "$bl" 01 repo 2>&1); rc=$?
+code "drained refuses over a ready task no lane can claim" 5 "$rc"
+check "and names that task's lane" "needs: opus on 1 task(s) is not a lane" "$out"
+[ -e "$bl/01.done" ] && bad "and writes no .done" "01.done exists" || ok "and writes no .done"
+out=$(sh "$fleet" next "$bl" 01 repo 2>&1); rc=$?
+code "next still reports the queue drained" 3 "$rc"
+check "but says which task nobody can claim" "is not a lane" "$out"
+fb=$tmp/finishbr; mkdir -p "$fb/tasks/ready"
+for t in t1 t2; do printf -- '---\ntask-id: %s\nneeds: repo\nbudget: 5\n---\n' "$t" > "$fb/tasks/ready/$t.md"; done
+sh "$fleet" next "$fb" 01 repo >/dev/null 2>&1
+out=$(sh "$fleet" finish "$fb" 01 t1 fleet/01/t1 2>&1); rc=$?
+sh "$fleet" next "$fb" 01 repo >/dev/null 2>&1   # a chip holding a claim is refused a second, so t1 is finished first
+code "finish takes the branch the work was committed on" 0 "$rc"
+[ "$(cat "$fb/tasks/done/t1" 2>/dev/null)" = "branch fleet/01/t1" ] && ok "and writes it into the done marker" || bad "and writes it into the done marker" "$(cat "$fb/tasks/done/t1" 2>&1)"
+sh "$fleet" finish "$fb" 01 t2 >/dev/null 2>&1
+[ -e "$fb/tasks/done/t2" ] && [ ! -s "$fb/tasks/done/t2" ] && ok "without one the marker is empty, as before" || bad "without one the marker is empty, as before" "$(cat "$fb/tasks/done/t2" 2>&1)"
+check "a branch that does not resolve is warned about" "does not resolve" "$out"
+sh "$fleet" finish "$fb" 01 t1 >/dev/null 2>&1
+[ "$(cat "$fb/tasks/done/t1" 2>/dev/null)" = "branch fleet/01/t1" ] && ok "a second finish without a branch keeps the branch line" || bad "a second finish without a branch keeps the branch line" "$(cat "$fb/tasks/done/t1" 2>&1)"
+out=$(sh "$fleet" chips "$run" 00 repo 2>&1); rc=$?
+code "chips refuses worker 00" 2 "$rc"
+out=$(sh "$fleet" chips "$run" 00-02 repo 2>&1); rc=$?
+code "and a range that starts at 00" 2 "$rc"
+case "$out" in *"CHIP "*) bad "and prints no chip for it" "$out";; *) ok "and prints no chip for it";; esac
+if command -v node >/dev/null 2>&1 && [ -f "$here/../hooks/run-dir.mjs" ]; then
+  rd=$tmp/relhook; mkdir -p "$rd/.claude/worktrees/w/.fleet/r" "$rd/plain/.fleet/r"
+  relof() { # relof <cwd> <dir>
+    ( cd "$1" && node --input-type=module -e 'import {pathToFileURL} from "node:url"; const m = await import(pathToFileURL(process.argv[1]).href); process.stdout.write(m.rel(process.argv[2]))' "$here/../hooks/run-dir.mjs" "$2" )
+  }
+  wcwd=$(cd "$rd/.claude/worktrees/w" && node -e 'process.stdout.write(process.cwd())')
+  pcwd=$(cd "$rd/plain" && node -e 'process.stdout.write(process.cwd())')
+  [ "$(relof "$rd/plain" "$pcwd/.fleet/r")" = ".fleet/r" ] && ok "a run under the cwd is printed relative" || bad "a run under the cwd is printed relative" "$(relof "$rd/plain" "$pcwd/.fleet/r")"
+  o=$(relof "$rd/.claude/worktrees/w" "$wcwd/.fleet/r")
+  [ "$o" = "$(printf '%s' "$wcwd/.fleet/r" | tr '\\' /)" ] && ok "but absolute from inside .claude/worktrees" || bad "but absolute from inside .claude/worktrees" "$o"
+  o=$(relof "$rd/plain" "$pcwd/.fleet/nope")
+  [ "$o" = "$(printf '%s' "$pcwd/.fleet/nope" | tr '\\' /)" ] && ok "and absolute when the relative form would not resolve" || bad "and absolute when the relative form would not resolve" "$o"
+  rm -rf "$rd"
+fi
+
+echo "== worktree --create"
+wr=${TMPDIR:-/tmp}/fleet-wtc-$$
+mkdir -p "$wr" && git -C "$wr" init -q main && (
+  cd "$wr/main" && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m init &&
+  mkdir -p node_modules/pkg node_modules/pkg/node_modules/y web/node_modules/x apps/web/node_modules/z && echo keep > node_modules/pkg/a &&
+  printf 'node_modules/\n' > .gitignore && echo x > web/index.js && echo y > apps/web/index.js &&
+  git add .gitignore web/index.js apps/web/index.js && git -c user.email=t@t -c user.name=t commit -qm two &&
+  mkdir -p .fleet/r/tasks/ready && mkdir -p .git/info && printf 'foo' > .git/info/exclude
+)
+main=$(cd "$wr/main" && git rev-parse --show-toplevel)
+# No global ignore file for this one call: a user whose own excludes already cover .claude/ never reaches the
+# append this case is about.
+out=$(cd "$wr/main" && GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 sh "$fleet" worktree .fleet/r 02 --create HEAD 2>&1); rc=$?
+code "a worker with no tree of its own gets one" 0 "$rc"
+check "under .claude/worktrees" "WORKTREE $main/.claude/worktrees/fleet-" "$out"
+check "with the dependencies linked" "linked node_modules" "$out"
+check "and nested ones too" "linked web/node_modules" "$out"
+check "three levels down, where a monorepo keeps them" "linked apps/web/node_modules" "$out"
+case "$out" in *"linked node_modules/pkg"*) bad "and never a package inside a node_modules" "$out";; *) ok "and never a package inside a node_modules";; esac
+check "and registered for clean" "registered worktree" "$out"
+grep -qx foo "$wr/main/.git/info/exclude" && grep -qx '.claude/worktrees/' "$wr/main/.git/info/exclude" && ok "an exclude file with no final newline keeps its last line" || bad "an exclude file with no final newline keeps its last line" "$(cat "$wr/main/.git/info/exclude")"
+st=$(cd "$wr/main" && git status --porcelain | grep -v '.fleet' || true)
+[ -z "$st" ] && ok "the tree does not show as untracked work in the checkout" || bad "the tree does not show as untracked work in the checkout" "$st"
+out=$(cd "$wr/main" && sh "$fleet" worktree .fleet/r 02 --create HEAD 2>&1)
+check "a second call reuses it" "reusing" "$out"
+case "$out" in *"linked "*) bad "and links nothing already linked" "$out";; *) ok "and links nothing already linked";; esac
+wt2=$(sed -n 's/^path //p' "$wr/main/.fleet/r/worktrees/02")
+sh "$fleet" unlink "$wt2" >/dev/null 2>&1
+out=$(cd "$wr/main" && sh "$fleet" worktree .fleet/r 02 --create HEAD 2>&1)
+check "a tree unlinked before drained gets its links back on reuse" "linked node_modules" "$out"
+[ "$(cat "$wr/main/node_modules/pkg/a" 2>/dev/null)" = keep ] && ok "and the main node_modules is untouched by the relink" || bad "and the main node_modules is untouched by the relink" "$(ls "$wr/main/node_modules" 2>&1)"
+out=$(cd "$wt2" && sh "$fleet" status .fleet/r 2>&1); rc=$?
+code "a relative run directory resolves against the main checkout from a worktree" 0 "$rc"
+check "and reads that run" "== claims" "$out"
+out=$(cd "$wt2" && sh "$fleet" status .fleet/nope 2>&1); rc=$?
+code "one that exists nowhere is still refused" 2 "$rc"
+out=$(cd "$wr/main" && sh "$fleet" clean .fleet/r 2>&1)
+check "the dry run names the tree" "would remove  02" "$out"
+case "$out" in *"branch -d HEAD"*) bad "and never a branch named HEAD" "$out";; *) ok "and never a branch named HEAD";; esac
+out=$(cd "$wr/main" && sh "$fleet" clean .fleet/r --remove 2>&1)
+check "clean removes a tree left on a commit a branch holds" "removed  02" "$out"
+[ "$(cat "$wr/main/node_modules/pkg/a" 2>/dev/null)" = keep ] && ok "and the main checkout's node_modules survives it" || bad "and the main checkout's node_modules survives it" "$(ls "$wr/main/node_modules" 2>&1)"
+want=$(git -C "$wr/main" symbolic-ref --short HEAD)
+out=$(cd "$wr/main" && sh "$fleet" worktree .fleet/r 03 --create 2>&1); rc=$?
+code "the base may be left out" 0 "$rc"
+check "and is the main checkout's current branch" "at $want" "$out"
+wt3=$(sed -n 's/^path //p' "$wr/main/.fleet/r/worktrees/03")
+git -C "$wt3" -c user.email=t@t -c user.name=t commit -q --allow-empty -m work
+out=$(cd "$wr/main" && sh "$fleet" clean .fleet/r --remove 2>&1)
+check "a detached tree holding a commit no branch has is kept" "KEEP  03" "$out"
+case "$out" in *"branch -D HEAD"*) bad "and its hint never says branch -D HEAD" "$out";; *) ok "and its hint never says branch -D HEAD";; esac
+out=$(cd "$wr/main" && sh "$fleet" worktree .fleet/r 04 --create HEAD 2>&1)
+wt4=$(sed -n 's/^path //p' "$wr/main/.fleet/r/worktrees/04")
+sh "$fleet" unlink "$wt4" >/dev/null 2>&1; rm -rf "$wt4"
+out=$(cd "$wr/main" && sh "$fleet" worktree .fleet/r 04 --create HEAD 2>&1); rc=$?
+code "a tree deleted by hand is made again" 0 "$rc"
+check "rather than reused from git's stale record" "created $wt4" "$out"
+git init -q "$wr/bare" && ( cd "$wr/bare" && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m init && rm -rf .git/info && mkdir -p .fleet/r )
+out=$(cd "$wr/bare" && sh "$fleet" worktree .fleet/r 01 --create HEAD 2>&1); rc=$?
+code "a clone with no .git/info still gets its tree" 0 "$rc"
+for t in "$wr"/main/.claude/worktrees/* "$wr"/bare/.claude/worktrees/*; do [ -d "$t" ] && sh "$fleet" unlink "$t" >/dev/null 2>&1; done
+rm -rf "$wr"
+
+
+echo "== clean during a run with an integration branch"
+ci=${TMPDIR:-/tmp}/fleet-ci-$$
+mkdir -p "$ci" && git -C "$ci" init -q main && (
+  cd "$ci/main" && G="git -c user.email=t@t -c user.name=t" &&
+  $G commit -q --allow-empty -m init && mkdir -p node_modules/p && echo keep > node_modules/p/a &&
+  printf 'node_modules/\n' > .gitignore && git add .gitignore && $G commit -qm two &&
+  git branch integ && mkdir -p .fleet/r/tasks/ready
+) >/dev/null 2>&1
+out=$(cd "$ci/main" && sh "$fleet" worktree .fleet/r 05 --create integ 2>&1)
+w5=$(sed -n 's/^path //p' "$ci/main/.fleet/r/worktrees/05")
+G="git -c user.email=t@t -c user.name=t"
+( cd "$w5" && git switch -q -c fleet/05/t1 integ && echo a > a.txt && git add a.txt && $G commit -qm t1 &&
+  git switch -q -c fleet/05/t2 && echo b > b.txt && git add b.txt && $G commit -qm t2 ) >/dev/null 2>&1
+git -C "$ci/main" -c user.email=t@t -c user.name=t merge -q --no-edit integ >/dev/null 2>&1
+( cd "$w5" && git -C "$ci/main" branch -f integ fleet/05/t2 ) >/dev/null 2>&1
+out=$(cd "$ci/main" && sh "$fleet" clean .fleet/r --remove 2>&1)
+check "a tree whose branch is merged into the integration branch is removed mid-run" "removed  05" "$out"
+[ "$(cat "$ci/main/node_modules/p/a" 2>/dev/null)" = keep ] && ok "and the main checkout's node_modules survives" || bad "and the main checkout's node_modules survives" "$out"
+git -C "$ci/main" -c user.email=t@t -c user.name=t merge -q --no-edit integ >/dev/null 2>&1
+out=$(cd "$ci/main" && sh "$fleet" worktree .fleet/r 06 --create integ 2>&1)
+( cd "$ci/main" && git branch fleet/06/old integ ) >/dev/null 2>&1
+out=$(cd "$ci/main" && sh "$fleet" clean .fleet/r --remove 2>&1)
+check "and a worker's merged task branches are deleted with it" "branch fleet/06/old deleted (merged)" "$out"
+for t in "$ci"/main/.claude/worktrees/*; do [ -d "$t" ] && sh "$fleet" unlink "$t" >/dev/null 2>&1; done
+rm -rf "$ci"
+echo
+echo "== pause: a hard stop the hooks enforce"
+pr=${TMPDIR:-/tmp}/fleet-pause-$$
+pc=$pr/config                      # the global paused/ marker lives under the config directory: never the real one
+mkdir -p "$pr/.fleet/r1/tasks/ready" "$pc"
+R=$pr/.fleet/r1
+CLAUDE_CONFIG_DIR=$pc; export CLAUDE_CONFIG_DIR
+pcwd=$(cd "$pr" && { node -e 'process.stdout.write(process.cwd())' 2>/dev/null || pwd; })
+for t in t-a t-b; do printf -- '---\ntask-id: %s\nneeds: repo\nbudget: 10\n---\nwork\n' "$t" > "$R/tasks/ready/$t.md"; done
+printf -- '---\ntask-id: t-c\nneeds: repo\nafter: t-a\nbudget: 10\n---\nwork\n' > "$R/tasks/ready/t-c.md"
+sh "$fleet" chips "$R" 03-04 repo >/dev/null 2>&1
+out=$(CLAUDE_CODE_SESSION_ID=sess-w3 sh "$fleet" next "$R" 03 repo 2>&1)
+check "worker 03 claims t-a" "CLAIMED t-a" "$out"
+out=$(CLAUDE_CODE_SESSION_ID=sess-w4 sh "$fleet" next "$R" 04 repo 2>&1)
+check "worker 04 claims t-b" "CLAIMED t-b" "$out"
+out=$(CLAUDE_CODE_SESSION_ID=sess-w3 sh "$fleet" next "$R" 03 repo 2>&1); rc=$?
+code "next for a chip that already holds an open claim exits 2" 2 "$rc"
+check "and names the held task" "HOLDING t-a" "$out"
+case "$out" in *CLAIMED*) bad "and claims nothing" "$out";; *) ok "and claims nothing";; esac
+
+out=$(sh "$fleet" pause "$R" "operator asked" </dev/null 2>&1); rc=$?
+code "pause exits 0" 0 "$rc"
+check "it says the run is paused" "PAUSED r1" "$out"
+check "and how many workers hold claims" "2 worker(s) hold claims: 03 04" "$out"
+check "and which line to watch for the acks" "stopped/<chip>" "$out"
+[ -e "$R/PAUSED" ] && ok "PAUSED is written" || bad "PAUSED is written"
+check "with the reason" "operator asked" "$(cat "$R/PAUSED" 2>/dev/null)"
+mk=$(ls "$pc"/makarasty/paused/* 2>/dev/null | head -1)
+check "and the global marker holds the run's absolute path" "/.fleet/r1" "$(cat "$mk" 2>/dev/null)"
+out=$(sh "$fleet" pause "$R" 2>&1)
+check "a second pause keeps the first" "already paused" "$out"
+sh "$fleet" pause "$R" - < /dev/null >/dev/null 2>&1; rc=$?
+code "pause - reads its reason from stdin and does not hang on an empty one" 0 "$rc"
+
+out=$(sh "$fleet" next "$R" 03 repo 2>&1); rc=$?
+code "next hands out nothing while paused" 8 "$rc"
+check "and says so" "RUN PAUSED" "$out"
+check "with the wake loop to background" "until [ ! -e" "$out"
+case "$out" in *CLAIMED*) bad "and claims nothing" "$out";; *) ok "and claims nothing";; esac
+out=$(sh "$fleet" drained "$R" 03 repo 2>&1); rc=$?
+code "drained exits 8 while paused" 8 "$rc"
+[ -e "$R/03.done" ] && bad "and writes no .done" "03.done exists" || ok "and writes no .done"
+case "$out" in *"CLOSE YOUR BROWSER PANE"*) bad "and does not tell a paused worker to close its pane first" "$out";; *) ok "and does not tell a paused worker to close its pane first";; esac
+# A worker whose only calls are answered "paused" is still registered, so the hooks know it.
+CLAUDE_CODE_SESSION_ID=sess-w9 sh "$fleet" next "$R" 09 repo >/dev/null 2>&1
+[ "$(cat "$R/chips/sess-w9" 2>/dev/null)" = 09 ] && ok "next registers the session before its paused exit" || bad "next registers the session before its paused exit" "$(ls "$R/chips" 2>&1 | tr '\n' ' ')"
+CLAUDE_CODE_SESSION_ID=sess-w8 sh "$fleet" drained "$R" 08 repo >/dev/null 2>&1
+[ "$(cat "$R/chips/sess-w8" 2>/dev/null)" = 08 ] && ok "and drained does too" || bad "and drained does too"
+# The coordinator is never registered as a worker, and cannot acknowledge a pause.
+echo sess-cd > "$R/coordinator"
+CLAUDE_CODE_SESSION_ID=sess-cd sh "$fleet" next "$R" 07 repo >/dev/null 2>&1
+[ -e "$R/chips/sess-cd" ] && bad "the coordinator's own session is not registered by next" "chips/sess-cd exists" || ok "the coordinator's own session is not registered by next"
+out=$(CLAUDE_CODE_SESSION_ID=sess-cd sh "$fleet" paused "$R" 07 2>&1); rc=$?
+code "paused refuses when the session is the coordinator" 2 "$rc"
+check "and says why" "this session is the coordinator" "$out"
+rm -f "$R/coordinator" "$R/chips/sess-w9" "$R/chips/sess-w8"
+out=$(sh "$fleet" landed "$R" 2 2>&1); rc=$?
+check "landed refuses a paused run" "the run is paused" "$out"
+
+touch -t 202001010000 "$R/tasks/claimed/t-a/heartbeat" 2>/dev/null
+out=$(sh "$fleet" sweep "$R" --release 2>&1); rc=$?
+code "sweep exits 0 while paused" 0 "$rc"
+check "and says it reports and reclaims nothing" "no claim is reported or reclaimed" "$out"
+[ -d "$R/tasks/claimed/t-a" ] && ok "so a quiet claim is not reclaimed" || bad "so a quiet claim is not reclaimed"
+
+# The abort clock must not ring at a worker that was stopped on purpose: with the pause standing it never
+# counts a round, so a short clock outlives the timeout; with the pause gone it rings.
+clk=$(sh "$fleet" clock "$R" 03 t-a 1 | sed "s/sleep $poll/sleep 0/")
+out=$(timeout 3 sh -c "$clk" 2>&1); rc=$?
+code "the abort clock does not count paused time" 124 "$rc"
+check "the clock exits on a retired chip" "03.retired" "$clk"
+
+out=$(sh "$fleet" status "$R" 2>&1)
+check "status names the pause and the count of stopped workers" "== PAUSED since" "$out"
+check "as k of n holding claims" "0 of 2 workers holding claims have stopped" "$out"
+check "a worker with no ack yet is not called silent early" "worker 04: no ack yet" "$out"
+
+echo "== pause: the hooks"
+touch "$R/PAUSED"   # the steps above took a while, and the grace counts from this file
+MEM="$here/../hooks/fleet-memory.mjs"; CON="$here/../hooks/fleet-contract.mjs"; GRD="$here/../hooks/fleet-guard.mjs"
+hp() { # hp <hook> <session> <tool> <command-or-json> [agent-id]
+  node -e 'const [c,s,t,i,a]=process.argv.slice(1);const p={session_id:s,cwd:c,tool_name:t,tool_input:i.startsWith("{")?JSON.parse(i):{command:i}};if(a)p.agent_id=a;process.stdout.write(JSON.stringify(p))' \
+    "$pcwd" "$2" "$3" "$4" "${5:-}" > "$pr/hp.json"
+  out=$(node "$1" < "$pr/hp.json" 2>&1); printf '%s %s' "$?" "$out"
+}
+# an acknowledged worker is held to the list at once, grace or not
+out=$(CLAUDE_CODE_SESSION_ID=sess-w3 sh "$fleet" paused "$R" 03 2>&1); rc=$?
+code "paused (the ack) exits 0" 0 "$rc"
+check "and says what the worker holds" "STOPPED 03: holding t-a" "$out"
+[ -e "$R/stopped/03" ] && ok "and writes stopped/03" || bad "and writes stopped/03"
+check "and prints the wake loop" "until [ ! -e" "$out"
+check "that echoes resumed" "echo resumed" "$out"
+check "or retired" "echo retired" "$out"
+check "and says a resumed worker carries on with its claim" "carry on with the claim you hold; call next only if you hold none" "$out"
+check "and asks for a note where it stopped" "<where you stopped, what is next>" "$out"
+wake=$(printf '%s\n' "$out" | grep '^  until')
+out=$(CLAUDE_CODE_SESSION_ID=sess-w3 sh "$fleet" paused "$R" 03 "before the retry loop" 2>&1)
+check "a fourth argument is written into the chip's notes" "noted in 03.notes.md" "$out"
+check "as a line saying where it stopped" "before the retry loop" "$(cat "$R/03.notes.md" 2>/dev/null)"
+o=$(hp "$MEM" sess-w3 Bash "npm test")
+check "an acked worker's other commands are refused at once" "2 RUN PAUSED" "$o"
+check "and told it has stopped" "you have stopped: this call did not run" "$o"
+o=$(hp "$MEM" sess-w3 Bash "git -C /x add -A && git -C /x commit -m \"wip: paused; again\"")
+check "git, with a semicolon in its message, is allowed" "0 " "$o"
+o=$(hp "$MEM" sess-w3 Bash "sh \"$fleet\" paused \"$R\" 03 \"where I stopped\"")
+check "fleet.sh by its exact path, quoted, is allowed" "0 " "$o"
+o=$(hp "$MEM" sess-w3 Bash "sh $fleet paused $R 03")
+check "and unquoted" "0 " "$o"
+o=$(hp "$MEM" sess-w3 Bash "$wake")
+check "so is the wake loop it printed" "0 " "$o"
+o=$(hp "$MEM" sess-w3 Bash "git status && npm test")
+check "but a command chained after git is not" "2 RUN PAUSED" "$o"
+o=$(hp "$MEM" sess-w3 PowerShell "git status; npm test")
+check "and the PowerShell tool is held to the same list" "2 RUN PAUSED" "$o"
+# The allow-list is a drift guard, and it closes the holes a reviewer found in it.
+for c in 'git status | head -5' 'git status 2>&1 | tail -3' 'time git status' 'git -C "/x/2026-10-06-do-over-fix" log --oneline -3' \
+         'git checkout fleet/01/do-it && git status' 'f=/a; sh "$f" paused /r 03' 'sh "${CLAUDE_PLUGIN_ROOT}/scripts/fleet.sh" paused /r 03' \
+         'git log --oneline -3 > /dev/null 2>&1' 'git commit -m "fix -c flag; do it"'; do
+  o=$(hp "$MEM" sess-w3 Bash "$c"); check "allowed while paused: $c" "0 " "$o"
+done
+for c in 'git status & npm test' 'echo $(npm test)' 'echo `npm test`' 'git status > out.txt' 'git -c alias.x="!npm test" x' \
+         'git rebase -x "npm test" main' 'git bisect run npm test' 'git submodule foreach npm test' 'git diff --ext-diff' \
+         'sh ./fleet.sh next' 'sh /tmp/other/fleet.sh next' 'git status | npm test' 'git --exec-path=/x status' 'GIT_EXTERNAL_DIFF=x git diff' \
+         'git filter-branch --tree-filter x' 'bash -c "npm test"'; do
+  o=$(hp "$MEM" sess-w3 Bash "$c"); check "refused while paused: $c" "2 RUN PAUSED" "$o"
+done
+# Round 2: a quoted or escaped spelling, an abbreviation, a git program-runner, a PowerShell subexpression.
+for c in 'git -C "/x y/wt" add -A; git -C "/x y/wt" commit -m "wip: paused"' 'git status 2>$null' 'git status 2>&1' '(git status)' 'git --git-dir /x/.git status'; do
+  o=$(hp "$MEM" sess-w3 Bash "$c"); check "allowed while paused: $c" "0 " "$o"
+done
+for c in 'git "-c" alias.x=y status' 'git "rebase" -x npm' 'git rebase -x"npm test" main' 'git rebase --exe "npm test" main' 'git rebase \-x t' \
+         'git --git-dir x -c alias.x=y status' 'git config alias.x "!npm t"' 'git difftool -x npm' 'git grep -O less foo' 'git fetch --upload-pack=x' \
+         'PAGER=x git log' 'EDITOR=x git commit' 'VISUAL=x git commit' 'GIT_EDITOR=x git commit' 'HOME=/x git status' 'XDG_CONFIG_HOME=/x git status' \
+         'git log (npm t)' 'echo @(npm t)' 'echo (npm t)' 'git status; (npm t)' 'g\it status'; do
+  o=$(hp "$MEM" sess-w3 Bash "$c"); check "refused while paused: $c" "2 RUN PAUSED" "$o"
+done
+check "the printed commit hint joins with a semicolon, not &&" 'add -A; git -C' "$(hp "$MEM" sess-w4 Bash "npm test")"
+o=$(hp "$MEM" sess-w3 Monitor '{"command":"npm test"}')
+check "Monitor is held like Bash" "2 RUN PAUSED" "$o"
+o=$(hp "$MEM" sess-w3 Monitor '{"command":"git status"}')
+check "and passes what Bash passes" "0 " "$o"
+o=$(hp "$CON" sess-w3 NotebookEdit '{"notebook_path":"/x/a.ipynb","new_source":"x"}')
+check "NotebookEdit is held like Edit" "2 RUN PAUSED" "$o"
+o=$(hp "$MEM" sess-w3 Skill '{"skill":"x"}')
+check "a Skill is held once the worker has stopped" "2 RUN PAUSED" "$o"
+o=$(hp "$CON" sess-w3 Edit '{"file_path":"/x/a.txt","old_string":"a","new_string":"b"}')
+check "an edit by an acked worker is refused" "2 RUN PAUSED" "$o"
+o=$(hp "$MEM" sess-w3 mcp__Claude_Browser__read_page '{}')
+check "so is any browser tool, not only the heavy three" "2 RUN PAUSED" "$o"
+o=$(hp "$MEM" sess-w3 Agent '{"prompt":"x"}')
+check "and a new subagent" "2 RUN PAUSED" "$o"
+
+# an unacked worker has the grace
+touch "$R/PAUSED"
+age_pause() { touch -d "$1 seconds ago" "$R/PAUSED" 2>/dev/null || touch -t "$(date -d "-$1 seconds" +%Y%m%d%H%M.%S 2>/dev/null)" "$R/PAUSED"; }
+o=$(hp "$CON" sess-w4 NotebookEdit '{"notebook_path":"/x/a.ipynb","new_source":"x"}')
+check "a notebook edit by an unacked worker is the first call and gets the notice" "2 RUN PAUSED by the operator. This call did not run" "$o"
+rm -f "$R/chips/sess-w4.pause-notice"
+# R2-1: the parent sits blocked inside Agent and has made no call, so the subagent's grace runs from the pause.
+touch "$R/PAUSED"
+o=$(hp "$MEM" sess-w4 Bash "npm test" agent-1)
+check "a subagent whose parent has not called yet is let through inside the grace" "0 " "$o"
+age_pause $((GRACE + 5))
+o=$(hp "$MEM" sess-w4 Bash "npm test" agent-1)
+check "and is refused once pause + grace has passed, not at four graces" "You are a subagent of worker 04" "$o"
+touch "$R/PAUSED"
+o=$(hp "$MEM" sess-w4 Bash "ls")
+check "an unacked worker's first call is refused once with the notice" "2 RUN PAUSED by the operator. This call did not run; repeat it if it is part of finishing the step in hand." "$o"
+check "naming the seconds it has from now" "You have ${GRACE} s from now" "$o"
+check "and what to do first" "stop your subagents and background shells (TaskStop each one" "$o"
+check "saying the abort clock needs no stopping" "the abort clock needs no stopping" "$o"
+check "with the commit command and the ack, paths quoted" "paused \"" "$o"
+o=$(hp "$MEM" sess-w4 Bash "npm test")
+check "then calls pass for the rest of the grace" "0 " "$o"
+o=$(hp "$CON" sess-w4 Edit '{"file_path":"/x/a.txt","old_string":"a","new_string":"b"}')
+check "edits too, so the step in hand can be finished" "0 " "$o"
+o=$(hp "$MEM" sess-w4 Agent '{"prompt":"x"}')
+check "a new subagent is refused even in the grace" "2 RUN PAUSED" "$o"
+o=$(hp "$MEM" sess-w4 Bash "npm test" agent-1)
+check "a subagent's calls pass inside the grace" "0 " "$o"
+
+# the grace over
+# The grace starts at the worker's first call, not at the pause: a worker that was mid way through a long
+# call a minute into the pause still gets its full grace.
+age_pause $((GRACE * 2))
+o=$(hp "$MEM" sess-w4 Bash "ls")
+check "a worker whose first call comes after the grace length still gets the grace" "You have ${GRACE} s from now" "$o"
+o=$(hp "$MEM" sess-w4 Bash "npm test")
+check "and its next call passes" "0 " "$o"
+# ...but never later than four graces after the pause.
+age_pause $((GRACE * 4 - 10))
+o=$(hp "$MEM" sess-w4 Bash "ls")
+n=$(printf '%s' "$o" | sed -n 's/.*You have \([0-9][0-9]*\) s from now.*/\1/p')
+[ -n "$n" ] && [ "$n" -le 11 ] && [ "$n" -ge 5 ] && ok "a first call near the ceiling gets only what is left of it ($n s)" || bad "a first call near the ceiling gets only what is left of it" "$o"
+age_pause $((GRACE * 4 + 60))
+o=$(hp "$MEM" sess-w4 Bash "npm test")
+check "a worker that never called is held four graces after the pause" "2 RUN PAUSED" "$o"
+check "told the grace is over and the call did not run" "the grace is over: this call did not run" "$o"
+check "with the commit command" "commit -m \"wip: paused\"" "$o"
+check "and the TaskStop line" "TaskStop each one" "$o"
+o=$(hp "$MEM" sess-w4 Bash "npm test" agent-1)
+check "and a subagent's call carrying agent_id is refused with it" "You are a subagent of worker 04" "$o"
+o=$(hp "$MEM" sess-w4 Bash "git log --oneline")
+check "git still passes" "0 " "$o"
+o=$(hp "$CON" sess-w4 Write '{"file_path":"/x/a.txt","content":"b"}')
+check "a write is refused" "2 RUN PAUSED" "$o"
+o=$(hp "$MEM" sess-w4 Bash 'cd /x && git commit -m "fix `x`"')
+check "a line refused for a backtick says its syntax was the cause" "refused for its shell syntax" "$o"
+o=$(hp "$MEM" sess-w4 Bash "git log && npm test")
+case "$o" in "2 "*) case "$o" in *"shell syntax"*) bad "a line refused for its commands does not blame its syntax" "$o";; *) ok "a line refused for its commands does not blame its syntax";; esac;; *) bad "a line refused for its commands does not blame its syntax" "$o";; esac
+o=$(hp "$MEM" sess-zz Bash "npm test")
+check "a session that is not a worker is never held" "0 " "$o"
+o=$(hp "$CON" sess-zz Edit '{"file_path":"/x/a.txt","old_string":"a","new_string":"b"}')
+check "not by the edit hook either" "0 " "$o"
+out=$(sh "$fleet" status "$R" 2>&1)
+check "status names a worker silent past pause_still_working_seconds as still working" "worker 04: still working" "$out"
+check "and counts the one that stopped" "1 of 2 workers holding claims have stopped" "$out"
+
+# no paused run anywhere: the fast path
+o=$(CLAUDE_CONFIG_DIR=$pr/empty-config hp "$MEM" sess-w4 Bash "npm test")
+check "with no paused run on the machine nothing is held" "0 " "$o"
+o=$(CLAUDE_CONFIG_DIR=$pr/empty-config hp "$CON" sess-w4 Edit '{"file_path":"/x/a.txt","old_string":"a","new_string":"b"}')
+check "and neither is an edit" "0 " "$o"
+check "the hook matcher covers Monitor, Skill, subagent spawns and every browser tool" '^(Bash|PowerShell|Monitor|Agent|Task|Skill)$|^mcp__(.*[Bb]rowser|claude-in-chrome)__"' "$(cat "$here/../.claude-plugin/plugin.json")"
+check "and the edit matcher covers NotebookEdit" '"matcher": "Edit|Write|MultiEdit|NotebookEdit"' "$(cat "$here/../.claude-plugin/plugin.json")"
+# O-2: the context reminder must not read as an order to a fleet coordinator.
+printf '{"type":"assistant","message":{"usage":{"input_tokens":650000}}}\n' > "$pr/ctx.jsonl"
+o=$(cd "$pr" && printf '{"hook_event_name":"UserPromptSubmit","session_id":"s-ctx","transcript_path":"ctx.jsonl","prompt":"go on"}' | CLAUDE_CONFIG_DIR=$pr/ctxcfg node "$here/../tools/hooks/context.mjs" 2>&1)
+check "the context reminder says it is at 650k" "context is at 650k tokens" "$o"
+check "and that a fleet coordinator ignores it, its marks coming from the watch" "a fleet coordinator ignores this line; its marks come from the watch (COORDINATOR CONTEXT)" "$o"
+case "$o" in *"use the relaunch in fleet-plan 8b instead"*) bad "and no longer tells a coordinator to relaunch at 400K" "$o";; *) ok "and no longer tells a coordinator to relaunch at 400K";; esac
+
+out=$(sh "$fleet" resume "$R" 2>&1); rc=$?
+code "resume exits 0" 0 "$rc"
+check "and says so" "RESUMED r1" "$out"
+check "and that a worker carries on with the claim it holds" "resumed: carry on with the claim you hold, call next only if you hold none" "$out"
+{ [ -e "$R/PAUSED" ] || [ -e "$R/stopped/03" ] || ls "$pc"/makarasty/paused/* >/dev/null 2>&1; } && bad "it removes PAUSED, the acks and the global marker" "$(ls "$R" "$pc/makarasty/paused" 2>&1 | tr '\n' ' ')" || ok "it removes PAUSED, the acks and the global marker"
+o=$(hp "$MEM" sess-w4 Bash "npm test")
+check "after resume the worker is free again" "0 " "$o"
+out=$(sh "$fleet" sweep "$R" 2>&1)
+check "and the pause is not held against a claim: the sweep finds nothing quiet" "no abandoned claims" "$out"
+out=$(eval "$wake" 2>&1)
+check "a wake loop started during the pause says resumed once it lifts" "resumed" "$out"
+
+echo "== a retired worker is finished: guard, next, drained"
+mkdir -p "$pr/.fleet/g1/chips" "$pr/.fleet/g1/tasks/claimed/task-05" "$pr/.fleet/g1/tasks/done"
+printf '07' > "$pr/.fleet/g1/chips/sess-g"
+printf 'chip 07\nclaimed now\n' > "$pr/.fleet/g1/tasks/claimed/task-05/owner"
+node -e 'require("fs").writeFileSync(process.argv[2], JSON.stringify({session_id:"sess-g", cwd:process.argv[1]}))' "$pcwd" "$pr/g.json"
+node "$GRD" < "$pr/g.json" >/dev/null 2>&1; rc=$?
+code "control: a worker with a fresh unfinished claim is stopped" 2 "$rc"
+rm -f "$pr/.fleet/g1/chips/sess-g.warned-task-05"; : > "$pr/.fleet/g1/07.retired"
+node "$GRD" < "$pr/g.json" >/dev/null 2>&1; rc=$?
+code "the same worker, retired, is not blocked from stopping" 0 "$rc"
+rm -f "$pr/.fleet/g1/07.retired" "$pr/.fleet/g1/chips/sess-g.warned-task-05"; : > "$pr/.fleet/g1/PAUSED"
+node "$GRD" < "$pr/g.json" >/dev/null 2>&1; rc=$?
+code "a worker holding a fresh claim is not blocked from stopping while the run is paused" 0 "$rc"
+rm -f "$pr/.fleet/g1/PAUSED" "$pr/.fleet/g1/chips/sess-g.warned-task-05"
+node "$GRD" < "$pr/g.json" >/dev/null 2>&1; rc=$?
+code "and is again once the pause lifts" 2 "$rc"
+rm -rf "$pr/.fleet/g1"
+
+echo "== relaunch"
+# a registered worktree on a branch, so the hand-back has a branch to continue from
+mkdir -p "$pr/wt03" && ( cd "$pr/wt03" && git init -q . && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m init && git checkout -q -b fleet/03/t-a ) >/dev/null 2>&1
+mkdir -p "$R/worktrees"; printf 'path %s\nbranch fleet/03/t-a\nchip 03\n' "$pr/wt03" > "$R/worktrees/03"
+out=$(sh "$fleet" relaunch "$R" --wait 0 03 2>&1); rc=$?
+code "relaunch's first call prints no chips with no STATE.md" 1 "$rc"
+check "and says why" "STATE.md NOT CURRENT: " "$out"
+check "that it is missing" "is missing. No chips are printed yet." "$out"
+check "and what to do: update it, then the same command again" "run the same command again" "$out"
+check "naming the ids it must list" "it must list the handed-back ids above" "$out"
+case "$out" in *"CHIP "*) bad "and prints no chip" "$out";; *) ok "and prints no chip";; esac
+check "it paused the run first" "PAUSED r1" "$out"
+check "named a worker that never stopped" "NOT STOPPED after 0 min: 03 04" "$out"
+check "handed the named chip's task back under a new id" "t-a -> t-a-r1  continue-from fleet/03/t-a" "$out"
+check "and pointed the task waiting on it at the new id" "t-c: its after: now names t-a-r1" "$out"
+[ -e "$R/03.retired" ] && ok "03.retired is written" || bad "03.retired is written"
+ls "$R"/tasks/claimed/t-a.released-* >/dev/null 2>&1 && ok "the claim is renamed the way a release renames it" || bad "the claim is renamed the way a release renames it"
+grep -q '^task-id: t-a-r1$' "$R/tasks/ready/t-a-r1.md" 2>/dev/null && grep -q '^continue-from: fleet/03/t-a$' "$R/tasks/ready/t-a-r1.md" && ok "the new task carries its own id and continue-from" || bad "the new task carries its own id and continue-from" "$(cat "$R/tasks/ready/t-a-r1.md" 2>&1)"
+grep -q '^needs: repo$' "$R/tasks/ready/t-a-r1.md" 2>/dev/null && ok "and the rest of the frontmatter" || bad "and the rest of the frontmatter"
+[ ! -e "$R/tasks/ready/t-a.md" ] && [ -e "$R/tasks/handed-back/t-a.md" ] && ok "the old task file leaves the queue without entering released/" || bad "the old task file leaves the queue without entering released/"
+[ -d "$R/tasks/claimed/t-b" ] && ok "a worker not named keeps its claim" || bad "a worker not named keeps its claim"
+out=$(sh "$fleet" next "$R" 03 repo 2>&1); rc=$?
+code "next for the retired chip exits 9" 9 "$rc"
+check "and tells it to end its turn" "You were retired: end this turn with one line, commit nothing, start nothing." "$out"
+out=$(CLAUDE_CODE_SESSION_ID=sess-w3 sh "$fleet" paused "$R" 03 2>&1); rc=$?
+code "paused for a retired chip exits 9" 9 "$rc"
+check "and says the same, not 'commit'" "You were retired" "$out"
+ls "$pc"/makarasty/paused/*.retired >/dev/null 2>&1 && ok "handback writes the second kind of global marker" || bad "handback writes the second kind of global marker" "$(ls "$pc/makarasty/paused" 2>&1)"
+o=$(hp "$MEM" sess-w3 Bash "git status")
+check "the retired worker's hook refuses even git" "2 RETIRED" "$o"
+o=$(hp "$CON" sess-w3 Edit '{"file_path":"/x/a.txt","old_string":"a","new_string":"b"}')
+check "and an edit" "2 RETIRED" "$o"
+check "with the one-line instruction" "end this turn with one line, commit nothing, start nothing" "$o"
+o=$(hp "$MEM" sess-zz Bash "npm test")
+check "a session that is not a worker is untouched by a retirement" "0 " "$o"
+out=$(sh "$fleet" drained "$R" 03 repo 2>&1); rc=$?
+code "drained for the retired chip exits 9" 9 "$rc"
+[ -e "$R/03.done" ] && bad "and writes no .done" || ok "and writes no .done"
+case "$out" in *"CLOSE YOUR BROWSER PANE"*) bad "and prints no pane line first" "$out";; *) ok "and prints no pane line first";; esac
+check "the first relaunch call stops for STATE.md with an instruction" "STATE.md NOT CURRENT" "$(sh "$fleet" relaunch "$R" --wait 0 03 2>&1)"
+sleep 1; printf '# state\n' > "$R/STATE.md"
+out=$(sh "$fleet" relaunch "$R" --wait 0 03 2>&1); rc=$?
+code "with STATE.md written after the pause, relaunch prints the chips" 0 "$rc"
+check "the second call does not wait for the acks again" "acks: 0 of 2 (not waited again)" "$out"
+case "$out" in *"NOT STOPPED"*|*"waiting for:"*) bad "and prints no wait" "$out";; *) ok "and prints no wait";; esac
+check "a fresh worker numbered after the highest offered" "CHIP 05" "$out"
+check "titled like every worker" "title: fleet r1 05" "$out"
+check "for the lane the retired one had" "lane repo" "$out"
+check "and one coordinator chip" "title: fleet r1 coordinator" "$out"
+check "whose prompt reads STATE.md in full" "STATE.md in full" "$out"
+check "and takes the seat with --take-over" "resume $(cd "$R" && { pwd -W 2>/dev/null || pwd; }) --take-over" "$out"
+check "then 3b and 8b of fleet-plan" "sections 3b and 8b of the makarasty fleet-plan command" "$out"
+check "then resumes the run" "resume $(cd "$R" && { pwd -W 2>/dev/null || pwd; })" "$out"
+check "and arms the watch with every chip ever offered" "arm /makarasty:fleet-wait r1 3" "$out"
+check "the closing steps name TaskStop" "TaskStop" "$out"
+check "and say STATE.md was checked against the handbacks" "newer than the pause and the handbacks" "$out"
+check "and the order to click" "click the coordinator chip first, then the worker chips" "$out"
+check "05 is recorded as offered" "repo" "$(cat "$R/offered/05" 2>/dev/null)"
+out2=$(sh "$fleet" relaunch "$R" --wait 0 03 2>&1)
+case "$out2" in *"CHIP 05"*) ok "run again, the same chip has the same replacement";; *) bad "run again, the same chip has the same replacement" "$out2";; esac
+case "$out2" in *"CHIP 06"*) bad "and no second replacement is minted" "$out2";; *) ok "and no second replacement is minted";; esac
+out=$(sh "$fleet" relaunch "$R" --wait 0 2>&1); rc=$?
+code "with no chips only the coordinator is replaced" 0 "$rc"
+check "the coordinator chip is printed" "title: fleet r1 coordinator" "$out"
+case "$out" in *"CHIP 06"*) bad "and no worker chip" "$out";; *) ok "and no worker chip";; esac
+sh "$fleet" relaunch "$R" --wait x 2>/dev/null; rc=$?
+code "a wait that is not minutes is refused" 2 "$rc"
+sh "$fleet" relaunch "$R" --wait 0 09 2>/dev/null; rc=$?
+code "and so is a chip that was never offered" 2 "$rc"
+out=$(sh "$fleet" relaunch "$R" 1 --wait 1 2>&1); rc=$?
+code "a bare number before --wait is not a chip: it retired chip 01 once" 2 "$rc"
+check "and the refusal says chips are two digits" "Chips are two digits" "$out"
+[ -e "$R/01.retired" ] && bad "and retires nothing" "01.retired exists" || ok "and retires nothing"
+sh "$fleet" relaunch "$R" --wait 1 3 2>/dev/null; rc=$?
+code "nor is a one-digit chip after it" 2 "$rc"
+sh "$fleet" relaunch "$R" --keep-coordinator --wait 0 2>/dev/null; rc=$?
+code "--keep-coordinator with no chip is refused" 2 "$rc"
+
+out=$(CLAUDE_CODE_SESSION_ID=sess-op sh "$fleet" resume "$R" 2>&1)
+check "a plain resume from some other chat lifts the pause" "RESUMED r1" "$out"
+check "and says the seat is waiting for --take-over" "coordinator-pending is set: the fresh coordinator takes the seat with:" "$out"
+grep -q sess-op "$R/coordinator" 2>/dev/null && bad "and does not take the coordinator seat" "$(cat "$R/coordinator")" || ok "and does not take the coordinator seat"
+[ -e "$R/coordinator-pending" ] && ok "coordinator-pending is still waiting" || bad "coordinator-pending is still waiting"
+out=$(CLAUDE_CODE_SESSION_ID=sess-new sh "$fleet" resume "$R" --take-over 2>&1)
+check "only resume --take-over takes the seat" "this session is now the coordinator" "$out"
+check "recorded in the coordinator file" "sess-new" "$(cat "$R/coordinator" 2>/dev/null)"
+[ -e "$R/coordinator-pending" ] && bad "and clears coordinator-pending" || ok "and clears coordinator-pending"
+sh "$fleet" resume "$R" --bogus >/dev/null 2>&1; rc=$?
+code "an unknown resume flag is refused" 2 "$rc"
+o=$(hp "$MEM" sess-w3 Bash "git status")
+check "after the resume the retired worker is still held" "2 RETIRED" "$o"
+# R2-5: until the run lands, or its directory is gone.
+touch "$R/FINISHED"
+o=$(hp "$MEM" sess-w3 Bash "git status")
+check "a finished run holds no retired worker" "0 " "$o"
+rm -f "$R/FINISHED"
+mv "$R" "$R.moved"
+o=$(hp "$MEM" sess-w3 Bash "git status")
+check "nor does a run directory that is gone" "0 " "$o"
+mv "$R.moved" "$R"
+o=$(hp "$MEM" sess-w3 Bash "git status")
+check "while a standing run still does" "2 RETIRED" "$o"
+o=$(hp "$MEM" sess-w4 Bash "npm test")
+check "while a worker that was not replaced is free" "0 " "$o"
+out=$(CLAUDE_CODE_SESSION_ID=sess-new sh "$fleet" paused "$R" 05 2>&1); rc=$?
+code "and the new coordinator cannot acknowledge a pause" 2 "$rc"
+out=$(CLAUDE_CODE_SESSION_ID=sess-w5 sh "$fleet" next "$R" 05 repo 2>&1)
+check "the fresh worker claims the re-filed task" "CLAIMED t-a-r1" "$out"
+check "whose body says where to continue from" "continue-from: fleet/03/t-a" "$out"
+sh "$fleet" finish "$R" 05 t-a-r1 >/dev/null 2>&1
+sh "$fleet" finish "$R" 04 t-b >/dev/null 2>&1
+out=$(sh "$fleet" next "$R" 05 repo 2>&1)
+check "t-c, which waited on t-a, opens once t-a-r1 is done" "CLAIMED t-c" "$out"
+sh "$fleet" finish "$R" 05 t-c >/dev/null 2>&1
+sh "$fleet" drained "$R" 04 repo >/dev/null 2>&1; sh "$fleet" drained "$R" 05 repo >/dev/null 2>&1
+: > "$R/backlog.jsonl"
+out=$(sh "$fleet" landed "$R" 3 2>&1); rc=$?
+code "landed passes on a run that went through a relaunch" 0 "$rc"
+check "counting the retired chip as finished" "LANDED: 3 workers" "$out"
+ls "$pc"/makarasty/paused/*.retired >/dev/null 2>&1 && bad "landed removes the retired marker" "$(ls "$pc/makarasty/paused")" || ok "landed removes the retired marker"
+out=$(sh "$fleet" status "$R" 2>&1)
+check "status marks the retired worker" "RETIRED" "$out"
+
+echo "== relaunch --keep-coordinator: unsaved work, the branch, the proof"
+K=$pr/.fleet/k1; mkdir -p "$K/tasks/ready" "$K/worktrees"
+for t in t-k1 t-k2 t-k3; do printf -- '---\ntask-id: %s\nneeds: repo\nkind: fix\nbudget: 10\n---\nwork\n' "$t" > "$K/tasks/ready/$t.md"; done
+sh "$fleet" chips "$K" 01-02 repo >/dev/null 2>&1
+CLAUDE_CODE_SESSION_ID=sess-k1 sh "$fleet" next "$K" 01 repo >/dev/null 2>&1
+CLAUDE_CODE_SESSION_ID=sess-k2 sh "$fleet" next "$K" 02 repo >/dev/null 2>&1
+CLAUDE_CODE_SESSION_ID=sess-k4 sh "$fleet" next "$K" 04 repo >/dev/null 2>&1
+mkwt() { # mkwt <dir> <branch|detach> - a tree with one commit and one unsaved file
+  mkdir -p "$1" && ( cd "$1" && git init -q . && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m init \
+    && if [ "$2" = detach ]; then git checkout -q --detach; else git checkout -q -b "$2"; fi && echo unsaved > unsaved.txt ) >/dev/null 2>&1
+}
+mkwt "$pr/wtk1" fleet/01/t-k1; printf 'path %s\nbranch fleet/01/t-k1\nchip 01\n' "$pr/wtk1" > "$K/worktrees/01"
+mkwt "$pr/wtk2" detach;        printf 'path %s\nchip 02\n' "$pr/wtk2" > "$K/worktrees/02"
+mkwt "$pr/wtk4" feature/x;     printf 'path %s\nchip 04\n' "$pr/wtk4" > "$K/worktrees/04"
+printf '{"phase":"before","exit":1,"cmd":"npm test -- login"}\n{"phase":"after","exit":0,"cmd":"npm test -- login"}\n' > "$K/tasks/claimed/t-k1/proof"
+out=$(sh "$fleet" relaunch "$K" --keep-coordinator --wait 0 01 2>&1); rc=$?
+code "keep-coordinator: the first call stops for STATE.md" 1 "$rc"
+check "after handing the chip's work back" "HANDED BACK 01" "$out"
+check "committing what the worker never saved" "COMMITTED the unsaved work of 01 on fleet/01/t-k1 as 'wip: handed back'" "$out"
+check "and listing the files" "unsaved.txt" "$out"
+[ "$(git -C "$pr/wtk1" log -1 --format=%s 2>/dev/null)" = "wip: handed back" ] && ok "the commit is on the task branch" || bad "the commit is on the task branch" "$(git -C "$pr/wtk1" log -1 --format=%s 2>&1)"
+[ -z "$(git -C "$pr/wtk1" status --porcelain 2>/dev/null)" ] && ok "and the tree is clean" || bad "and the tree is clean"
+grep -q '^continue-from: fleet/01/t-k1$' "$K/tasks/ready/t-k1-r1.md" && grep -q '^continued-from-chip: 01$' "$K/tasks/ready/t-k1-r1.md" && grep -q '^handback-of: t-k1$' "$K/tasks/ready/t-k1-r1.md" \
+  && ok "the new task carries continue-from, continued-from-chip and handback-of" || bad "the new task carries continue-from, continued-from-chip and handback-of" "$(cat "$K/tasks/ready/t-k1-r1.md" 2>&1)"
+sleep 1; printf '# state\n' > "$K/STATE.md"
+out=$(sh "$fleet" relaunch "$K" --keep-coordinator --wait 0 01 2>&1); rc=$?
+code "keep-coordinator: the same command again prints" 0 "$rc"
+check "and does not wait for the acks again" "acks: 0 of 1 (not waited again)" "$out"
+check "a fresh worker chip numbered after the highest offered" "CHIP 03" "$out"
+case "$out" in *"title: fleet k1 coordinator"*) bad "and no coordinator chip" "$out";; *) ok "and no coordinator chip";; esac
+[ -e "$K/coordinator-pending" ] && bad "and no coordinator-pending" || ok "and no coordinator-pending"
+[ -e "$K/PAUSED" ] && bad "and the run is resumed by the call itself" || ok "and the run is resumed by the call itself"
+check "saying the same coordinator carries on" "(same coordinator)" "$out"
+check "and to re-arm the watch with the new count, which counts the retired chip" "arm /makarasty:fleet-wait k1 3" "$out"
+out=$(CLAUDE_CODE_SESSION_ID=sess-k3 sh "$fleet" next "$K" 03 repo 2>&1)
+check "the fresh worker claims the re-filed task" "CLAIMED t-k1-r1" "$out"
+grep -q '"phase":"after"' "$K/tasks/claimed/t-k1-r1/proof" 2>/dev/null && bad "the old after is not carried over: the fresh worker proves its own tree" "$(cat "$K/tasks/claimed/t-k1-r1/proof" 2>&1)" || ok "the old after is not carried over: the fresh worker proves its own tree"
+grep -q '"phase":"before"' "$K/tasks/claimed/t-k1-r1/proof" 2>/dev/null && ok "with the old claim's fix proof copied in" || bad "with the old claim's fix proof copied in" "$(cat "$K/tasks/claimed/t-k1-r1/proof" 2>&1)"
+out=$(sh "$fleet" handback "$K" 02 2>&1)
+check "a worktree on a detached HEAD gets a branch first" "was on a detached HEAD: its work is now on branch fleet/02/t-k2-handback" "$out"
+check "the unsaved work is committed there" "COMMITTED the unsaved work of 02 on fleet/02/t-k2-handback" "$out"
+grep -q '^continue-from: fleet/02/t-k2-handback$' "$K/tasks/ready/t-k2-r1.md" && ok "and the new task continues from it" || bad "and the new task continues from it" "$(cat "$K/tasks/ready/t-k2-r1.md" 2>&1)"
+out=$(sh "$fleet" handback "$K" 04 2>&1)
+check "a tree on some other branch is committed too" "COMMITTED the unsaved work of 04 on feature/x" "$out"
+check "but the new task gets no continue-from, and says so" "WARNING: 04 has no registered worktree on fleet/04/t-k3 (it is on feature/x)" "$out"
+grep -q '^continue-from:' "$K/tasks/ready/t-k3-r1.md" && bad "continue-from only for the task's own branch" "$(cat "$K/tasks/ready/t-k3-r1.md")" || ok "continue-from only for the task's own branch"
+grep -q '^continued-from-chip: 04$' "$K/tasks/ready/t-k3-r1.md" && ok "while the chip whose notes to read is still named" || bad "while the chip whose notes to read is still named"
+mkdir -p "$pr/wtk5"; ( cd "$pr/wtk5" && git init -q . && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m init && git checkout -q -b fleet/05/zz && echo y > y.txt ) >/dev/null 2>&1
+printf -- '---\ntask-id: t-k5\nneeds: repo\nbudget: 10\n---\nwork\n' > "$K/tasks/ready/t-k5.md"; mkdir -p "$K/tasks/claimed/t-k5"; printf 'chip 05\nclaimed now\n' > "$K/tasks/claimed/t-k5/owner"
+printf 'path %s\nchip 05\n' "$pr/wtk5" > "$K/worktrees/05"
+out=$(GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null HOME=$pr/nohome sh "$fleet" handback "$K" 05 2>&1)
+check "a commit with no git identity configured still lands" "COMMITTED the unsaved work of 05" "$out"
+
+echo "== contexts"
+cx=$pr/.fleet/c1; mkdir -p "$cx/chips" "$cx/tasks/claimed/t-x" "$cx/tasks/done"
+printf 'chip 04\nclaimed now\n' > "$cx/tasks/claimed/t-x/owner"
+printf 'sess-co\n' > "$cx/coordinator"
+printf '04' > "$cx/chips/sess-w4"; printf '04' > "$cx/chips/sess-old"; printf '05' > "$cx/chips/sess-w5"
+touch -t 202001010000 "$cx/chips/sess-old" 2>/dev/null
+printf '04 x' > "$cx/chips/sess-w4.warned-t-x"; printf 'm' > "$cx/chips/04.model"
+mkdir -p "$pc/projects/p"
+tr_() { printf '{"type":"assistant","message":{"usage":{"input_tokens":5,"cache_read_input_tokens":%s}}}\n' "$2" > "$pc/projects/p/$1.jsonl"; }
+tr_ sess-co $((CK * 1000)); tr_ sess-w4 $((WK * 1000)); tr_ sess-old 990000; tr_ sess-w5 120000
+out=$(sh "$fleet" contexts "$cx" 2>&1); rc=$?
+code "contexts exits 0" 0 "$rc"
+check "the coordinator line carries its context and OVER" "${CK}K  OVER (mark ${HAT}K)" "$out"
+check "a worker over the mark is OVER, with its claim" "worker 04  sess-w4  ${WK}K  holds t-x  OVER (mark ${WAT}K)" "$out"
+check "a worker under it is not, and holds nothing" "worker 05  sess-w5  120K  no claim" "$out"
+if printf '%s
+' "$out" | grep 'worker 05' | grep -q OVER; then bad "and carries no OVER" "$out"; else ok "and carries no OVER"; fi
+case "$out" in *sess-old*|*900K*) bad "a reopened chip's older session is not read" "$out";; *) ok "a reopened chip's older session is not read";; esac
+out=$(sh "$fleet" ctx "$cx" 2>&1)
+check "ctx speaks for the coordinator" "COORDINATOR CONTEXT ${CK}K" "$out"
+check "and for a worker past worker_relaunch_k, naming the chip" "WORKER CONTEXT 04 ${WK}K (mark ${WAT}K, holds t-x)" "$out"
+case "$out" in *"WORKER CONTEXT 05"*) bad "and not for one under it" "$out";; *) ok "and not for one under it";; esac
+case "$out" in *"relaunch in fleet-plan"*|*"fleet-plan, 8b"*) ok "both point at the relaunch in fleet-plan 8b" ;; *) bad "both point at the relaunch in fleet-plan 8b" "$out";; esac
+case "$out" in *makarasty-tools:handoff*) bad "and neither sends a fleet coordinator to a handoff chip" "$out";; *) ok "and neither sends a fleet coordinator to a handoff chip";; esac
+out=$(sh "$fleet" ctx "$cx" 2>&1)
+[ -z "$out" ] && ok "each only once per mark" || bad "each only once per mark" "$out"
+tr_ sess-w4 120000
+out=$(sh "$fleet" ctx "$cx" 2>&1)
+tr_ sess-w4 $((WK * 1000))
+out=$(sh "$fleet" ctx "$cx" 2>&1)
+check "a worker that fell back under the mark is named again when it crosses" "WORKER CONTEXT 04" "$out"
+: > "$cx/05.done"
+tr_ sess-w5 900000
+out=$(sh "$fleet" ctx "$cx" 2>&1)
+case "$out" in *"WORKER CONTEXT 05"*) bad "a finished worker is never named" "$out";; *) ok "a finished worker is never named";; esac
+check "the context marks are in calibration.json: coordinator, step and worker" '"coordinator_handoff_k": 700,
+  "coordinator_handoff_step_k": 100,
+  "worker_relaunch_k": 700,' "$(cat "$here/../calibration.json")"
+check "with the operator's provenance" '"worker_relaunch_k": "operator, 2026-10-06' "$(cat "$here/../calibration.json")"
+check "and the 150 s a worker may take to answer a pause" '"pause_still_working_seconds": 150' "$(cat "$here/../calibration.json")"
+
+CLAUDE_CONFIG_DIR=${TMPDIR:-/tmp}/fleet-cfg-$$; export CLAUDE_CONFIG_DIR
+rm -rf "$pr"
+
+echo "== brief workers are registered too"
+bw=${TMPDIR:-/tmp}/fleet-bw-$$
+mkdir -p "$bw/tasks/ready"; printf -- '---
+brief
+---
+' > "$bw/brief-01.md"
+CLAUDE_CODE_SESSION_ID=sess-brief sh "$fleet" whoami "$bw" 01 m x >/dev/null 2>&1
+[ "$(cat "$bw/chips/sess-brief" 2>/dev/null)" = 01 ] && ok "a brief worker's whoami registers its session for the pause hooks" || bad "a brief worker's whoami registers its session for the pause hooks" "$(ls "$bw/chips" 2>&1)"
+out=$(CLAUDE_CONFIG_DIR=$bw/cfg sh "$fleet" pause "$bw" 2>&1)
+check "the pause counts a registered brief worker as holding work" "1 worker(s) hold claims: 01" "$out"
+touch "$bw/01.done"
+out=$(CLAUDE_CONFIG_DIR=$bw/cfg sh "$fleet" pause "$bw" 2>&1)
+check "and stops counting it once it is done" "0 worker(s) hold claims" "$out"
+CLAUDE_CODE_SESSION_ID=sess-reg CLAUDE_CONFIG_DIR=$bw/cfg sh "$fleet" whoami "$bw" 02 m x >/dev/null 2>&1
+[ -s "$bw/cfg/makarasty/fleet-sessions/sess-reg" ] && ok "a registered worker is recorded for the context hook" || bad "a registered worker is recorded for the context hook" "$(ls "$bw/cfg/makarasty" 2>&1)"
+
+echo "== file, stranded, and what status names"
+fr=${TMPDIR:-/tmp}/fleet-fr-$$
+mkdir -p "$fr/tasks/ready" "$fr/tasks/done" "$fr/offered" "$fr/chips"
+out=$(printf -- '---\ntask-id: a1\nneeds: repo\noperator: grant the role\n---\nx\n' | sh "$fleet" file "$fr" a1 2>&1); rc=$?
+code "file exits 0 on a good task" 0 "$rc"
+check "and says FILED with its lane" "FILED a1 lane repo" "$out"
+check "and says a task waiting on the operator is asked now" "waits on the operator" "$out"
+printf -- '---\nneeds: repo\nafter: a1\n---\n' | sh "$fleet" file "$fr" b1 >/dev/null 2>&1
+printf -- '---\nneeds: repo\nafter: b1\n---\n' | sh "$fleet" file "$fr" c1 >/dev/null 2>&1
+out=$(printf -- '---\nneeds: repo\nafter: a1, zz\n---\n' | sh "$fleet" file "$fr" d1 2>&1)
+check "an after: naming nothing filed is noted" "names a task not filed yet: zz" "$out"
+out=$(printf -- '---\nneeds: opus\n---\n' | sh "$fleet" file "$fr" e1 2>&1); rc=$?
+code "a lane that is a model is refused" 2 "$rc"
+[ ! -e "$fr/tasks/ready/e1.md" ] && ok "and nothing is filed" || bad "and nothing is filed"
+out=$(printf -- '---\nneeds: repo\n---\n' | sh "$fleet" file "$fr" a1 2>&1); rc=$?
+code "a used id is refused" 2 "$rc"
+out=$(printf -- '---\nneeds: repo\n---\ncaf\351\n' | sh "$fleet" file "$fr" u1 2>&1); rc=$?
+code "a cp1252 file is refused" 2 "$rc"
+check "as not UTF-8" "not valid UTF-8" "$out"
+out=$(printf -- '---\ntask-id: q\nneeds: repo\n---\n' | sh "$fleet" file "$fr" q2 2>&1)
+check "a task-id: that disagrees is refused" "says 'q', not 'q2'" "$out"
+out=$(printf 'needs: repo\n' | sh "$fleet" file "$fr" n1 2>&1)
+check "a file with no frontmatter is refused" "does not start with a --- frontmatter" "$out"
+ls "$fr"/tasks/.filing-* >/dev/null 2>&1 && bad "a refused filing leaves no temp file" || ok "a refused filing leaves no temp file"
+printf 'repo\n' > "$fr/offered/05"; printf 'repo\n' > "$fr/offered/06"
+printf 'opus high plugin 0.0.1\n' > "$fr/chips/05.model"; printf '06' > "$fr/chips/sess-06"
+out=$(sh "$fleet" status "$fr" 2>&1)
+check "status starts with the machine's clock" "== now $(date '+%Y-%m-%d')" "$out"
+check "names a task three open tasks wait behind" "a1: 3 open task(s) wait behind it, ready, unclaimed, WAITS ON THE OPERATOR" "$out"
+check "and lists what the operator must do" "a1: grant the role (3 behind it" "$out"
+check "names a worker on another plugin version" "OTHER PLUGIN: worker 05 runs makarasty 0.0.1" "$out"
+check "and one that started and never ran whoami" "never ran whoami" "$out"
+check "an after: naming nothing is a wait for ever" "d1: after: zz, which is neither filed nor done" "$out"
+printf -- '---\nneeds: repo\n---\nbody\noperator: not in the frontmatter\n' > "$fr/tasks/ready/h1.md"
+printf -- '---\nneeds: opus\n---\n' > "$fr/tasks/ready/h2.md"
+out=$(sh "$fleet" status "$fr" 2>&1)
+case "$out" in *"h1: not in"*) bad "an operator: line in the body is prose" "$out";; *) ok "an operator: line in the body is prose";; esac
+check "a hand-written task with a model for a lane is named" "h2: needs: \"opus\" is not pane, repo or verify" "$out"
+rm -f "$fr/tasks/ready/h1.md" "$fr/tasks/ready/h2.md"
+out=$(sh "$fleet" next "$fr" 09 repo 2>&1); rc=$?
+code "next holds a task the operator owes and the tasks after it" 7 "$rc"
+out=$(sh "$fleet" cleared "$fr" a1 2>&1)
+check "cleared says so" "CLEARED a1" "$out"
+[ -z "$(grep '^operator:' "$fr/tasks/ready/a1.md")" ] && ok "and removes the line" || bad "and removes the line" "$(cat "$fr/tasks/ready/a1.md")"
+out=$(sh "$fleet" next "$fr" 09 repo 2>&1)
+check "then next hands it out" "a1" "$out"
+printf 'repo\n' > "$fr/offered/08"; printf '08' > "$fr/chips/sess-08"; printf 'opus high plugin 0.0.1\n' > "$fr/chips/08.model"
+out=$(sh "$fleet" ctx "$fr" 2>&1)
+check "the watch names a worker on an older plugin, for the one relaunch ask" "WORKER PLUGIN 08 runs makarasty 0.0.1" "$out"
+out=$(sh "$fleet" ctx "$fr" 2>&1)
+case "$out" in *"WORKER PLUGIN 08"*) bad "once" "$out";; *) ok "once";; esac
+printf 'opus high\n' > "$fr/chips/06.model"
+out=$(sh "$fleet" status "$fr" 2>&1)
+check "a 1.5.8 or 1.5.9 record, with no version, is named older" "OTHER PLUGIN: worker 06 runs makarasty 1.5.8 or 1.5.9" "$out"
+CLAUDE_CODE_SESSION_ID=sess-v sh "$fleet" whoami "$fr" 07 m x >/dev/null 2>&1
+check "whoami records the plugin version" "plugin $(sed -n 's/.*"version": "\([^"]*\)".*/\1/p' "$here/../.claude-plugin/plugin.json")" "$(cat "$fr/chips/07.model")"
+g=$fr/repo; git init -q -b int "$g" && git -C "$g" -c user.name=t -c user.email=t@t commit -q --allow-empty -m root
+git -C "$g" switch -q -c b1 && git -C "$g" -c user.name=t -c user.email=t@t commit -q --allow-empty -m w1
+git -C "$g" switch -q int && git -C "$g" -c user.name=t -c user.email=t@t merge -q --no-ff --no-edit b1
+git -C "$g" switch -q b1 && git -C "$g" -c user.name=t -c user.email=t@t commit -q --allow-empty -m late
+git -C "$g" switch -q -c b2 int && git -C "$g" -c user.name=t -c user.email=t@t commit -q --allow-empty -m w2
+git -C "$g" switch -q -c b3 int && git -C "$g" switch -q int && git -C "$g" -c user.name=t -c user.email=t@t merge -q --no-ff b2 -m m2
+mkdir -p "$fr/worktrees"; printf 'path %s\n' "$g" > "$fr/worktrees/integration"
+printf 'branch b1\n' > "$fr/tasks/done/t1"; printf 'branch b2\n' > "$fr/tasks/done/t2"
+git -C "$g" switch -q -c b4 int && git -C "$g" -c user.name=t -c user.email=t@t commit -q --allow-empty -m w4 && git -C "$g" switch -q int
+printf 'branch b4\n' > "$fr/tasks/done/t4"
+git -C "$g" switch -q -c b5 int && git -C "$g" -c user.name=t -c user.email=t@t commit -q --allow-empty -m w5
+printf 'branch b5
+tip %s
+' "$(git -C "$g" rev-parse b5)" > "$fr/tasks/done/t5"
+git -C "$g" switch -q int && git -C "$g" -c user.name=t -c user.email=t@t merge -q --no-ff b5 -m "squashed-looking message"
+git -C "$g" switch -q b5 && git -C "$g" -c user.name=t -c user.email=t@t commit -q --allow-empty -m late5 && git -C "$g" switch -q int
+git -C "$g" branch -q gone6 int && printf 'branch gone6
+' > "$fr/tasks/done/t6" && git -C "$g" branch -q -D gone6
+git -C "$g" branch -q rm/t7 b4 && : > "$fr/tasks/done/t7"
+out=$(sh "$fleet" stranded "$fr" 2>&1)
+check "stranded names a commit made after the merge" "STRANDED t1: branch b1 was merged, then got 1 more" "$out"
+check "and a branch never merged as not merged" "not merged t4: branch b4, 1 commit(s)" "$out"
+case "$out" in *t2*) bad "and stays quiet about a branch fully merged" "$out";; *) ok "and stays quiet about a branch fully merged";; esac
+check "the tip finish recorded proves a merge whatever the merge message says" "STRANDED t5: branch b5 was merged, then got 1 more" "$out"
+check "a deleted branch is counted, not listed" "1 done task branch(es) no longer exist" "$out"
+check "a marker with no branch line is matched by its task id" "not merged t7: branch rm/t7" "$out"
+lr=${TMPDIR:-/tmp}/fleet-lr-$$; mkdir -p "$lr/run/tasks/ready" "$lr/cfg/makarasty/fleet-sessions"; : > "$lr/run/backlog.jsonl"
+printf '%s\n' "$(cd "$lr/run" && { pwd -W 2>/dev/null || pwd; })" > "$lr/cfg/makarasty/fleet-sessions/sx"
+printf '%s\n' "/some/other/run" > "$lr/cfg/makarasty/fleet-sessions/sy"
+out=$(CLAUDE_CONFIG_DIR=$lr/cfg sh "$fleet" landed "$lr/run" 0 2>&1)
+[ ! -e "$lr/cfg/makarasty/fleet-sessions/sx" ] && [ -e "$lr/cfg/makarasty/fleet-sessions/sy" ] && ok "landed removes this run's session records and no other run's" || bad "landed removes this run's session records and no other run's" "$out"
+CLAUDE_CODE_SESSION_ID=sess-c CLAUDE_CONFIG_DIR=$lr/cfg sh "$fleet" chips "$lr/run" 01 repo >/dev/null 2>&1
+[ -s "$lr/cfg/makarasty/fleet-sessions/sess-c" ] && ok "chips records the coordinator for the context hook" || bad "chips records the coordinator for the context hook" "$(ls "$lr/cfg/makarasty/fleet-sessions")"
+rm -rf "$lr"
+rm -rf "$fr"
+CLAUDE_CODE_SESSION_ID=sess-coord sh "$fleet" find "$bw" integration </dev/null >/dev/null 2>&1 || true
+[ ! -e "$bw/chips/sess-coord" ] && ok "the coordinator's integration tree is never registered as a worker" || bad "the coordinator's integration tree is never registered as a worker" "$(cat "$bw/chips/sess-coord")"
+rm -rf "$bw"
 rm -rf "$tmp"
 rm -f "$loadstub"
 echo "$pass passed, $fail failed"
+rm -rf "${TMPDIR:-/tmp}/fleet-cfg-$$"
 if [ "${1:-}" = "--keep" ]; then echo "run directory kept: $run"; else rm -rf "$run"; fi
 [ "$fail" = 0 ] || exit 1

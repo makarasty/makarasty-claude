@@ -1,5 +1,6 @@
 ---
 description: Open and authenticate this project's app in this session's browser pane. Use before any visual check, when a pane shows a login screen or reads empty, or on "залогинься", "зайди в приложение", "открой localhost", log in as AI.
+argument-hint: [origin]
 allowed-tools: Bash, Read, Glob, Grep, AskUserQuestion, mcp__Claude_Browser__preview_start, mcp__Claude_Browser__preview_logs, mcp__Claude_Browser__javascript_tool, mcp__Claude_Browser__navigate, mcp__Claude_Browser__read_network_requests
 ---
 
@@ -19,6 +20,10 @@ stays in the chat's transcript on disk.
 Probe the session before reading anything. Three workers in the 2026-08-26 run read 58 KB of login runbook
 after they had already established they were signed in, a whole document of context spent for nothing. Read `FLEET.md` for the origin and probe; open the runbook only when the probe says signed out.
 
+**An origin in `$ARGUMENTS` replaces `FLEET.md`'s** for steps 2, 3 and 5: a pane task that carries `origin:`
+(the integration checkout, or the worker's own tree's dev server) is logged in there, and `fleet-run` calls
+`/makarasty:fleet-login <origin>` for it. Without an argument, use `FLEET.md`'s origin.
+
 `FLEET.md` at the repository root carries the login runbook path, the origin, and the services that must
 be running. Without it, look for `docs/HOW_TO_LOGIN_AS_AI.md`, then any `*LOGIN*AS*AI*` or
 `docs/**/login*.md`.
@@ -35,20 +40,25 @@ Check that the ports the runbook names are listening, using the command for this
 **Which of them you may start is the project's call, not a rule of this command.** A dev server the
 operator runs is theirs; a backend or emulator the project hands you a launch entry for is yours, and
 reporting it as missing when the runbook told you how to start it is a failed run.
-`FLEET.md` says which is which.
+`FLEET.md` says which is which, in the `start:` field of its `Services` line (`operator`, or the command that starts it).
+That applies to a coordinator or an operator running this command. A fleet worker never starts a shared
+service, whatever `start:` says: it files `ask/` naming the service and takes another task.
 
 Re-check this whenever a login fails later. A service that was up at the start of a run can be down by
 the middle of it, and nothing in the app announces that.
 
 ## 3. Open the pane
 
-`preview_start` at the runbook's origin, honouring its literal host. Some projects must be reached as
+`preview_start` at the origin you were given, or else the runbook's, honouring its literal host. Some projects must be reached as
 `[::1]` rather than `localhost`; the wrong host lands on an error page whose title still looks correct.
 
 **A second host is a second session.** Where a project serves an admin or operator surface on its own
 hostname, that origin authenticates separately, and the pane will not `navigate` across the boundary —
 open it with the launch entry the project provides for it. Signed in on one host proves nothing about the
-other, so probe the one you are about to use.
+other, so probe the one you are about to use. The same goes for a different port: an origin you were handed
+is a new session, and the app's auth or CORS allow-list may not include that port. A refusal there is a
+question for `ask/` naming the origin and the refusal, not a stop and not a reason to change the app's
+settings.
 
 ## 4. Gate the pane
 

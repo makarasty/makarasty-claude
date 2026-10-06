@@ -54,6 +54,16 @@ At the project root, in the shape `docs/PROTOCOL.md` gives. It carries the origi
 be running, the login runbook path, the naming rules, the controls reserved for the operator, and the cost
 of the project's verification commands.
 
+**Write the services as one line in one fixed shape**, because the watch reads it to probe each service
+and to know who restarts it: `- Services: <url> (start: <how>|operator); <url> (start: ...)`. Each entry is
+a URL a connection can be made to (an IPv6 literal such as `http://[::1]:5173` is fine), then the command
+that starts it, or `operator` when only the operator may start it (anything holding data, credentials or
+a vendor connection). Ask the operator which are which. Leave the line out when the project needs no
+service beyond the app itself (the watch then prints a notice that no services are being checked, which for
+such a project is the truth). **A `FLEET.md` that already lists its services in another shape** (a bullet
+list, a sentence, a `Services:` line with no leading `- `) is converted to this one line: the watch reads
+only this shape, and an old one looks like a project with no services.
+
 **Get the reserved controls list right.** Walk the project for anything that leaves the
 machine: telephony, payments, email and messaging, shipping, any vendor API, production writes and
 migrations. List those controls by the label a person sees, not by a general warning. Ask the operator

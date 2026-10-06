@@ -47,8 +47,14 @@ for (const run of runs) {
   try { chip = fs.readFileSync(chipFile, 'utf8').trim(); } catch { continue; }
   if (!chip) continue;
 
-  // A worker that has written its completion marker owes the disk nothing.
-  if (fs.existsSync(path.join(run, `${chip}.done`)) || fs.existsSync(path.join(run, `${chip}.blocked`))) continue;
+  // A worker that has written its completion marker owes the disk nothing, and neither does one a relaunch
+  // replaced: `fleet.sh handback` released its claims and wrote `.retired`, so a block here would hold a worker
+  // that is meant to end its turn on one line.
+  if (['done', 'blocked', 'retired'].some((x) => fs.existsSync(path.join(run, `${chip}.${x}`)))) continue;
+
+  // A paused run is not a turn to be held to its claims: the worker was told to stop, and a block here is
+  // the second contradiction in a row (the first is `act on it now`). The pause lifts, the claim stays.
+  if (fs.existsSync(path.join(run, 'PAUSED'))) continue;
 
   let claimed = [];
   try { claimed = fs.readdirSync(path.join(run, 'tasks', 'claimed'), { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name); }

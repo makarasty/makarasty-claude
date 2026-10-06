@@ -60,7 +60,11 @@ The brief carries the choice, in `model:` and `verdict-model:`. A single brief s
 one model walks the scenario, another rules on what the walk produced.
 
 Neither field changes the model of the session reading the brief, which was fixed when that session
-started. They are honoured by dispatch. `model:` is passed as the `Agent` call's per-invocation parameter,
+started. They are honoured by dispatch, and in a queue the dispatch is the worker's: a task whose `model:`
+is above the model `fleet.sh whoami` recorded for the worker is delegated to one `Agent` at that tier,
+and one at or below it is worked in place. A chip cannot be split by model, so `model:` on a queue task is
+a wish that the worker meets with a spawn; `fleet.sh status` shows what each worker really runs, and the
+coordinator names the gap to the operator in the turn it appears. `model:` is passed as the `Agent` call's per-invocation parameter,
 which outranks the agent definition's own frontmatter, so a brief naming a tier gets it. `verdict-model:`
 is honoured by spawning a second pass at that tier over the returned observations, and a definition whose
 own frontmatter already carries the tier - `fleet-design-eye` on `fable` - honours it without the brief saying
@@ -117,6 +121,15 @@ switching. What an operator can set once: `model` and `effortLevel` in settings 
 `CLAUDE_CODE_SUBAGENT_MODEL` for every otherwise-unassigned subagent, and `model:` plus `effort:` in the
 four agent files for the work a fleet dispatches. The agent files pin `effort` so that one operator dial
 does not silently set the depth of a design verdict.
+
+**A worker runs whatever the operator started its chip with.** A chip has no model field, a session cannot
+change its own model, and the operator in practice starts every chip on the coordinator's model with the
+effort dropped a step. Plan for that rather than against it: say at hand over which one model and effort
+to start the chips with, give each task the `model:` it wants as information, and route work by lane only.
+`fleet.sh whoami` records what each worker really runs and `fleet.sh status` lists it. Measured 2026-10-05:
+the plan said Sonnet for 81 of 125 tasks, every worker was Opus at medium, and the one data point on
+effort did not favour high: the worker on high had all three of its first tasks sent back for fixes, the
+workers on medium six of about eighteen, and every return came from the hardest area of the plan.
 
 ## Cost discipline that is not about models
 

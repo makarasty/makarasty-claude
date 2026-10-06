@@ -1,7 +1,7 @@
 {
   "name": "makarasty",
   "description": "Run one job across several Claude Code sessions: a shared task queue, reports written to files, a frame-count check before every browser observation, and a gate that refuses a fix without a reproduction that failed first. Ten mission kinds, from test sweeps and fixes to refactors, research and design.",
-  "version": "1.5.5",
+  "version": "1.5.10",
   "author": {
     "name": "makarasty",
     "url": "https://github.com/makarasty"
@@ -32,7 +32,7 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "Edit|Write|MultiEdit",
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
         "hooks": [
           {
             "type": "command",
@@ -43,7 +43,7 @@
         ]
       },
       {
-        "matcher": "^(Bash|PowerShell)$|^mcp__(.*[Bb]rowser|claude-in-chrome)__(navigate|browser_batch|computer)$",
+        "matcher": "^(Bash|PowerShell|Monitor|Agent|Task|Skill)$|^mcp__(.*[Bb]rowser|claude-in-chrome)__",
         "hooks": [
           {
             "type": "command",

@@ -58,8 +58,8 @@ removed so the whole tree survives rather than only the branch. Branches go by `
 
 ## Where the guards stop, which is the part worth reading
 
-`unsafe_path()` runs inside `fleet.sh worktree` and `fleet.sh clean`. Nothing else on the machine goes
-through it.
+`unsafe_path()` runs inside `fleet.sh worktree`, `fleet.sh unlink` and `fleet.sh clean`. Nothing else on the
+machine goes through it.
 
 - **A worker's own unlink is not enforced.** `fleet-run.md` tells a worker to run `fleet.sh unlink` before it
   leaves, and removal belongs to `fleet.sh clean` alone - `ExitWorktree` is a no-op in a chip's worktree,

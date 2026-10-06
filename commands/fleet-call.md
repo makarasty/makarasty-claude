@@ -72,7 +72,7 @@ interview, as in `fleet-plan`.
 
 ## 3. Write the queue
 
-Pull mode, under `.fleet/<run-id>/tasks/ready/`, `kind: call`, `isolation: none`, `needs: repo`
+Pull mode, under `.fleet/<run-id>/tasks/ready/`, each task filed with `fleet.sh file` (`fleet-plan` 3b), `kind: call`, `isolation: none`, `needs: repo`
 throughout. Write `call/CALL.md` yourself before the first chip: the counterpart and what they can do,
 the two languages, the answers to bring home, the reserved topics, the window the facts should cover.
 The script task rewrites it with what the facts changed.
@@ -96,8 +96,12 @@ Use the `after:` gate, not the order, for the script task: `fleet.sh next` holds
 
 ## 4. Offer the chips
 
-Repo chips only, from `sh "$f" width .fleet/<run-id>`; no pane is opened for a call run. Chip titles and
-prompts exactly as `fleet-plan` section 7 gives them, worker identity and `lane repo` in the prompt.
+Repo chips only, from `sh "${CLAUDE_PLUGIN_ROOT}/scripts/fleet.sh" width .fleet/<run-id>`; no pane is opened for a call run. Chip titles and
+prompts verbatim from `sh "${CLAUDE_PLUGIN_ROOT}/scripts/fleet.sh" chips .fleet/<run-id> 01-<NN> repo`.
+
+Name the one model and effort to start every chip on. A chip cannot be split by model, so the script task,
+which wants the design model, is delegated by a lower-tier worker to one `Agent` at that tier
+(`fleet-run`); the facts tasks want `opus`. Say which tier you recommend for the chips in the hand-over.
 
 ## 5. Arm the watch, and deliver when it lands
 

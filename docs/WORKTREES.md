@@ -1,10 +1,11 @@
 # Worktrees: created safely, cleaned safely
 
 A worker whose brief writes code runs in its own git worktree, so two sessions never edit one tree. The
-worktrees pile up: one per code worker, each with a branch. One project on this machine links
-`node_modules` into every worktree by its own setup script, to skip a second install; nothing in this
-plugin creates such a link, and every one of them is a hole a recursive delete follows. At the end of a run
-the work is pushed and the worktrees are dead weight on the disk. Removing them is right, and removing them
+worktrees pile up: one per code worker, each with a branch. A project's own setup script may link
+`node_modules` into every worktree to skip a second install, and `fleet.sh worktree --create` does the same
+for the trees it makes; every one of those links is a hole a recursive delete follows. At the end of a run
+the work is committed on each task's branch (pushed only where the project's rules allow it) and the
+worktrees are dead weight on the disk. Removing them is right, and removing them
 wrong is how an agent deletes something it should not.
 
 The obvious command is not the safe one.
@@ -43,9 +44,36 @@ is followed as readily as one beside it, which is why the unlink walks the whole
 The closed list of what this plugin may delete, the path gate every deletion passes, and the places where
 the guards stop are all in [`SAFETY.md`](SAFETY.md). This page is the procedure.
 
+## Creation: when the chip did not give you one
+
+A chip usually opens in a worktree the host made under `.claude/worktrees/`. When it opens in the main
+checkout instead, the worker makes its own, once, and reuses it for every task:
+
+```bash
+sh "$f" worktree "$r" <chip> --create <base>
+```
+
+`base` is the `base:` of the worker's first task, the integration branch the coordinator merges into; each task
+branch is cut from that task's own `base:`. Without one the command defaults to the main
+checkout's current branch (`HEAD` when that is detached), which is not where the merges go unless that branch is
+the integration branch. It
+adds a detached worktree at `<main>/.claude/worktrees/fleet-<tag>-<chip>`, reusing the tree only when its
+directory still exists (a deleted one is pruned from git's list and made again), excludes
+`.claude/worktrees/` in the clone's `info/exclude` if nothing ignores it yet (creating `info/` and ending
+the file with a newline first when it needs to), links every real `node_modules` up to three levels deep
+in the main checkout into the same place (`apps/web/node_modules` counts; it never descends into a
+`node_modules`; a junction on Windows, a symlink elsewhere; a link that fails is warned about, not
+skipped silently), registers it, and prints the path on a `WORKTREE <path>` line. Each task then starts its
+own branch inside it. A tree left detached on a commit some branch already holds is removable by `clean`;
+one with commits nowhere else is kept.
+
+Without this command a coordinator wrote its own setup into the run's rules on 2026-10-05: five trees at
+`C:/wtRM01..05`, junctions made by hand, and registration refusing every one, so `clean` could remove none.
+
 ## Registration: the run knows its own worktrees
 
-A worktree worker records its worktree the first time it claims, so cleanup targets this run's worktrees
+A worktree worker records its worktree the first time it claims (`--create` does this itself; the bare
+command below is for a chip the host opened inside a worktree), so cleanup targets this run's worktrees
 and no others - which matters because the machine runs several runs at once, and a blanket sweep of
 `.claude/worktrees/` would take a live run's tree.
 
@@ -82,8 +110,9 @@ For every worktree the run registered, in order:
    division of labour between the depth floor and the containment test.
 2. **Keep anything holding work.** A worktree with uncommitted changes, or whose branch holds commits
    that are neither in the main checkout's branch nor on that branch's upstream, is **kept** and reported.
-   A worktree on a detached HEAD is always kept: its commits belong to no branch, so nothing can speak for
-   them. The whole point of a worktree is the work in it, and cleanup that loses it is worse than a full
+   A worktree on a detached HEAD is kept unless some branch or remote already contains its commit (the
+   shape `--create` leaves a tree in until its first task starts a branch): otherwise its commits belong
+   to nothing, so nothing can speak for them. The whole point of a worktree is the work in it, and cleanup that loses it is worse than a full
    disk. `--remove` does not override this and no flag does: a tree the operator has written off is
    removed by the operator, in git, with the commands `clean` prints.
 3. **Unlink reparse points first, at any depth.** `find -type l` finds junctions as well as symlinks and
@@ -106,8 +135,10 @@ each one stayed, and the operator removes it by hand having seen the reason.
 
 ## Who runs it, and when
 
-- **A live worker that finishes its brief** commits and pushes its slice, which is the isolation
-  contract, then runs `sh "$f" unlink <its worktree>` and leaves the tree for the planner's `clean`.
+- **A live worker that finishes its brief** commits its slice on its own task branch (and pushes it where
+  the project's rules allow), which is the isolation contract, then runs `sh "$f" unlink <its worktree>`,
+  the path from its `worktrees/<chip>` registration, since its cwd may still be the main checkout, and
+  leaves the tree for the planner's `clean`.
   `ExitWorktree` does nothing here: it acts only on a tree the same session made with `EnterWorktree`, and a
   chip's worktree was made by the host. It never runs a recursive delete on its own tree.
 - **The planner, once the run has landed**, runs `fleet.sh clean .fleet/<run-id> --remove` as the last step of

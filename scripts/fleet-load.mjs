@@ -9,6 +9,8 @@
 //   node fleet-load.mjs                     one census, human readable
 //   node fleet-load.mjs --json              the same, as one JSON object, `tight` included
 //   node fleet-load.mjs --clear <GB>        exit 0 when free memory is above <GB>, 1 otherwise. Silent.
+//   node fleet-load.mjs --leftovers [--kill]  toolchain processes whose parent is gone; --kill ends the
+//                                           orphaned test and typecheck runs among them, nothing else
 //   node fleet-load.mjs --watch 30          sample every 30s until Ctrl-C
 //   node fleet-load.mjs --watch 30 --out load.csv    ... and append each sample to a CSV
 //
@@ -158,6 +160,72 @@ function render(c) {
     lines.push(`${k.padEnd(28)}${String(v.n).padStart(2)}   ${String(v.totalMB).padStart(8)}   ${String(v.maxMB).padStart(10)}`);
   }
   return lines.join('\n');
+}
+
+// --leftovers [--kill]: toolchain processes nobody is waiting for. A test run or a typecheck whose parent is
+// gone - the chat or shell that started it closed - holds its memory until the machine reboots: on
+// 2026-10-06 a build run's box ran out of memory with such runs behind it, and nothing said whose they were.
+// An orphan here is a process whose parent no longer exists (on POSIX: was reparented to 1), or whose parent
+// pid now belongs to a process younger than it (pid reuse on Windows). A process with a live parent is
+// somebody's and is never listed. --kill ends only orphaned one-shot runs (tests, typecheck) at least two
+// minutes old, with their children; an orphaned dev server, watcher or emulator is listed and left alone,
+// because a launcher script that exits at once (a .vbs, a detached start) orphans the operator's own services.
+function leftovers() {
+  let procs = [];
+  if (process.platform === 'win32') {
+    const out = sh('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+      'Get-CimInstance Win32_Process | Select-Object Name,ProcessId,ParentProcessId,WorkingSetSize,CommandLine,' +
+      '@{n="Created";e={[int64](($_.CreationDate.ToUniversalTime()) - [datetime]"1970-01-01").TotalMilliseconds}} | ' +
+      'ConvertTo-Json -Compress -Depth 3']);
+    procs = parse(out, []);
+    if (!Array.isArray(procs)) procs = [procs];
+  } else {
+    const now = Date.now();
+    procs = sh('sh', ['-c', 'ps -eo pid=,ppid=,etimes=,rss=,comm=,args= 2>/dev/null']).split('\n').filter(Boolean).map((l) => {
+      const m = l.trim().match(/^(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\S+)\s*(.*)$/);
+      return m ? { ProcessId: +m[1], ParentProcessId: +m[2], Created: now - m[3] * 1000, WorkingSetSize: +m[4] * 1024, Name: m[5].split('/').pop(), CommandLine: m[6] } : null;
+    }).filter(Boolean);
+  }
+  const byPid = new Map(procs.map((p) => [p.ProcessId, p]));
+  const orphan = (p) => {
+    if (process.platform !== 'win32') return p.ParentProcessId === 1;
+    const parent = byPid.get(p.ParentProcessId);
+    return !parent || (parent.Created && p.Created && parent.Created > p.Created);
+  };
+  const kids = (pid) => procs.filter((q) => q.ParentProcessId === pid && q.ProcessId !== pid);
+  const tree = (p) => [p, ...kids(p.ProcessId).flatMap(tree)];
+  const found = [];
+  for (const p of procs) {
+    const k = classify(p);
+    if (!k || !k.startsWith('toolchain:') || !orphan(p)) continue;
+    const all = tree(p);
+    const mins = p.Created ? Math.round((Date.now() - p.Created) / 60000) : null;
+    found.push({ pid: p.ProcessId, class: k, mb: Math.round(all.reduce((s, q) => s + (q.WorkingSetSize || 0), 0) / 1048576),
+      minutes: mins, oneShot: k === 'toolchain: tests' || k === 'toolchain: typecheck', cmd: (p.CommandLine || p.Name || '').slice(0, 160), tree: all.map((q) => q.ProcessId) });
+  }
+  return found.sort((a, b) => b.mb - a.mb);
+}
+
+if (has('--leftovers')) {
+  const found = leftovers();
+  const kill = has('--kill');
+  if (!found.length) { console.log('no orphaned toolchain process'); process.exit(0); }
+  let freed = 0;
+  for (const f of found) {
+    const killable = f.oneShot && f.minutes != null && f.minutes >= 2;
+    let tag = killable ? 'ORPHANED RUN' : 'orphaned, left alone (may be the operator\'s service)';
+    if (kill && killable) {
+      const ok = process.platform === 'win32'
+        ? sh('taskkill', ['/PID', String(f.pid), '/T', '/F']) !== ''
+        : f.tree.slice().reverse().every((pid) => { try { process.kill(pid, 'SIGTERM'); return true; } catch { return false; } });
+      tag = ok ? 'KILLED' : 'KILL FAILED';
+      if (ok) freed += f.mb;
+    }
+    console.log(`${tag}  pid ${f.pid}  ${f.class}  ${f.mb} MB  ${f.minutes ?? '?'} min  ${f.cmd}`);
+  }
+  if (kill) console.log(`freed about ${freed} MB`);
+  else if (found.some((f) => f.oneShot)) console.log('--kill ends the ORPHANED RUN lines only (one-shot runs at least two minutes old, with their children)');
+  process.exit(0);
 }
 
 // --clear N: say nothing, and exit 0 only when free memory is above N GB. This is what a worker refused

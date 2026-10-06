@@ -11,8 +11,10 @@ model that tries and tells it not to reproduce the steps by hand.
 
 | Command | Flag | Why |
 |---|---|---|
-| `fleet`, `fleet-plan`, `fleet-design`, `fleet-redesign`, `fleet-call` | set | They spend money and depend on the operator's clicks |
+| `fleet`, `fleet-design`, `fleet-redesign`, `fleet-call` | set | They spend money and depend on the operator's clicks |
+| `fleet-plan` | **not set, since 1.5.7** | A coordinator made by handoff, or told "launch the fleet", was blocked from it and launched from memory: no chips, wrong titles, a stale path (2026-10-05). It writes files and offers chips; money is spent only when the operator clicks one |
 | `fleet-run` | **not set, deliberately** | The operator starts a worker by clicking its chip; the model in that new session is what invokes `fleet-run` there |
+| `fleet-pause` | not set | A coordinator told to "pause the fleet" in words has to be able to do it for real, and a relaunch pauses through it. It writes one marker file and spends nothing |
 | `fleet-init`, `fleet-login`, `fleet-wait`, `fleet-collect`, `fleet-resume` | not set | An agent that needs them must be able to reach them |
 
 **Giving `fleet-run` the flag would break every worker**, at the moment it tried to begin. The prose in
@@ -54,9 +56,11 @@ Two consequences:
 - **`argument-hint`** is autocomplete text. Omit it when the command takes no arguments, as `fleet-init`
   and `fleet` do.
 - **`model` and `effort`** apply for the rest of the invoking turn. No command here sets them: a planner's
-  work is choosing the model *per task*, which belongs in the task file, not in the command that writes it.
+  work is stating the model each task wants, in the task file and as a wish (the model the operator started
+  a chip with is what runs), not in the command that writes it.
 - **Keep a command under 500 lines** and push reference material into `docs/`, which every command here
-  does through its first paragraph. The longest is `fleet-run`, under 400.
+  does through its first paragraph. The longest is `fleet-run`, under 500; `fleet-plan`'s relaunch
+  procedure lives in `docs/RELAUNCH.md` for that reason.
 - **`commands/` is the legacy location and still supported.** The documentation recommends
   `skills/<name>/SKILL.md` for new work, which would keep every invocation name identical and add support
   for per-command files. This plugin has not moved, because its reference material is shared between

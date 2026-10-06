@@ -23,7 +23,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { findRuns, chipOf, rel } from './run-dir.mjs';
+import { findRuns, chipOf, rel, pauseGate } from './run-dir.mjs';
 
 const bail = () => process.exit(0);
 
@@ -38,11 +38,18 @@ const input = payload.tool_input || {};
 const session = payload.session_id || process.env.CLAUDE_CODE_SESSION_ID || '';
 if (!session) bail();
 
-// Both shell tools: on Windows the PowerShell tool is often the primary one, and a suite run through it
+// The shell tools, Monitor (a command that runs for as long as it likes) included: on Windows the PowerShell tool is often the primary one, and a suite run through it
 // costs the machine exactly what the same run through Bash does. `preview_start` is deliberately absent:
 // the refusal below tells the worker to reopen a pane with it, so refusing it would be a loop.
-const SHELL = tool === 'Bash' || tool === 'PowerShell';
+const SHELL = tool === 'Bash' || tool === 'PowerShell' || tool === 'Monitor';
 const BROWSER = /^mcp__(.*[Bb]rowser|claude-in-chrome)__(navigate|browser_batch|computer)$/;
+// A pause comes before everything below, and it is wider than the memory rules: every browser tool, not
+// only the three that cost memory, Agent/Task, so a paused worker cannot start a subagent, and Skill, which
+// loads a new instruction set into a session that was told to stop. The common
+// case - no paused run anywhere - is one readdir inside pauseGate.
+if (!SHELL && !BROWSER.test(tool) && !/^mcp__(.*[Bb]rowser|claude-in-chrome)__/.test(tool) && !/^(Agent|Task|Skill)$/.test(tool)) bail();
+const held = pauseGate(payload);
+if (held) { process.stderr.write(held + '\n'); process.exit(2); }
 if (!SHELL && !BROWSER.test(tool)) bail();
 
 // A whole-repository run of one of these, in command position: `cat vitest.config.ts`, `npm i -D vitest`

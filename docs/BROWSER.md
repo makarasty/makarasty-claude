@@ -60,7 +60,14 @@ gate fired the instant an operator says they have opened the pane therefore read
 worker back to ask for a pane that is already open - which is the shape that cost six pane workers between
 1 and 34 minutes each [M20]. Read zero, wait a second, read again, and believe the second one.
 
-A blind worker asks the operator to display the pane, then **measures again**. All eight panes of the
+A blind worker asks the operator to display the pane, then **measures again**. This holds for every
+session that reads a pane, the coordinator included, and the ask goes out in the same turn - with
+`AskUserQuestion`. The push notification is the coordinator's: it adds `PushNotification` where the session has
+it, since the operator is usually looking at another chat. A worker's route is its `.waiting` marker plus
+`AskUserQuestion` (`fleet-run`, "Gate the pane before trusting it"), and the coordinator's watch reports that
+marker as `NEEDS OPERATOR` in the chat the operator is reading. Recording the visual check as a debt "for when the pane is open" is not an ask: nobody is
+told, nothing wakes anyone, and the check never happens. Measured 2026-10-05: a coordinator's pane read
+0 fps, it wrote three screens into a backlog and went quiet, and the operator found out by scrolling. All eight panes of the
 first eight-worker run opened blind, and the gate is what kept them from filing findings off a pane that
 was not drawing [M02]. The reading is the proof. An operator can open a different pane, or open one and
 collapse it, and both answers sound like yes.

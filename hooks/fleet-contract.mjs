@@ -24,7 +24,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { findRuns, chipOf, rel } from './run-dir.mjs';
+import { findRuns, chipOf, rel, pauseGate } from './run-dir.mjs';
 
 const bail = () => process.exit(0);
 
@@ -35,10 +35,19 @@ try {
 } catch { bail(); }
 
 const tool = payload.tool_name || '';
-if (!/^(Edit|Write|MultiEdit)$/.test(tool)) bail();
+if (!/^(Edit|Write|MultiEdit|NotebookEdit)$/.test(tool)) bail();
 
 const session = payload.session_id || process.env.CLAUDE_CODE_SESSION_ID || '';
 if (!session) bail();
+
+// A pause first: it is one readdir when nothing is paused, and an edit is exactly what a paused worker must
+// not make once its grace is over.
+const held = pauseGate(payload);
+if (held) { process.stderr.write(held + '\n'); process.exit(2); }
+
+// A notebook edit is held by a pause like any other edit; it names a notebook, not a file on the contract
+// surface, so past the pause there is nothing for the rest of this hook to compare.
+if (tool === 'NotebookEdit') bail();
 
 const input = payload.tool_input || {};
 const target = input.file_path || '';

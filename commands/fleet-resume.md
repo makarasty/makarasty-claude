@@ -79,7 +79,7 @@ back the old one, or a late write from the old worker lands on live work.
 ### 4. Re-file, then re-spawn
 
 Write the released work as new tasks in `tasks/ready/`, then `mcp__ccd_session__spawn_task` one chip per worker you want,
-titled exactly `fleet <run-id> NN` as in `fleet-plan`. Size the wave off `fleet.sh width`, not off how many
+title and prompt verbatim from `sh "$f" chips .fleet/<run-id> <NN>-<NN> <lane>`, numbered past the dead workers. Size the wave off `fleet.sh width`, not off how many
 workers died: the survivors usually finished several tasks before the lights went out.
 
 If the run had a `verify` or `pane` lane, say which lane each new chip is for. A pane worker whose pane is
