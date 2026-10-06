@@ -139,7 +139,7 @@ the flag would stop every worker the moment it tried to begin.
 All nine can be started by you or by Claude, and most trigger on plain phrasing in any language: "commit
 as me", "закоммить от меня", "ping me when the tests are done".
 
-**Context hook.** Once a chat's context passes 600k tokens, and again every 150k above that, the chat is
+**Context hook.** Once a chat's context passes 700k tokens, and again every 150k above that, the chat is
 told to offer a handoff in one line (a chat that coordinates or works a fleet run gets none: the run's own marks watch it, below). `MAKARASTY_HANDOFF_AT` and `MAKARASTY_HANDOFF_STEP` move the levels;
 `MAKARASTY_HANDOFF_AT=0` turns it off.
 

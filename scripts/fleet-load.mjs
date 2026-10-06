@@ -10,7 +10,7 @@
 //   node fleet-load.mjs --json              the same, as one JSON object, `tight` included
 //   node fleet-load.mjs --clear <GB>        exit 0 when free memory is above <GB>, 1 otherwise. Silent.
 //   node fleet-load.mjs --leftovers [--kill]  toolchain processes whose parent is gone; --kill ends the
-//                                           orphaned test and typecheck runs among them, nothing else
+//                                           orphaned test and typecheck runs among them that sit idle, nothing else
 //   node fleet-load.mjs --watch 30          sample every 30s until Ctrl-C
 //   node fleet-load.mjs --watch 30 --out load.csv    ... and append each sample to a CSV
 //
@@ -162,38 +162,52 @@ function render(c) {
   return lines.join('\n');
 }
 
-// --leftovers [--kill]: toolchain processes nobody is waiting for. A test run or a typecheck whose parent is
-// gone - the chat or shell that started it closed - holds its memory until the machine reboots: on
-// 2026-10-06 a build run's box ran out of memory with such runs behind it, and nothing said whose they were.
-// An orphan here is a process whose parent no longer exists (on POSIX: was reparented to 1), or whose parent
-// pid now belongs to a process younger than it (pid reuse on Windows). A process with a live parent is
-// somebody's and is never listed. --kill ends only orphaned one-shot runs (tests, typecheck) at least two
-// minutes old, with their children; an orphaned dev server, watcher or emulator is listed and left alone,
-// because a launcher script that exits at once (a .vbs, a detached start) orphans the operator's own services.
-function leftovers() {
-  let procs = [];
+// --leftovers [--kill]: toolchain processes nobody is waiting for, machine-wide. A test run or a typecheck
+// whose parent is gone - the chat or shell that started it closed - holds its memory until it ends, and a
+// hung one never ends: on 2026-10-06 a build run's box ran out of memory with such runs behind it, and
+// nothing said whose they were. An orphan here is a process whose parent no longer exists (on POSIX: was
+// reparented to 1), or whose parent pid now belongs to a process younger than it (pid reuse on Windows). A
+// process with a live parent is somebody's and is never listed. --kill ends only an orphaned one-shot run
+// (tests, typecheck) at least two minutes old whose whole tree used no CPU over a five-second second look:
+// a run somebody detached on purpose (`start /b`, nohup) is still working and is left alone, and so is
+// every orphaned dev server, watcher or emulator, since a launcher that exits at once (a .vbs) orphans the
+// operator's own services.
+function snapshot() {
+  // A test hands in its own process table, so the listing is checked without touching a real process.
+  if (process.env.FLEET_PROCS_JSON) return JSON.parse(fs.readFileSync(process.env.FLEET_PROCS_JSON, 'utf8'));
   if (process.platform === 'win32') {
     const out = sh('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
       'Get-CimInstance Win32_Process | Select-Object Name,ProcessId,ParentProcessId,WorkingSetSize,CommandLine,' +
+      '@{n="Cpu";e={[int64]($_.UserModeTime + $_.KernelModeTime)}},' +
       '@{n="Created";e={[int64](($_.CreationDate.ToUniversalTime()) - [datetime]"1970-01-01").TotalMilliseconds}} | ' +
       'ConvertTo-Json -Compress -Depth 3']);
-    procs = parse(out, []);
-    if (!Array.isArray(procs)) procs = [procs];
-  } else {
-    const now = Date.now();
-    procs = sh('sh', ['-c', 'ps -eo pid=,ppid=,etimes=,rss=,comm=,args= 2>/dev/null']).split('\n').filter(Boolean).map((l) => {
-      const m = l.trim().match(/^(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\S+)\s*(.*)$/);
-      return m ? { ProcessId: +m[1], ParentProcessId: +m[2], Created: now - m[3] * 1000, WorkingSetSize: +m[4] * 1024, Name: m[5].split('/').pop(), CommandLine: m[6] } : null;
-    }).filter(Boolean);
+    const procs = parse(out, []);
+    return Array.isArray(procs) ? procs : [procs];
   }
+  const now = Date.now();
+  const secs = (t) => t.split(/[-:]/).map(Number).reverse().reduce((s, v, i) => s + v * [1, 60, 3600, 86400][i], 0);
+  return sh('sh', ['-c', 'ps -eo pid=,ppid=,etimes=,rss=,time=,comm=,args= 2>/dev/null']).split('\n').filter(Boolean).map((l) => {
+    const m = l.trim().match(/^(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\S+)\s+(\S+)\s*(.*)$/);
+    return m ? { ProcessId: +m[1], ParentProcessId: +m[2], Created: now - m[3] * 1000, WorkingSetSize: +m[4] * 1024, Cpu: secs(m[5]), Name: m[6].split('/').pop(), CommandLine: m[7] } : null;
+  }).filter(Boolean);
+}
+
+function leftovers(procs) {
   const byPid = new Map(procs.map((p) => [p.ProcessId, p]));
   const orphan = (p) => {
     if (process.platform !== 'win32') return p.ParentProcessId === 1;
     const parent = byPid.get(p.ParentProcessId);
     return !parent || (parent.Created && p.Created && parent.Created > p.Created);
   };
-  const kids = (pid) => procs.filter((q) => q.ParentProcessId === pid && q.ProcessId !== pid);
-  const tree = (p) => [p, ...kids(p.ProcessId).flatMap(tree)];
+  // A child is created after its parent: a pid reused by an older process is not one, and without this
+  // check a reused pid made the walk loop for ever.
+  const kids = (p) => procs.filter((q) => q.ParentProcessId === p.ProcessId && q.ProcessId !== p.ProcessId
+    && (!q.Created || !p.Created || q.Created >= p.Created));
+  const tree = (p, seen = new Set()) => {
+    if (seen.has(p.ProcessId)) return [];
+    seen.add(p.ProcessId);
+    return [p, ...kids(p).flatMap((q) => tree(q, seen))];
+  };
   const found = [];
   for (const p of procs) {
     const k = classify(p);
@@ -201,30 +215,43 @@ function leftovers() {
     const all = tree(p);
     const mins = p.Created ? Math.round((Date.now() - p.Created) / 60000) : null;
     found.push({ pid: p.ProcessId, class: k, mb: Math.round(all.reduce((s, q) => s + (q.WorkingSetSize || 0), 0) / 1048576),
-      minutes: mins, oneShot: k === 'toolchain: tests' || k === 'toolchain: typecheck', cmd: (p.CommandLine || p.Name || '').slice(0, 160), tree: all.map((q) => q.ProcessId) });
+      minutes: mins, oneShot: k === 'toolchain: tests' || k === 'toolchain: typecheck', cmd: (p.CommandLine || p.Name || '').slice(0, 160),
+      tree: all.map((q) => ({ pid: q.ProcessId, created: q.Created, cpu: q.Cpu })) });
   }
   return found.sort((a, b) => b.mb - a.mb);
 }
 
 if (has('--leftovers')) {
-  const found = leftovers();
+  const found = leftovers(snapshot());
   const kill = has('--kill');
-  if (!found.length) { console.log('no orphaned toolchain process'); process.exit(0); }
+  if (!found.length) { console.log('no orphaned toolchain process on this machine'); process.exit(0); }
+  // The second look: a tree whose CPU time moved is still running for somebody.
+  let later = null;
+  if (kill && found.some((f) => f.oneShot && f.minutes >= 2)) {
+    execFileSync(process.execPath, ['-e', 'setTimeout(()=>{},5000)']);
+    later = new Map(snapshot().map((p) => [p.ProcessId, p]));
+  }
+  const idle = (f) => later && f.tree.every((t) => { const q = later.get(t.pid); return !q || (q.Created === t.created && q.Cpu === t.cpu); });
   let freed = 0;
   for (const f of found) {
-    const killable = f.oneShot && f.minutes != null && f.minutes >= 2;
-    let tag = killable ? 'ORPHANED RUN' : 'orphaned, left alone (may be the operator\'s service)';
-    if (kill && killable) {
-      const ok = process.platform === 'win32'
-        ? sh('taskkill', ['/PID', String(f.pid), '/T', '/F']) !== ''
-        : f.tree.slice().reverse().every((pid) => { try { process.kill(pid, 'SIGTERM'); return true; } catch { return false; } });
-      tag = ok ? 'KILLED' : 'KILL FAILED';
-      if (ok) freed += f.mb;
+    const candidate = f.oneShot && f.minutes != null && f.minutes >= 2;
+    let tag = !candidate ? 'orphaned, left alone (may be the operator\'s service)' : 'ORPHANED RUN';
+    if (kill && candidate) {
+      if (!idle(f)) tag = 'ORPHANED RUN, still using CPU: left alone';
+      else {
+        // The pids this walk checked, children first; never taskkill /T, which walks pids without the
+        // creation-time check above.
+        const ok = f.tree.slice().reverse().every((t) => process.platform === 'win32'
+          ? sh('taskkill', ['/PID', String(t.pid), '/F']) !== '' || !later.get(t.pid)
+          : (() => { try { process.kill(t.pid, 'SIGTERM'); return true; } catch { return false; } })());
+        tag = ok ? 'KILLED' : 'KILL FAILED';
+        if (ok) freed += f.mb;
+      }
     }
     console.log(`${tag}  pid ${f.pid}  ${f.class}  ${f.mb} MB  ${f.minutes ?? '?'} min  ${f.cmd}`);
   }
   if (kill) console.log(`freed about ${freed} MB`);
-  else if (found.some((f) => f.oneShot)) console.log('--kill ends the ORPHANED RUN lines only (one-shot runs at least two minutes old, with their children)');
+  else if (found.some((f) => f.oneShot)) console.log('--kill ends ORPHANED RUN lines only: one-shot runs at least two minutes old whose tree used no CPU over five seconds, with their children');
   process.exit(0);
 }
 

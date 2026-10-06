@@ -115,7 +115,7 @@ So a clock **reads the disk that closes its obligation, and exits when it sees i
 |---|---|---|
 | `fleet.sh clock <run> <chip> <task> <budget>` | one claimed task | `tasks/done/<task>` or `<chip>.done` appears, checked every 30 seconds |
 | `sleep 90; echo regate` | a pane that is not displayed | the gate reads live and the `.waiting` marker goes |
-| the `until` wake in `fleet-run` | a queue that is not finished: `drained` exit 5, `next` exit 7 | the ready or done set changes, `queue-open` goes, or `FINISHED` appears |
+| the `until` wake in `fleet-run` | a queue that is not finished: `drained` exit 5, `next` exit 7 | the ready, done or cleared set changes, `queue-open` goes, or `FINISHED` appears |
 
 One clock per obligation, and never a second for an obligation that already has one.
 

@@ -10,7 +10,7 @@
 # Usage, from anywhere:
 #   fleet.sh next    <run-dir> <chip> [lane]       claim the first free task in that lane, print it. exit 3 =
 #                                                  drained, nothing left and nothing waiting. exit 7 = waiting:
-#                                                  tasks exist but an `after:` or a held verify lane holds them.
+#                                                  tasks exist but an `after:`, a held verify lane or `operator:` holds them.
 #                                                  exit 8 = the run is paused. exit 9 = this chip was retired
 #   fleet.sh beat    <run-dir> <chip> <task-id>    refresh heartbeat. exit 4 = claim lost, take another
 #   fleet.sh clock   <run-dir> <chip> <task-id> [budget-min]   print the self-disarming abort clock to background
@@ -176,8 +176,10 @@ installed_version() {
 # What a task's frontmatter says the operator still owes, or nothing. Only the frontmatter: a body line
 # beginning `operator:` is prose.
 operator_owed() { # operator_owed <task file>
-  awk 'NR==1 && /^---/ {fm=1; next} fm && /^---/ {exit} fm && /^operator:/ {v=$0; sub(/^operator:[ \t]*/, "", v); sub(/[ \t\r]+$/, "", v); if (v !~ /^(none|no|-)?$/) print v; exit}' "$1" 2>/dev/null
+  awk 'NR==1 && /^---/ {fm=1; next} fm && /^---/ {exit} fm && /^operator:/ {v=$0; sub(/^operator:[ \t]*/, "", v); sub(/[ \t\r]+$/, "", v); if (tolower(v) !~ /^(none|no|-|n.a|nothing|false|done)?$/) print v; exit}' "$1" 2>/dev/null
 }
+# version_readable <v>: digits and dots only; anything else (unknown, a pre-release) is not compared.
+version_readable() { case "$1" in ''|*[!0-9.]*) return 1 ;; esac; }
 # version_older <a> <b>: true when a sorts before b as a version (1.5.9 < 1.5.10).
 version_older() { [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -1)" = "$1" ]; }
 
@@ -465,7 +467,7 @@ release_task() { # release_task <task-id>; prints one line per dependent it took
       # this whole graveyard exists to avoid.
       [ -d "$run/tasks/claimed/$_b" ] && continue
       [ -e "$run/tasks/done/$_b" ] && continue
-      for _d in $(sed -n 's/^after:[[:space:]]*\(.*\)/\1/p' "$_f" | head -1 | tr ',' ' '); do
+      for _d in $(sed -n 's/^after:[[:space:]]*\(.*\)/\1/p' "$_f" | head -1 | tr ',\r' '  '); do
         if [ "$_d" = "$_id" ]; then
           echo "  also released $_b: its \`after:\` named $_id, which nobody finished"
           _todo="${_todo:+$_todo }$_b"
@@ -653,7 +655,7 @@ next)
     # `fleet.sh cleared` removes the line: a worker that claimed it would sit on it, as a claim nobody can
     # advance. `none`, `no` and `-` mean nothing is owed.
     if [ -n "$(operator_owed "$f")" ]; then waiting=$((waiting + 1)); continue; fi
-    deps=$(sed -n 's/^after:[[:space:]]*\(.*\)/\1/p' "$f" | head -1 | tr ',' ' ')
+    deps=$(sed -n 's/^after:[[:space:]]*\(.*\)/\1/p' "$f" | head -1 | tr ',\r' '  ')
     if [ -n "$deps" ]; then
       blocked=""
       for d in $deps; do
@@ -719,7 +721,7 @@ next)
   # first when the second is true writes its `.done` and ends a session that still had work coming. So the
   # two states have two exit codes, not one exit code and two sentences.
   if [ "$waiting" -gt 0 ]; then
-    echo "QUEUE WAITING${lane:+ for lane $lane}: $waiting task(s) held by an unfinished \`after:\` dependency or a held verify lane"
+    echo "QUEUE WAITING${lane:+ for lane $lane}: $waiting task(s) held by an unfinished \`after:\` dependency, a held verify lane, or an \`operator:\` line not yet cleared"
     echo "  Poll rather than finishing: this queue opens again when those tasks land."
     exit 7
   fi
@@ -1053,10 +1055,12 @@ file)
     _why="it is not valid UTF-8 (a cp1252 or UTF-16 write?): write the file as UTF-8 and file it again"
   elif [ "$(head -1 "$_tmp" | tr -d '\r')" != "---" ]; then
     _why="it does not start with a --- frontmatter line"
+  elif ! awk 'NR>1 && /^---/ {f=1; exit} END {exit !f}' "$_tmp"; then
+    _why="its frontmatter has no closing --- line"
   else
     # The lane as `next` reads it: the first word of the needs: line.
     _need=$(awk 'NR>1 && /^---/{exit} /^needs:/{sub(/^needs:[ \t]*/,""); if (match($0, /^[a-z]+/)) print substr($0, 1, RLENGTH); exit}' "$_tmp")
-    case "$_need" in pane|repo|verify) ;; *) _why="its needs: line names '${_need}', and a lane is pane, repo or verify";; esac
+    case "$_need" in pane|repo|verify) ;; *) _why="its needs: line reads '$(awk 'NR>1 && /^---/{exit} /^needs:/{sub(/^needs:[ \t]*/,""); sub(/[ \t\r]+$/,""); print; exit}' "$_tmp")', and a lane is pane, repo or verify, in lower case";; esac
     _tid=$(awk 'NR>1 && /^---/{exit} /^task-id:/{sub(/^task-id:[ \t]*/,""); sub(/[ \t\r]+$/,""); print; exit}' "$_tmp")
     [ -z "$_why" ] && [ -n "$_tid" ] && [ "$_tid" != "$id" ] && _why="its task-id: line says '$_tid', not '$id'"
   fi
@@ -1088,6 +1092,9 @@ cleared)
   [ -e "$_f" ] || { echo "no such task: $id" >&2; exit 2; }
   _t="$_f.tmp-$$"
   awk 'NR==1 && /^---/ {fm=1; print; next} fm && /^---/ {fm=0} fm && /^operator:/ {next} {print}' "$_f" > "$_t" && mv "$_t" "$_f"
+  # A worker waiting on exit 7 wakes when the ready, done or cleared listing changes (fleet-run's wake
+  # loop); rewriting the task in place changes none of them.
+  mkdir -p "$run/tasks/cleared" && now > "$run/tasks/cleared/$id"
   echo "CLEARED $id: the operator's part is done; next hands it out"
   exit 0
   ;;
@@ -1106,8 +1113,8 @@ stranded)
   git -C "$_g" rev-parse --verify -q "$_ib" >/dev/null || { echo "integration branch '$_ib' does not resolve in ${_g}" >&2; exit 2; }
   # Two git calls up front instead of several per task: a 200-task run took about a minute the other way,
   # inside `landed`. Every branch, and the ones integration does not hold all of.
-  _heads=" $(git -C "$_g" for-each-ref --format='%(refname:short)' refs/heads 2>/dev/null | tr '\n' ' ')"
-  _unm=" $(git -C "$_g" for-each-ref --no-merged "$_ib" --format='%(refname:short)' refs/heads 2>/dev/null | tr '\n' ' ')"
+  _heads=" $(git -C "$_g" for-each-ref --format='%(refname:lstrip=2)' refs/heads 2>/dev/null | tr '\n' ' ')"
+  _unm=" $(git -C "$_g" for-each-ref --no-merged "$_ib" --format='%(refname:lstrip=2)' refs/heads 2>/dev/null | tr '\n' ' ')"
   _n=0; _gone=0; _subj=""; _subjread=""
   for _m in "$run"/tasks/done/*; do
     [ -f "$_m" ] || continue
@@ -1123,7 +1130,7 @@ stranded)
       for _h in $_heads; do case "$_h" in */"$_id") _bs="$_bs $_h" ;; esac; done
       [ -n "$_bs" ] || continue
     fi
-    for _b in $_bs; do
+    set -f; for _b in $_bs; do
       # A branch that no longer exists was deleted, almost always after its merge: counted, not listed,
       # or a run that cleans up behind itself buries the one line that matters under a hundred.
       case "$_heads" in *" $_b "*) ;; *) _gone=$((_gone + 1)); continue ;; esac
@@ -1147,7 +1154,7 @@ stranded)
       else
         echo "  not merged $_id: branch $_b, $_miss commit(s) not in $_ib"
       fi
-    done
+    done; set +f
   done
   if [ "$_gone" -gt 0 ]; then echo "  ($_gone done task branch(es) no longer exist: deleted, most likely after their merge)"; fi
   if [ "$_n" = 0 ]; then echo "every done task's branch that still exists is in $_ib"; fi
@@ -1189,7 +1196,7 @@ ctx)
       [ "$lv" -gt "$lt" ] || continue
       echo "$lv" > "$st"
       held=$(claims_of "$c" | head -1); held=${held:+holds $held}; held=${held:-no claim}
-      echo "WORKER CONTEXT $c ${wk}K (mark ${wat}K, $held): put it in the ONE relaunch ask to the operator (fleet-plan, 8b; the option 'Replace workers $c only' is fleet.sh relaunch $absrun --keep-coordinator $c). Do not message the worker and do not ask about it separately."
+      echo "WORKER CONTEXT $c ${wk}K (mark ${wat}K, $held): put it in the ONE relaunch ask to the operator (fleet-plan, 8b; the option 'Replace workers $c only' is fleet.sh relaunch $absrun --keep-coordinator $c). Do not message a worker that is still working about its context, and do not ask about it separately."
     done
   fi
   # The watch runs this in the coordinator's session every minute: that keeps its fleet-sessions record
@@ -1206,7 +1213,9 @@ ctx)
     if [ -z "$_wv" ]; then
       if [ -e "$run/chips/$c.model" ]; then _wv="1.5.8-or-1.5.9"; else _wv="older-than-1.5.8"; fi
     fi
-    case "$_wv" in *-*) _old=1 ;; *) _old=""; version_older "$_wv" "$_iv" && _old=1 ;; esac
+    _old=""
+    case "$_wv" in 1.5.8-or-1.5.9|older-than-1.5.8) _old=1 ;; esac
+    if [ -z "$_old" ] && version_readable "$_wv" && version_readable "$_iv" && version_older "$_wv" "$_iv"; then _old=1; fi
     if [ -n "$_old" ]; then
       [ "$(cat "$run/chips/$c.plugin-warned" 2>/dev/null)" = "$_wv $_iv" ] && continue
       printf '%s %s\n' "$_wv" "$_iv" > "$run/chips/$c.plugin-warned"
@@ -1253,7 +1262,7 @@ drained)
   # Only tasks this worker could claim count: a repo worker held open by an unclaimed pane task waits for a
   # pane worker it cannot help. The lane rules are the ones `next` applies.
   lane=${4:-}
-  unheld=0
+  unheld=0; opheld=0
   for f in "$run"/tasks/ready/*.md; do
     [ -e "$f" ] || continue
     id=$(basename "$f" .md)
@@ -1268,9 +1277,11 @@ drained)
       fi
     fi
     unheld=$((unheld + 1))
+    if [ -n "$(operator_owed "$f")" ]; then opheld=$((opheld + 1)); fi
   done
   if [ "$unheld" -gt 0 ]; then
     echo "QUEUE NOT EMPTY: $unheld ready task(s) nobody holds yet. Do NOT write .done."
+    if [ "$opheld" -gt 0 ]; then echo "  $opheld of them wait on the operator; the coordinator has asked, and fleet.sh cleared releases each one."; fi
     echo "Claim again with next, and while it answers QUEUE WAITING poll rather than finishing:"
     echo "  [ -e \"$absrun/FINISHED\" ] && { echo run-finished; exit 0; }; sleep 300; echo recheck"
     exit 5
@@ -1835,7 +1846,7 @@ status)
         if (done.has(id)) continue;
         let who=""; try{who=(fs.readFileSync(p.join(T,"claimed",id,"owner"),"utf8").match(/^chip (\S+)/m)||[])[1]||""}catch{}
         const op=g("operator");
-        t[id]={after:g("after").split(/[\s,]+/).filter(Boolean),op:/^(none|no|-)?$/.test(op)?"":op,who};
+        t[id]={after:g("after").split(/[\s,]+/).filter(Boolean),op:/^(none|no|-|n.a|nothing|false|done)?$/i.test(op)?"":op,who};
       }
       const behind=id=>{const seen=new Set(),q=[id];while(q.length){const x=q.pop();for(const[k,v]of Object.entries(t))if(!seen.has(k)&&v.after.includes(x)){seen.add(k);q.push(k)}}return seen.size};
       const st=id=>t[id].who?"claimed by "+t[id].who:"ready, unclaimed";
@@ -1862,6 +1873,8 @@ status)
     # when its markers turn out empty. One that started and never recorded itself is older than `whoami`.
     _wv=$(sed -n 's/.* plugin \([^ ]*\)$/\1/p' "$run/chips/$nn.model" 2>/dev/null | tr -d '\r')
     if [ -e "$run/$nn.retired" ] || [ -e "$run/$nn.done" ]; then :
+    elif [ -n "$_wv" ] && [ "$_wv" != "$_pv" ] && ! { version_readable "$_wv" && version_readable "$_pv"; }; then
+      echo "    OTHER PLUGIN: worker $nn recorded makarasty '$_wv', which cannot be compared with this fleet.sh ($_pv)"
     elif [ -n "$_wv" ] && [ "$_wv" != "$_pv" ]; then
       _rel=newer; version_older "$_wv" "$_pv" && _rel=older
       echo "    OTHER PLUGIN: worker $nn runs makarasty $_wv, $_rel than this fleet.sh ($_pv); its markers and acks follow that version's protocol"
@@ -1992,7 +2005,10 @@ landed)
     for g in "$run"/tasks/claimed/"$id".released-* "$run"/tasks/claimed/"$id".dead-*; do
       [ -d "$g" ] && taken=1
     done
-    [ -n "$taken" ] || { echo "NOT LANDED: task nobody ever claimed: $id"; fail=1; }
+    if [ -z "$taken" ]; then
+      _op=$(operator_owed "$f")
+      echo "NOT LANDED: task nobody ever claimed: $id${_op:+ (it waits on the operator: $_op; fleet.sh cleared $absrun $id once done)}"; fail=1
+    fi
   done
   # A task the sweep released left the queue, so the loop above cannot see it. It is still work somebody
   # started and nobody finished: either the planner re-filed it under a new id, in which case delete the
@@ -2353,8 +2369,10 @@ pause)
   # The pause is enforced by the hooks of the plugin each worker runs, and only 1.5.9 and later have them.
   for _c in $hold; do
     _wv=$(sed -n 's/.* plugin \([^ ]*\)$/\1/p' "$run/chips/$_c.model" 2>/dev/null | tr -d '\r')
-    if [ -z "$_wv" ] || version_older "$_wv" 1.5.9; then
-      echo "  worker $_c runs makarasty ${_wv:-1.5.9 or older}: its hooks may not hold it; message it by its title (fleet $(basename "$absrun") $_c) to stop"
+    if [ ! -e "$run/chips/$_c.model" ]; then
+      echo "  worker $_c never recorded its plugin (no whoami): if it is older than 1.5.9 its hooks will not hold it; check that it acks"
+    elif [ -z "$_wv" ] || { version_readable "$_wv" && version_older "$_wv" 1.5.9; }; then
+      echo "  worker $_c runs makarasty ${_wv:-1.5.8 or 1.5.9}: its hooks may not hold it; message it by its title (fleet $(basename "$absrun") $_c) to stop"
     fi
   done
   echo "  Each worker gets ${_g} s from its first call after this to finish the step in hand ($(( _g * 4 )) s from now at the latest, for one that never calls); then the hooks refuse everything but git, fleet.sh and the wake loop."
@@ -2542,7 +2560,7 @@ handback)
       for _f in "$run"/tasks/ready/*.md; do
         [ -e "$_f" ] || continue
         [ "$_f" = "$run/tasks/ready/$new.md" ] && continue
-        _t=$(sed -n 's/^after:[[:space:]]*\(.*\)/\1/p' "$_f" | head -1 | tr ',' ' ')
+        _t=$(sed -n 's/^after:[[:space:]]*\(.*\)/\1/p' "$_f" | head -1 | tr ',\r' '  ')
         case " $_t " in *" $id "*) ;; *) continue ;; esac
         _tmp=$(tmpfile)
         awk -v o="$id" -v n="$new" '/^after:/ { l = $0; gsub(/,/, " ", l); m = split(l, a, " "); out = "after:"; for (i = 2; i <= m; i++) out = out " " (a[i] == o ? n : a[i]); print out; next } { print }' "$_f" > "$_tmp"

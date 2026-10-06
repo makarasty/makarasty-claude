@@ -128,7 +128,7 @@ sh "$f" whoami "$r" <chip> <model id> <effort or unknown>
    **Pass the lane** - `repo` if this session has no Browser pane, `pane` if it does - or you will claim
    work you cannot do. **Exit 3 means drained**: nothing left in your lane and nothing waiting. **Exit 8
    means the run is paused** and **exit 9 that you were retired** (both from `drained` too): section 1c.
-   **Exit 7 means QUEUE WAITING**: tasks exist but an `after:` or a held verify lane holds them - poll (below),
+   **Exit 7 means QUEUE WAITING**: tasks exist, held by an `after:`, a verify lane or an uncleared `operator:` - poll (below),
    and do not call `drained`. `next` and `drained` register this session as your chip before any of these
    exits, so a pause holds you from your first call. By hand: walk `tasks/ready/`
    in order, read each file's `needs:` line, `mkdir tasks/claimed/<task-id>` on the first one that matches
@@ -172,7 +172,7 @@ still answers 5, arm a wake on the queue actually changing, with `run_in_backgro
 claim again when it fires:
 
 ```bash
-q="$r"; k() { ls "$q/tasks/ready" "$q/tasks/done" 2>/dev/null | wc -l; [ -e "$q/tasks/queue-open" ] && echo open; }
+q="$r"; k() { ls "$q/tasks/ready" "$q/tasks/done" "$q/tasks/cleared" 2>/dev/null | wc -l; [ -e "$q/tasks/queue-open" ] && echo open; }
 s=$(k); until [ -e "$q/FINISHED" ] || [ "$(k)" != "$s" ]; do sleep 30; done; echo recheck
 ```
 

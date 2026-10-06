@@ -81,7 +81,7 @@ while true; do
     done
     rdy=$(ls $d/tasks/ready/*.md 2>/dev/null | wc -l); dne=$(ls $d/tasks/done 2>/dev/null | wc -l)
     echo "  progress: $dne of $rdy tasks done, $(ls $d/*.done $d/*.retired 2>/dev/null | wc -l) of $n workers landed"
-    if [ -f "$FS" ]; then sh "$FS" status "$d" | sed -n '/^== lanes with work/,/^== workers/{/^== workers/!p;}'; fi
+    if [ -f "$FS" ]; then sh "$FS" status "$d" | sed -n '/^== \(lanes with work\|waits for ever\|bottlenecks\|waiting on the operator\|task files\)/,/^== workers/{/^== workers/!p;}'; fi
     if [ -d "$d/pane/requests" ] && [ -f "$FS" ]; then sh "$FS" pane-status "$d" | sed 's/^/  /'; fi
     last=$now
   fi
@@ -101,7 +101,8 @@ else, the stall timer included, still applies.
 
 **A `WORKER PLUGIN NN` line means worker NN runs an older makarasty than the one installed**, so a pause or
 a retirement may not hold it: it goes into the same one relaunch ask below ("Replace workers NN only"), and
-you offer the fresh chips yourself; the operator should not have to ask whether old workers need replacing.
+you offer the fresh chips yourself, saying in that same ask that a fresh chip runs the new version only if
+Claude Code was restarted after the update; the operator should not have to ask whether old workers need replacing.
 
 **`COORDINATOR CONTEXT <n>K` means you, the session reading this, are getting full, and a `WORKER CONTEXT`
 line naming worker NN means that worker is.** Each prints once per mark and per session, from its

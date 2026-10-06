@@ -370,7 +370,7 @@ wants its pane opened and kept on screen.
 
 ## 8b. Coordinate without becoming the bottleneck
 
-You are the one session the whole run depends on, and the one nothing restarts. Nine rules keep you light.
+You are the one session the whole run depends on, and the one nothing restarts. Ten rules keep you light.
 
 - **Review through a subagent, never in your own context.** When a task finishes, spawn one review agent
   at the task's `verdict-model` (your own tier when the task names none) with the branch, the task file
@@ -382,7 +382,7 @@ You are the one session the whole run depends on, and the one nothing restarts. 
 - **Keep `STATE.md` in the run directory current**: the plan path, the run directory, the worker count
   `n`, the chips offered by lane, the integration checkout's path and URL, any extra URLs the watch
   checks, whether `tasks/queue-open` is held, the merged branches in order, the reviews in flight, the fix
-  tasks filed and why, the operator's decisions, and the pane check tasks filed and their state. Update it on
+  tasks filed and why, the operator's decisions and the questions still open to them, and the pane check tasks filed and their state. Update it on
   every merge. It is what a fresh coordinator reads, and what you read after a compaction; the first six are
   exactly what re-arming the watch and judging the lanes need, and nobody else has them. Stamp each entry
   with the time from the `== now` line of `fleet.sh status`, never an estimate: a coordinator that guessed
@@ -392,12 +392,12 @@ You are the one session the whole run depends on, and the one nothing restarts. 
   the task out. `== waits for ever` is an `after:` naming nothing: re-file or fix it. `OTHER PLUGIN` or
   `never ran whoami` under a worker, or a `WORKER PLUGIN` line from the watch, means it follows an older
   protocol (pause and retirement may not hold it, its markers may carry no branch line): put it in the one
-  relaunch ask as "Replace workers NN only" and offer the fresh chips, unasked by the operator. After each
+  relaunch ask as "Replace workers NN only" and offer the fresh chips, unasked by the operator (a fresh chip runs the new version only after a Claude Code restart: say so in the ask). After each
   merge, and before `landed`, the merge agent runs `fleet.sh stranded <run>`: `STRANDED` is a commit made
-  after its branch was merged, which nothing else would pick up.
+  after its branch was merged, which nothing else would pick up; a `not merged` line is a task turned down or forgotten, and `landed` does not repeat it.
 - **Watch the machine's memory, and clean up what nobody waits for.** On `== held on memory`, a slow
   machine, or the operator's word, run `fleet.sh procs <run>`: it lists test runs and typechecks whose chat
-  or shell is gone, and `--kill` ends those and nothing else. An orphaned dev server, watcher or emulator is
+  or shell is gone, and `--kill` ends those at least two minutes old that used no CPU over five seconds, and nothing else (it is machine-wide, so run it only on the operator's word). An orphaned dev server, watcher or emulator is
   listed and left alone: it may be the operator's service, so ask. Never kill a process with a live parent.
 - **Spend your context on verdicts, not on material: it should grow by lines, not by files.** Delegate to
   a subagent not only the reviews but **the merges, conflict resolution included** (the agent merges the
@@ -425,6 +425,12 @@ You are the one session the whole run depends on, and the one nothing restarts. 
   420 K on "workers 01-05 retire, your context is past 400K", written eighteen hours before it started).
   Replace workers with `relaunch`. A worker that stops for context below `worker_relaunch_k` (700) did not
   run out: message it by title to carry on.
+- **Every question to the operator is an `AskUserQuestion`, never a line in your reply.** A question typed
+  into the chat scrolls away under the next event and waits unseen (2026-10-06: "do we load the demo data
+  on sandbox and start pane workers?" sat in the text between two merges). Before asking, put everything
+  that does not depend on the answer in motion (reviews and merges in background agents, chips offered),
+  send `PushNotification` with the question in one line, ask with your recommended option first, and
+  write it under open questions in `STATE.md` so a fresh coordinator sees it too.
 - **A pause is `/makarasty:fleet-pause <run-id>`, never a sentence to the workers.** Telling them to pause
   stopped nobody (2026-10-05: they kept "wrapping up" for a long time). The command writes the file the
   hooks enforce; the watch prints `PAUSED`, `worker NN stopped` and `RESUMED`. A relaunch pauses by itself.

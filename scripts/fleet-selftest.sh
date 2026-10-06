@@ -300,6 +300,10 @@ sleep 1   # the flag compares mtimes, and both writes land in the same second ot
 printf 'the tool everybody is tripping over is fixed\n' | sh "$fleet" broadcast "$run" >/dev/null 2>&1
 out=$(sh "$fleet" status "$run" 2>&1)
 check "a question older than the broadcast is flagged rather than left silently open" "broadcast landed after it" "$out"
+check "each broadcast entry carries its time" "## $(date +%Y-%m-%d)" "$(cat "$run/answers/00-broadcast.md")"
+out=$(printf 'workers 01-05 retire
+' | sh "$fleet" broadcast "$run" 2>&1)
+check "and a retire order is warned about" "read by every worker, later ones too" "$out"
 
 # The heading used to be printed above nothing at all: its `|| echo none` hung off a pipeline whose exit
 # status was sed's, and sed succeeds on empty input.
@@ -2043,9 +2047,9 @@ check "and neither is an edit" "0 " "$o"
 check "the hook matcher covers Monitor, Skill, subagent spawns and every browser tool" '^(Bash|PowerShell|Monitor|Agent|Task|Skill)$|^mcp__(.*[Bb]rowser|claude-in-chrome)__"' "$(cat "$here/../.claude-plugin/plugin.json")"
 check "and the edit matcher covers NotebookEdit" '"matcher": "Edit|Write|MultiEdit|NotebookEdit"' "$(cat "$here/../.claude-plugin/plugin.json")"
 # O-2: the context reminder must not read as an order to a fleet coordinator.
-printf '{"type":"assistant","message":{"usage":{"input_tokens":650000}}}\n' > "$pr/ctx.jsonl"
+printf '{"type":"assistant","message":{"usage":{"input_tokens":750000}}}\n' > "$pr/ctx.jsonl"
 o=$(cd "$pr" && printf '{"hook_event_name":"UserPromptSubmit","session_id":"s-ctx","transcript_path":"ctx.jsonl","prompt":"go on"}' | CLAUDE_CONFIG_DIR=$pr/ctxcfg node "$here/../tools/hooks/context.mjs" 2>&1)
-check "the context reminder says it is at 650k" "context is at 650k tokens" "$o"
+check "the context reminder says it is at 750k" "context is at 750k tokens" "$o"
 check "and that a fleet coordinator ignores it, its marks coming from the watch" "a fleet coordinator ignores this line; its marks come from the watch (COORDINATOR CONTEXT)" "$o"
 case "$o" in *"use the relaunch in fleet-plan 8b instead"*) bad "and no longer tells a coordinator to relaunch at 400K" "$o";; *) ok "and no longer tells a coordinator to relaunch at 400K";; esac
 
@@ -2309,6 +2313,7 @@ CLAUDE_CODE_SESSION_ID=sess-brief sh "$fleet" whoami "$bw" 01 m x >/dev/null 2>&
 [ "$(cat "$bw/chips/sess-brief" 2>/dev/null)" = 01 ] && ok "a brief worker's whoami registers its session for the pause hooks" || bad "a brief worker's whoami registers its session for the pause hooks" "$(ls "$bw/chips" 2>&1)"
 out=$(CLAUDE_CONFIG_DIR=$bw/cfg sh "$fleet" pause "$bw" 2>&1)
 check "the pause counts a registered brief worker as holding work" "1 worker(s) hold claims: 01" "$out"
+case "$out" in *"its hooks may not hold it"*) bad "a holder on this plugin is not called old" "$out";; *) ok "a holder on this plugin is not called old";; esac
 touch "$bw/01.done"
 out=$(CLAUDE_CONFIG_DIR=$bw/cfg sh "$fleet" pause "$bw" 2>&1)
 check "and stops counting it once it is done" "0 worker(s) hold claims" "$out"
@@ -2361,6 +2366,10 @@ check "cleared says so" "CLEARED a1" "$out"
 [ -z "$(grep '^operator:' "$fr/tasks/ready/a1.md")" ] && ok "and removes the line" || bad "and removes the line" "$(cat "$fr/tasks/ready/a1.md")"
 out=$(sh "$fleet" next "$fr" 09 repo 2>&1)
 check "then next hands it out" "a1" "$out"
+[ -e "$fr/tasks/cleared/a1" ] && ok "cleared leaves a mark the wake loop sees" || bad "cleared leaves a mark the wake loop sees"
+out=$(printf '\357\273\277---\nneeds: repo\n---\n' | sh "$fleet" file "$fr" bom1 2>&1)
+check "a byte order mark is dropped, not refused" "FILED bom1" "$out"
+[ "$(head -c 3 "$fr/tasks/ready/bom1.md")" = "---" ] && ok "and the filed task starts with its frontmatter" || bad "and the filed task starts with its frontmatter" "$(head -c 8 "$fr/tasks/ready/bom1.md" | od -c | head -1)"
 printf 'repo\n' > "$fr/offered/08"; printf '08' > "$fr/chips/sess-08"; printf 'opus high plugin 0.0.1\n' > "$fr/chips/08.model"
 out=$(sh "$fleet" ctx "$fr" 2>&1)
 check "the watch names a worker on an older plugin, for the one relaunch ask" "WORKER PLUGIN 08 runs makarasty 0.0.1" "$out"
@@ -2405,6 +2414,24 @@ out=$(CLAUDE_CONFIG_DIR=$lr/cfg sh "$fleet" landed "$lr/run" 0 2>&1)
 CLAUDE_CODE_SESSION_ID=sess-c CLAUDE_CONFIG_DIR=$lr/cfg sh "$fleet" chips "$lr/run" 01 repo >/dev/null 2>&1
 [ -s "$lr/cfg/makarasty/fleet-sessions/sess-c" ] && ok "chips records the coordinator for the context hook" || bad "chips records the coordinator for the context hook" "$(ls "$lr/cfg/makarasty/fleet-sessions")"
 rm -rf "$lr"
+out=$(printf -- '---\nneeds: repo\noperator: None\n---\n' | sh "$fleet" file "$fr" none1 2>&1)
+case "$out" in *"waits on the operator"*) bad "operator: None owes nothing" "$out";; *) ok "operator: None owes nothing";; esac
+out=$(printf -- '---\nneeds: repo\nno closing line\n' | sh "$fleet" file "$fr" open1 2>&1)
+check "a frontmatter with no closing --- is refused" "no closing --- line" "$out"
+out=$(printf -- '---\nneeds: Repo\n---\n' | sh "$fleet" file "$fr" case1 2>&1)
+check "a lane in the wrong case is named as read" "reads 'Repo'" "$out"
+if command -v node >/dev/null 2>&1; then
+  node -e 'const n=Date.now();require("fs").writeFileSync(process.argv[1],JSON.stringify([
+    {Name:"node.exe",ProcessId:100,ParentProcessId:200,WorkingSetSize:104857600,CommandLine:"node C:/x/node_modules/vitest/vitest.mjs run",Cpu:5,Created:n-600000},
+    {Name:"node.exe",ProcessId:200,ParentProcessId:100,WorkingSetSize:52428800,CommandLine:"node C:/x/node_modules/vitest/dist/worker.js",Cpu:5,Created:n-500000},
+    {Name:"node.exe",ProcessId:300,ParentProcessId:999,WorkingSetSize:52428800,CommandLine:"node C:/x/node_modules/vite/bin/vite.js",Cpu:5,Created:n-600000},
+    {Name:"node.exe",ProcessId:400,ParentProcessId:401,WorkingSetSize:52428800,CommandLine:"node C:/x/node_modules/vitest/vitest.mjs run",Cpu:5,Created:n-600000},
+    {Name:"bash.exe",ProcessId:401,ParentProcessId:1,WorkingSetSize:1,CommandLine:"bash",Cpu:5,Created:n-700000}]))' "$fr/procs.json"
+  out=$(FLEET_PROCS_JSON="$fr/procs.json" node "$here/fleet-load.mjs" --leftovers 2>&1)
+  check "leftovers names an orphaned test run, its reused-pid child counted once" "ORPHANED RUN  pid 100  toolchain: tests  150 MB" "$out"
+  check "and lists an orphaned dev server without offering to kill it" "pid 300  toolchain: vite" "$out"
+  case "$out" in *"pid 400"*) bad "and never lists a run whose parent is alive" "$out";; *) ok "and never lists a run whose parent is alive";; esac
+fi
 rm -rf "$fr"
 CLAUDE_CODE_SESSION_ID=sess-coord sh "$fleet" find "$bw" integration </dev/null >/dev/null 2>&1 || true
 [ ! -e "$bw/chips/sess-coord" ] && ok "the coordinator's integration tree is never registered as a worker" || bad "the coordinator's integration tree is never registered as a worker" "$(cat "$bw/chips/sess-coord")"

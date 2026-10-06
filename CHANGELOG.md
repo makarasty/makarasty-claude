@@ -1,6 +1,6 @@
 # Changelog
 
-## makarasty 1.5.11 — 2026-10-06
+## makarasty 1.5.11, makarasty-tools 1.5.6 — 2026-10-06
 
 Worker 20 of the 2026-10-05 build stopped at 420 K of a million-token window, calling it "the coordinator's
 400K retire threshold". There was no such threshold: eighteen hours earlier a coordinator had broadcast
@@ -9,9 +9,14 @@ Worker 20 of the 2026-10-05 build stopped at 420 K of a million-token window, ca
 - **A worker never stops for context on its own** below 850 K; a reminder's number or a broadcast order
   naming other chips is not its own. The coordinator's watch asks the operator at 700 K, and a relaunch
   reaches the worker as "retired".
+- **Every question to the operator is an `AskUserQuestion`** with a push notification first, never a
+  line in the coordinator's reply, and it is kept in `STATE.md` until answered: a question typed into the
+  chat scrolled away between two merges.
 - **`fleet.sh broadcast` stamps each entry with its time** and warns when one carries a retire order;
   `fleet-plan` keeps orders for named chips out of the broadcast and has the coordinator tell a worker that
   stopped early to carry on.
+- **The general handoff reminder first fires at 700 K** (makarasty-tools 1.5.6), not 600 K: below that is
+  ordinary context on a large project, and 700 K is where the operator draws the yellow line.
 
 ## makarasty 1.5.10, makarasty-tools 1.5.5 — 2026-10-06
 
@@ -47,7 +52,7 @@ tasks done in 20.9 hours, seven coordinators in a row, and a third of the tasks 
   offers the fresh chips. `pause` names holders whose hooks cannot hold them. 137 of 200 done markers had
   come from 1.5.2 workers, and the operator had to ask the coordinator to look.
 - **`fleet.sh procs <run> [--kill]`** (`fleet-load.mjs --leftovers`) lists test runs and typechecks whose
-  chat or shell is gone, and kills only those; an orphaned dev server, watcher or emulator is listed and
+  chat or shell is gone, and kills only those that sit idle (no CPU over a five-second second look); an orphaned dev server, watcher or emulator is listed and
   left to the operator. A worker stops every run, server and background shell it started before `finish`.
   The build's machine ran out of memory with leftovers nobody owned.
 - **`status` starts with `== now`**, the machine's clock, and `STATE.md` entries are stamped from it: one
