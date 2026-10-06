@@ -1,5 +1,20 @@
 # Changelog
 
+## makarasty 1.5.12 — 2026-10-06
+
+The second red-team round on 1.5.10 and 1.5.11, plus one rule from the live run.
+
+- **Every question to the operator is an `AskUserQuestion`**, with a push notification first, never a line
+  in the coordinator's reply, and it stays under open questions in `STATE.md` until answered: a question
+  typed into the chat scrolled away between two merges.
+- A `cleared` task wakes the worker waiting on exit 7 (`tasks/cleared/`), and exit 7, `drained` and `landed`
+  say when a task waits on the operator; `operator: none`, `N/A` or `done` in any case owe nothing.
+- `--leftovers --kill` ends only an orphaned test run or typecheck whose tree used no CPU over a five-second
+  second look, by the pids it checked; a reused pid no longer loops the walk.
+- The watch's stall block shows the operator, bottleneck and wait-for-ever sections; `stranded` reads branch
+  names that a tag shadows; `file` refuses a frontmatter with no closing `---` and names the lane it read; an
+  unreadable plugin version is said to be unreadable rather than older or newer.
+
 ## makarasty 1.5.11, makarasty-tools 1.5.6 — 2026-10-06
 
 Worker 20 of the 2026-10-05 build stopped at 420 K of a million-token window, calling it "the coordinator's
@@ -9,9 +24,6 @@ Worker 20 of the 2026-10-05 build stopped at 420 K of a million-token window, ca
 - **A worker never stops for context on its own** below 850 K; a reminder's number or a broadcast order
   naming other chips is not its own. The coordinator's watch asks the operator at 700 K, and a relaunch
   reaches the worker as "retired".
-- **Every question to the operator is an `AskUserQuestion`** with a push notification first, never a
-  line in the coordinator's reply, and it is kept in `STATE.md` until answered: a question typed into the
-  chat scrolled away between two merges.
 - **`fleet.sh broadcast` stamps each entry with its time** and warns when one carries a retire order;
   `fleet-plan` keeps orders for named chips out of the broadcast and has the coordinator tell a worker that
   stopped early to carry on.
