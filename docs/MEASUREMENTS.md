@@ -503,10 +503,44 @@ desktop app, Claude Code 2.1.280.
   `preview_start` reopened it hidden at 0 frames, and only the operator could put it back on screen. Two
   trips to that chat, 58 minutes blind (10:20 to 10:56, 11:07 to 11:29).
 
+- **The app's own wake after a quit.** A session that had a background task running when the app quit gets
+  "The app was quit while you were working. Please continue from where you left off." at the next start. A
+  paused pane worker woken that way gated its pane, found it blind and asked the operator to show it, during
+  a pause the operator had set. The message is still the only thing that re-arms a wake loop the quit killed.
+- **What closed chats left running.** That evening, with six workers alive, `fleet-load --leftovers`
+  reported nothing while three trees belonged to nobody: a closed chat's wake loop for an older run (seven
+  hours), a closed chat's `python -m http.server 5199` (five hours), and the coordinator's own watch, three
+  hours past its monitor's timeout because Git Bash had broken its parent link. The toolchain rule saw none
+  of them: a shell is not a test run.
+
 **Rule:** the coordinator sets worker models (`MODELS.md`, Switching a worker); after a restart it wakes
 every worker by message before it believes `status` (`fleet-resume`, step 0); a pane worker frees memory by
-swapping tabs and never closes its last one (`BROWSER.md`). That a fresh tab gets a fresh renderer is
-inferred from M34's per-tab process count, not measured.
+swapping tabs and never closes its last one (`BROWSER.md`); a loop ends itself when its chat's session
+record is gone or its time is up, and `--leftovers` names the shells of closed chats. That a fresh tab gets
+a fresh renderer is inferred from M34's per-tab process count, not measured.
+**Status:** current.
+
+## M36 — Workers are slow by turn count, not by model or tests
+**2026-10-08**, two runs read from their transcripts: `2026-10-07-rm-ui-intake` (24 tasks, six workers) and
+`2026-10-05-remote-monitoring-build` (339 tasks, 28 chips). Median task 25.3 and 12.2 minutes.
+
+- Model time is 62-67% of active task time; tests and typecheck 8-16%; other tools 10-11%; browser 2-3%.
+- 87-89% of turns issue exactly one tool call. Turns that run one `sed -n`, `grep` or `cat` are 46% of all
+  turns and 40% of model time; their tool time is a seventh of the model time around them. 19-24% of file
+  reads re-read a file already read, and 18% of what a subagent reads its parent had read.
+- A turn costs a median 3.6-5.0 s on Opus at high or max and on Sonnet alike, at any context size.
+  Effort made no visible difference to speed (not a controlled comparison).
+- Tool time, measured on the same box: a trivial Bash call costs 0.48 s at p10 and 0.87 s at the median in
+  harness overhead alone, where a `Read` returned in 0.02 s; the plugin's hooks add 46-63 ms of that.
+- A delegated subagent makes its first edit after a median 4.5 minutes. Review and the fixes after it are
+  35-42% of a code task's wall time.
+- `2026-10-07-rm-ui-intake` lost 28% of its wall time to a memory crash with the restart after it (167 min) and to a pane
+  worker that closed its own pane (62 min, M35).
+
+**Rule:** batch independent reads into one turn, and give every subagent the map already found
+(`fleet-run`, "Read in batches"); split a task with three or more independent items across subagents.
+Pipelining the review and copying gitignored env files into new worktrees are measured candidates, not
+yet done.
 **Status:** current.
 
 ## Appendix: what a pull run spends
