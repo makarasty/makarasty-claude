@@ -1,7 +1,7 @@
 {
   "name": "makarasty-tools",
-  "description": "Nine everyday commands: commit and ship under your own name, review a diff with evidence, hand a chat off before its context runs out, collect bugs until a codeword, explain plainly, strip assistant tics from text, phrase a vendor call in simple English, and get a phone message when a chat finishes. A hook suggests a handoff once a chat passes 700k tokens of context.",
-  "version": "1.5.6",
+  "description": "Twelve everyday commands: commit and ship under your own name, review a diff with evidence, hand a chat off before its context runs out, collect bugs until a codeword, explain plainly, strip assistant tics from text, phrase a vendor call in simple English, get a phone message when a chat finishes, tune the machine for a game, find what is worth updating and clean up what nobody uses. A hook suggests a handoff once a chat passes 700k tokens of context.",
+  "version": "1.5.7",
   "author": {
     "name": "makarasty",
     "url": "https://github.com/makarasty"
