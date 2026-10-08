@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "makarasty",
-  "description": "Two Claude Code plugins: makarasty runs one job across several sessions with evidence gates, makarasty-tools is nine everyday commands for git, review, handoff and notifications.",
+  "description": "Two Claude Code plugins: makarasty runs one job across several sessions with evidence gates, makarasty-tools is twelve everyday commands for git, review, handoff and notifications.",
   "owner": {
     "name": "makarasty",
     "url": "https://github.com/makarasty"
@@ -15,7 +15,7 @@
     },
     {
       "name": "makarasty-tools",
-      "description": "Nine everyday commands: commit and ship under your own name, review a diff with evidence, hand a chat off before its context runs out, collect bugs until a codeword, explain plainly, strip assistant tics from text, phrase a vendor call in simple English, and get a phone message when a chat finishes.",
+      "description": "Twelve everyday commands: commit and ship under your own name, review a diff with evidence, hand a chat off before its context runs out, collect bugs until a codeword, explain plainly, strip assistant tics from text, phrase a vendor call in simple English, get a phone message when a chat finishes, tune the machine for a game, find what is worth updating and clean up what nobody uses.",
       "source": "./tools",
       "category": "productivity"
     }

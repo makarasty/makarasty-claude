@@ -1,5 +1,61 @@
 # Changelog
 
+## makarasty 1.5.14, makarasty-tools 1.5.7 — 2026-10-08
+
+Fewer clicks and questions per worker, and nothing left running after a chat closes.
+
+- **A queue worker past its context mark is replaced unasked, without a pause.** The watch names
+  `fleet.sh retire NN`; the coordinator runs it and offers the replacement chip, with the same lane and
+  model wish. The worker finishes its task and leaves at its next claim: `handback` commits its tree, its
+  unanswered questions are written into `.retired`, and a hook now lets a retired worker close its tabs and
+  preview servers. A second `retire` offers nothing again, the chip number is taken atomically, a lane with
+  nothing left gets no replacement, an unclicked replacement is named after ten minutes, and a worker on an
+  older plugin or a brief worker still goes through the one relaunch ask.
+- **Leaks from closed chats are found and ended.** `fleet-load --leftovers` now names a shell a Claude Code
+  chat started whose parent is gone, at least ten minutes old, with what runs under it (wake loops, `find`,
+  polling scripts), and `--kill` ends it, children first; the watch prints a `LEFTOVER` line once per process
+  and the coordinator kills unasked. A tree that serves something - a dev server, an `http.server`, any pid
+  holding a listening port - is never ended unasked: it comes as `LEFTOVER, ASK THE OPERATOR`. The watch
+  ends itself before its monitor's timeout and when the coordinator's chat is gone; a worker's pause,
+  memory and queue wake loops end when their chat's session record is gone [M35].
+- **Effort.** `chips` refuses `--effort max`; `docs/MODELS.md` holds the operator's policy: `high` by
+  default, `medium` for plain work, `xhigh` for the hardest lanes, ultracode for one task that needs more.
+- **Faster workers, same evidence.** A worker batches every read that does not depend on the last one into
+  one turn, splits a task with three or more independent items across subagents, and hands each subagent the
+  files, ranges and test command it already found: 87-89% of a measured run's turns made one tool call,
+  nearly half of them a single read at 3.6-5.0 s of model time each, and a delegated subagent took a median
+  4.5 minutes to its first edit [M36].
+- **A paused worker woken by the app's "The app was quit while you were working" re-arms its wake loop and
+  ends with one line**, without gating its pane or asking the operator anything; the coordinator reads the
+  same message as a restart and wakes its workers (`fleet-resume`, step 0).
+- **Upgrading mid-run no longer relaunches the whole fleet.** `next` stamps the plugin version each worker
+  claims on. A worker keeps the `fleet.sh` path it resolved at its start, so after `claude plugin update` and a
+  restart `WORKER PLUGIN` has the coordinator message it to invoke `fleet-run` again, and only a worker that
+  then claims on the old version (`STILL ON`) goes to the relaunch ask; the restart wake message does the same.
+  `retire` and the `WORKER CONTEXT` line send a worker older than 1.5.14 to the relaunch ask, `relaunch`
+  never reuses a replacement that `retire` marked `none` or that already started, versions compare without
+  `sort -V`, and `--leftovers` also knows zsh shells.
+- `next` skips the memory census when free memory is plainly above the line (0.8 s per claim), and workers
+  read with the `Read` and `Grep` tools where offered: 0.02 s against 0.5-0.9 s for a Bash read [M36].
+- **`/makarasty:fleet-analyze <run-id>`** answers "how did the fleet work", "why so slow", "where did the
+  tokens go" in under a second, from the run directory and the transcripts, with no model turns spent on
+  parsing: task time split into model, tests, tools, browser, operator waits and outages; one-tool turns,
+  read streaks, re-reads; subagents and their time to first edit; cache rewrites after idle; tokens and a
+  list-price cost per worker, parent and subagents; the slowest tasks; recommendations tied to the numbers.
+  It is the plugin's first TypeScript script: `node` runs it directly from 22.18, `tsc -p scripts` checks it,
+  and the selftest runs both.
+- **Three new tools.** `/makarasty-tools:game <game>` reads the hardware, disks, drivers and the game's install,
+  proposes changes each with a source and an undo, has a red team try to disprove them, and reports what
+  survived in a few plain lines. `/makarasty-tools:update` does the same for what is out of date: apps,
+  runtimes, Claude Code and its plugins, other agent CLIs, drivers. Both apply only the items the operator
+  says yes to, into standard install paths, record them in `~/.claude/makarasty/upkeep.json`, and leave
+  Windows system settings and drivers to the operator with exact steps. `/makarasty-tools:cleanup` finds what
+  the machine carries for nobody - processes ended chats left running, runaway background logs and scratch
+  folders of ended sessions (20 GB on the machine it was tried on), stale worktrees, caches - ends processes
+  on a yes and gives the commands for files; "почисти за собой" stops only what the current chat started.
+- The watch counts chips that started after it was armed, and counts a chip once however many markers it has;
+  collection treats a retired chip as finished.
+
 ## makarasty 1.5.13 — 2026-10-08
 
 The coordinator now sets each worker's model, and a restart no longer reads as a running fleet.
