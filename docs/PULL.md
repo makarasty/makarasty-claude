@@ -87,7 +87,7 @@ sh "$f" broadcast "$r"            # planner: something every worker reads at its
 sh "$f" file    "$r" task-07 < task-07.md   # planner: file one task, checked; FILED or REFUSED
 sh "$f" stranded "$r"             # planner: done branches with commits integration lacks
 sh "$f" cleared "$r" task-07          # planner: the operator did its part; next hands the task out
-sh "$f" procs   "$r" [--kill]         # planner: orphaned test runs and typechecks; --kill ends only those
+sh "$f" procs   "$r" [--kill]         # planner: orphaned test runs and typechecks, and shells of closed chats; --kill ends only those
 sh "$f" summary "$r" 03      # the end banner, generated from disk
 ```
 

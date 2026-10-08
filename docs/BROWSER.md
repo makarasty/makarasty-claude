@@ -222,7 +222,8 @@ reset to `desktop`.
    it hidden, and only the operator can put it back on screen [M35]. To give memory back, swap tabs:
    `tabs_create`, `tabs_select` the new tab, `tabs_close` the heavy one; then gate the new tab and log in
    again before the next observation. A fresh tab getting a fresh renderer is inferred from M34, not
-   measured. On a full machine, wait for the memory before loading the heavy page again.
+   measured. On a full machine, wait for the memory before loading the heavy page again. A retired worker is
+   the exception: its chat is not reused, so it closes every tab, the last one too.
 
 ## Delegating browser work
 

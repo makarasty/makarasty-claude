@@ -27,7 +27,8 @@ For the rest, call `list_sessions`, raising `limit` until its oldest row predate
 fall behind every chat touched since. Every `fleet <run-id> NN` it lists whose chip has no `.done`,
 `.blocked` or `.retired` gets one `send_message`:
 
-- a queue worker (`offered/NN` is a lane): "Status check after a restart. Beat the claim you hold, run
+- a queue worker (`offered/NN` is a lane): "Status check after a restart. Invoke /makarasty:fleet-run
+  <absolute run dir>/ again first: it resolves the plugin installed now. Then beat the claim you hold, run
   fleet.sh whoami again, re-arm the clock next printed and any dev server you ran, and go on with the claim;
   call next if you hold none. A pane worker gates its pane before the next observation."
 - a brief worker (`offered/NN` is `brief`): "Status check after a restart. Go on with your brief from where
@@ -104,7 +105,8 @@ back the old one, or a late write from the old worker lands on live work.
 ### 4. Re-file, then re-spawn
 
 Write the released work as new tasks in `tasks/ready/`, then `mcp__ccd_session__spawn_task` one chip per worker you want,
-title and prompt verbatim from `sh "$f" chips .fleet/<run-id> <NN>-<NN> <lane> --model <id> --effort <level>`, with the pair `status` shows as `wants` under the workers they replace (`any` is a valid `--effort`), numbered past the dead workers. Size the wave off `fleet.sh width`, not off how many
+title and prompt verbatim from `sh "$f" chips .fleet/<run-id> <NN>-<NN> <lane> --model <id> --effort <level>`, with the pair `status` shows as `wants` under the workers they replace (`any` is a valid `--effort`; a
+`max` written before 1.5.14 is passed as `xhigh`), numbered past the dead workers. Size the wave off `fleet.sh width`, not off how many
 workers died: the survivors usually finished several tasks before the lights went out.
 
 If the run had a `verify` or `pane` lane, say which lane each new chip is for. A pane worker whose pane is

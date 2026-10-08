@@ -19,6 +19,7 @@ holds its own context, works one brief, and reports by writing a file. Nothing m
 | `/makarasty:fleet-login [origin]` | A session needs the project's app open and authenticated, at `FLEET.md`'s origin or the one given |
 | `/makarasty:fleet-wait <run-id> [n]` | Workers are running and you want each finish to announce itself |
 | `/makarasty:fleet-collect <run-id>` | Workers have finished and you want one ranked backlog |
+| `/makarasty:fleet-analyze <run-id>` | You want to know how a run went: speed, tokens, money, what to change |
 | `/makarasty:fleet-pause <run-id> [off] [reason]` | You want every worker to really stop (they are refused every tool call except `git` and `fleet.sh`, after a 30 s grace), or want the pause lifted. Also what a coordinator relaunch uses |
 | `/makarasty:fleet-resume <run-id>` | The machine restarted mid-run: reopen the workers whose context survived, respawn the rest |
 | `/makarasty:fleet-design <screens>` | You want the application's screens as artboards on disk, assembled into a Claude Design canvas you can open and edit |

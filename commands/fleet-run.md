@@ -52,8 +52,9 @@ mostly written for an ordinary chat with a person in it. Split them in two:
 - **How a fleet worker talks and hands work back: this command wins.** A rule like "ask the owner with
   `AskUserQuestion`", "offer a chip for the rest" or "hand off to a fresh chat near the context limit"
   changes how your work travels, and in a fleet it travels through `ask/`, findings, claims and `.done`.
-  Never stop for context on your own: the window is a million tokens, the watch asks the operator at 700 K,
-  and a relaunch reaches you as "retired" (1c). A reminder's number, or a broadcast retire order naming
+  Never stop for context on your own: the window is a million tokens, at 700 K the coordinator
+  replaces a queue worker at its next claim, or asks the operator about a brief worker, and either reaches
+  you as "retired" (1c). A reminder's number, or a broadcast retire order naming
   other chips, is not yours (2026-10-06: worker 20 quit at 420 K on one meant for 01-05). Only past 850 K
   finish or hand the task back. Project extras that change none of this (a board card) you do at first claim.
 
@@ -70,6 +71,8 @@ file the step in `ask/` naming both rules, say so in your notes, and take the ne
 silently (2026-10-05: a coordinator followed a chip-hygiene memory rule, offered no chips, and the operator found it).
 
 ## The pane comes first, before anything else here
+
+One exception: woken while the run is paused, go straight to section 1c, item 6.
 
 Your brief's frontmatter, or your chip's prompt, names your lane; that is all you need to start. If it
 is `pane`, everything below this section waits: each turn spent reading `FLEET.md`, the documentation or
@@ -167,6 +170,10 @@ step 1. Any other wake, a restart message included, runs `whoami` without it.
    marker then holds `branch <name>` and its tip, which is how the coordinator finds what to merge. It
    refuses if the claim is no longer yours. Before it, `TaskStop` every test run, server and background
    shell you started: a run left behind holds its memory after your chat closes (2026-10-06: the box died).
+   Everything you start ends with your task: a server for your own worktree you stop before `finish`. A
+   shared service, seeded data or a long-lived server is the coordinator's: ask for it through `ask/`.
+   Before `finish`, everything the next worker needs is on disk (the branch, your notes, your findings),
+   because your next task may go to another chat: a worker past its context mark is replaced here.
 
 Exit 3: if you worked in a worktree and `tasks/queue-open` is gone, unlink it first (section 5), then
 `sh "$f" drained "$r" <chip> <lane>` and stop: `.done` is the last thing you write, and means the queue is
@@ -179,8 +186,9 @@ still answers 5, arm a wake on the queue actually changing, with `run_in_backgro
 claim again when it fires:
 
 ```bash
-q="$r"; k() { ls "$q/tasks/ready" "$q/tasks/done" "$q/tasks/cleared" 2>/dev/null | wc -l; [ -e "$q/tasks/queue-open" ] && echo open; }
-s=$(k); until [ -e "$q/FINISHED" ] || [ "$(k)" != "$s" ]; do sleep 30; done; echo recheck
+q="$r"; k() { ls "$q/tasks/ready" "$q/tasks/done" "$q/tasks/cleared" 2>/dev/null | wc -l; [ -e "$q/tasks/queue-open" ] && echo open; ls "$q"/*.retiring 2>/dev/null; }
+sf=$(grep -ls "\"sessionId\":\"$CLAUDE_CODE_SESSION_ID\"" "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sessions"/*.json 2>/dev/null | head -1)
+s=$(k); until [ -e "$q/FINISHED" ] || [ "$(k)" != "$s" ] || { [ -n "$sf" ] && [ ! -e "$sf" ]; }; do sleep 30; done; echo recheck
 ```
 
 Do not write `.done` and do not close the chat: a session that ends cannot be reopened.
@@ -226,6 +234,17 @@ about a band it could not have written to either way).
 then refuses that file ("File has not been read yet"): three round trips, on every run so far [M31]. A file
 the shell read is changed with `sed -i`, a heredoc or a script; `Edit` is for a file this session `Read`.
 
+**Read in batches.** A turn costs a median 3.6-5.0 s of model time whatever it carries, 87-89% of a measured
+run's turns made one tool call, and 46% were a single `sed`, `grep` or `cat` [M36]. Put every read that does not depend on the
+last result into one turn: several tool calls in one message, or one Bash call printing several ranges
+(`sed -n 10,60p a.ts; sed -n 1,40p b.ts; grep -n X c.ts`). A turn with a single read is for a read that
+needs the previous answer. Read with the `Read` tool (offset and limit for a slice) and search with `Grep`
+when they are offered: a `Read` returned in 0.02 s where a Bash read cost 0.5-0.9 s of harness time, and a
+file `Read` read can be changed with `Edit`. Every repo `Agent` prompt you write (work, review, verify) carries the four
+sentences above verbatim, plus the map of what you already found: the files and line ranges, the scoped
+test command, the worktree and the branch. A delegated subagent made its first edit after a median 4.5
+minutes, and 18% of what it read its parent had already read [M36].
+
 ## 1. Set up for your kind and your lane
 
 The brief's `kind` decides what happens next: read that kind's section of `docs/MISSIONS.md` (`root` reads
@@ -240,7 +259,10 @@ repo lane, never in the pane lane". The rest of that file sizes lanes, which is 
   message) is the default width, and a task's `fanout:`
   line raises or lowers it. No script reads that field: it is a planner's instruction to you, so follow it.
   You do not need to weigh it against free memory - `next` refuses your next task when the box is full.
-  The parts must not read each other's output. **On a long queue, delegate whole tasks, not parts:**
+  The parts must not read each other's output. A task with three or more independent items, each a slice
+  of work rather than one lookup (claims that need a trace, screens, files changed apart), goes to
+  subagents in one message, grouped to the task's width, on disjoint files. The subagents edit; you run
+  the scoped tests once after they return. **On a long queue, delegate whole tasks, not parts:**
   each task you work inline leaves 20-30 k of context behind, and four workers who never spawned anything
   were all compacted around their thirtieth task [M30]. When `next` prints `DELEGATE`, hand the task to
   one subagent - task file, `RULES.md`, your notes - and keep your own context flat.
@@ -388,9 +410,16 @@ ends. Then, in this order:
 5. **"resumed"**: carry on with the claim you hold, from where you stopped, re-arming what you stopped; call
    `next` only if you hold none (it refuses a second claim). Paused time does not count against the budget.
    **"retired"**, **exit 9**, or a call refused with "you were retired: end this turn with one line, commit
-   nothing, start nothing": a relaunch gave your open tasks to a fresh worker. That holds after the run
-   resumes (a retired chat is not reused; the hold ends when the run lands). End the turn with one line:
-   no commit, `.done`, banner or rename.
+   nothing, start nothing": a relaunch gave your open tasks to a fresh worker, or `retire` replaced you at a task boundary. That holds after the run
+   resumes (a retired chat is not reused; the hold ends when the run lands). First stop what you started -
+   `TaskStop` your shells and servers, `preview_stop`, and `tabs_close` every tab, the last one too, since
+   this chat is not reused - then end the turn with one line: no commit, `.done`, banner or rename.
+6. **Woken by the app's "The app was quit while you were working. Please continue from where you left
+   off."**, by `chat-gone` from your wake loop, or by any message once your wake loop is gone from your task
+   list: the quit killed the loop, and this message is what brings it back. Run `sh "$f" paused "$r"
+   <chip>` again. `NOT PAUSED` means carry on as for "resumed"; exit 9 is "retired" (item 5). Otherwise
+   background the wake loop it prints and end the turn with one line. Your pane, the operator and servers
+   all wait for the resume [M35].
 
 ## 2. Gate the pane before trusting it
 

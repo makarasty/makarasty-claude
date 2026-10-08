@@ -24,7 +24,8 @@
 #                                                  frontmatter, lane, task-id, no duplicate id. FILED or REFUSED
 #   fleet.sh stranded <run-dir> [branch]           done tasks whose branch has commits integration lacks
 #   fleet.sh cleared <run-dir> <task-id>           planner: the operator did a task's `operator:` part; next hands it out
-#   fleet.sh procs   <run-dir> [--kill]            orphaned test runs and typechecks; --kill ends only those
+#   fleet.sh procs   <run-dir> [--kill]            orphaned test runs and typechecks, and shells ended chat
+#                                                  processes left; --kill ends those, never a tree serving something
 #   fleet.sh drained <run-dir> <chip> [lane]       queue empty: write <chip>.done. exit 5 = queue still open,
 #                                                  or a ready task in that lane nobody holds yet
 #   fleet.sh chips   <run-dir> <NN>[-<NN>] [lane] [--model <id> [--effort <level>]]
@@ -42,6 +43,8 @@
 #   fleet.sh resume  <run-dir> [--take-over]       lift the pause. Only --take-over (the new coordinator's chip
 #                                                  prompt) takes the coordinator seat after a relaunch
 #   fleet.sh paused  <run-dir> <chip>              worker ack: committed and stopped; prints the wake loop
+#   fleet.sh retire  <run-dir> <chip>              coordinator: a queue worker past its context mark leaves at its
+#                                                  next claim, its tree committed; prints the chip for its lane
 #   fleet.sh handback <run-dir> <chip>             commit the chip's unsaved work, release its open claims, re-file
 #                                                  each as <id>-r<n> (`continue-from:` its branch), write <chip>.retired
 #   fleet.sh relaunch <run-dir> [--wait N] [--keep-coordinator] [NN...]  pause, wait for acks, hand the named
@@ -184,7 +187,8 @@ operator_owed() { # operator_owed <task file>
 # version_readable <v>: digits and dots only; anything else (unknown, a pre-release) is not compared.
 version_readable() { case "$1" in ''|*[!0-9.]*) return 1 ;; esac; }
 # version_older <a> <b>: true when a sorts before b as a version (1.5.9 < 1.5.10).
-version_older() { [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -1)" = "$1" ]; }
+# Numeric, field by field: busybox has no `sort -V`, and without it every version read as not older.
+version_older() { [ "$1" != "$2" ] && awk -v a="$1" -v b="$2" 'BEGIN { n = split(a, x, "."); m = split(b, y, "."); if (m > n) n = m; for (i = 1; i <= n; i++) { if (x[i] + 0 < y[i] + 0) exit 0; if (x[i] + 0 > y[i] + 0) exit 1 } exit 1 }'; }
 
 _calfile=$(beside ../calibration.json makarasty calibration.json)
 if [ -n "$_calfile" ]; then
@@ -360,6 +364,14 @@ pausemark() { printf '%s/%s' "$(pausedroot)" "$(printf '%s' "$absrun" | cksum | 
 # held after the resume. `landed` removes it with the run's FINISHED.
 retiredmark() { printf '%s.retired' "$(pausemark)"; }
 
+# Questions and pane walks a chip filed that nobody has answered: they would land for a chip nobody reads
+# once it is retired, so the retired marker names them for the coordinator.
+open_asks() { # open_asks <chip>
+  _o=""
+  for _a in "$run"/ask/"$1"-*.md; do [ -e "$_a" ] || continue; _b=$(basename "$_a"); [ -e "$run/answers/$_b" ] || _o="$_o ask/$_b"; done
+  for _w in "$run"/pane/requests/"$1"-*; do [ -e "$_w" ] || continue; _o="$_o pane/requests/$(basename "$_w")"; done
+  printf '%s' "$_o"
+}
 # Who this session is, so the hooks can tell a worker from any other chat on the machine. Called at the top of
 # `next`, `drained` and `paused` - BEFORE any exit for a pause, a retirement or a drained queue - because a
 # worker whose only calls were answered "paused" or "waiting" was otherwise never in the chip map and the pause
@@ -423,8 +435,19 @@ claims_of() { # claims_of <chip>
 # exactly what the hook's allow-list lets through while the run is paused.
 wake_loop() { # wake_loop <chip>
   _ps=$(calint clock_poll_seconds 30)
-  printf '  until [ ! -e "%s/PAUSED" ] || [ -e "%s/%s.retired" ] || [ -e "%s/FINISHED" ]; do sleep %s; done; if [ -e "%s/%s.retired" ]; then echo retired; elif [ -e "%s/FINISHED" ]; then echo run-finished; else echo resumed; fi\n' \
-    "$absrun" "$absrun" "$1" "$absrun" "$_ps" "$absrun" "$1" "$absrun"
+  printf '  until [ ! -e "%s/PAUSED" ] || [ -e "%s/%s.retired" ] || [ -e "%s/FINISHED" ]%s; do sleep %s; done; if [ -e "%s/%s.retired" ]; then echo retired; elif [ -e "%s/FINISHED" ]; then echo run-finished; elif [ -e "%s/PAUSED" ]; then echo chat-gone; else echo resumed; fi\n' \
+    "$absrun" "$absrun" "$1" "$absrun" "$(chat_gone)" "$_ps" "$absrun" "$1" "$absrun" "$absrun"
+}
+# A loop a worker backgrounds outlives the worker's chat: 2026-10-08, a closed chat's wake loop had run for
+# seven hours. Claude Code removes `sessions/<pid>.json` when a session ends, so a loop that knows its
+# session stops once that record is gone. Empty when the session is unknown or the host keeps no records.
+# The record file is found here, once; the loop tests only `[ ! -e <file> ]`, which the pause hook allows
+# (a `grep` in the loop is refused there) and which a rewrite of the record's content cannot trip.
+chat_gone() {
+  [ -n "${CLAUDE_CODE_SESSION_ID:-}" ] || return 0
+  _sf=$(grep -ls "\"sessionId\":\"$CLAUDE_CODE_SESSION_ID\"" "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sessions"/*.json 2>/dev/null | head -1)
+  [ -n "$_sf" ] && printf ' || [ ! -e "%s" ]' "$_sf"
+  return 0
 }
 
 # Each worker chip with the newest session that registered as it, "<chip> <session>" per line. A chip that
@@ -575,21 +598,38 @@ next)
   lane=${4:-}
   waiting=0
   register_chip "$chip"
+  # The fleet.sh running this is the plugin this worker runs now: after an update and a restart a resumed
+  # worker runs the new one, and a record written once at `whoami` would keep the old version for ever.
+  if [ -e "$run/chips/$chip.model" ]; then
+    _pv=$(plugin_version); _t=$(tmpfile)
+    sed "s/ plugin [^ ]*\$/ plugin $_pv/" "$run/chips/$chip.model" > "$_t" && mv -f "$_t" "$run/chips/$chip.model" || rm -f "$_t"
+  fi
   # A chip a relaunch replaced hands out nothing and says so before anything else: its tasks went back to
   # the queue under new ids (`handback`), so claiming here would take one of them off the fresh worker
   # that is meant to continue it. Exit 9, not 3: 3 means "drained", and a worker told that writes `.done`.
   if [ -e "$run/$chip.retired" ]; then
-    echo "RETIRED: chip $chip was replaced by a fresh worker. You were retired: end this turn with one line, commit nothing, start nothing."
+    echo "RETIRED: chip $chip was replaced by a fresh worker. You were retired: end this turn with one line, commit nothing, start nothing. First stop what you started: TaskStop your background shells, Monitors and servers, preview_stop your preview servers, tabs_close every tab, the last one too: this chat is not reused."
     exit 9
   fi
   # A run that landed hands out nothing: a leftover ready task claimed after collection is work nobody reads.
   if [ -e "$run/FINISHED" ]; then
-    echo "RUN FINISHED: $(basename "$absrun") has landed. End this turn with one line, commit nothing, start nothing."
+    echo "RUN FINISHED: $(basename "$absrun") has landed. End this turn with one line, commit nothing, start nothing. First stop what you started: TaskStop your background shells, Monitors and servers, preview_stop your preview servers, tabs_close every tab, the last one too: this chat is not reused."
     exit 9
   fi
   if [ -e "$run/brief-$chip.md" ]; then
     echo "chip $chip works brief-$chip.md, not the queue: go on with the brief from where your notes stop." >&2
     exit 2
+  fi
+  # `retire` asked this worker to leave at a task boundary, and `next` with no claim open is that boundary.
+  # `handback` commits what the tree still holds and writes `.retired`; with no claim it re-files nothing.
+  # Before the pause and the switch checks: a worker held there would otherwise never leave.
+  if [ -e "$run/$chip.retiring" ] && [ -z "$(claims_of "$chip" | head -1)" ]; then
+    sh "$0" handback "$run" "$chip" | sed 's/^/  /'
+    _r=$(head -1 "$run/$chip.retiring" | tr -d '\r'); rm -f "$run/$chip.retiring"
+    _open=$(open_asks "$chip")
+    printf 'context%s%s\n' "${_r:+, replaced by $_r}" "${_open:+, unanswered:$_open}" >> "$run/$chip.retired"
+    echo "RETIRED: your context is past its mark${_r:+ and worker $_r takes your lane}. You were retired: end this turn with one line, commit nothing, start nothing. First stop what you started: TaskStop your background shells, Monitors and servers, preview_stop your preview servers, tabs_close every tab, the last one too: this chat is not reused."
+    exit 9
   fi
   # A pause hands out nothing, however much is ready. Exit 8 is its own code for the reason 7 is not 3:
   # a worker told "drained" would write `.done`, and one told "waiting" would poll `next` as if work were
@@ -630,7 +670,7 @@ next)
       free=$(node "$loader" --json 2>/dev/null | sed -n 's/.*"freeGB":\([0-9.]*\).*/\1/p' | tail -1)
       echo "MACHINE TIGHT: ${free:-unknown} GB free, floor ${floor} GB. Nothing is wrong with you; the box is full."
       echo "Background this and wait. Do NOT write .done, and do not end this turn without it running:"
-      echo "  [ -e \"$absrun/FINISHED\" ] && { echo run-finished; exit 0; }; until node \"$loader\" --clear $clear >/dev/null 2>&1; do sleep 60; done; echo memory-back"
+      echo "  [ -e \"$absrun/FINISHED\" ] && { echo run-finished; exit 0; }; until node \"$loader\" --clear $clear >/dev/null 2>&1$(chat_gone); do sleep 60; done; echo memory-back"
       echo "Then claim again. While you wait, give back what your browser holds: a tab keeps its renderer until"
       echo "it is closed, and a reload returns none of it [M34]. tabs_create, tabs_select the new tab, then"
       echo "tabs_close the heavy one. Keep one tab open: the last one closing closes the pane, and only the"
@@ -978,7 +1018,10 @@ chips)
   case "$wmodel" in ''|none|claude-*) ;; *)
     echo "--model '$wmodel' is not a model id: pass it as get_session prints it (claude-opus-5-5), or none to drop the wish" >&2; exit 2;;
   esac
-  case "$weffort" in any) weffort="" ;; ''|low|medium|high|xhigh|max) ;; *) echo "effort '$weffort' is not low, medium, high, xhigh or max" >&2; exit 2;; esac
+  # max is refused: the docs warn it overthinks, and the operator capped workers at xhigh (docs/MODELS.md).
+  case "$weffort" in any) weffort="" ;; ''|low|medium|high|xhigh) ;;
+    max) echo "effort max is not for workers: use xhigh at most, and ultracode for one hard task (docs/MODELS.md, Reasoning effort)" >&2; exit 2;;
+    *) echo "effort '$weffort' is not low, medium, high or xhigh" >&2; exit 2;; esac
   if [ -n "$weffort" ] && [ -z "$wmodel" ]; then echo "--effort needs --model beside it" >&2; exit 2; fi
   first=${range%-*}; last=${range#*-}
   # Numbers only, and a range that runs forwards. `expr` returned status 1 for a zero and ended the script
@@ -1153,7 +1196,11 @@ procs)
   # parent is gone is listed and left to the operator.
   _l=$(load_script)
   [ -n "$_l" ] && command -v node >/dev/null 2>&1 || { echo "procs needs node and fleet-load.mjs" >&2; exit 2; }
-  if [ "${3:-}" = "--kill" ]; then node "$_l" --leftovers --kill; else node "$_l" --leftovers; fi
+  # A closed chat's tree serving a port FLEET.md names (the integration dev server after a relaunch) is the
+  # run's service, not a leftover.
+  _fm=$(dirname "$(dirname "$absrun")")/FLEET.md
+  _ports=$(sed -n 's/^- Services: *//p' "$_fm" 2>/dev/null | grep -oE ':[0-9]{2,5}' | tr -d ':' | sort -u | tr '\n' ',' | sed 's/,$//')
+  if [ "${3:-}" = "--kill" ]; then FLEET_KEEP_PORTS=$_ports node "$_l" --leftovers --kill; else FLEET_KEEP_PORTS=$_ports node "$_l" --leftovers; fi
   exit 0
   ;;
 
@@ -1267,7 +1314,17 @@ ctx)
       [ "$lv" -gt "$lt" ] || continue
       echo "$lv" > "$st"
       held=$(claims_of "$c" | head -1); held=${held:+holds $held}; held=${held:-no claim}
-      echo "WORKER CONTEXT $c ${wk}K (mark ${wat}K, $held): put it in the ONE relaunch ask to the operator (fleet-plan, 8b; the option 'Replace workers $c only' is fleet.sh relaunch $absrun --keep-coordinator $c). Do not message a worker that is still working about its context, and do not ask about it separately."
+      if [ -e "$run/$c.retiring" ] || [ -e "$run/$c.retired" ]; then :
+      elif [ "$(head -1 "$run/offered/$c" 2>/dev/null | tr -d '\r')" = brief ]; then
+        echo "WORKER CONTEXT $c ${wk}K (mark ${wat}K, $held): a brief worker; put it in the ONE relaunch ask to the operator (fleet-plan, 8b; the option 'Replace workers $c only' is fleet.sh relaunch $absrun --keep-coordinator $c)."
+      else
+        _cv=$(sed -n 's/.* plugin \([^ ]*\)$/\1/p' "$run/chips/$c.model" 2>/dev/null | tr -d '\r')
+        if [ -n "$_cv" ] && version_readable "$_cv" && ! version_older "$_cv" 1.5.14; then
+          echo "WORKER CONTEXT $c ${wk}K (mark ${wat}K, $held): run fleet.sh retire $absrun $c now, unasked, and do what it prints. The worker finishes the task it holds and leaves at its next claim; the run does not pause."
+        else
+          echo "WORKER CONTEXT $c ${wk}K (mark ${wat}K, $held): runs makarasty ${_cv:-unknown}, which does not leave on its own; put it in the ONE relaunch ask to the operator (fleet-plan, 8b; the option 'Replace workers $c only' is fleet.sh relaunch $absrun --keep-coordinator $c)."
+        fi
+      fi
     done
   fi
   # The watch runs this in the coordinator's session every minute: that keeps its fleet-sessions record
@@ -1278,6 +1335,14 @@ ctx)
   _iv=$(installed_version)
   for o in "$run"/offered/*; do
     [ -e "$o" ] || continue; c=$(basename "$o")
+    # A replacement nobody clicked leaves its lane short, and nothing else would say so. Checked before
+    # `chip_finished`: the old worker is usually retired by the time this matters.
+    _rp=$(cat "$run/replaced/$c" 2>/dev/null | tr -d '\r')
+    if [ -n "$_rp" ] && [ "$_rp" != none ] && [ -e "$run/offered/$_rp" ] && ! grep -lx "$_rp" "$run"/chips/* >/dev/null 2>&1 \
+      && [ -n "$(find "$run/replaced/$c" -mmin +10 2>/dev/null)" ] && [ ! -e "$run/replaced/$c.nagged" ]; then
+      : > "$run/replaced/$c.nagged"
+      echo "REPLACEMENT $_rp for worker $c was offered over ten minutes ago and has not started: PushNotification the operator to click the chip titled 'fleet $(basename "$absrun") $_rp'."
+    fi
     chip_finished "$c" && continue
     # A worker that stopped itself at `whoami` waits for exactly one act of the coordinator's. Said again
     # every ten minutes while it waits: a compaction or a relaunch loses a line printed once.
@@ -1295,6 +1360,9 @@ ctx)
       echo "WORKER MODEL $c DID NOT TAKE: $(tr -d '\r' < "$run/chips/$c.switch-failed"). It works on what it has. Switch it again and message it, or accept it: rm $absrun/want/$c."
     fi
     grep -lx "$c" "$run"/chips/* >/dev/null 2>&1 || continue # not started
+    # A brief worker never runs whoami and never claims: no record says its version, and nothing it does
+    # would answer this line. `status` names it under the worker instead.
+    [ "$(head -1 "$run/offered/$c" 2>/dev/null | tr -d '\r')" = brief ] && continue
     _wv=$(sed -n 's/.* plugin \([^ ]*\)$/\1/p' "$run/chips/$c.model" 2>/dev/null | tr -d '\r')
     if [ -z "$_wv" ]; then
       if [ -e "$run/chips/$c.model" ]; then _wv="1.5.8-or-1.5.9"; else _wv="older-than-1.5.8"; fi
@@ -1303,9 +1371,26 @@ ctx)
     case "$_wv" in 1.5.8-or-1.5.9|older-than-1.5.8) _old=1 ;; esac
     if [ -z "$_old" ] && version_readable "$_wv" && version_readable "$_iv" && version_older "$_wv" "$_iv"; then _old=1; fi
     if [ -n "$_old" ]; then
-      [ "$(cat "$run/chips/$c.plugin-warned" 2>/dev/null)" = "$_wv $_iv" ] && continue
+      if [ "$(cat "$run/chips/$c.plugin-warned" 2>/dev/null)" = "$_wv $_iv" ]; then
+        # Told once already. A claim made after that, with the record still old, means the worker kept its
+        # old fleet.sh path: only a relaunch moves it.
+        # Only a claim made after the coordinator messaged the worker counts: before that it had no chance.
+        [ -e "$run/chips/$c.plugin-escalated" ] && continue
+        [ -e "$run/chips/$c.plugin-messaged" ] || continue
+        for _ow in "$run"/tasks/claimed/*/owner; do
+          [ -e "$_ow" ] || continue
+          if [ "$_ow" -nt "$run/chips/$c.plugin-messaged" ] && grep -q "^chip $c\$" "$_ow" 2>/dev/null; then
+            : > "$run/chips/$c.plugin-escalated"
+            echo "WORKER PLUGIN $c STILL ON $_wv after a claim made since the last line: it keeps its old fleet.sh. Put it in the ONE relaunch ask (option 'Replace workers $c only': fleet.sh relaunch $absrun --keep-coordinator $c)."
+            break
+          fi
+        done
+        continue
+      fi
       printf '%s %s\n' "$_wv" "$_iv" > "$run/chips/$c.plugin-warned"
-      echo "WORKER PLUGIN $c runs makarasty $_wv, $_iv is installed: it follows an older protocol, so a pause or a retirement may not hold it. Put it in the ONE relaunch ask to the operator (option 'Replace workers $c only': fleet.sh relaunch $absrun --keep-coordinator $c) and offer the fresh chips; a fresh chip runs $_iv only if Claude Code was restarted after the update, so say that."
+      # A new pair starts the ask over: marks from an earlier bump in this run would fire STILL ON at once.
+      rm -f "$run/chips/$c.plugin-messaged" "$run/chips/$c.plugin-escalated"
+      echo "WORKER PLUGIN $c runs makarasty $_wv, $_iv is installed. A worker keeps the fleet.sh path it resolved at its start, so a restart alone does not move it: after the operator restarts Claude Code, message the session titled 'fleet $(basename "$absrun") $c' to invoke /makarasty:fleet-run $absrun/ again, which resolves the installed plugin, and then run: touch $absrun/chips/$c.plugin-messaged. Its next claim records $_iv; a claim after that mark that still records $_wv brings a STILL ON line for the relaunch ask."
     fi
   done
   ;;
@@ -1318,7 +1403,7 @@ drained)
   # drained queue: `.done` written under a pause would end a worker the run is about to need back. Both
   # answers come before the line about the browser pane: a retired or paused worker has nothing to close.
   if [ -e "$run/$chip.retired" ]; then
-    echo "RETIRED: chip $chip was replaced by a fresh worker. You were retired: end this turn with one line, commit nothing, start nothing."
+    echo "RETIRED: chip $chip was replaced by a fresh worker. You were retired: end this turn with one line, commit nothing, start nothing. First stop what you started: TaskStop your background shells, Monitors and servers, preview_stop your preview servers, tabs_close every tab, the last one too: this chat is not reused."
     exit 9
   fi
   if [ -e "$run/PAUSED" ]; then
@@ -1975,6 +2060,8 @@ status)
       echo "    OTHER PLUGIN: worker $nn runs makarasty $_wv, $_rel than this fleet.sh ($_pv); its markers and acks follow that version's protocol"
     elif [ -z "$_wv" ] && [ -e "$run/chips/$nn.model" ]; then
       echo "    OTHER PLUGIN: worker $nn runs makarasty 1.5.8 or 1.5.9 (whoami recorded no version), older than this fleet.sh ($_pv)"
+    elif [ "$started" = yes ] && [ ! -e "$run/chips/$nn.model" ] && [ "$(head -1 "$o" | tr -d '\r')" = brief ]; then
+      echo "    a brief worker: it runs no whoami, so its version is not recorded"
     elif [ "$started" = yes ] && [ ! -e "$run/chips/$nn.model" ]; then
       echo "    never ran whoami: a plugin older than 1.5.8, or it skipped the step; check its markers carry a branch line"
     fi
@@ -2542,7 +2629,7 @@ paused)
   register_chip "$chip"
   # A retired chip commits nothing: its work was handed back (and any unsaved part committed) by `handback`.
   if [ -e "$run/$chip.retired" ]; then
-    echo "RETIRED: chip $chip was replaced by a fresh worker. You were retired: end this turn with one line, commit nothing, start nothing."
+    echo "RETIRED: chip $chip was replaced by a fresh worker. You were retired: end this turn with one line, commit nothing, start nothing. First stop what you started: TaskStop your background shells, Monitors and servers, preview_stop your preview servers, tabs_close every tab, the last one too: this chat is not reused."
     exit 9
   fi
   if [ ! -e "$run/PAUSED" ]; then echo "NOT PAUSED: nothing to acknowledge. Carry on."; exit 1; fi
@@ -2593,6 +2680,75 @@ contexts)
       fi
       printf 'worker %s  %.8s  %sK  %s%s\n' "$c" "$sid" "${k:-?}" "$held" "$state"
     done
+  fi
+  ;;
+
+retire)
+  # A queue worker past its context mark is replaced without a pause and without a question: it leaves at
+  # its next `next`, where it holds no claim, so nothing goes back to the queue. A relaunch pauses the whole
+  # run to hand back open claims; between tasks there is nothing to hand back. The coordinator's own context
+  # stays the operator's call (fleet-plan, 8b), and so does a brief worker's: a brief has no boundary.
+  c=${3:?chip id required}
+  [ -e "$run/offered/$c" ] || { echo "chip $c was never offered in this run" >&2; exit 2; }
+  case "$(head -1 "$run/offered/$c" | tr -d '\r')" in brief) echo "chip $c works a brief, which has no task boundary to leave at: use the relaunch ask (docs/RELAUNCH.md)" >&2; exit 2;; esac
+  lane=$(head -1 "$run/offered/$c" | tr -d '\r')
+  chip_finished "$c" && { echo "chip $c has already finished: nothing to retire" >&2; exit 2; }
+  if [ -e "$run/replaced/$c" ]; then
+    if [ "$(head -1 "$run/replaced/$c" | tr -d '\r')" = none ]; then
+      echo "already retiring: chip $c leaves at its next claim, and its lane had nothing left, so no chip replaces it."
+    else
+      echo "already retiring: chip $c is replaced by $(cat "$run/replaced/$c"). Its chip was offered already: do not offer it again."
+    fi
+    exit 0
+  fi
+  # A worker on 1.5.13 or older never reads `.retiring` and would never leave.
+  _wv=$(sed -n 's/.* plugin \([^ ]*\)$/\1/p' "$run/chips/$c.model" 2>/dev/null | tr -d '\r')
+  if [ -z "$_wv" ] || ! version_readable "$_wv" || version_older "$_wv" 1.5.14; then
+    echo "chip $c runs makarasty ${_wv:-older than 1.5.8}, which does not leave on its own: use the relaunch ask (docs/RELAUNCH.md, 'Replace workers $c only')" >&2; exit 2
+  fi
+  # No replacement for a lane with nothing left to do: its chip would start, find the lane drained and end.
+  _left=0
+  [ -e "$run/tasks/queue-open" ] && _left=1
+  for _t in "$run"/tasks/ready/*.md; do
+    [ -e "$_t" ] || continue; _id=$(basename "$_t" .md)
+    [ -d "$run/tasks/claimed/$_id" ] || [ -e "$run/tasks/done/$_id" ] && continue
+    # The lane as `next` reads it: the first word, a missing one being repo, and a repo worker also takes verify.
+    _need=$(sed -n 's/^needs:[[:space:]]*\([a-z][a-z]*\).*/\1/p' "$_t" | head -1); _need=${_need:-repo}
+    if [ "$_need" = "$lane" ] || { [ "$lane" = repo ] && [ "$_need" = verify ]; }; then _left=1; break; fi
+  done
+  mkdir -p "$run/replaced"
+  if [ "$_left" = 0 ]; then
+    printf 'none\n' > "$run/replaced/$c"; printf '\n' > "$run/$c.retiring"
+    echo "RETIRING $c: it leaves at its next claim. Lane $lane has nothing left to claim, so no chip replaces it."
+    exit 0
+  fi
+  # The number, taken atomically: two retires in one minute must not both print chip 09.
+  # A number a brief file already names belongs to that brief's chip.
+  n=$(ls "$run/offered" | sed 's/^0*//' | grep -E '^[0-9]+$' | sort -n | tail -1); n=$(( ${n:-0} + 1 ))
+  new=""; _tries=0
+  while [ -z "$new" ] && [ "$_tries" -lt 50 ]; do
+    _nn=$(printf '%02d' "$n"); _tries=$((_tries + 1))
+    if [ ! -e "$run/brief-$_nn.md" ] && ( set -C; printf '%s\n' "$lane" > "$run/offered/$_nn" ) 2>/dev/null; then new=$_nn
+    elif [ ! -e "$run/offered/$_nn" ] && [ ! -e "$run/brief-$_nn.md" ]; then echo "cannot write $run/offered/$_nn" >&2; exit 2
+    fi
+    n=$((n + 1))
+  done
+  [ -n "$new" ] || { echo "no free chip number found after $_tries tries" >&2; exit 2; }
+  if ! _chip=$(sh "$0" chips "$run" "$new" "$lane" 2>&1); then
+    rm -f "$run/offered/$new"; echo "chips refused worker $new, so nothing was retired: $_chip" >&2; exit 2
+  fi
+  printf '%s\n' "$new" > "$run/replaced/$c"; printf '%s\n' "$new" > "$run/$c.retiring"
+  # The wish travels with the lane; an effort above the ceiling written before 1.5.14 does not.
+  if [ -e "$run/want/$c" ]; then mkdir -p "$run/want"; sed 's/ max$/ xhigh/' "$run/want/$c" > "$run/want/$new"; fi
+  echo "RETIRING $c: it finishes the task it holds and leaves at its next claim, its tree committed. Worker $new takes lane $lane:"
+  printf '%s\n' "$_chip" | sed -n '/^CHIP /,/^$/p'
+  echo "Offer that chip now, as its own spawn_task, then PushNotification the operator to click 'fleet $(basename "$absrun") $new'. A watch armed from 1.5.14's fleet-wait counts it from now on, clicked or not; one armed earlier (a saved watch.sh pinned to an older plugin) must be re-armed from the current fleet-wait first."
+  # A worker waiting on a model switch or acked into a pause holds nothing and may not call next for hours.
+  if [ -z "$(claims_of "$c" | head -1)" ] && { [ -e "$run/chips/$c.switch" ] || [ -e "$run/stopped/$c" ]; }; then
+    sh "$0" handback "$run" "$c" | sed 's/^/  /'; rm -f "$run/$c.retiring"
+    _open=$(open_asks "$c")
+    printf 'context, replaced by %s, idle when retired%s\n' "$new" "${_open:+, unanswered:$_open}" >> "$run/$c.retired"
+    echo "  $c was idle (waiting on a switch or a pause), so it is retired now."
   fi
   ;;
 
@@ -2804,8 +2960,11 @@ relaunch)
   mkdir -p "$run/replaced"
   echo
   for c in $list; do
-    if [ -e "$run/replaced/$c" ]; then new=$(head -1 "$run/replaced/$c")
-    else maxn=$((maxn + 1)); new=$(printf '%02d' "$maxn"); fi
+    new=$(head -1 "$run/replaced/$c" 2>/dev/null | tr -d '\r')
+    # `retire` may have written `none`, or a replacement that is already running as its own worker.
+    if [ -z "$new" ] || [ "$new" = none ] || grep -lx "$new" "$run"/chips/* >/dev/null 2>&1; then
+      maxn=$((maxn + 1)); new=$(printf '%02d' "$maxn")
+    fi
     lane=$(head -1 "$run/offered/$c")
     if [ "$lane" = brief ]; then
       if [ ! -e "$run/brief-$new.md" ]; then
@@ -2816,7 +2975,7 @@ relaunch)
     else
       sh "$0" chips "$run" "$new" "$lane" | sed -n '/^CHIP /,/^$/p'
       # The replacement runs on what its predecessor was meant to run on.
-      if [ -e "$run/want/$c" ]; then cp "$run/want/$c" "$run/want/$new"; fi
+      if [ -e "$run/want/$c" ]; then sed 's/ max$/ xhigh/' "$run/want/$c" > "$run/want/$new"; fi
     fi
     printf '%s\n' "$new" > "$run/replaced/$c"
   done

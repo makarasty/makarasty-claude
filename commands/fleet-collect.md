@@ -89,7 +89,7 @@ hand-patched by a cheaper model is how the next critique finds the same screen w
 
 ## Read only what is finished
 
-A worker with findings but no `.done` and no `.blocked` is still running. List it as outstanding and do
+A worker with findings but no `.done`, no `.blocked` and no `.retired` is still running. List it as outstanding and do
 not merge its file: a JSONL read mid-append has a torn last line, which is either a parse error or a
 finding silently dropped.
 

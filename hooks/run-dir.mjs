@@ -331,8 +331,11 @@ export function pauseGate(payload) {
     // does not. Checked first, because a retired worker has nothing in hand worth protecting.
     // Until the run lands: a finished run holds nobody, and a retired chat is never reused.
     if (fs.existsSync(path.join(run, `${chip}.retired`)) && !fs.existsSync(path.join(run, 'FINISHED'))) {
-      return `RETIRED: a relaunch replaced worker ${chip} and handed its task back to a fresh worker. ` +
-        `You were retired: end this turn with one line, commit nothing, start nothing.`;
+      // Closing what it started is the one thing a retired worker still does; holding the pane open would
+      // keep its renderer for as long as the chat stays open.
+      if (/__(tabs_close(_mcp)?|tabs_context(_mcp)?|preview_stop|preview_list)$/.test(tool)) return null;
+      return `RETIRED: a relaunch or a retire replaced worker ${chip} and gave its work to a fresh worker. ` +
+        `You were retired: end this turn with one line, commit nothing, start nothing. First stop what you started: TaskStop your background shells, Monitors and servers, preview_stop your preview servers, tabs_close every tab, the last one too: this chat is not reused.`;
     }
 
     let pausedAt;

@@ -392,14 +392,18 @@ You are the one session the whole run depends on, and the one nothing restarts. 
   operator is a question to ask now; when they have done it, `fleet.sh cleared <run> <id>` lets `next` hand
   the task out. `== waits for ever` is an `after:` naming nothing: re-file or fix it. `OTHER PLUGIN` or
   `never ran whoami` under a worker, or a `WORKER PLUGIN` line from the watch, means it follows an older
-  protocol (pause and retirement may not hold it, its markers may carry no branch line): put it in the one
-  relaunch ask as "Replace workers NN only" and offer the fresh chips, unasked by the operator (a fresh chip runs the new version only after a Claude Code restart: say so in the ask). After each
+  protocol (pause and retirement may not hold it, its markers may carry no branch line): ask for a Claude
+  Code restart, then have the worker invoke `fleet-run` again, as the line says; `STILL ON` goes in the one
+  relaunch ask as "Replace workers NN only", with the fresh chips (`fleet-wait`). After each
   merge, and before `landed`, the merge agent runs `fleet.sh stranded <run>`: `STRANDED` is a commit made
   after its branch was merged, which nothing else would pick up; a `not merged` line is a task turned down or forgotten, and `landed` does not repeat it.
-- **Watch the machine's memory, and clean up what nobody waits for.** On `== held on memory`, a slow
-  machine, or the operator's word, run `fleet.sh procs <run>`: it lists test runs and typechecks whose chat
-  or shell is gone, and `--kill` ends those at least two minutes old that used no CPU over five seconds, and nothing else (it is machine-wide, so run it only on the operator's word). An orphaned dev server, watcher or emulator is
-  listed and left alone: it may be the operator's service, so ask. Never kill a process with a live parent.
+- **Watch the machine's memory, and clean up what nobody waits for.** The watch prints a `LEFTOVER` line
+  once per process that `fleet.sh procs <run>` finds: a shell a closed chat left running with everything
+  under it (wake loops, a `find`, a polling script), or an orphaned test run or typecheck. Run `fleet.sh
+  procs <run> --kill` on it unasked: the operator's standing word since 2026-10-08. A closed chat's tree that
+  serves something - a dev server, an `http.server`, anything holding a listening port - comes as `LEFTOVER,
+  ASK THE OPERATOR`: it may be what they are looking at, so ask, and `--kill` never ends it. Never kill a
+  process with a live parent.
 - **Spend your context on verdicts, not on material: it should grow by lines, not by files.** Delegate to
   a subagent not only the reviews but **the merges, conflict resolution included** (the agent merges the
   branch into the integration branch, resolves what conflicts, runs the scoped checks and returns one
@@ -418,8 +422,9 @@ You are the one session the whole run depends on, and the one nothing restarts. 
   every session's size and marks the ones `OVER`. The operator may also just ask. Do not hand off by chip and
   do not run `/makarasty-tools:handoff`: a chain of handoff chips re-reads the world at every hop and loses
   what was only in context, and workers with a large context were never moved at all. One controlled
-  relaunch replaces the chain, and a `WORKER CONTEXT` line points at this same single ask, never at a
-  relaunch of its own. **The procedure is in `docs/RELAUNCH.md`: read it when the mark comes**, before
+  relaunch replaces the chain. A `WORKER CONTEXT` line for a queue worker is the exception: it names
+  `fleet.sh retire`, which you run unasked (`fleet-wait`); for a brief worker it points at this same single
+  ask. **The procedure is in `docs/RELAUNCH.md`: read it when the mark comes**, before
   you ask: one notification, one `AskUserQuestion`, `fleet.sh relaunch` in two calls, then the chips.
 - **The broadcast is for every worker, including one that starts a day later.** Never put an order for
   named chips in it, above all a retire order: it reads as a standing rule (2026-10-06: worker 20 retired at

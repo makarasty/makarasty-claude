@@ -1,7 +1,8 @@
 # Relaunch
 
-The procedure `fleet-plan` section 8b points at, read when the watch prints `COORDINATOR CONTEXT` or
-`WORKER CONTEXT`, or when the operator asks for a relaunch. `${CLAUDE_PLUGIN_ROOT}` is the makarasty plugin's
+The procedure `fleet-plan` section 8b points at, read when the watch prints `COORDINATOR CONTEXT`, a
+`WORKER CONTEXT` for a brief worker, when `fleet.sh retire` refuses a worker on an older plugin, or when the
+operator asks for a relaunch. A queue worker on 1.5.14 or later is retired instead (`fleet-wait`). `${CLAUDE_PLUGIN_ROOT}` is the makarasty plugin's
 directory.
 
 1. `PushNotification` first, one line, so the ask below is seen from another chat (skip it when the

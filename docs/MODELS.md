@@ -88,6 +88,15 @@ Guidance:
 
 ## Reasoning effort
 
+**The operator's policy, 2026-10-08.** `high` is the default for every worker session (`chips --effort`).
+`medium` for plain, well-specified work. `xhigh` for the hardest lanes - coordination, UI, a subtle
+correctness question - and the ceiling: the docs warn `max` "can be prone to overthinking", and the operator
+saw it make workers do far more than asked. `fleet.sh chips` refuses `--effort max`. The agent files keep
+their own effort, each with its reason. For one task that needs more than `xhigh`, the operator turns on
+ultracode (`/effort ultracode`, or the word `ultracode` in a prompt they type), which has Claude run the task
+as a workflow of subagents at the current effort; the coordinator asks for it, since no tool sets it. An effort change keeps the prompt cache on the
+5.5 models and Fable 5.1; a model change does not (`code.claude.com/docs/en/prompt-caching`).
+
 Effort is settable per subagent, in the definition file's frontmatter. The `effort` field is documented at
 `code.claude.com/docs/en/sub-agents` as "Effort level when this subagent is active. Overrides the session
 effort level. Default: inherits from session. Options: `low`, `medium`, `high`, `xhigh`, `max`; available
@@ -163,7 +172,7 @@ The loop:
 Effort, measured 2026-10-05: the plan said Sonnet for 81 of 125 tasks, every worker was Opus at medium,
 and the one data point on effort did not favour high: the worker on high had all three of its first tasks
 sent back for fixes, the workers on medium six of about eighteen, and every return came from the hardest
-area of the plan. Pick the pair by what the lane's hardest task needs.
+area of the plan. The operator's policy above stands; this one data point does not overturn it.
 
 Outside a run, the operator still sets defaults once: `model` and `effortLevel` in settings for where
 sessions start, `CLAUDE_CODE_SUBAGENT_MODEL` for every otherwise-unassigned subagent, and `model:` plus

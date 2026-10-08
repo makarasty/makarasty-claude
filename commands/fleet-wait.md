@@ -39,13 +39,20 @@ svc=$(sed -n 's/^- Services: *//p' "$fm" 2>/dev/null | sed 's/(start:[^)]*)//g' 
 # svc="$svc http://localhost:5199"   # EXAMPLE only: uncomment with the integration checkout's real dev-server URL
 [ -z "$svc" ] && echo "WATCH: no '- Services:' line in FLEET.md, services are not being checked"
 [ -d "$d" ] || { echo "NO RUN DIR $d from $(pwd)"; exit 1; }
-seen=$d/.watch-seen; touch "$seen"; last=$(date +%s); down=""; tick=0; ps=0; acks=""; ps0=0
+seen=$d/.watch-seen; touch "$seen"; last=$(date +%s); down=""; tick=0; ps=0; acks=""; ps0=0; t0=$last
+sf=$(grep -ls "\"sessionId\":\"${CLAUDE_CODE_SESSION_ID:-none}\"" "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sessions"/*.json 2>/dev/null | head -1)  # this chat's record; gone when it ends
 [ -n "${CLAUDE_CODE_SESSION_ID:-}" ] && echo "$CLAUDE_CODE_SESSION_ID" > "$d/coordinator"  # whoever watches, coordinates
 FS="${CLAUDE_PLUGIN_ROOT}/scripts/fleet.sh"
 while true; do
   [ -e "$(cd "$d" 2>/dev/null && pwd)/FINISHED" ] && { echo "run landed"; break; }
+  # It ends itself before the monitor's timeout: on Windows the timeout did not reach it, and a watch re-armed
+  # every 30 minutes left one more loop running each time (2026-10-08: one ran three hours past its timeout).
+  [ $(( $(date +%s) - t0 )) -ge 1780 ] && { echo "watch expired: re-arm it"; break; }
   tick=$((tick+1))
   if [ $((tick % 6)) -eq 1 ]; then
+    if [ -n "$sf" ] && [ ! -e "$sf" ]; then echo "coordinator chat gone"; break; fi
+    n2=0; for o in "$d"/offered/*; do [ -e "$o" ] || continue; c=${o##*/}   # a chip that started, or a retire's replacement
+      { grep -qx "$c" "$d"/chips/* 2>/dev/null || grep -qx "$c" "$d"/replaced/* 2>/dev/null; } && n2=$((n2+1)); done; [ "$n2" -gt "$n" ] && n=$n2
     for u in $svc; do
       curl -g -s -o /dev/null --max-time 5 "$u"; rc=$?
       case " $down " in *" $u "*) was=1;; *) was=0;; esac
@@ -53,6 +60,12 @@ while true; do
       if [ $rc -ne 7 ] && [ $was = 1 ]; then down=$(printf '%s\n' $down | grep -vxF "$u" | tr '\n' ' '); echo "SERVICE BACK: $u"; fi
     done
     [ -f "$FS" ] && sh "$FS" ctx "$d"
+  fi
+  if [ $((tick % 30)) -eq 2 ] && [ -f "$FS" ]; then   # every five minutes: what closed chats left running
+    sh "$FS" procs "$d" 2>/dev/null | grep -E '^(CLOSED CHAT|ORPHANED RUN|CLOSED CHAT SERVING.*\))  pid ' | while IFS= read -r l; do
+      p=$(printf '%s' "$l" | sed -n 's/.*  pid \([0-9]*\) .*/\1/p'); grep -qx "$p" "$d/.leftover-seen" 2>/dev/null && continue
+      echo "$p" >> "$d/.leftover-seen"
+      case "$l" in "CLOSED CHAT SERVING"*) echo "LEFTOVER, ASK THE OPERATOR: $l";; *) echo "LEFTOVER: $l";; esac; done
   fi
   if [ -e "$d/PAUSED" ]; then   # a pause is announced once, each ack once, and the stall timer rests
     [ $ps = 1 ] || { ps=1; acks=""; ps0=$(date +%s); last=$ps0; echo "PAUSED: $(head -1 "$d/PAUSED")"; }
@@ -80,40 +93,56 @@ while true; do
       echo "  held: $t by $(head -1 "$c/owner" 2>/dev/null || echo 'NO OWNER')"
     done
     rdy=$(ls $d/tasks/ready/*.md 2>/dev/null | wc -l); dne=$(ls $d/tasks/done 2>/dev/null | wc -l)
-    echo "  progress: $dne of $rdy tasks done, $(ls $d/*.done $d/*.retired 2>/dev/null | wc -l) of $n workers landed"
+    lw=$(ls $d/*.done $d/*.blocked $d/*.retired 2>/dev/null | sed 's|.*/||; s|\.[^.]*$||' | sort -u | wc -l)
+    echo "  progress: $dne of $rdy tasks done, $lw of $n workers landed"
     if [ -f "$FS" ]; then sh "$FS" status "$d" | sed -n '/^== \(lanes with work\|waits for ever\|bottlenecks\|waiting on the operator\|task files\)/,/^== workers/{/^== workers/!p;}'; fi
     if [ -d "$d/pane/requests" ] && [ -f "$FS" ]; then sh "$FS" pane-status "$d" | sed 's/^/  /'; fi
     last=$now
   fi
-  c=$(ls $d/*.done $d/*.blocked $d/*.retired 2>/dev/null | wc -l)
+  c=$(ls $d/*.done $d/*.blocked $d/*.retired 2>/dev/null | sed 's|.*/||; s|\.[^.]*$||' | sort -u | wc -l)
   [ "$c" -ge "$n" ] && { echo "run complete: $c of $n"; break; }
   sleep 10
 done
 ```
 
 Run it with `Monitor`, `timeout_ms: 1800000`, the most a monitor can be given. A fleet run outlasts that,
-so **re-arm the same loop on every expiry notice** until it prints `run complete` or `run landed`. A watch
+so **re-arm the same loop on every expiry notice, and when it prints `watch expired: re-arm it`**, until it
+prints `run complete` or `run landed`. A watch
 that is not re-armed dies silently at thirty minutes and the run never collects. `seen` persists
 across re-arms, so nothing already reported is reported twice.
 
 For a run with fixed briefs and no queue, drop the three `tasks/` globs from the `for` line. Everything
 else, the stall timer included, still applies.
 
+**A `LEFTOVER:` line is a process nobody waits for**: run `fleet.sh procs <run> --kill` in that turn
+(`fleet-plan` 8b, "Watch the machine's memory"). `LEFTOVER, ASK THE OPERATOR:` is a closed chat's tree that
+serves something (a dev server, an `http.server`; the line lists its pids leaves first): ask the operator once whether it can go, and only on
+their word end its pids one at a time, children first - `taskkill /PID <n> /F` on Windows, never `/T`, which
+follows reused pids; `kill <n>` elsewhere.
+
 **A `WORKER MODEL NN` line means worker NN stopped itself at `whoami` and waits for you.** Make the calls
 it names in that turn: `docs/MODELS.md`, "Switching a worker", steps 4 and 5. `WORKER MODEL NN DID NOT TAKE`
 is step 5's failed switch.
 
-**A `WORKER PLUGIN NN` line means worker NN runs an older makarasty than the one installed**, so a pause or
-a retirement may not hold it: it goes into the same one relaunch ask below ("Replace workers NN only"), and
-you offer the fresh chips yourself, saying in that same ask that a fresh chip runs the new version only if
-Claude Code was restarted after the update; the operator should not have to ask whether old workers need replacing.
+**A `WORKER PLUGIN NN` line means worker NN last claimed on an older makarasty than the one installed.** A
+worker keeps the `fleet.sh` path it resolved at its start, so a restart alone does not move it. Ask the
+operator once to restart Claude Code, then message the worker as the line says and `touch` the mark it
+names: invoking `fleet-run` again resolves the installed plugin, and its next claim records the new version. `WORKER PLUGIN NN STILL ON` is a
+worker that claimed and kept the old one: it goes into the one relaunch ask below ("Replace workers NN only"),
+with the fresh chips offered by you. A saved watch pinned to the old plugin's path is re-armed from this file
+after the restart.
 
 **`COORDINATOR CONTEXT <n>K` means you, the session reading this, are getting full, and a `WORKER CONTEXT`
 line naming worker NN means that worker is.** Each prints once per mark and per session, from its
 transcript: yours once the loop has recorded you as the coordinator (whoever arms the watch is the
-coordinator), a worker's once it crosses `worker_relaunch_k` in `calibration.json`. You act on neither
-alone: you do not hand off by chip and you do not relaunch unasked. Do what `fleet-plan` section 8b says
-at that line: `PushNotification`, one `AskUserQuestion` with the numbers and the options (a fourth, "Replace
+coordinator), a worker's once it crosses `worker_relaunch_k` in `calibration.json`. **A queue worker's
+line is yours to act on at once and unasked**: run the `fleet.sh retire` it names and do what it prints
+(offer the replacement chip, PushNotification the operator to click it). The worker finishes the task it
+holds and leaves at its next claim with its tree committed; the run does not pause and the watch counts the
+new chip by itself. `REPLACEMENT NN ... has not started` means that chip was not clicked: notify again.
+Answer any `unanswered:` files named in `<NN>.retired` to the replacement.
+**Your own line, and a brief worker's, you never act on alone**: you do not hand off by chip and you do not
+relaunch unasked. Do what `fleet-plan` section 8b says at that line: `PushNotification`, one `AskUserQuestion` with the numbers and the options (a fourth, "Replace
 workers NN only", when only workers are over), and on "yes" `fleet.sh relaunch`, run with
 `run_in_background` and in two calls: it pauses the run, hands the named workers' tasks back, asks you to
 update `STATE.md`, and on the second call prints one coordinator chip and fresh worker chips (with
@@ -194,7 +223,8 @@ with it. Claim files and heartbeats survive it, so `status` reads like a working
 [M35].
 
 **An expiry notice is not a restart: on one, re-arm and nothing else.** A restart is a turn that did not
-start from the watch - the operator writing "продолжи" or "continue", or saying the machine restarted - while
+start from the watch - the app's own "The app was quit while you were working. Please continue from where
+you left off.", the operator writing "продолжи" or "continue", or saying the machine restarted - while
 your watch task is missing from your task list and never printed `run complete` or `run landed`. On that,
 run `/makarasty:fleet-resume <run-id>` before you read `status`: its step 0 wakes every worker the app still
 lists, and its step 5 re-arms this watch. Done when it has reported which workers were woken, reopened and
@@ -236,7 +266,7 @@ that shows it.
 
 ## Done when
 
-Every expected worker has a `.done` or a `.blocked`, or you have said which ones are still outstanding and
+Every expected worker has a `.done`, a `.blocked` or a `.retired`, or you have said which ones are still outstanding and
 for how long.
 
 **When the whole run has landed, invoke `/makarasty:fleet-collect <run-id>` yourself.** Do not print it as

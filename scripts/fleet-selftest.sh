@@ -2425,6 +2425,40 @@ sh "$fleet" chips "$fr" 12 repo --model none >/dev/null 2>&1
 printf 'claude-opus-5-5\r\n' > "$fr/want/14"
 out=$(CLAUDE_CODE_SESSION_ID=sess-14 sh "$fleet" whoami "$fr" 14 claude-opus-5-5 high 2>&1); rc=$?
 code "a CRLF want file with one field matches" 0 "$rc"
+wg=${TMPDIR:-/tmp}/fleet-wg-$$; mkdir -p "$wg/cfg/sessions" "$wg/run/tasks/ready"
+printf '{"pid":1,"sessionId":"sid-wg"}' > "$wg/cfg/sessions/1.json"
+sh "$fleet" chips "$wg/run" 01 repo >/dev/null 2>&1
+CLAUDE_CONFIG_DIR=$wg/cfg sh "$fleet" pause "$wg/run" t >/dev/null 2>&1
+wl=$(CLAUDE_CONFIG_DIR=$wg/cfg CLAUDE_CODE_SESSION_ID=sid-wg sh "$fleet" paused "$wg/run" 01 x 2>&1 | grep 'until')
+check "the wake loop ends when its chat's session record is gone" "sessions/1.json" "$wl"
+if command -v node >/dev/null 2>&1; then
+  ok_hook=$(cd "$here/.." && node --input-type=module -e "import {allowedWhilePaused} from './hooks/run-dir.mjs'; console.log(allowedWhilePaused(process.argv[1]))" "$wl" 2>&1)
+  check "and the pause hook lets that loop run" "true" "$ok_hook"
+fi
+CLAUDE_CONFIG_DIR=$wg/cfg sh "$fleet" resume "$wg/run" >/dev/null 2>&1; rm -rf "$wg"
+rt=${TMPDIR:-/tmp}/fleet-rt-$$; mkdir -p "$rt/tasks/ready"
+printf -- '---\nneeds: repo\n---\n' > "$rt/tasks/ready/u1.md"; printf -- '---\nneeds: repo\n---\n' > "$rt/tasks/ready/u2.md"
+sh "$fleet" chips "$rt" 01-02 repo --model claude-opus-5-5 --effort high >/dev/null 2>&1
+CLAUDE_CODE_SESSION_ID=sr1 sh "$fleet" whoami "$rt" 01 claude-opus-5-5 high >/dev/null 2>&1
+CLAUDE_CODE_SESSION_ID=sr1 sh "$fleet" next "$rt" 01 repo >/dev/null 2>&1
+out=$(sh "$fleet" retire "$rt" 01 2>&1)
+check "retire offers the replacement in the same lane" "CHIP 03" "$out"
+check "with its model wish" "claude-opus-5-5 high" "$(cat "$rt/want/03" 2>&1)"
+out=$(sh "$fleet" retire "$rt" 01 2>&1)
+case "$out" in *"CHIP "*) bad "a second retire offers nothing again" "$out";; *) ok "a second retire offers nothing again";; esac
+out=$(CLAUDE_CODE_SESSION_ID=sr1 sh "$fleet" next "$rt" 01 repo 2>&1); rc=$?
+code "a retiring worker holding a task finishes it first" 2 "$rc"
+CLAUDE_CODE_SESSION_ID=sr1 sh "$fleet" finish "$rt" 01 u1 >/dev/null 2>&1
+out=$(CLAUDE_CODE_SESSION_ID=sr1 sh "$fleet" next "$rt" 01 repo 2>&1); rc=$?
+code "then leaves at its next claim" 9 "$rc"
+check "told to close what it started" "tabs_close every tab" "$out"
+check "and recorded with its replacement" "replaced by 03" "$(cat "$rt/01.retired" 2>&1)"
+printf 'm high plugin 1.5.13\n' > "$rt/chips/02.model"
+out=$(sh "$fleet" retire "$rt" 02 2>&1); rc=$?
+code "a worker on an older plugin is left to the relaunch ask" 2 "$rc"
+out=$(sh "$fleet" chips "$rt" 09 repo --model claude-opus-5-5 --effort max 2>&1); rc=$?
+code "effort max is refused for workers" 2 "$rc"
+rm -rf "$rt"
 printf -- '---\nbrief\n---\n' > "$fr/brief-15.md"
 out=$(sh "$fleet" next "$fr" 15 repo 2>&1); rc=$?
 code "a brief worker is sent back to its brief by next" 2 "$rc"
@@ -2484,6 +2518,53 @@ if command -v node >/dev/null 2>&1; then
   check "leftovers names an orphaned test run, its reused-pid child counted once" "ORPHANED RUN  pid 100  toolchain: tests  150 MB" "$out"
   check "and lists an orphaned dev server without offering to kill it" "pid 300  toolchain: vite" "$out"
   case "$out" in *"pid 400"*) bad "and never lists a run whose parent is alive" "$out";; *) ok "and never lists a run whose parent is alive";; esac
+  cs=${TMPDIR:-/tmp}/fleet-cs-$$; mkdir -p "$cs/sessions"
+  printf '{"pid":600,"sessionId":"aaaaaaaa-1111-2222-3333-444444444444"}' > "$cs/sessions/600.json"
+  printf '{"pid":601,"sessionId":"bbbbbbbb-1111-2222-3333-444444444444"}' > "$cs/sessions/601.json"
+  node -e 'const n=Date.now();require("fs").writeFileSync(process.argv[1],JSON.stringify([
+    {Name:"claude.exe",ProcessId:600,ParentProcessId:1,WorkingSetSize:1,CommandLine:"claude",Cpu:5,Created:n-9000000},
+    {Name:"bash.exe",ProcessId:500,ParentProcessId:999,WorkingSetSize:1048576,CommandLine:"bash -c \"source /c/Users/u/.claude/shell-snapshots/snapshot-bash-1.sh; cd .fleet/run-x\"",Cpu:5,Created:n-1800000},
+    {Name:"python.exe",ProcessId:501,ParentProcessId:500,WorkingSetSize:2097152,CommandLine:"python poll.py",Cpu:5,Created:n-1700000},
+    {Name:"sh.exe",ProcessId:510,ParentProcessId:998,WorkingSetSize:1,CommandLine:"sh C:/Users/u/AppData/Local/Temp/claude/proj/aaaaaaaa-1111-2222-3333-444444444444/tasks/watch.sh",Cpu:5,Created:n-1800000},
+    {Name:"bash.exe",ProcessId:520,ParentProcessId:997,WorkingSetSize:1,CommandLine:"bash -c \"source /c/Users/u/.claude/shell-snapshots/snapshot-bash-2.sh\"",Cpu:5,Created:n-120000}]))' "$fr/procs2.json"
+  out=$(FLEET_LISTEN_PIDS= CLAUDE_CONFIG_DIR="$cs" FLEET_PROCS_JSON="$fr/procs2.json" node "$here/fleet-load.mjs" --leftovers 2>&1)
+  check "leftovers names the shell a closed chat left, with what runs under it" "CLOSED CHAT  pid 500  shell whose chat process ended: python" "$out"
+  case "$out" in *"pid 510"*) bad "and never a live chat's script whose parent link Git Bash broke" "$out";; *) ok "and never a live chat's script whose parent link Git Bash broke";; esac
+  case "$out" in *"pid 520"*) bad "and not one younger than ten minutes" "$out";; *) ok "and not one younger than ten minutes";; esac
+  node -e 'const n=Date.now();require("fs").writeFileSync(process.argv[1],JSON.stringify([
+    {Name:"claude.exe",ProcessId:600,ParentProcessId:1,WorkingSetSize:1,CommandLine:"claude",Cpu:5,Created:n-9000000},
+    {Name:"bash.exe",ProcessId:530,ParentProcessId:996,WorkingSetSize:1,CommandLine:"bash -c \"source /c/Users/u/.claude/shell-snapshots/snapshot-bash-"+(n-8993000)+"-abcdef.sh; npm run dev &\"",Cpu:5,Created:n-1800000}]))' "$fr/procs3.json"
+  printf '{"pid":600,"sessionId":"aaaaaaaa-1111-2222-3333-444444444444","startedAt":%s}' "$(node -e 'console.log(Date.now()-9000000)')" > "$cs/sessions/600.json"
+  out=$(FLEET_LISTEN_PIDS= CLAUDE_CONFIG_DIR="$cs" FLEET_PROCS_JSON="$fr/procs3.json" node "$here/fleet-load.mjs" --leftovers 2>&1)
+  case "$out" in *"pid 530"*) bad "a live chat's own detached shell is never a leftover" "$out";; *) ok "a live chat's own detached shell is never a leftover";; esac
+  node -e 'const n=Date.now();require("fs").writeFileSync(process.argv[1],JSON.stringify([
+    {Name:"bash.exe",ProcessId:540,ParentProcessId:995,WorkingSetSize:1,CommandLine:"bash -c \"source /c/Users/u/.claude/shell-snapshots/snapshot-bash-1700000000001-bb.sh; y\"",Cpu:5,Created:n-1800000},
+    {Name:"python.exe",ProcessId:541,ParentProcessId:540,WorkingSetSize:1,CommandLine:"python -m http.server 5199",Cpu:5,Created:n-1700000}]))' "$fr/procs4.json"
+  out=$(FLEET_LISTEN_PIDS= CLAUDE_CONFIG_DIR="$cs" FLEET_PROCS_JSON="$fr/procs4.json" node "$here/fleet-load.mjs" --leftovers 2>&1)
+  check "a closed chat's tree that serves something is left for the operator" "CLOSED CHAT SERVING, left alone" "$out"
+  node -e 'const n=Date.now();require("fs").writeFileSync(process.argv[1],JSON.stringify([
+    {Name:"bash.exe",ProcessId:550,ParentProcessId:994,WorkingSetSize:1,CommandLine:"bash -c \"source /c/Users/u/.claude/shell-snapshots/snapshot-bash-1700000000002-cc.sh; z\"",Cpu:5,Created:n-1800000},
+    {Name:"node.exe",ProcessId:551,ParentProcessId:550,WorkingSetSize:1,CommandLine:"node server.js",Cpu:5,Created:n-1700000}]))' "$fr/procs5.json"
+  out=$(FLEET_LISTEN_PIDS=551 CLAUDE_CONFIG_DIR="$cs" FLEET_PROCS_JSON="$fr/procs5.json" node "$here/fleet-load.mjs" --leftovers 2>&1)
+  check "and so is one holding a listening socket, whatever its command line" "CLOSED CHAT SERVING, left alone" "$out"
+  node -e 'const n=Date.now(),st=n-9000000;require("fs").writeFileSync(process.argv[1],JSON.stringify([
+    {Name:"claude.exe",ProcessId:600,ParentProcessId:1,WorkingSetSize:1,CommandLine:"claude",Cpu:5,Created:st},
+    {Name:"bash.exe",ProcessId:560,ParentProcessId:600,WorkingSetSize:1,CommandLine:"bash -c \"source /c/Users/u/.claude/shell-snapshots/snapshot-bash-"+(st+7000)+"-live01.sh; w\"",Cpu:5,Created:n-60000},
+    {Name:"bash.exe",ProcessId:561,ParentProcessId:993,WorkingSetSize:1,CommandLine:"bash -c \"source /c/Users/u/.claude/shell-snapshots/snapshot-bash-"+(st+9000)+"-gone01.sh; w\"",Cpu:5,Created:n-1800000}]))' "$fr/procs6.json"
+  out=$(FLEET_LISTEN_PIDS= CLAUDE_CONFIG_DIR="$cs" FLEET_PROCS_JSON="$fr/procs6.json" node "$here/fleet-load.mjs" --leftovers 2>&1)
+  check "after a restart, an ended chat's shell is found even when a live chat started in the same minute" "CLOSED CHAT  pid 561" "$out"
+  node -e 'const n=Date.now(),st=n-9000000;require("fs").writeFileSync(process.argv[1],JSON.stringify([
+    {Name:"claude.exe",ProcessId:600,ParentProcessId:1,WorkingSetSize:1,CommandLine:"claude",Cpu:5,Created:st},
+    {Name:"bash.exe",ProcessId:570,ParentProcessId:992,WorkingSetSize:1,CommandLine:"bash -c \"source /c/Users/u/.claude/shell-snapshots/snapshot-bash-"+(st+3600000)+"-late01.sh; npm run build &\"",Cpu:5,Created:n-1800000}]))' "$fr/procs7.json"
+  out=$(FLEET_LISTEN_PIDS= CLAUDE_CONFIG_DIR="$cs" FLEET_PROCS_JSON="$fr/procs7.json" node "$here/fleet-load.mjs" --leftovers 2>&1)
+  case "$out" in *"pid 570"*) bad "a live idle chat's shell from a first Bash call an hour in is still its own" "$out";; *) ok "a live idle chat's shell from a first Bash call an hour in is still its own";; esac
+  node -e 'const n=Date.now(),st=n-9000000;require("fs").writeFileSync(process.argv[1],JSON.stringify([
+    {Name:"claude.exe",ProcessId:600,ParentProcessId:1,WorkingSetSize:1,CommandLine:"claude",Cpu:5,Created:st},
+    {Name:"bash.exe",ProcessId:580,ParentProcessId:600,WorkingSetSize:1,CommandLine:"bash -c \"source /c/Users/u/.claude/shell-snapshots/snapshot-bash-"+(st-3500000)+"-old01.sh; w\"",Cpu:5,Created:st-3600000},
+    {Name:"bash.exe",ProcessId:581,ParentProcessId:991,WorkingSetSize:1,CommandLine:"bash -c \"source /c/Users/u/.claude/shell-snapshots/snapshot-bash-"+(st+60000)+"-new01.sh; npm run build &\"",Cpu:5,Created:n-1800000}]))' "$fr/procs8.json"
+  out=$(FLEET_LISTEN_PIDS= CLAUDE_CONFIG_DIR="$cs" FLEET_PROCS_JSON="$fr/procs8.json" node "$here/fleet-load.mjs" --leftovers 2>&1)
+  case "$out" in *"pid 581"*) bad "a reused pid does not make a live chat's shell look ended" "$out";; *) ok "a reused pid does not make a live chat's shell look ended";; esac
+  rm -rf "$cs"
 fi
 rm -rf "$fr"
 CLAUDE_CODE_SESSION_ID=sess-coord sh "$fleet" find "$bw" integration </dev/null >/dev/null 2>&1 || true
@@ -2491,6 +2572,21 @@ CLAUDE_CODE_SESSION_ID=sess-coord sh "$fleet" find "$bw" integration </dev/null 
 rm -rf "$bw"
 rm -rf "$tmp"
 rm -f "$loadstub"
+# The watch loop lives in fleet-wait.md, where nothing else parses it: a stray quote there once broke it.
+wl=${TMPDIR:-/tmp}/fleet-watch-$$.sh
+awk '/^```(sh|bash)?$/{if(!f){f=1;next}else{exit}} f' "$here/../commands/fleet-wait.md" > "$wl"
+sh -n "$wl" 2>/dev/null && [ -s "$wl" ]; code "fleet-wait's watch loop parses" 0 "$?"
+rm -f "$wl"
+# The TypeScript scripts: their own test, and the type check when tsc is on PATH. Node 22.18 strips types.
+if command -v node >/dev/null 2>&1 && node -e 'const [a,b]=process.versions.node.split(".").map(Number);process.exit(a>22||(a===22&&b>=18)?0:1)'; then
+  out=$(node "$here/fleet-analyze-test.ts" 2>&1); rc=$?
+  code "fleet-analyze's own test passes" 0 "$rc"
+  check "with nothing failed" " 0 failed" "$out"
+  if command -v tsc >/dev/null 2>&1; then
+    out=$(tsc -p "$here/tsconfig.json" 2>&1); rc=$?
+    code "the TypeScript scripts type-check" 0 "$rc"
+  fi
+fi
 echo "$pass passed, $fail failed"
 rm -rf "${TMPDIR:-/tmp}/fleet-cfg-$$"
 if [ "${1:-}" = "--keep" ]; then echo "run directory kept: $run"; else rm -rf "$run"; fi
