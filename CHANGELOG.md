@@ -1,5 +1,30 @@
 # Changelog
 
+## makarasty 1.5.13 — 2026-10-08
+
+The coordinator now sets each worker's model, and a restart no longer reads as a running fleet.
+
+- **The coordinator switches workers' models.** The desktop app's `set_session_model` and
+  `set_session_effort` change another session from its next turn. `fleet.sh chips ... --model <id>
+  --effort <level>` records what each worker should run; `whoami` exits 10 when the session runs something
+  else, the worker ends its turn, the watch prints `WORKER MODEL NN`, and the coordinator switches it and
+  messages it on; the watch repeats the line every ten minutes while the worker waits. The same mismatch
+  twice means the switch did not take: the worker goes on and the coordinator is told once, so a declined
+  card cannot loop. `chips` takes only a full model id, keeps a wish across a re-offer, and drops it with
+  `--model none`; `next` hands nothing to a worker with a switch pending. On 2026-10-08 four chips started
+  on Sonnet because `/model` had been flipped just before the click [M35]. `docs/MODELS.md`, "Switching a
+  worker", is the one place this is written down.
+- **A pane worker keeps its pane open for the whole run.** The memory hook, `next` on a full machine and
+  `drained` told it to close the pane; closing the last tab closes it, and only the operator can put it
+  back on screen. On 2026-10-08 worker 05 closed it twice and sat blind for 58 minutes waiting for the
+  operator. Memory now comes back by swapping the heavy tab for an empty one.
+- **Back from a restart, the coordinator wakes every worker by message before it re-arms the watch.** Claim
+  files survive a restart and make a stopped run look alive. `fleet-resume` step 0 messages every worker
+  the app still lists, with its own wording for a brief worker, and keeps `claude -r` for the ones it does
+  not. An expiry of the watch is not a restart and wakes nobody; a paused or landed run is not woken.
+- `next` hands out nothing once the run has landed (exit 9) and sends a brief worker back to its brief, so a
+  late message cannot start a task after collection or end a brief early.
+
 ## makarasty 1.5.12 — 2026-10-06
 
 The second red-team round on 1.5.10 and 1.5.11, plus one rule from the live run.
