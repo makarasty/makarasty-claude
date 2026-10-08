@@ -9,8 +9,9 @@
 //   node fleet-load.mjs                     one census, human readable
 //   node fleet-load.mjs --json              the same, as one JSON object, `tight` included
 //   node fleet-load.mjs --clear <GB>        exit 0 when free memory is above <GB>, 1 otherwise. Silent.
-//   node fleet-load.mjs --leftovers [--kill]  toolchain processes whose parent is gone; --kill ends the
-//                                           orphaned test and typecheck runs among them that sit idle, nothing else
+//   node fleet-load.mjs --leftovers [--kill]  toolchain processes whose parent is gone, and shells a closed
+//                                           chat left running; --kill ends the idle orphaned test and typecheck
+//                                           runs and those shells with everything under them, nothing else
 //   node fleet-load.mjs --watch 30          sample every 30s until Ctrl-C
 //   node fleet-load.mjs --watch 30 --out load.csv    ... and append each sample to a CSV
 //
@@ -26,12 +27,13 @@
 
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 
 const args = process.argv.slice(2);
 const flag = (n, d = null) => { const i = args.indexOf(n); return i === -1 ? d : (args[i + 1] ?? true); };
 const has = (n) => args.includes(n);
 
-const sh = (cmd, a) => { try { return execFileSync(cmd, a, { encoding: 'utf8', maxBuffer: 32e6 }); } catch { return ''; } };
+const sh = (cmd, a) => { try { return execFileSync(cmd, a, { encoding: 'utf8', maxBuffer: 32e6, stdio: ['ignore', 'pipe', 'ignore'] }); } catch { return ''; } };
 const round = (n, d = 2) => Math.round(n * 10 ** d) / 10 ** d;
 
 // A census that throws is worse than one that is missing a column: every caller has a fallback, so the
@@ -192,8 +194,74 @@ function snapshot() {
   }).filter(Boolean);
 }
 
+// A shell a Claude Code chat started carries the chat's shell snapshot or its temp folder in its command
+// line. Once that chat has closed, the shell and everything under it - a wake loop, `python -m http.server`,
+// a `find` over the disk, a dev server - belongs to nobody: 2026-10-08, a closed chat's wake loop had run
+// for seven hours and another's http.server for five, and the toolchain rule above saw neither.
+const SHELLS = /^(bash|sh|zsh|cmd|powershell|pwsh)(\.exe)?$/i;
+const CHAT_SHELL = /[\\/]\.claude[\\/]shell-snapshots[\\/]snapshot-|__claudeCodeScrip|[\\/]Temp[\\/]claude[\\/][^\\/]+[\\/][0-9a-f]{8}-[0-9a-f-]{27}[\\/]/i;
+// The chats alive now: Claude Code keeps one `sessions/<pid>.json` per running session and removes it when
+// the session ends. One whose pid is no longer in the snapshot crashed, and does not count as alive.
+function liveSessions(byPid) {
+  const dir = (process.env.CLAUDE_CONFIG_DIR || (process.env.HOME || process.env.USERPROFILE || '') + '/.claude') + '/sessions';
+  let names = [];
+  try { names = fs.readdirSync(dir).filter((f) => f.endsWith('.json')); } catch { return null; }
+  const ids = [];
+  for (const f of names) {
+    try { const s = JSON.parse(fs.readFileSync(dir + '/' + f, 'utf8')); if (s.sessionId && byPid.has(s.pid)) ids.push({ id: s.sessionId, pid: s.pid, started: s.startedAt || 0 }); } catch { /* a file being rewritten */ }
+  }
+  return ids;
+}
+
+// Pids holding a listening TCP socket: a tree that holds one is serving something, whatever its command
+// line says (`npm run dev` names no port; nodemon and `tsx watch` hide the server a level down). Asked only
+// when a chat shell is about to be listed, since it costs one PowerShell call (0.56 s measured).
+function listeningPids() {
+  if (process.env.FLEET_LISTEN_PIDS != null) return new Set(process.env.FLEET_LISTEN_PIDS.split(',').filter(Boolean).map(Number));
+  let out = '';
+  if (process.platform === 'win32') {
+    out = sh('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+      'Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique']);
+    return new Set(out.split(/\s+/).filter(Boolean).map(Number));
+  }
+  out = sh('lsof', ['-nP', '-iTCP', '-sTCP:LISTEN', '-Fp']);
+  if (out) return new Set(out.split('\n').filter((l) => l.startsWith('p')).map((l) => Number(l.slice(1))));
+  out = sh('ss', ['-ltnpH']);
+  return new Set([...out.matchAll(/pid=(\d+)/g)].map((m) => Number(m[1])));
+}
+
 function leftovers(procs) {
   const byPid = new Map(procs.map((p) => [p.ProcessId, p]));
+  const live = liveSessions(byPid);
+  let listening = null;
+  // A Bash tool shell names its chat's shell snapshot, `snapshot-bash-<ms>-<rand>.sh`, which the chat's process
+  // writes at its first Bash call (1-2 s before that call's own line in the transcript, 2026-10-08), so a
+  // detached `cmd &` whose parent link Git Bash broke still says whose it is. The snapshot each live session
+  // uses is read off the shells it has running now: after an app restart every chat starts within the same
+  // minute or two, and a time test alone also covered the shells of chats that did not come back
+  // (2026-10-08: four hidden that way). The time test is the fallback for a live session with no shell now.
+  const SNAP = /snapshot-[a-z]+-(\d{12,14})-[a-z0-9]+\.sh/i;
+  const liveSnaps = new Set(); const snapKnown = new Set();
+  if (live) for (const s of live) for (const q of procs) {
+    // A child is younger than its parent: an older process naming this pid as parent had a parent that died
+    // and whose pid the live chat reused.
+    const sp = byPid.get(s.pid);
+    if (q.ParentProcessId !== s.pid || (q.Created && sp && sp.Created && q.Created < sp.Created)) continue;
+    const m = (q.CommandLine || '').match(SNAP);
+    if (m) { liveSnaps.add(m[0]); snapKnown.add(s.id); }
+  }
+  const ownedByLive = (cmd) => {
+    if (live.some((s) => cmd.includes(s.id))) return true;
+    const m = cmd.match(SNAP);
+    if (!m) return false;
+    if (liveSnaps.has(m[0])) return true;
+    // A process writes its snapshot at its first Bash call, which can be hours after it started, and never
+    // before. So for a live session with no shell running now, any snapshot from after its start is its own:
+    // at worst an ended chat's shell is missed, never a live chat's ended.
+    return live.some((s) => !snapKnown.has(s.id) && s.started && +m[1] >= s.started - 5000);
+  };
+  const keep = (process.env.FLEET_KEEP_PORTS || '').split(',').filter((p) => /^\d+$/.test(p));
+  const servesKept = (all) => keep.length > 0 && all.some((q) => new RegExp(`(:|--port[ =]|\\s)(${keep.join('|')})\\b`).test(q.CommandLine || ''));
   const orphan = (p) => {
     if (process.platform !== 'win32') return p.ParentProcessId === 1;
     const parent = byPid.get(p.ParentProcessId);
@@ -210,10 +278,29 @@ function leftovers(procs) {
   };
   const found = [];
   for (const p of procs) {
+    const cmd = p.CommandLine || '';
+    const mins = p.Created ? Math.round((Date.now() - p.Created) / 60000) : null;
+    // Ten minutes, and only with the live sessions known: Git Bash breaks the parent link of a live chat's
+    // own background scripts, so an unknown session list must not turn them into leftovers.
+    if (live && SHELLS.test(p.Name || '') && orphan(p) && CHAT_SHELL.test(cmd) && mins != null && mins >= 10
+      && !ownedByLive(cmd)) {
+      const all = tree(p);
+      if (servesKept(all)) continue;
+      // A dev server, an emulator or an http.server under it may be what the operator is looking at: listed,
+      // never ended unasked (2026-10-08: a closed chat's http.server still served the run's mockups).
+      if (!listening) listening = listeningPids();
+      const serves = all.some((q) => { const k = classify(q); return listening.has(q.ProcessId) || k === 'toolchain: vite' || k === 'toolchain: emulator'
+        || /http\.server|\bserve\b|--port[ =]\d|\b(npm|pnpm|yarn|bun)(\.cmd)?\b.*\brun\s+(dev|start|serve|preview|watch)\b|nodemon|tsx\s+watch|--watch\b|react-scripts\s+start|\b(next|astro|nuxt|remix)\s+dev\b|webpack-dev-server|\bvite\b/i.test(q.CommandLine || ''); });
+      const what = all.slice(1).map((q) => (q.Name || '').replace(/\.exe$/i, '')).filter((n) => !/^(bash|sh|conhost)$/i.test(n));
+      found.push({ pid: p.ProcessId, class: 'shell whose chat process ended' + (what.length ? ': ' + [...new Set(what)].join(', ') : ''),
+        mb: Math.round(all.reduce((s, q) => s + (q.WorkingSetSize || 0), 0) / 1048576), minutes: mins, oneShot: false, chatShell: !serves, serves,
+        cmd: (cmd.match(/\.fleet[\\/][\w.-]+/) || [''])[0] || cmd.slice(0, 160),
+        tree: all.map((q) => ({ pid: q.ProcessId, created: q.Created, cpu: q.Cpu })) });
+      continue;
+    }
     const k = classify(p);
     if (!k || !k.startsWith('toolchain:') || !orphan(p)) continue;
     const all = tree(p);
-    const mins = p.Created ? Math.round((Date.now() - p.Created) / 60000) : null;
     found.push({ pid: p.ProcessId, class: k, mb: Math.round(all.reduce((s, q) => s + (q.WorkingSetSize || 0), 0) / 1048576),
       minutes: mins, oneShot: k === 'toolchain: tests' || k === 'toolchain: typecheck', cmd: (p.CommandLine || p.Name || '').slice(0, 160),
       tree: all.map((q) => ({ pid: q.ProcessId, created: q.Created, cpu: q.Cpu })) });
@@ -224,7 +311,7 @@ function leftovers(procs) {
 if (has('--leftovers')) {
   const found = leftovers(snapshot());
   const kill = has('--kill');
-  if (!found.length) { console.log('no orphaned toolchain process on this machine'); process.exit(0); }
+  if (!found.length) { console.log('no orphaned toolchain process and no shell left by an ended chat process on this machine'); process.exit(0); }
   // The second look: a tree whose CPU time moved is still running for somebody.
   let later = null;
   if (kill && found.some((f) => f.oneShot && f.minutes >= 2)) {
@@ -234,24 +321,32 @@ if (has('--leftovers')) {
   const idle = (f) => later && f.tree.every((t) => { const q = later.get(t.pid); return !q || (q.Created === t.created && q.Cpu === t.cpu); });
   let freed = 0;
   for (const f of found) {
-    const candidate = f.oneShot && f.minutes != null && f.minutes >= 2;
-    let tag = !candidate ? 'orphaned, left alone (may be the operator\'s service)' : 'ORPHANED RUN';
+    const candidate = f.chatShell || (f.oneShot && f.minutes != null && f.minutes >= 2);
+    let tag = f.chatShell ? 'CLOSED CHAT' : f.serves ? 'CLOSED CHAT SERVING, left alone (ask the operator)' : !candidate ? 'orphaned, left alone (may be the operator\'s service)' : 'ORPHANED RUN';
+    // --pid a,b: end only the pids the operator chose, whatever else is listed.
+    const only = String(flag('--pid', '') || '').split(',').filter(Boolean).map(Number);
+    if (kill && only.length && !only.includes(f.pid)) { console.log(`not chosen  pid ${f.pid}  ${f.class}`); continue; }
     if (kill && candidate) {
-      if (!idle(f)) tag = 'ORPHANED RUN, still using CPU: left alone';
+      // A closed chat's shell is ended busy or not: nobody reads what it does.
+      if (!f.chatShell && !idle(f)) tag = 'ORPHANED RUN, still using CPU: left alone';
       else {
         // The pids this walk checked, children first; never taskkill /T, which walks pids without the
         // creation-time check above.
+        // A parent shell often exits by itself once its child is gone, so "not found" is a success too.
+        const gone = (pid) => !sh('tasklist', ['/FI', `PID eq ${pid}`, '/NH']).includes(` ${pid} `);
         const ok = f.tree.slice().reverse().every((t) => process.platform === 'win32'
-          ? sh('taskkill', ['/PID', String(t.pid), '/F']) !== '' || !later.get(t.pid)
-          : (() => { try { process.kill(t.pid, 'SIGTERM'); return true; } catch { return false; } })());
+          ? sh('taskkill', ['/PID', String(t.pid), '/F']) !== '' || gone(t.pid)
+          : (() => { try { process.kill(t.pid, 'SIGTERM'); return true; } catch (e) { return e.code === 'ESRCH'; } })());
         tag = ok ? 'KILLED' : 'KILL FAILED';
         if (ok) freed += f.mb;
       }
     }
-    console.log(`${tag}  pid ${f.pid}  ${f.class}  ${f.mb} MB  ${f.minutes ?? '?'} min  ${f.cmd}`);
+    // A serving tree is ended by hand, children first: give its pids in that order.
+    const order = f.serves ? `  pids leaves first: ${f.tree.slice().reverse().map((t) => t.pid).join(' ')}` : '';
+    console.log(`${tag}  pid ${f.pid}  ${f.class}  ${f.mb} MB  ${f.minutes ?? '?'} min  ${f.cmd}${order}`);
   }
   if (kill) console.log(`freed about ${freed} MB`);
-  else if (found.some((f) => f.oneShot)) console.log('--kill ends ORPHANED RUN lines only: one-shot runs at least two minutes old whose tree used no CPU over five seconds, with their children');
+  else if (found.some((f) => f.oneShot || f.chatShell)) console.log('--kill ends ORPHANED RUN lines (one-shot runs at least two minutes old whose tree used no CPU over five seconds) and CLOSED CHAT lines, each with everything under it');
   process.exit(0);
 }
 
@@ -259,6 +354,9 @@ if (has('--leftovers')) {
 // for memory backgrounds, so the shell decides when it may claim again and no model has to poll.
 if (has('--clear')) {
   const want = Number(flag('--clear', 4));
+  // Free memory above the line needs no census: it cannot call the box tight there, and the census is the
+  // 0.8 s every `next` paid (measured 2026-10-08). os.freemem() read within 0.3 GB of the census.
+  if (os.freemem() / 2 ** 30 > want) process.exit(0);
   const c = census();
   process.exit(c.freeGB > want ? 0 : 1);
 }
