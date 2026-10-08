@@ -19,7 +19,8 @@ pending. Measured 2026-08-27: three workers dead for nearly three hours came bac
 cross-session message and finished their tasks. Keep the
 handles usable, and never let a finding or an answer ride that channel.
 
-**That channel dies with the machine, and the disk does not** [M27]. Measured 2026-09-01: after a
+**That channel can die with the machine, and the disk does not** [M27]. Look first: a worker still in
+`list_sessions` is woken by message (`/makarasty:fleet-resume`, step 0) [M35]. Measured 2026-09-01: after a
 restart the 26 worker sessions of two runs were gone from the session list (`mcp__ccd_session_mgmt__list_sessions`), which listed five unrelated
 chats started minutes earlier, and absent from the app's own session list whether or not archived rows
 were included. A planner
@@ -177,6 +178,10 @@ as health: `fleet-wait` now emits a stall line on a quiet interval for exactly t
   chips/<NN>.model     `<model> <effort> plugin <version>` worker NN actually runs, written by `fleet.sh whoami`;
                        `status` compares the version with its own (OTHER PLUGIN)
   offered/<NN>         the lane chip NN was offered for (or `brief`), written by `fleet.sh chips`
+  want/<NN>            `<model> <effort|any>` queue worker NN should run, written by `fleet.sh chips --model`;
+                       `whoami` exits 10 on a mismatch (`docs/MODELS.md`, Switching a worker)
+  chips/<NN>.switch    `<has> -> <wants>` while worker NN waits for a switch; `.switch-failed` once the same
+                       mismatch came twice and the worker went on
   coordinator          the session id of whoever arms the watch; `fleet.sh ctx` reads its context size
   STATE.md             the coordinator's ledger, and what a fresh coordinator re-arms from: plan path, run dir,
                        worker count, chips offered by lane, integration checkout path and URL, extra watched
@@ -225,7 +230,7 @@ Add `.fleet/` to the project's ignore file. Runs are scratch, not history.
 `fleet.sh pause <run> [reason|-]` writes `PAUSED` and the global marker (the reason is read from stdin only
 when the argument is a lone `-`); `fleet.sh resume <run>` removes both. While `PAUSED` exists, `next` hands
 out nothing and **exits 8** (printing `RUN PAUSED` and a wake loop), `drained` does not write `.done` and
-exits 8 (before it prints the pane-close line), the abort clock does not count paused time, and `sweep`
+exits 8 (before it prints the tab-swap line), the abort clock does not count paused time, and `sweep`
 reclaims nothing and reports no claim as dead, because heartbeats stop on purpose. Exit 8 means paused, not
 empty and not waiting; the worker acknowledges and waits (`fleet-run` section 1c). `resume` takes the
 coordinator seat only with `--take-over`, which is the last call of the new coordinator's chip prompt; a

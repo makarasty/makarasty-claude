@@ -1,19 +1,40 @@
 ---
-description: Bring a fleet run back after the machine died - reopen the workers whose context survived, respawn the ones whose did not, and account for what neither covers. Use after a crash, a power cut, or a restart that closed every chat.
+description: Bring a fleet run back after a restart or crash - wake or reopen the workers whose context survived, respawn the ones whose did not. Use after a crash, a power cut or a Claude Code restart, and on "продолжи" when the watch is gone.
 argument-hint: <run-id>
-allowed-tools: Bash, Read, Write, Glob, Grep, Monitor, TaskStop
+allowed-tools: Bash, Read, Write, Glob, Grep, Monitor, TaskStop, ToolSearch, mcp__ccd_session_mgmt__list_sessions, mcp__ccd_session_mgmt__send_message
 ---
 
-The run is on disk and the sessions are not. This command turns that into three lists and a wave of clicks.
+A restart ends every session's turn and leaves the run on disk looking alive. This command wakes the
+workers that are still there and turns the rest into lists and a wave of clicks.
 
-`sweep` and the revive message both assume the workers are still there, and after a restart none of them
-are: a message needs a live receiver, and `mcp__ccd_session_mgmt__list_sessions` no longer lists them [M27]. What survives is
+The sessions themselves may or may not survive: on 2026-10-08 the app kept them [M35], on 2026-09-01 the
+session list had none of them [M27]. What survives either way is
 `chips/<session-id>`, written at the first claim, the standing claims, and each session's transcript under
 `~/.claude/projects/<slug>/<session-id>.jsonl` — enough to reopen a worker with its context intact. **A
 reopened worker is worth several fresh ones**: it still holds the files it read, the refutations it already
 made, and the half-written finding it was about to file.
 
 ## Do this
+
+### 0. Wake every worker the app still lists
+
+First the two states that are not a wake: `<run>/PAUSED` means the run is paused, which is
+`/makarasty:fleet-pause` off, and `<run>/FINISHED` means it landed and nobody is owed a message.
+
+Otherwise load `list_sessions` and `send_message` with ToolSearch, and switch every chip with a
+`chips/NN.switch` first (`docs/MODELS.md`, "Switching a worker", step 4); its message is that step's line.
+For the rest, call `list_sessions`, raising `limit` until its oldest row predates the run's start: it sorts by recent activity, and stopped workers
+fall behind every chat touched since. Every `fleet <run-id> NN` it lists whose chip has no `.done`,
+`.blocked` or `.retired` gets one `send_message`:
+
+- a queue worker (`offered/NN` is a lane): "Status check after a restart. Beat the claim you hold, run
+  fleet.sh whoami again, re-arm the clock next printed and any dev server you ran, and go on with the claim;
+  call next if you hold none. A pane worker gates its pane before the next observation."
+- a brief worker (`offered/NN` is `brief`): "Status check after a restart. Go on with your brief from where
+  your notes stop; re-arm any dev server you ran and gate your pane before the next observation."
+
+The app reopens each with its context: a RESUME with no terminal. Note which chips you messaged. Done when
+every listed worker has had one message; if that covers every unfinished worker, go to step 5.
 
 ### 1. Read the run before touching it
 
@@ -59,6 +80,10 @@ a machine with no transcripts: it asks the heartbeat question instead.
 
 ### 2. Reopen what can be reopened, first
 
+Skip every chip step 0 messaged: `recover` judges by how stale a transcript is, so a worker woken a minute
+ago can still read RESUME, and a `claude -r` on it is a second writer on its transcript. Run `recover` again
+after a few minutes; a woken worker reads LIVE? by then.
+
 Hand the operator the `claude -r` lines, one per RESUME chip, and say what each was holding. They run them
 in a terminal; a resumed session comes back with its context and its claim, and its next act should be
 `fleet.sh beat` to prove it is alive.
@@ -72,14 +97,14 @@ has to be told to stop, and two workers on one task is what the claim exists to 
 sh "$f" recover .fleet/<run-id> --release
 ```
 
-This releases the claims of chips whose sessions are gone, and moves their task files to
+Never with a chip step 0 messaged still unanswered. This releases the claims of chips whose sessions are gone, and moves their task files to
 `tasks/released/`. As everywhere else, **a released task returns under a NEW id** - re-file it, never hand
 back the old one, or a late write from the old worker lands on live work.
 
 ### 4. Re-file, then re-spawn
 
 Write the released work as new tasks in `tasks/ready/`, then `mcp__ccd_session__spawn_task` one chip per worker you want,
-title and prompt verbatim from `sh "$f" chips .fleet/<run-id> <NN>-<NN> <lane>`, numbered past the dead workers. Size the wave off `fleet.sh width`, not off how many
+title and prompt verbatim from `sh "$f" chips .fleet/<run-id> <NN>-<NN> <lane> --model <id> --effort <level>`, with the pair `status` shows as `wants` under the workers they replace (`any` is a valid `--effort`), numbered past the dead workers. Size the wave off `fleet.sh width`, not off how many
 workers died: the survivors usually finished several tasks before the lights went out.
 
 If the run had a `verify` or `pane` lane, say which lane each new chip is for. A pane worker whose pane is
@@ -109,9 +134,8 @@ one that lands short**, because the missing work is invisible from the backlog.
 
 ## What this cannot do
 
-- **It cannot reopen a session for you.** `claude -r` runs in the operator's terminal; a fleet has no way
-  to type into a chat, which is the same constraint the revive message works around and the reason the
-  guard hook exists at all.
+- **It cannot reopen a session the app no longer lists.** `claude -r` runs in the operator's terminal;
+  step 0's message reaches only the sessions the app still holds.
 - **It cannot tell a crash from a quiet worker**, except through the transcript. That is why an UNKNOWN
   claim is reported rather than released.
 - **It does not recover findings that were never written.** Everything a worker held in context and had not

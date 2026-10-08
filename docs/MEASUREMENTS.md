@@ -285,7 +285,8 @@ rows included. The revive message — the only recovery this plugin had — had 
 enough to reopen a worker with its context intact.
 **Rule:** revive is for a session that stopped, `fleet.sh recover` is for one that no longer exists. A
 claim whose chip never registered a session id is UNKNOWN, not dead — that is what `sweep` is for.
-**Status:** current.
+**Status:** partly superseded by M35: on 2026-10-08 the desktop app kept its sessions across a restart, so
+look before you write a worker off.
 
 ## M29 — The design probe against a fixture of planted defects
 **2026-09-03**, one browser (the in-app pane, live at 302 frames), one fixture,
@@ -482,7 +483,30 @@ set of the renderer is the instrument; the family total is not.
 weight of its own page under test, divided into the free memory less the operator's reserve. Nothing takes
 that measurement automatically yet: `node scripts/fleet-load.mjs` shows the largest renderer on the box
 under **browser pane or window**, so it is one command with a pane open and one without, and the difference
-is the number. Until somebody records it, `fleet.sh next` is what stands between a fleet and the page file. A worker that has finished with a heavy page closes its pane rather than reloading it.
+is the number. Until somebody records it, `fleet.sh next` is what stands between a fleet and the page file. A worker that has finished with a heavy page swaps that tab for an empty one and keeps the pane open (M35).
+**Status:** current.
+
+## M35 — Three ways a coordinator lost its workers in one morning
+**2026-10-08**, one six-worker run (`2026-10-07-rm-ui-intake`, four repo workers, two pane workers),
+desktop app, Claude Code 2.1.280.
+
+- **A chip starts on the menu's model.** Workers 01-04 started on Sonnet: the operator had flipped `/model`
+  just before clicking their chips. The coordinator noticed at 13:05, about three minutes in, switched all
+  six with `set_session_model` and `set_session_effort` (01-04 to Opus at high, 05-06 to Opus at max),
+  stopped 03's Sonnet turn and messaged the rest on. The switch held: every worker recorded Opus at its
+  next `whoami`.
+- **A restart reads as a running run.** After a Claude Code restart the coordinator re-armed its watch,
+  read six claims in `status` and reported the run as running. The worker chats had stopped; the operator
+  had to say so. They were still in the app's session list.
+- **A closed tab is a closed pane.** Worker 05 obeyed the memory hook's "tabs_close on every tab" at 10:19
+  and again, unprompted, at 11:04 while wrapping up a task. Closing the last tab closed the Browser pane;
+  `preview_start` reopened it hidden at 0 frames, and only the operator could put it back on screen. Two
+  trips to that chat, 58 minutes blind (10:20 to 10:56, 11:07 to 11:29).
+
+**Rule:** the coordinator sets worker models (`MODELS.md`, Switching a worker); after a restart it wakes
+every worker by message before it believes `status` (`fleet-resume`, step 0); a pane worker frees memory by
+swapping tabs and never closes its last one (`BROWSER.md`). That a fresh tab gets a fresh renderer is
+inferred from M34's per-tab process count, not measured.
 **Status:** current.
 
 ## Appendix: what a pull run spends

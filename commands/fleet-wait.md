@@ -1,7 +1,7 @@
 ---
 description: Wait for a run's workers to finish without spending model turns, then collect. Use while workers are running, or to ask whether a run has finished.
 argument-hint: <run-id> [expected worker count]
-allowed-tools: Bash, Read, Write, Glob, Grep, Monitor, Agent, TaskStop, PushNotification
+allowed-tools: Bash, Read, Write, Glob, Grep, Monitor, Agent, TaskStop, PushNotification, ToolSearch, mcp__ccd_session_mgmt__list_sessions, mcp__ccd_session_mgmt__send_message, mcp__ccd_session_mgmt__set_session_model, mcp__ccd_session_mgmt__set_session_effort
 ---
 
 Watch `.fleet/<run-id>/` for workers finishing. Do the waiting in the shell, where it is free. A re-read
@@ -99,6 +99,10 @@ across re-arms, so nothing already reported is reported twice.
 For a run with fixed briefs and no queue, drop the three `tasks/` globs from the `for` line. Everything
 else, the stall timer included, still applies.
 
+**A `WORKER MODEL NN` line means worker NN stopped itself at `whoami` and waits for you.** Make the calls
+it names in that turn: `docs/MODELS.md`, "Switching a worker", steps 4 and 5. `WORKER MODEL NN DID NOT TAKE`
+is step 5's failed switch.
+
 **A `WORKER PLUGIN NN` line means worker NN runs an older makarasty than the one installed**, so a pause or
 a retirement may not hold it: it goes into the same one relaunch ask below ("Replace workers NN only"), and
 you offer the fresh chips yourself, saying in that same ask that a fresh chip runs the new version only if
@@ -180,11 +184,21 @@ So keep the count as the happy path and give yourself a fallback with a threshol
 A `.done` that lands after that is orphaned unless collection is re-run. Say so in the summary; do not
 pretend the count closed.
 
-**If the chats are gone rather than quiet, none of the above applies.** A stall report and a crash look the
-same from the run directory — no file changes in either — and the difference is whether the workers still
-exist. When `mcp__ccd_session_mgmt__list_sessions` no longer lists them, or the operator says the machine restarted, stop messaging
-and run `/makarasty:fleet-resume <run-id>`: the sessions with transcripts are reopened with their context,
-and only the rest are written off.
+**If the chats stopped rather than went quiet, none of the above applies.** A stall report and a crash
+look the same from the run directory — no file changes in either — so the next section decides which.
+
+## After a restart, wake every worker before you re-arm
+
+A Claude Code restart ends the turn of every session on the machine: your watch, and every worker's loop
+with it. Claim files and heartbeats survive it, so `status` reads like a working run while nothing works
+[M35].
+
+**An expiry notice is not a restart: on one, re-arm and nothing else.** A restart is a turn that did not
+start from the watch - the operator writing "продолжи" or "continue", or saying the machine restarted - while
+your watch task is missing from your task list and never printed `run complete` or `run landed`. On that,
+run `/makarasty:fleet-resume <run-id>` before you read `status`: its step 0 wakes every worker the app still
+lists, and its step 5 re-arms this watch. Done when it has reported which workers were woken, reopened and
+written off, and you have told the operator that pane workers want their panes on screen again.
 
 ## The watch must end
 
