@@ -27,10 +27,13 @@
 #   fleet.sh procs   <run-dir> [--kill]            orphaned test runs and typechecks; --kill ends only those
 #   fleet.sh drained <run-dir> <chip> [lane]       queue empty: write <chip>.done. exit 5 = queue still open,
 #                                                  or a ready task in that lane nobody holds yet
-#   fleet.sh chips   <run-dir> <NN>[-<NN>] [lane]  coordinator: the exact spawn_task title and prompt per worker
+#   fleet.sh chips   <run-dir> <NN>[-<NN>] [lane] [--model <id> [--effort <level>]]
+#                                                  coordinator: the exact spawn_task title and prompt per worker,
+#                                                  and the model and effort each should run on (want/<NN>)
 #   fleet.sh status  <run-dir>                     planner view: claims, ages, markers, questions, lane gaps,
 #                                                  workers and their models, budgets, coordinator context
-#   fleet.sh whoami  <run-dir> <chip> <model> [effort]  worker: record the model, effort and plugin version it runs on
+#   fleet.sh whoami  <run-dir> <chip> <model> [effort]  worker: record the model, effort and plugin version it
+#                                                  runs on. exit 10 = not what want/<chip> says: end the turn
 #   fleet.sh ctx     <run-dir>                     one line per session whose context crosses its mark: the
 #                                                  coordinator (coordinator_handoff_k) or a worker (worker_relaunch_k)
 #   fleet.sh contexts <run-dir>                    every session the run knows: context in K, claim held, OVER
@@ -579,6 +582,15 @@ next)
     echo "RETIRED: chip $chip was replaced by a fresh worker. You were retired: end this turn with one line, commit nothing, start nothing."
     exit 9
   fi
+  # A run that landed hands out nothing: a leftover ready task claimed after collection is work nobody reads.
+  if [ -e "$run/FINISHED" ]; then
+    echo "RUN FINISHED: $(basename "$absrun") has landed. End this turn with one line, commit nothing, start nothing."
+    exit 9
+  fi
+  if [ -e "$run/brief-$chip.md" ]; then
+    echo "chip $chip works brief-$chip.md, not the queue: go on with the brief from where your notes stop." >&2
+    exit 2
+  fi
   # A pause hands out nothing, however much is ready. Exit 8 is its own code for the reason 7 is not 3:
   # a worker told "drained" would write `.done`, and one told "waiting" would poll `next` as if work were
   # coming, when what it has to do is stop and wait for the pause to lift.
@@ -587,6 +599,10 @@ next)
     echo "Background this, end your turn, and after it prints resumed carry on with the claim you hold; call next only if you hold none:"
     wake_loop "$chip"
     exit 8
+  fi
+  if [ -e "$run/chips/$chip.switch" ]; then
+    echo "SWITCH PENDING: run whoami before claiming; on exit 10 end this turn as it says."
+    exit 10
   fi
   # A chip that already holds an open claim takes no second task. Resumed from a pause, the wake loop says
   # "carry on with the claim you hold", and a worker that read it as "claim again" took another one.
@@ -615,9 +631,10 @@ next)
       echo "MACHINE TIGHT: ${free:-unknown} GB free, floor ${floor} GB. Nothing is wrong with you; the box is full."
       echo "Background this and wait. Do NOT write .done, and do not end this turn without it running:"
       echo "  [ -e \"$absrun/FINISHED\" ] && { echo run-finished; exit 0; }; until node \"$loader\" --clear $clear >/dev/null 2>&1; do sleep 60; done; echo memory-back"
-      echo "Then claim again. While you wait, the cheapest thing you can do for the run is close anything"
-      echo "of yours that holds memory: a browser pane holds its renderer until the tab is closed, and a"
-      echo "reload returns none of it [M34]."
+      echo "Then claim again. While you wait, give back what your browser holds: a tab keeps its renderer until"
+      echo "it is closed, and a reload returns none of it [M34]. tabs_create, tabs_select the new tab, then"
+      echo "tabs_close the heavy one. Keep one tab open: the last one closing closes the pane, and only the"
+      echo "operator can show it again."
       exit 6
     fi
     rm -f "$run/tight/$chip" 2>/dev/null || true
@@ -945,8 +962,24 @@ chips)
   # chips titled "Fleet worker 02: ..." that no `fleet <run-id> NN` lookup finds, and a fleet-run path into a
   # cache snapshot two versions old. Every path that offers workers - plan, resume, design, call, a handoff -
   # goes through here, so the title, the absolute run path and the command path have one spelling.
-  range=${3:-}; lane=${4:-}
+  range=${3:-}; lane=""; wmodel=""; weffort=""
+  [ $# -ge 3 ] && shift 3 || shift $#
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --model|--effort)
+        [ $# -ge 2 ] && [ -n "$2" ] || { echo "$1 needs a value" >&2; exit 2; }
+        if [ "$1" = --model ]; then wmodel=$2; else weffort=$2; fi; shift 2 ;;
+      *) lane=$1; shift ;;
+    esac
+  done
   [ -n "$range" ] || { echo "worker range required, e.g. 02 or 02-05" >&2; exit 2; }
+  # The id the app's model menu uses, as `get_session` prints it. A tier alias never equals what a worker
+  # reports, so every `whoami` would stop on it.
+  case "$wmodel" in ''|none|claude-*) ;; *)
+    echo "--model '$wmodel' is not a model id: pass it as get_session prints it (claude-opus-5-5), or none to drop the wish" >&2; exit 2;;
+  esac
+  case "$weffort" in any) weffort="" ;; ''|low|medium|high|xhigh|max) ;; *) echo "effort '$weffort' is not low, medium, high, xhigh or max" >&2; exit 2;; esac
+  if [ -n "$weffort" ] && [ -z "$wmodel" ]; then echo "--effort needs --model beside it" >&2; exit 2; fi
   first=${range%-*}; last=${range#*-}
   # Numbers only, and a range that runs forwards. `expr` returned status 1 for a zero and ended the script
   # under `set -e` without a word; a reversed range printed no chip at all, only the trailer, and the
@@ -962,10 +995,10 @@ chips)
   if [ "$i" -gt "$end" ]; then echo "range '$range' runs backwards: no worker would be offered" >&2; exit 2; fi
   # A lane is where a task can be done, never which model does it: pane, repo or verify. A model name as
   # a lane (`opus`, measured 2026-10-05) made a queue of its own that four idle workers on the very same
-  # model could not touch, because a chip cannot pick its session's model and a worker cannot change it.
+  # model could not touch. The model is set per worker with --model, and the coordinator switches it.
   case "${lane:-}" in ''|pane|repo|verify) ;; *)
     echo "lane '$lane' is not a lane: use pane, repo or verify. A lane says where a task can be done; the" >&2
-    echo "model is whatever the operator starts the chip with, and fleet.sh status shows it per worker." >&2
+    echo "model goes in --model <id> [--effort <level>], and the coordinator switches each worker to it." >&2
     exit 2;;
   esac
   runid=$(basename "$absrun")
@@ -978,6 +1011,8 @@ chips)
   while [ "$j" -le "$end" ]; do
     nn=$(printf '%02d' "$j")
     if [ -e "$run/brief-$nn.md" ]; then want=brief
+      # A brief is one turn, and a switch lands on the next one.
+      [ -z "$wmodel" ] || { echo "worker $nn has a brief: a brief is one turn, which no switch reaches. Have the operator pick its model in the app's menu before the click (docs/MODELS.md, Switching a worker)" >&2; exit 2; }
     else
       [ -n "$lane" ] || { echo "no brief-$nn.md in $absrun, so this is a queue worker and needs a lane: pane, repo or verify" >&2; exit 2; }
       want=$lane
@@ -990,12 +1025,17 @@ chips)
     j=$((j + 1))
   done
   mkdir -p "$run/offered"
+  if [ -n "$wmodel" ]; then mkdir -p "$run/want"; fi
   # The session that asks for chips is the coordinator. `status` and the watch read its transcript for
   # its context size, which is the one number that says when the run needs a fresh coordinator.
   if [ -n "${CLAUDE_CODE_SESSION_ID:-}" ]; then printf '%s\n' "$CLAUDE_CODE_SESSION_ID" > "$run/coordinator"; fleet_session; fi
   while [ "$i" -le "$end" ]; do
     nn=$(printf '%02d' "$i")
     seepane=""
+    # What this worker should run on; `whoami` checks it (docs/MODELS.md, Switching a worker). A re-offer
+    # without --model keeps the wish a respawn would otherwise lose; `none` drops it.
+    if [ "$wmodel" = none ]; then rm -f "$run/want/$nn"
+    elif [ -n "$wmodel" ]; then printf '%s %s\n' "$wmodel" "${weffort:-any}" > "$run/want/$nn"; fi
     if [ -e "$run/brief-$nn.md" ]; then
       prompt="Run the brief at $absrun/brief-$nn.md by following the makarasty fleet-run command. Invoke it as /makarasty:fleet-run $absrun/brief-$nn.md, and if that name does not resolve in this session, read the command file directly, at $runmd"
       what="brief $nn"
@@ -1025,13 +1065,44 @@ chips)
   ;;
 
 whoami)
-  # What this worker runs on, recorded at its first claim. A chip cannot choose its session's model and a
-  # session cannot change its own, so a task's `model:` line is a wish; this is what actually ran. Measured
-  # 2026-10-05: every task said `model: sonnet`, and all seven workers were Opus.
-  chip=${3:?chip id required}; model=${4:?model required}; effort=${5:-unknown}
+  # What this worker runs on, recorded before its first claim. Measured 2026-10-05: every task said
+  # `model: sonnet`, and all seven workers were Opus. A session cannot switch itself; the coordinator can
+  # (set_session_model), but only from the worker's next turn, and a queue worker's loop is one long turn.
+  # So a worker on the wrong model ends its turn here, before it spends the run's time on that model.
+  chip=${3:?chip id required}; model=${4:?model required}; effort=${5:-unknown}; after=${6:-}
   mkdir -p "$run/chips"
   printf '%s %s plugin %s\n' "$model" "$effort" "$(plugin_version)" > "$run/chips/$chip.model"
   echo "recorded: chip $chip runs $model at effort $effort, plugin $(plugin_version)"
+  if [ -e "$run/want/$chip" ]; then
+    w=$(tr -d '\r' < "$run/want/$chip" | head -1); wm=${w%% *}; we=${w#"$wm"}; we=${we# }; we=${we:-any}
+    off=""
+    # `claude-opus-5-5[1m]` and `claude-opus-5-5` are one model for this purpose: a worker without
+    # get_session reports the id from its instructions, which carries no suffix.
+    [ "${model%%\[*}" = "${wm%%\[*}" ] || off=1
+    # An effort the worker could not read is not a mismatch: it would stop again after every switch.
+    if [ "$we" != any ] && [ "$effort" != unknown ] && [ "$effort" != "$we" ]; then off=1; fi
+    if [ -n "$off" ]; then
+      line="$model $effort -> $wm $we"
+      # The same mismatch right after the coordinator's switch (its message says `switched`) means the
+      # switch did not take: a declined card, an effort the model lacks. Stopping again would loop for
+      # ever, so the worker goes on and the coordinator is told once. Any other wake - a restart, a stall
+      # check - is not a switch, and the worker keeps waiting.
+      if [ "$after" = switched ] && [ "$(cat "$run/chips/$chip.switch" 2>/dev/null)" = "$line" ]; then
+        rm -f "$run/chips/$chip.switch" "$run/chips/$chip.switch-warned" "$run/chips/$chip.switch-failed-warned"
+        printf '%s\n' "$line" > "$run/chips/$chip.switch-failed"
+        echo "SWITCH DID NOT TAKE: still $model at $effort. Go on with your work on this model; the coordinator is told."
+        exit 0
+      fi
+      rm -f "$run/chips/$chip.switch-warned"
+      printf '%s\n' "$line" > "$run/chips/$chip.switch"
+      held=$(claims_of "$chip" | head -1)
+      echo "SWITCH: this session runs $model at $effort, and the run wants $wm at $we. Claim nothing new.${held:+ Beat $held first.}"
+      echo "Then end this turn with the one line: waiting for the coordinator to switch my model. Its message"
+      echo "wakes you; run whoami again as it says, and on exit 0 go on."
+      exit 10
+    fi
+  fi
+  rm -f "$run/chips/$chip.switch" "$run/chips/$chip.switch-warned" "$run/chips/$chip.switch-failed" "$run/chips/$chip.switch-failed-warned" 2>/dev/null || true
   ;;
 
 file)
@@ -1208,6 +1279,21 @@ ctx)
   for o in "$run"/offered/*; do
     [ -e "$o" ] || continue; c=$(basename "$o")
     chip_finished "$c" && continue
+    # A worker that stopped itself at `whoami` waits for exactly one act of the coordinator's. Said again
+    # every ten minutes while it waits: a compaction or a relaunch loses a line printed once.
+    if [ -e "$run/chips/$c.switch" ] && { [ "$(cat "$run/chips/$c.switch" 2>/dev/null)" != "$(cat "$run/chips/$c.switch-warned" 2>/dev/null)" ] || [ -n "$(find "$run/chips/$c.switch-warned" -mmin +10 2>/dev/null)" ]; }; then
+      # The worker's passing whoami can remove .switch between the test and here.
+      cp "$run/chips/$c.switch" "$run/chips/$c.switch-warned" 2>/dev/null || continue
+      read -r hm he _a wm we < "$run/chips/$c.switch-warned" || true; we=$(printf '%s' "$we" | tr -d '\r')
+      calls=""
+      [ "${hm%%\[*}" = "${wm%%\[*}" ] || calls="set_session_model $wm"
+      if [ "$we" != any ] && [ "$he" != "$we" ]; then calls="${calls:+$calls, }set_session_effort $we"; fi
+      echo "WORKER MODEL $c: runs $hm at $he, wants $wm at $we, and waits for you. On the session titled 'fleet $(basename "$absrun") $c': $calls, then send_message it: \"switched: run fleet.sh whoami again with switched as its last argument\" (docs/MODELS.md, Switching a worker)."
+    fi
+    if [ -e "$run/chips/$c.switch-failed" ] && [ ! -e "$run/chips/$c.switch-failed-warned" ]; then
+      touch "$run/chips/$c.switch-failed-warned"
+      echo "WORKER MODEL $c DID NOT TAKE: $(tr -d '\r' < "$run/chips/$c.switch-failed"). It works on what it has. Switch it again and message it, or accept it: rm $absrun/want/$c."
+    fi
     grep -lx "$c" "$run"/chips/* >/dev/null 2>&1 || continue # not started
     _wv=$(sed -n 's/.* plugin \([^ ]*\)$/\1/p' "$run/chips/$c.model" 2>/dev/null | tr -d '\r')
     if [ -z "$_wv" ]; then
@@ -1241,11 +1327,12 @@ drained)
     wake_loop "$chip"
     exit 8
   fi
-  # A drained worker still holds its renderer, and only closing the tab gives it back [M34]. This is a
-  # directive on a path the worker already walks, like the rename below it; there is no measurement of
-  # whether it is obeyed, and it costs one line.
-  printf 'CLOSE YOUR BROWSER PANE if you opened one: tabs_close. The renderer lives until the tab does,\n'
-  printf 'a reload returns nothing, and one heavy page measured 2,061 MB [M34].\n'
+  # A drained worker still holds its renderer, and only closing that tab gives it back [M34]. Closing the
+  # LAST tab closes the pane, which only the operator can put back on screen: 2026-10-08, a pane worker
+  # told to close its pane cost the operator two trips and 58 blind minutes. So the tab is swapped.
+  printf 'GIVE YOUR BROWSER MEMORY BACK if you opened a pane: tabs_create, tabs_select the new tab, then\n'
+  printf 'tabs_close the heavy one. Keep that empty tab: the last tab closing closes the pane, and only the\n'
+  printf 'operator can show it again. One heavy page measured 2,061 MB [M34].\n'
   # A drained queue is not the end of the run while the planner still intends to file work. The marker
   # says so, and it is what lets the repo lane run at full width from the first minute without closing
   # chats that will be needed again an hour later.
@@ -1869,6 +1956,14 @@ status)
     started=no; grep -lx "$nn" "$run"/chips/* >/dev/null 2>&1 && started=yes
     [ -e "$run/$nn.retired" ] && started="$started, RETIRED"
     echo "  $nn  lane $(cat "$o")  started $started  $m"
+    if [ -e "$run/want/$nn" ] && ! chip_finished "$nn"; then
+      _w=$(tr -d '\r' < "$run/want/$nn" | head -1); echo "    wants $_w"
+      _rm=$(cut -d' ' -f1 "$run/chips/$nn.model" 2>/dev/null)
+      if [ -e "$run/chips/$nn.switch" ]; then echo "    WAITS FOR A MODEL SWITCH: $(tr -d '\r' < "$run/chips/$nn.switch")"
+      elif [ -e "$run/chips/$nn.switch-failed" ]; then echo "    SWITCH DID NOT TAKE: $(tr -d '\r' < "$run/chips/$nn.switch-failed")"
+      # A worker on 1.5.12 or older never compares; neither does one that skipped whoami.
+      elif [ -n "$_rm" ] && [ "${_rm%%\[*}" != "$(printf '%s' "${_w%% *}" | sed 's/\[.*//')" ]; then echo "    RUNS OFF ITS WISH: records $_rm"; fi
+    fi
     # A worker on another plugin version follows another protocol. Say so while it is still running, not
     # when its markers turn out empty. One that started and never recorded itself is older than `whoami`.
     _wv=$(sed -n 's/.* plugin \([^ ]*\)$/\1/p' "$run/chips/$nn.model" 2>/dev/null | tr -d '\r')
@@ -2720,6 +2815,8 @@ relaunch)
       sh "$0" chips "$run" "$new" | sed -n '/^CHIP /,/^$/p'
     else
       sh "$0" chips "$run" "$new" "$lane" | sed -n '/^CHIP /,/^$/p'
+      # The replacement runs on what its predecessor was meant to run on.
+      if [ -e "$run/want/$c" ]; then cp "$run/want/$c" "$run/want/$new"; fi
     fi
     printf '%s\n' "$new" > "$run/replaced/$c"
   done

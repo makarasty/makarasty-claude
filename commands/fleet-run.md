@@ -116,18 +116,25 @@ per-task done marker, the notes are where the coordinator finds what to merge.
 `$ARGUMENTS` naming a run directory that contains `tasks/ready/` is **pull mode**. Read `docs/PULL.md`'s
 "Claiming", "Heartbeat, and losing a claim" and "Asking the planner" (the rest is the planner's), then loop.
 
-**Before the first claim, say what you run on**, once: your model is named in your own instructions, and
-`mcp__ccd_session_mgmt__get_session` with `self` adds your effort; the coordinator reads it in `status`:
+**Before the first claim, and again whenever the coordinator's message asks, say what you run on**:
+`mcp__ccd_session_mgmt__get_session` with `self` gives `model` and `effort` as the app names them. Pass
+`unknown` for an effort it leaves empty, and without the tool, the model id in your own instructions:
 
 ```bash
 sh "$f" whoami "$r" <chip> <model id> <effort or unknown>
 ```
 
+**Exit 10 means the coordinator wants you on another model or effort.** Claim nothing new, beat a claim you
+hold, and end your turn with the line `waiting for the coordinator to switch my model`. Its message wakes
+you; run `whoami` again, with `switched` as a sixth argument when the message says so, and on exit 0 go to
+step 1. Any other wake, a restart message included, runs `whoami` without it.
+
 1. `sh "$f" next "$r" <chip> <lane>` claims the first free task **in your lane**, writes
    `owner` and the first heartbeat atomically, and prints the task with its budget and abort deadline.
    **Pass the lane** - `repo` if this session has no Browser pane, `pane` if it does - or you will claim
    work you cannot do. **Exit 3 means drained**: nothing left in your lane and nothing waiting. **Exit 8
-   means the run is paused** and **exit 9 that you were retired** (both from `drained` too): section 1c.
+   means the run is paused** and **exit 9 that you were retired** (both from `drained` too), or from
+   `next`, that the run landed: section 1c. **Exit 10 means a model switch is pending**: run `whoami`.
    **Exit 7 means QUEUE WAITING**: tasks exist, held by an `after:`, a verify lane or an uncleared `operator:` - poll (below),
    and do not call `drained`. `next` and `drained` register this session as your chip before any of these
    exits, so a pause holds you from your first call. By hand: walk `tasks/ready/`
@@ -135,7 +142,7 @@ sh "$f" whoami "$r" <chip> <model id> <effort or unknown>
    your lane, and write `owner` in the same command, never as a second step.
 2. Read the task file and take the first real action on it **in the same turn as the claim**. If the task's
    `model:` is a tier above the one `whoami` recorded for you, delegate the work to one `Agent` at that tier
-   (task file and `RULES.md` in its prompt) and review what it returns: your own model cannot change.
+   (task file and `RULES.md` in its prompt) and review what it returns: a session never switches itself.
 3. Work the task exactly as the sections below describe a brief, rewriting
    `claimed/<task-id>/heartbeat` at every natural boundary.
 4. Past twice the task's `budget`, stop that task: write what you have, record the rest as unreached with
@@ -355,7 +362,9 @@ removing it is `fleet.sh clean`'s job.
 hold the verify lane, and a browser call when the box is full. Each prints what to do next, and **a refusal
 is a wait, not an ending**: background the loop it gives you and end the turn with that pending, because a
 session that finishes because it was refused is a dead chat that nothing can restart [M03]. While held,
-give memory back: a pane holds its renderer until the tab is closed (one tab measured 2,061 MB [M34]).
+give memory back by swapping the heavy tab for an empty one, as `next` prints it. **Keep the pane open for
+the whole run**: closing its last tab closes it, and putting it back on screen takes the operator
+(`docs/BROWSER.md`, "Order of operations").
 
 ## 1c. When the run is paused, and when you are retired
 
@@ -429,8 +438,8 @@ and an `ask/` note as you do it, never afterwards; and read a surprising reading
 because "this list is empty" is as likely to be another worker's write as a defect.
 
 When the brief sets `verdict-model` and it names a model other than the one this session runs, spawn one
-verdict pass at that model over the returned observations. Ruling "yourself" cannot honour the field: your
-model was fixed when this session started, so a brief asking for Opus verdicts from a Sonnet session gets
+verdict pass at that model over the returned observations. Ruling "yourself" cannot honour the field: a
+session never switches its own model, so a brief asking for Opus verdicts from a Sonnet session gets
 Sonnet verdicts and paperwork that says otherwise. When it matches, rule on the observations yourself and
 do not adopt the executor's severities: observing and judging are different jobs.
 

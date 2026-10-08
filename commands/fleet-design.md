@@ -93,10 +93,11 @@ Two pane chips, `lane pane` - the recon stage is ten minutes a screen and the co
 so two panes drain either in a wave. Repo chips from `sh "${CLAUDE_PLUGIN_ROOT}/scripts/fleet.sh" width .fleet/<run-id>`, `lane repo`. Chip
 titles and prompts verbatim from `sh "${CLAUDE_PLUGIN_ROOT}/scripts/fleet.sh" chips .fleet/<run-id> <NN>-<NN> <lane>`, one call per lane.
 
-Name the one model and effort to start every chip on. A chip cannot be split by model, so a task whose
-`model:` is above the worker's own tier is delegated by that worker to one `Agent` at that tier
-(`fleet-run`); starting every chip on the design model avoids those spawns, starting them on the cheaper
-tier spends them on the system and screen tasks. Say which you chose and why in the hand-over.
+Pass each lane's model to `chips` as `--model <id> --effort <level>`. A task whose `model:` is above its
+worker's tier is delegated by that worker to one `Agent` at that tier (`fleet-run`); the design model on
+the pane lane avoids those spawns, a cheaper tier spends them on the system and screen tasks. Say which you
+chose and why in the hand-over; `docs/MODELS.md`, "Switching a worker", covers a chip that starts on
+another model.
 
 Say the stage arithmetic out loud: repo workers will sit on `QUEUE WAITING` until the pane workers have
 recon'd their screens, which is a few minutes, and the operator should open the pane chips first.

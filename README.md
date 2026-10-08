@@ -318,7 +318,7 @@ Under semver, 1.x will not break:
 
 - **The run directory layout**: `tasks/ready`, `tasks/claimed/<id>/owner`, `tasks/claimed/<id>/proof`,
   `tasks/done`, `ask/`, `answers/`, `pane/`, `decisions.jsonl`, `clusters.jsonl`, and the
-  `<chip>.jsonl`, `.notes.md`, `.done`, `.blocked`, `.waiting` and `.retired` files, `PAUSED` and `stopped/<chip>`. `.fleet/contract-surface.txt`
+  `<chip>.jsonl`, `.notes.md`, `.done`, `.blocked`, `.waiting` and `.retired` files, `PAUSED`, `stopped/<chip>` and `want/<chip>`. `.fleet/contract-surface.txt`
   sits beside the runs because it belongs to the project and is committed with it. Each run stamps
   `RUN_FORMAT` at its first write, and a `fleet.sh` that reads an older format refuses a newer run rather
   than misreading it.
@@ -327,7 +327,9 @@ Under semver, 1.x will not break:
   is drained for that lane; 4 the claim is no longer yours; 5 from `drained`, not finished (the planner
   has not closed the queue, or a ready task nobody holds is still waiting); 6 free memory is under the
   floor; 7 from `next`, tasks exist but an `after:` or a held verify lane holds them; 8 from `next` or
-  `drained`, the run is paused; 9 from `next` or `drained`, the worker was retired by a relaunch.
+  `drained`, the run is paused; 9 from `next` or `drained`, the worker was retired by a relaunch, or from
+  `next`, the run has landed; 10 from `whoami` or `next`, the session runs another model or effort than
+  `want/<chip>` and waits for the coordinator to switch it.
 - **The four line shapes** a findings file may hold (a finding, `unreached`, `created`, `state_changed`)
   and the fields the schema gate enforces on each.
 - **The markers**: `.done` means finished, `.blocked` means it never saw, `.retired` means a relaunch replaced

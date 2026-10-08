@@ -68,7 +68,7 @@ pane.
 
 ## 4. Chips, watch, publish
 
-Repo chips only, from `sh "${CLAUDE_PLUGIN_ROOT}/scripts/fleet.sh" width .fleet/<run-id>`; no pane is opened for a redesign. The watch as `fleet-plan`
+Repo chips only, from `sh "${CLAUDE_PLUGIN_ROOT}/scripts/fleet.sh" width .fleet/<run-id>`; no pane is opened for a redesign. Pass the chips `--model` for the design tier (`docs/MODELS.md`, "Switching a worker"). The watch as `fleet-plan`
 section 8. Publish exactly as `fleet-design` section 5 does, twice when there was a directions task: once
 for the sketches, once for the proposals. Between the two, the operator picks; carry the pick into the
 propose tasks and the broadcast, and never rename a direction.

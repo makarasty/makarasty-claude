@@ -74,7 +74,8 @@ rather than hand rolling the shell each time:
 ```bash
 f="<plugin>/scripts/fleet.sh"   # <plugin>: the root fleet-run named; $f and $r are already set there
 r="<the run's absolute directory>"
-sh "$f" next    "$r" 03 repo # claim IN YOUR LANE; exit 3 drained, exit 7 waiting (poll), exit 8 paused, exit 9 retired
+sh "$f" whoami  "$r" 03 <model> <effort>   # before the first claim; exit 10 = wrong model: end the turn
+sh "$f" next    "$r" 03 repo # claim IN YOUR LANE; exit 3 drained, exit 7 waiting (poll), exit 8 paused, exit 9 retired or landed, exit 10 switch pending
 sh "$f" clock   "$r" 03 task-07 25    # prints the self-disarming clock; background it
 sh "$f" beat    "$r" 03 task-07
 printf '%s' '<one JSON finding>' | sh "$f" find "$r" 03   # a pipe, not a herestring: `<<<` is a bashism

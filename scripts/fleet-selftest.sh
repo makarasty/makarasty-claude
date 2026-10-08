@@ -1472,7 +1472,8 @@ if command -v node >/dev/null 2>&1; then
   check "and is given the wait to background rather than an ending" "until node" "$out"
   check "whose loader path is absolute, since a worktree worker has another working directory" "/scripts/fleet-load.mjs" "$out"
   check "and which ends itself when the run lands" "FINISHED" "$out"
-  check "and it is told the one thing it can do while waiting" "close anything" "$out"
+  check "and it is told the one thing it can do while waiting" "give back what your browser holds" "$out"
+  check "and to keep one tab, so the pane stays open" "Keep one tab open" "$out"
   [ -e "$mt/r/tight/07" ] && ok "the held worker is on disk where status can find it" || bad "the held worker is on disk where status can find it" "no marker"
   [ -e "$mt/r/tasks/claimed/t1" ] && bad "and nothing was claimed" "claimed anyway" || ok "and nothing was claimed"
 
@@ -1483,7 +1484,7 @@ if command -v node >/dev/null 2>&1; then
   [ -e "$mt/r/tight/07" ] && bad "and the held mark is cleared" "still there" || ok "and the held mark is cleared"
 
   out=$( cd "$mt" && sh scripts/fleet.sh drained r 07 2>&1 )
-  check "a drained worker is asked for its pane back" "CLOSE YOUR BROWSER PANE" "$out"
+  check "a drained worker is asked for its pane back" "GIVE YOUR BROWSER MEMORY BACK" "$out"
   rm -rf "$mt"
 else
   echo "  skip  memory throttle cases: no node"
@@ -1863,7 +1864,7 @@ case "$out" in *CLAIMED*) bad "and claims nothing" "$out";; *) ok "and claims no
 out=$(sh "$fleet" drained "$R" 03 repo 2>&1); rc=$?
 code "drained exits 8 while paused" 8 "$rc"
 [ -e "$R/03.done" ] && bad "and writes no .done" "03.done exists" || ok "and writes no .done"
-case "$out" in *"CLOSE YOUR BROWSER PANE"*) bad "and does not tell a paused worker to close its pane first" "$out";; *) ok "and does not tell a paused worker to close its pane first";; esac
+case "$out" in *"GIVE YOUR BROWSER MEMORY BACK"*) bad "and does not tell a paused worker to swap its tab first" "$out";; *) ok "and does not tell a paused worker to swap its tab first";; esac
 # A worker whose only calls are answered "paused" is still registered, so the hooks know it.
 CLAUDE_CODE_SESSION_ID=sess-w9 sh "$fleet" next "$R" 09 repo >/dev/null 2>&1
 [ "$(cat "$R/chips/sess-w9" 2>/dev/null)" = 09 ] && ok "next registers the session before its paused exit" || bad "next registers the session before its paused exit" "$(ls "$R/chips" 2>&1 | tr '\n' ' ')"
@@ -2121,7 +2122,7 @@ check "a session that is not a worker is untouched by a retirement" "0 " "$o"
 out=$(sh "$fleet" drained "$R" 03 repo 2>&1); rc=$?
 code "drained for the retired chip exits 9" 9 "$rc"
 [ -e "$R/03.done" ] && bad "and writes no .done" || ok "and writes no .done"
-case "$out" in *"CLOSE YOUR BROWSER PANE"*) bad "and prints no pane line first" "$out";; *) ok "and prints no pane line first";; esac
+case "$out" in *"GIVE YOUR BROWSER MEMORY BACK"*) bad "and prints no pane line first" "$out";; *) ok "and prints no pane line first";; esac
 check "the first relaunch call stops for STATE.md with an instruction" "STATE.md NOT CURRENT" "$(sh "$fleet" relaunch "$R" --wait 0 03 2>&1)"
 sleep 1; printf '# state\n' > "$R/STATE.md"
 out=$(sh "$fleet" relaunch "$R" --wait 0 03 2>&1); rc=$?
@@ -2380,6 +2381,58 @@ out=$(sh "$fleet" status "$fr" 2>&1)
 check "a 1.5.8 or 1.5.9 record, with no version, is named older" "OTHER PLUGIN: worker 06 runs makarasty 1.5.8 or 1.5.9" "$out"
 CLAUDE_CODE_SESSION_ID=sess-v sh "$fleet" whoami "$fr" 07 m x >/dev/null 2>&1
 check "whoami records the plugin version" "plugin $(sed -n 's/.*"version": "\([^"]*\)".*/\1/p' "$here/../.claude-plugin/plugin.json")" "$(cat "$fr/chips/07.model")"
+out=$(sh "$fleet" chips "$fr" 11-12 repo --model claude-opus-5-5 --effort high 2>&1)
+check "chips takes the model a worker should run on" "claude-opus-5-5 high" "$(cat "$fr/want/11" 2>&1)"
+out=$(sh "$fleet" chips "$fr" 13 repo --effort high 2>&1); rc=$?
+code "an effort with no model is refused" 2 "$rc"
+out=$(sh "$fleet" chips "$fr" 13 repo --model claude-x --effort huge 2>&1); rc=$?
+code "an effort that is not a level is refused" 2 "$rc"
+out=$(sh "$fleet" chips "$fr" 13 repo --model opus 2>&1); rc=$?
+code "a tier alias is refused, since no worker reports one" 2 "$rc"
+out=$(sh "$fleet" chips "$fr" 13 repo --model 2>&1); rc=$?
+code "an empty --model is refused" 2 "$rc"
+out=$(CLAUDE_CODE_SESSION_ID=sess-11 sh "$fleet" whoami "$fr" 11 claude-sonnet-5-5 high 2>&1); rc=$?
+code "whoami on the wrong model ends the turn" 10 "$rc"
+check "and says what to wait for" "waiting for the coordinator to switch my model" "$out"
+out=$(CLAUDE_CODE_SESSION_ID=sess-11 sh "$fleet" next "$fr" 11 repo 2>&1); rc=$?
+code "next claims nothing while a switch is pending" 10 "$rc"
+out=$(sh "$fleet" ctx "$fr" 2>&1)
+check "the watch tells the coordinator which worker to switch" "WORKER MODEL 11: runs claude-sonnet-5-5 at high, wants claude-opus-5-5 at high" "$out"
+check "with the one call it needs" "set_session_model claude-opus-5-5, then" "$out"
+out=$(sh "$fleet" ctx "$fr" 2>&1)
+case "$out" in *"WORKER MODEL 11"*) bad "once" "$out";; *) ok "once";; esac
+check "status shows the worker waiting" "WAITS FOR A MODEL SWITCH" "$(sh "$fleet" status "$fr" 2>&1)"
+out=$(CLAUDE_CODE_SESSION_ID=sess-11 sh "$fleet" whoami "$fr" 11 claude-sonnet-5-5 high 2>&1); rc=$?
+code "a wake that was not the switch keeps the worker waiting" 10 "$rc"
+check "the watch line tells the worker it was switched" "with switched as its last argument" "$(sh "$fleet" ctx "$fr" 2>&1; cat "$fr/chips/11.switch" >/dev/null)"
+out=$(CLAUDE_CODE_SESSION_ID=sess-11 sh "$fleet" whoami "$fr" 11 claude-sonnet-5-5 high switched 2>&1); rc=$?
+code "the same mismatch after the switch goes on rather than loops" 0 "$rc"
+check "and says the switch did not take" "SWITCH DID NOT TAKE" "$out"
+check "the coordinator is told once" "WORKER MODEL 11 DID NOT TAKE" "$(sh "$fleet" ctx "$fr" 2>&1)"
+check "and status keeps it" "SWITCH DID NOT TAKE" "$(sh "$fleet" status "$fr" 2>&1)"
+out=$(CLAUDE_CODE_SESSION_ID=sess-11 sh "$fleet" whoami "$fr" 11 'claude-opus-5-5[1m]' unknown 2>&1); rc=$?
+code "after the switch whoami passes, an unreadable effort included" 0 "$rc"
+[ ! -e "$fr/chips/11.switch" ] && [ ! -e "$fr/chips/11.switch-failed" ] && ok "and the wait is cleared" || bad "and the wait is cleared"
+out=$(CLAUDE_CODE_SESSION_ID=sess-12 sh "$fleet" whoami "$fr" 12 claude-opus-5-5 medium 2>&1); rc=$?
+code "a known effort below the wish also stops" 10 "$rc"
+check "and only the effort is asked for" "set_session_effort high, then" "$(sh "$fleet" ctx "$fr" 2>&1)"
+sh "$fleet" chips "$fr" 12 repo >/dev/null 2>&1
+[ -e "$fr/want/12" ] && ok "a re-offer with no --model keeps the wish" || bad "a re-offer with no --model keeps the wish"
+out=$(sh "$fleet" chips "$fr" 13 repo --model claude-opus-5-5 --effort any 2>&1); rc=$?
+code "--effort any is accepted, as status prints it" 0 "$rc"
+sh "$fleet" chips "$fr" 12 repo --model none >/dev/null 2>&1
+[ ! -e "$fr/want/12" ] && ok "and --model none drops it" || bad "and --model none drops it"
+printf 'claude-opus-5-5\r\n' > "$fr/want/14"
+out=$(CLAUDE_CODE_SESSION_ID=sess-14 sh "$fleet" whoami "$fr" 14 claude-opus-5-5 high 2>&1); rc=$?
+code "a CRLF want file with one field matches" 0 "$rc"
+printf -- '---\nbrief\n---\n' > "$fr/brief-15.md"
+out=$(sh "$fleet" next "$fr" 15 repo 2>&1); rc=$?
+code "a brief worker is sent back to its brief by next" 2 "$rc"
+rm -f "$fr/brief-15.md"
+printf 'finished x\n' > "$fr/FINISHED"
+out=$(sh "$fleet" next "$fr" 16 repo 2>&1); rc=$?
+code "a landed run hands out nothing" 9 "$rc"
+rm -f "$fr/FINISHED"
 g=$fr/repo; git init -q -b int "$g" && git -C "$g" -c user.name=t -c user.email=t@t commit -q --allow-empty -m root
 git -C "$g" switch -q -c b1 && git -C "$g" -c user.name=t -c user.email=t@t commit -q --allow-empty -m w1
 git -C "$g" switch -q int && git -C "$g" -c user.name=t -c user.email=t@t merge -q --no-ff --no-edit b1

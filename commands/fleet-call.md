@@ -99,9 +99,9 @@ Use the `after:` gate, not the order, for the script task: `fleet.sh next` holds
 Repo chips only, from `sh "${CLAUDE_PLUGIN_ROOT}/scripts/fleet.sh" width .fleet/<run-id>`; no pane is opened for a call run. Chip titles and
 prompts verbatim from `sh "${CLAUDE_PLUGIN_ROOT}/scripts/fleet.sh" chips .fleet/<run-id> 01-<NN> repo`.
 
-Name the one model and effort to start every chip on. A chip cannot be split by model, so the script task,
-which wants the design model, is delegated by a lower-tier worker to one `Agent` at that tier
-(`fleet-run`); the facts tasks want `opus`. Say which tier you recommend for the chips in the hand-over.
+Pass the chips `--model <the opus id, as get_session prints it>`: the facts tasks want `opus`, and the script task, which wants the
+design model, is delegated by its worker to one `Agent` at that tier (`fleet-run`). `docs/MODELS.md`,
+"Switching a worker", covers a chip that starts on another model.
 
 ## 5. Arm the watch, and deliver when it lands
 

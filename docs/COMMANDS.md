@@ -47,7 +47,7 @@ Two consequences:
 ## The rest, briefly
 
 - **`description` is capped at 1,536 characters** together with `when_to_use`, and is truncated in the
-  listing beyond that, so the first sentence carries the load. The longest here is 271. Put what the
+  listing beyond that, so the first sentence carries the load. The longest here is 365 (`fleet-plan`). Put what the
   command does first and when to reach for it second.
 - **A command with `disable-model-invocation` has a human-facing description**: the operator reads it in
   the `/` menu and no model matches against it. Trigger phrases in one are wasted words. A command without
@@ -56,8 +56,8 @@ Two consequences:
 - **`argument-hint`** is autocomplete text. Omit it when the command takes no arguments, as `fleet-init`
   and `fleet` do.
 - **`model` and `effort`** apply for the rest of the invoking turn. No command here sets them: a planner's
-  work is stating the model each task wants, in the task file and as a wish (the model the operator started
-  a chip with is what runs), not in the command that writes it.
+  work is stating the model each task wants in the task file, and each lane's model through `fleet.sh chips
+  --model` (`docs/MODELS.md`, "Switching a worker"), not in the command that writes it.
 - **Keep a command under 500 lines** and push reference material into `docs/`, which every command here
   does through its first paragraph. The longest is `fleet-run`, under 500; `fleet-plan`'s relaunch
   procedure lives in `docs/RELAUNCH.md` for that reason.

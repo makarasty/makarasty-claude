@@ -184,16 +184,13 @@ Every brief carries:
   gives a worker something to be right or wrong about. "Check the tabs work" does not.
 - **The evidence contract**, restated in one line: a finding carries a `file:line`, a reproducing
   expression, or three readings with spread and machine load.
-- **A model choice per stage, as a wish, not a route.** `model:` names the tier the work wants and
-  `verdict-model:` the tier that rules on it, from `docs/MODELS.md`. A worker runs whatever model the
-  operator started its chip with, and nothing in a fleet can change that, so never split the queue by
-  model: lanes are `pane`, `repo` and `verify` only, and `fleet.sh chips` refuses anything else. What
-  closes the gap is on the worker's side: a task whose `model:` is above the model the worker runs is
-  delegated to one `Agent` at that tier (`fleet-run`), so a task's tier is met by a spawn, not a chip.
-  Tell the operator the one model and effort to start every chip with, and `fleet.sh status` shows what each
-  worker actually runs: when it shows a worker below what the queue's heaviest tasks want, say so to the
-  operator in that turn rather than discovering it in the review. Measured 2026-10-05: every task said `model: sonnet`, all seven workers were Opus,
-  and an `opus` lane left four idle Opus workers unable to take a waiting task.
+- **A model per queue worker, a model per task.** `model:` names the tier a task wants and `verdict-model:` the
+  tier that rules on it, from `docs/MODELS.md`. Lanes stay `pane`, `repo` and `verify`: an `opus` lane
+  (2026-10-05) left four idle Opus workers unable to take a waiting task. The worker's own model is yours
+  to choose per lane, passed to `fleet.sh chips` as `--model <id> --effort <level>` (a brief worker's is
+  picked by the operator before the click) and switched by you when
+  a chip starts on something else (`docs/MODELS.md`, "Switching a worker"). A task above its worker's tier
+  is delegated by that worker to one `Agent` at the tier (`fleet-run`).
 - **Whole brief demand.** The worker completes its entire brief before writing findings and does not
   stop at the first interesting thing.
 
@@ -310,8 +307,8 @@ Schedule those workers in their own wave. They are measuring a machine the other
 One `mcp__ccd_session__spawn_task` per worker, title and prompt taken verbatim from:
 
 ```bash
-sh "${CLAUDE_PLUGIN_ROOT}/scripts/fleet.sh" chips .fleet/<run-id> 01-02 pane   # lane: pane, repo or verify; a brief worker has none
-sh "${CLAUDE_PLUGIN_ROOT}/scripts/fleet.sh" chips .fleet/<run-id> 03-08 repo
+sh "${CLAUDE_PLUGIN_ROOT}/scripts/fleet.sh" chips .fleet/<run-id> 01-02 pane --model <id> --effort <level>   # lane: pane, repo or verify; a brief worker has neither lane nor --model
+sh "${CLAUDE_PLUGIN_ROOT}/scripts/fleet.sh" chips .fleet/<run-id> 03-08 repo --model <id> --effort <level>
 ```
 
 Do not type them yourself, and run it once per lane the queue holds, in the same turn, **with disjoint
@@ -364,9 +361,10 @@ no person. So an overnight run is either paneless, which the lane split now make
 it needs is open and stays open before the operator leaves. Say which one this run is, out loud, while
 they can still act on it.
 
-Then tell the operator, in this order: the run id, how many chips are waiting **split by lane**, the one
-model and effort to start every chip with, the wave order you recommend and why, and that each pane worker
-wants its pane opened and kept on screen.
+Then tell the operator, in this order: the run id, how many chips are waiting **split by lane**, the model
+and effort each lane runs on (you switch any chip that starts on another, and say whether approval cards are
+coming: `docs/MODELS.md`, "Switching a worker", step 1), the wave order you recommend and why, and that each
+pane worker wants its pane opened and kept on screen.
 
 ## 8b. Coordinate without becoming the bottleneck
 
@@ -387,6 +385,9 @@ You are the one session the whole run depends on, and the one nothing restarts. 
   exactly what re-arming the watch and judging the lanes need, and nobody else has them. Stamp each entry
   with the time from the `== now` line of `fleet.sh status`, never an estimate: a coordinator that guessed
   wrote "~13:00" on a snapshot taken at 11:10.
+- **Back from a restart, wake the workers before reading `status`.** A restart stops every chat and leaves
+  the claims on disk looking alive: `fleet-wait`, "After a restart, wake every worker before you re-arm".
+  An expiry notice is not a restart.
 - **Read `status` for what holds the run, and act in that turn.** A `== bottlenecks` line that waits on the
   operator is a question to ask now; when they have done it, `fleet.sh cleared <run> <id>` lets `next` hand
   the task out. `== waits for ever` is an `after:` naming nothing: re-file or fix it. `OTHER PLUGIN` or
@@ -476,5 +477,5 @@ nothing else is running.
 
 Every brief exists on disk, or the whole queue is filed with its waves held by `after:`, every slice of the
 axis has exactly one owner, a chip is offered for every lane with work, **the watch is armed**, and the
-operator has the wave order and the model to start the chips with. Then stop, without opening a browser and without
+operator has the wave order and each lane's model. Then stop, without opening a browser and without
 starting the mission.
