@@ -40,7 +40,7 @@ if (!session) bail();
 
 // The shell tools, Monitor (a command that runs for as long as it likes) included: on Windows the PowerShell tool is often the primary one, and a suite run through it
 // costs the machine exactly what the same run through Bash does. `preview_start` is deliberately absent:
-// the refusal below tells the worker to reopen a pane with it, so refusing it would be a loop.
+// a worker whose pane is gone needs it to start again, so refusing it would be a loop.
 const SHELL = tool === 'Bash' || tool === 'PowerShell' || tool === 'Monitor';
 const BROWSER = /^mcp__(.*[Bb]rowser|claude-in-chrome)__(navigate|browser_batch|computer)$/;
 // A pause comes before everything below, and it is wider than the memory rules: every browser tool, not
@@ -107,10 +107,13 @@ if (BROWSER.test(tool)) {
   say(
     `The machine is down to ${census.freeGB} GB free and this session is driving a browser pane` +
     (heaviest ? `; the largest renderer on the box is ${heaviest} MB` : '') + `.\n\n` +
-    `A pane holds its renderer until the tab is closed, and a reload returns none of it - one tab measured ` +
-    `132 MB empty and 2,061 MB after a large page [M34]. Close the pane, then do this again:\n\n` +
-    `  tabs_close on every tab of yours, then preview_start when you next need one.\n\n` +
-    `Reopening costs a second and a login. Holding it costs the fleet. This will not be raised again in this session.`
+    `A tab holds its renderer until it is closed, and a reload returns none of it - one tab measured ` +
+    `132 MB empty and 2,061 MB after a large page [M34]. Swap the heavy tab for an empty one - tabs_create, ` +
+    `tabs_select the new tab, then tabs_close the heavy one - and load the heavy page again only once the ` +
+    `machine has room.\n\n` +
+    `Keep at least one tab open: closing the last tab closes the pane, and only the operator can put it back ` +
+    `on screen [M35].\n\n` +
+    `Loading the page again costs a second and a login. Holding it costs the fleet. This will not be raised again in this session.`
   );
 }
 
@@ -148,9 +151,12 @@ say(
   `A full run of \`${(cmd.match(RUNNERS) || [])[1] || 'the suite'}\` is the whole machine, and the machine is not free right now` +
   (census ? `: ${census.freeGB} GB left` : '') +
   (live ? `, with ${live} typecheck or test process(es) already running` : '') + `.\n\n` +
-  `Scope it, or claim the verify lane. The verify lane is one worker wide and it exists for this:\n\n` +
-  `  scoped now:   name the file, the project, or --changed\n` +
-  `  whole thing:  sh <plugin>/scripts/fleet.sh next ${rel(run)} ${chip} repo\n` +
-  `                and run it when a \`needs: verify\` task is yours\n\n` +
+  // A brief worker has no queue to claim the verify lane from: `next` sends it back to its brief.
+  (fs.existsSync(path.join(run, `brief-${chip}.md`))
+    ? `Scope it: name the file, the project, or --changed. A brief has no verify lane; leave the full run to the coordinator.\n\n`
+    : `Scope it, or claim the verify lane. The verify lane is one worker wide and it exists for this:\n\n` +
+      `  scoped now:   name the file, the project, or --changed\n` +
+      `  whole thing:  sh <plugin>/scripts/fleet.sh next ${rel(run)} ${chip} repo\n` +
+      `                and run it when a \`needs: verify\` task is yours\n\n`) +
   `The full sweep runs once, at the end, by whoever holds that task. This will not be raised again in this session.`
 );

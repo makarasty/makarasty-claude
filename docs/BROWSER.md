@@ -148,7 +148,7 @@ number taken in that window describes a paging machine rather than the applicati
 
 So what bounds a wave is free physical memory, not a count of panes. Nobody has to check it: `fleet.sh
 next` reads it before every claim and refuses below the floor, and a worker driving a pane on a full
-machine is told to close it.
+machine is told to swap its heavy tab for an empty one ("Order of operations").
 
 Workers measuring speed get a wave to themselves, and at this scale it is not optional. They are measuring
 a machine the other workers are loading, so numbers taken alongside them describe the fleet rather than
@@ -218,6 +218,11 @@ reset to `desktop`.
 2. Gate.
 3. Log in and navigate, once the gate reads live. Both can hang for minutes through a blind pane, and the
    hang reads as a broken backend.
+4. **Keep the pane open until the run ends.** Its last tab closing closes it, `preview_start` then reopens
+   it hidden, and only the operator can put it back on screen [M35]. To give memory back, swap tabs:
+   `tabs_create`, `tabs_select` the new tab, `tabs_close` the heavy one; then gate the new tab and log in
+   again before the next observation. A fresh tab getting a fresh renderer is inferred from M34, not
+   measured. On a full machine, wait for the memory before loading the heavy page again.
 
 ## Delegating browser work
 
