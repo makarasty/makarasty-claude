@@ -1,5 +1,30 @@
 # Changelog
 
+## makarasty 1.6.0, makarasty-tools 1.5.8 — 2026-10-09
+
+The plugin is TypeScript now, and fleet.sh answers in a tenth of the time.
+
+- **fleet.sh runs in node.** Its 39 commands moved from 3,000 lines of POSIX sh to `src/scripts/fleet.mts`
+  and `src/scripts/fleet/*.mts`, compiled to `scripts/fleet.mjs`; `fleet.sh` is a thin entry every command,
+  skill and worker still calls the same way. On Git Bash a fork costs about 25 ms and the sh forked for
+  nearly every line: on a 62-task run `next` went from 3-8 s to 0.1-0.6 s, `status` from 5-12 s to 0.13 s,
+  and the self-test from about four minutes to 96 s [M37]. Each command was compared with the old sh on
+  50-160 cases, stdout, stderr, exit code and every file written; the differences that remain are listed
+  below and every one makes the answer more correct.
+- **Every script and hook is strict TypeScript** (`src/`, `tools/src/`), compiled to the `.mjs` files that
+  ship and run: node never runs `.ts`, since type stripping is paid on every start and the hooks start on
+  every tool call. The port of the existing `.mjs` files was proven to change types only: the old and the
+  new go through one printer and give the same JavaScript. `npm install --prefix src` once, then
+  `npm run build --prefix src`; the self-test type-checks the sources and fails on a stale `.mjs`.
+- **Node.js 20.11 or newer is required.** Without it fleet.sh refuses every command and says why, where it
+  used to run some of them with half their answers missing.
+- **The watch loop** no longer forks a `grep` per file every ten seconds, and `ctx` names a background
+  command's output past `runaway_log_gb` (1 GB) once: closed chats had left 5 GB of them.
+- Differences from the sh, deliberate: a `budget:` with a leading zero is decimal (the sh read it as octal
+  and died on 08 after making the claim); `status` no longer stops early for a worker with a model wish and
+  no record yet; a reader that closes early (`| head`) ends a command quietly with 141; paths read from run
+  files in POSIX spelling (`/c/...`, `/tmp/...`) reach git and the filesystem converted, as the shell did.
+
 ## makarasty 1.5.14, makarasty-tools 1.5.7 — 2026-10-08
 
 Fewer clicks and questions per worker, and nothing left running after a chat closes.
