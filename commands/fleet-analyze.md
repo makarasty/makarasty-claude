@@ -9,8 +9,7 @@ The script in `scripts/` lives in this plugin's own directory, `${CLAUDE_PLUGIN_
 Reading transcripts by hand is the expensive way to answer this. On 2026-10-08 the analysis behind M36 took
 a chat a dozen ad-hoc scripts; numbers of the same kinds now come from one call that reads a six-worker run
 in under a second and an about-340-task, 28-worker run in about three. Its counting is stricter in places -
-a re-read must overlap lines already read - so a figure can sit a little below the one M36 records. It needs Node 22.18 or newer (it is TypeScript
-run with the types stripped).
+a re-read must overlap lines already read - so a figure can sit a little below the one M36 records.
 
 ## Run it
 
@@ -18,7 +17,7 @@ run with the types stripped).
 m=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)")   # the main checkout, from any worktree
 run=".fleet/<run-id>"; [ -d "$run" ] || run="$m/.fleet/<run-id>"
 # only when no run id was given: run=$(dirname "$(ls -td .fleet/*/chips | head -1)")
-node "${CLAUDE_PLUGIN_ROOT}/scripts/fleet-analyze.ts" "$run"
+node "${CLAUDE_PLUGIN_ROOT}/scripts/fleet-analyze.mjs" "$run"
 ```
 
 It finds the transcripts itself (`~/.claude/projects/<slug of the project>`, then every project folder).

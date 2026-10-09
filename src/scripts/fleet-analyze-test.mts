@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-// fleet-analyze-test.ts - builds a tiny run and its transcripts in a temp dir and checks what
-// fleet-analyze.ts reads out of them. Every expected number below is worked out by hand in the comments,
+// fleet-analyze-test.mts - builds a tiny run and its transcripts in a temp dir and checks what
+// fleet-analyze.mjs reads out of them. Every expected number below is worked out by hand in the comments,
 // so a change to the split or the pricing shows up as a named failure rather than a different report.
 //
-//   node scripts/fleet-analyze-test.ts        prints "N passed, M failed", exit 0 only when M is 0
+//   node scripts/fleet-analyze-test.mjs       prints "N passed, M failed", exit 0 only when M is 0
 
 import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -114,7 +114,7 @@ writeFileSync(join(cfg, 'projects', 'elsewhere', `${C}.jsonl`), jsonl([
   asst('09:00:30', 'c1', OPUS, { input_tokens: 100, output_tokens: 1000 }, { type: 'text', text: 'plan' }, 'end_turn'),
 ]));
 
-const script = join(dirname(resolve(process.argv[1] ?? '.')), 'fleet-analyze.ts');
+const script = join(dirname(resolve(process.argv[1] ?? '.')), 'fleet-analyze.mjs');
 const env = { ...process.env, CLAUDE_CONFIG_DIR: cfg };
 const res = spawnSync(process.execPath, [script, run, '--json'], { encoding: 'utf8', env, maxBuffer: 64e6 });
 if (res.status !== 0) { console.log(`FAIL fleet-analyze exited ${res.status}: ${res.stderr}`); failed++; }

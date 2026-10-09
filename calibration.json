@@ -17,6 +17,7 @@
   "worker_relaunch_k": 700,
   "pause_grace_seconds": 30,
   "pause_still_working_seconds": 150,
+  "runaway_log_gb": 1,
   "_provenance": {
     "repo_tasks_per_worker": "M16 - measured throughput 2.87 and 4.25 tasks per hour per worker on repo-heavy runs",
     "repo_worker_ceiling": "M21 - a session with no pane is ~330 MB, so the ceiling is attention rather than memory",
@@ -29,6 +30,7 @@
     "worker_relaunch_k": "operator, 2026-10-06: the same mark as the coordinator, 700 K, for the same reason (auto-compaction starts a little past 900 K). A repo worker grows 20-30 k per task worked inline and four were compacted near their thirtieth [M30]; the coordinator then retires a queue worker unasked (fleet.sh retire, 1.5.14), and asks the operator once before relaunching a brief or older worker. fleet.sh ctx and contexts read it.",
     "pause_grace_seconds": "The operator chose it: a paused worker gets this long from its first tool call after the pause to finish the step in hand before the hooks hold it to git, fleet.sh and the wake loop; a worker that never calls is held at four times this long after the PAUSED timestamp. Not a measurement. Read by hooks/run-dir.mjs.",
     "pause_still_working_seconds": "Chosen: a worker holding a claim with no ack this long after PAUSED is named \"still working\" by fleet.sh status, so the coordinator can message it by title; before that it is \"no ack yet\". Long enough for a worker in the middle of a 90-120 s sleep or a build to reach its next call.",
+    "runaway_log_gb": "Chosen after 2026-10-08, when closed chats had left 5 GB of tasks/*.output from interactive python loops: a background command that has written this much output is a loop, not a build. fleet.sh ctx names the file once, for the coordinator to stop its writer.",
     "max_run_minutes": "A ceiling, not a measurement: comparable tools have documented runs that looped for days and cost thousands. A run past this is a decision to continue, not a default.",
     "hook_claim_window_minutes": "M03 - the workers that died had claimed within the minute; past ten a quiet claim is long work, and the planner's sweep owns it",
     "quiet_interval_seconds": "Read by a planner when it arms the watch loop in fleet-wait.md, not by any script here.",

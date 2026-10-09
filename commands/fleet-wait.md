@@ -39,7 +39,7 @@ svc=$(sed -n 's/^- Services: *//p' "$fm" 2>/dev/null | sed 's/(start:[^)]*)//g' 
 # svc="$svc http://localhost:5199"   # EXAMPLE only: uncomment with the integration checkout's real dev-server URL
 [ -z "$svc" ] && echo "WATCH: no '- Services:' line in FLEET.md, services are not being checked"
 [ -d "$d" ] || { echo "NO RUN DIR $d from $(pwd)"; exit 1; }
-seen=$d/.watch-seen; touch "$seen"; last=$(date +%s); down=""; tick=0; ps=0; acks=""; ps0=0; t0=$last
+seen=$d/.watch-seen; touch "$seen"; sl="|$(tr '\n' '|' < "$seen")"; last=$(date +%s); down=""; tick=0; ps=0; acks=""; ps0=0; t0=$last
 sf=$(grep -ls "\"sessionId\":\"${CLAUDE_CODE_SESSION_ID:-none}\"" "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sessions"/*.json 2>/dev/null | head -1)  # this chat's record; gone when it ends
 [ -n "${CLAUDE_CODE_SESSION_ID:-}" ] && echo "$CLAUDE_CODE_SESSION_ID" > "$d/coordinator"  # whoever watches, coordinates
 FS="${CLAUDE_PLUGIN_ROOT}/scripts/fleet.sh"
@@ -75,7 +75,7 @@ while true; do
       acks="$acks $w"; last=$(date +%s); echo "worker $w stopped"; done
   elif [ $ps = 1 ]; then ps=0; last=$(date +%s); echo "RESUMED"; fi
   for f in $d/tasks/claimed/*/owner $d/tasks/done/* $d/ask/*.md $d/*.done $d/*.blocked $d/*.retired $d/*.waiting; do
-    [ -e "$f" ] || continue; grep -Fxq "$f" "$seen" && continue; echo "$f" >> "$seen"; last=$(date +%s)
+    [ -e "$f" ] || continue; case "$sl" in *"|$f|"*) continue;; esac; echo "$f" >> "$seen"; sl="$sl$f|"; last=$(date +%s)
     case "$f" in
       *.waiting) echo "NEEDS OPERATOR: $f -- $(cat "$f")";;
       */ask/*) echo "QUESTION FOR PLANNER: $f -- $(head -c 300 "$f")";;
@@ -185,9 +185,10 @@ shows up by name in the stall report, but it does not wake you on its own. A cla
 planner: of 62 notifications one planner received, 13 were claims it took no action on, each costing a full
 model turn to read and dismiss [M18].
 
-Copy the `seen` matching as it stands: `grep -Fxq` is a whole-line test, and the substring version it
+Copy the `seen` matching as it stands: `*"|$f|"*` is a whole-entry test, and the substring version it
 replaced let the presence of `task-22b` silently suppress every event for `task-22`, which is exactly the
-pair a reclaimed task produces.
+pair a reclaimed task produces. It is matched in the shell, against `sl` read once at the start: a `grep`
+per file every ten seconds forked about a hundred processes a tick on a 60-task run, 1.5 s on Git Bash [M37].
 
 **A stall report whose counts moved since the last one is a fleet doing long tasks; one whose counts are
 identical is a fleet that has stopped.** You can tell them apart without opening a worker chat, and the next

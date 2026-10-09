@@ -52,9 +52,9 @@ pass its path to `marketplace add`.
   browser pane and the task chips); a fleet with no browser tasks runs anywhere Claude Code does.
 - A POSIX shell. On Windows that is Git Bash, which Claude Code already needs. The self-test passes under
   `bash` and `dash`.
-- Node.js for the hooks and four `fleet.sh` subcommands (`sweep`, `recover`, `pane-status`, and the proof
-  check in `finish`). Everything else degrades to a warning without it, or skips a check: the UTF-8 check
-  in `file`, and the bottleneck and task-file lines of `status`.
+- Node.js 20.11 or newer, for the hooks and for `fleet.sh` itself: its commands run in `scripts/fleet.mjs`,
+  where a call that took seconds of shell forks on Git Bash takes a tenth of one [M37].
+  The plugin ships that JavaScript compiled; nothing is installed or built on your machine.
 - Nothing else. `rg`, `sg`, `jq` and similar tools are offered by `fleet-init` and never required.
 
 ### Check that it works on your machine
@@ -67,6 +67,23 @@ From an install rather than a checkout, the plugin's path is `installPath` for `
 `~/.claude/plugins/installed_plugins.json`. The self-test runs the whole protocol (claims, lanes, the
 schema gate, the clocks, the markers, the landing check) against a temporary directory in about a second,
 with no sessions, no browser and no tokens. It should end with `N passed, 0 failed`.
+
+### Changing the code
+
+The scripts and hooks are written in TypeScript under `src/` (and `tools/src/` for the tools plugin) and
+compiled to the `.mjs` files beside them, which are committed and are what runs. Edit the `.mts`, never
+the `.mjs`:
+
+```bash
+npm install --prefix src
+```
+
+```bash
+npm run build --prefix src
+```
+
+The first installs the pinned compiler and Node's types into `src/node_modules`, once. The self-test then
+also type-checks the sources and fails when a committed `.mjs` is not what its source compiles to.
 
 ## Quick start
 

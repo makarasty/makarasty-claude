@@ -543,6 +543,30 @@ Pipelining the review and copying gitignored env files into new worktrees are me
 yet done.
 **Status:** current.
 
+## M37 — fleet.sh's cost is forks, so its hot commands moved to compiled TypeScript
+**2026-10-08**, on a copy of the live run `2026-10-08-rm-polish` (62 ready, 37 claimed, 32 done, seven
+workers), Git Bash on Windows 11, a box also running that fleet's tests. Old and new run side by side on
+fresh copies, outputs, exit codes and the resulting files compared; only the run directory name and a
+pause age that moved while the old one ran differed.
+
+- A process start costs about 25 ms on Git Bash (`/usr/bin/true`), and fleet.sh forks for nearly every
+  line: its preamble alone took 0.42-0.62 s before any command ran.
+- `next`: 3.4-7.7 s in sh, 0.10-0.62 s in node, across lanes, claims, waits, pauses and retirements.
+  `status` 4.6-6.1 s -> 0.13 s, `ctx` 2.8-4.8 s -> 0.13 s, `contexts` 5.7 s -> 0.14-0.94 s.
+- The watch loop's per-file `grep -Fxq` against `.watch-seen` forked about a hundred times a tick on this
+  run; matching in the shell against the list read once removes them.
+- Language, measured by a red team on the same box (median of 20 runs): `node -e 0` 41 ms; a small file
+  as .mjs 34 ms and as .ts 48 ms; a 3,433-line file as .mjs 38 ms and as .ts 120 ms (63 ms with
+  NODE_COMPILE_CACHE). Bun 15-19 ms, but bun.exe is 86 MB per platform and Claude Code's embedded Bun cannot
+  run a script. Go 7 ms and 5.5 MB working set against node's 62 MB, at the price of six native binaries
+  in a git-distributed plugin. Claude Code here is a native binary: node is not guaranteed by the host.
+
+**Rule:** every fleet.sh command runs in `scripts/fleet.mjs`, compiled from `src/scripts/fleet.mts` by
+`npm run build --prefix src` and committed; fleet.sh is a thin `exec node` that refuses, saying so, where
+node is absent. The source is TypeScript and node runs plain JavaScript, never .ts: type stripping is paid
+on every start, and the hooks start on every tool call.
+**Status:** current.
+
 ## Appendix: what a pull run spends
 
 Moved here from `PULL.md`, which workers read in full; none of it changes what a worker does.

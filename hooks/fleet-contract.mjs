@@ -21,54 +21,58 @@
 //   - the worker already asked about this name, or already recorded a decision on it -> exit 0
 //   - it blocks a given name once per session, ever, and records that it did
 // Exit 2 with a sentence on stderr is Claude Code's "do not run this tool, here is why".
-
 import fs from 'node:fs';
 import path from 'node:path';
 import { findRuns, chipOf, rel, pauseGate } from './run-dir.mjs';
-
 const bail = () => process.exit(0);
-
 let payload = {};
 try {
-  const raw = fs.readFileSync(0, 'utf8');
-  payload = raw ? JSON.parse(raw) : {};
-} catch { bail(); }
-
+    const raw = fs.readFileSync(0, 'utf8');
+    payload = raw ? JSON.parse(raw) : {};
+}
+catch {
+    bail();
+}
 const tool = payload.tool_name || '';
-if (!/^(Edit|Write|MultiEdit|NotebookEdit)$/.test(tool)) bail();
-
+if (!/^(Edit|Write|MultiEdit|NotebookEdit)$/.test(tool))
+    bail();
 const session = payload.session_id || process.env.CLAUDE_CODE_SESSION_ID || '';
-if (!session) bail();
-
+if (!session)
+    bail();
 // A pause first: it is one readdir when nothing is paused, and an edit is exactly what a paused worker must
 // not make once its grace is over.
 const held = pauseGate(payload);
-if (held) { process.stderr.write(held + '\n'); process.exit(2); }
-
+if (held) {
+    process.stderr.write(held + '\n');
+    process.exit(2);
+}
 // A notebook edit is held by a pause like any other edit; it names a notebook, not a file on the contract
 // surface, so past the pause there is nothing for the rest of this hook to compare.
-if (tool === 'NotebookEdit') bail();
-
+if (tool === 'NotebookEdit')
+    bail();
 const input = payload.tool_input || {};
 const target = input.file_path || '';
-
 const { fleetDir, runs } = findRuns(payload.cwd || process.cwd());
-if (!fleetDir) bail();
+if (!fleetDir)
+    bail();
 const { run, chip } = chipOf(runs, session);
-if (!run || !chip) bail();
-
+if (!run || !chip)
+    bail();
 // The surface is generated per project and edited by hand. Absent means this project has not opted in, and
 // a hook that invents a contract surface would block on names nobody promised anything about.
 let surface = [];
 try {
-  surface = fs.readFileSync(path.join(fleetDir, 'contract-surface.txt'), 'utf8')
-    .split(/\r?\n/) // the file is committed, and a checkout with autocrlf hands it back with CRLF
-    .filter((l) => l && !l.startsWith('#'))
-    .map((l) => { const [kind, token] = l.split('\t'); return { kind, token }; })
-    .filter((s) => s.token);
-} catch { bail(); }
-if (!surface.length) bail();
-
+    surface = fs.readFileSync(path.join(fleetDir, 'contract-surface.txt'), 'utf8')
+        .split(/\r?\n/) // the file is committed, and a checkout with autocrlf hands it back with CRLF
+        .filter((l) => l && !l.startsWith('#'))
+        .map((l) => { const [kind, token] = l.split('\t'); return { kind, token }; })
+        .filter((s) => s.token);
+}
+catch {
+    bail();
+}
+if (!surface.length)
+    bail();
 // A name is at risk when the edit removes it from the text it was in. Present on both sides is a line being
 // worked around it; present on neither is an edit that never touched it.
 //
@@ -76,81 +80,106 @@ if (!surface.length) bail();
 // `/statistics'` - never holds the whole token, so its fragments say nothing was removed. The fragments are
 // only the fallback, for a file this cannot read or one that does not hold the text the edit names.
 let existing = null;
-try { existing = fs.readFileSync(path.resolve(payload.cwd || process.cwd(), target), 'utf8'); } catch { /* new, or unreadable */ }
-
+try {
+    existing = fs.readFileSync(path.resolve(payload.cwd || process.cwd(), target), 'utf8');
+}
+catch { /* new, or unreadable */ }
 // One replacement the way the Edit tool makes it; null when the text does not hold `old_string`.
 const apply = (text, { old_string: o = '', new_string: n = '', replace_all: all } = {}) => {
-  if (text === null || !o || !text.includes(o)) return null;
-  return all ? text.split(o).join(n) : text.replace(o, () => n);
+    if (text === null || !o || !text.includes(o))
+        return null;
+    return all ? text.split(o).join(n) : text.replace(o, () => n);
 };
-
 const sides = [];
 if (tool === 'Write') {
-  if (existing === null) bail(); // a new file promises nothing yet
-  sides.push([existing, input.content || '']);
-} else {
-  const edits = tool === 'Edit' ? [input] : input.edits || [];
-  const after = edits.reduce(apply, existing);
-  if (after !== null) sides.push([existing, after]);
-  else for (const e of edits) sides.push([e.old_string || '', e.new_string || '']);
+    if (existing === null)
+        bail(); // a new file promises nothing yet
+    sides.push([existing, input.content || '']);
 }
-
+else {
+    const edits = tool === 'Edit' ? [input] : input.edits || [];
+    const after = edits.reduce(apply, existing);
+    if (after !== null)
+        sides.push([existing, after]);
+    else
+        for (const e of edits)
+            sides.push([e.old_string || '', e.new_string || '']);
+}
 // Every kind needs its end guarded, not only identifiers. A plain substring count says `/api/server/status`
 // survived an edit that replaced it with `/api/server/statistics`, which is the rename most likely to be
 // made and the one this exists to catch.
 const escape = (t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const occurrences = (hay, { kind, token }) => {
-  if (!hay) return 0;
-  const re = kind === 'export' || kind === 'event'
-    ? new RegExp(`\\b${escape(token)}\\b`, 'g')
-    : new RegExp(`${escape(token)}(?![\\w./:-])`, 'g');
-  let n = 0;
-  while (re.exec(hay)) n++;
-  return n;
+    if (!hay)
+        return 0;
+    const re = kind === 'export' || kind === 'event'
+        ? new RegExp(`\\b${escape(token)}\\b`, 'g')
+        : new RegExp(`${escape(token)}(?![\\w./:-])`, 'g');
+    let n = 0;
+    while (re.exec(hay))
+        n++;
+    return n;
 };
-
 const atRisk = [];
 for (const s of surface) {
-  for (const [before, after] of sides) {
-    const was = occurrences(before, s);
-    if (was && occurrences(after, s) < was) { atRisk.push(s); break; }
-  }
+    for (const [before, after] of sides) {
+        const was = occurrences(before, s);
+        if (was && occurrences(after, s) < was) {
+            atRisk.push(s);
+            break;
+        }
+    }
 }
-if (!atRisk.length) bail();
-
+if (!atRisk.length)
+    bail();
 // Already accounted for. Both channels count: a question filed for a person to answer, and a decision the
 // worker recorded and carried on from. Either way the name is visible outside this session.
 const accountedFor = (token) => {
-  const hunt = (p) => { try { return fs.readFileSync(p, 'utf8').includes(token); } catch { return false; } };
-  try { for (const f of fs.readdirSync(path.join(run, 'ask'))) if (hunt(path.join(run, 'ask', f))) return true; } catch { /* none filed */ }
-  if (hunt(path.join(run, 'decisions.jsonl'))) return true;
-  return false;
+    const hunt = (p) => { try {
+        return fs.readFileSync(p, 'utf8').includes(token);
+    }
+    catch {
+        return false;
+    } };
+    try {
+        for (const f of fs.readdirSync(path.join(run, 'ask')))
+            if (hunt(path.join(run, 'ask', f)))
+                return true;
+    }
+    catch { /* none filed */ }
+    if (hunt(path.join(run, 'decisions.jsonl')))
+        return true;
+    return false;
 };
 const unaccounted = atRisk.filter((s) => !accountedFor(s.token));
-if (!unaccounted.length) bail();
-
+if (!unaccounted.length)
+    bail();
 // Once per name per session. A hook that cannot remember what it has already said repeats itself every turn,
 // and a worker that cannot get past it stops trusting it and starts working around it.
 const first = unaccounted.find((s) => {
-  const mark = path.join(run, 'chips', `${session}.contract-${Buffer.from(s.token).toString('hex').slice(0, 40)}`);
-  if (fs.existsSync(mark)) return false;
-  try { fs.writeFileSync(mark, new Date().toISOString()); } catch { return false; }
-  return true;
+    const mark = path.join(run, 'chips', `${session}.contract-${Buffer.from(s.token).toString('hex').slice(0, 40)}`);
+    if (fs.existsSync(mark))
+        return false;
+    try {
+        fs.writeFileSync(mark, new Date().toISOString());
+    }
+    catch {
+        return false;
+    }
+    return true;
 });
-if (!first) bail();
-
+if (!first)
+    bail();
 const runPath = rel(run);
-process.stderr.write(
-  `This edit removes \`${first.token}\` from ${path.basename(target) || 'the file'}, and that name is on this project's ` +
-  `contract surface as a ${first.kind}: something outside this repository may be reading it. ` +
-  `Nothing here says you are wrong - it says nobody outside your context knows yet.\n\n` +
-  `Take one of the two, then make the edit again:\n\n` +
-  `  Ask, if a person's answer would change what you do:\n` +
-  `    write ${runPath}/ask/${chip}-<n>.md naming ${first.token}, what breaks, and your recommendation, then take another task\n\n` +
-  `  Decide, if it would not:\n` +
-  `    echo '{"token":"${first.token}","why":"<why this is safe, and what would have to be true for it not to be>"}' |\n` +
-  `      node <plugin>/scripts/fleet-gate.mjs decide ${runPath} ${chip}\n\n` +
-  `Both are one line and both put the change in front of the operator before the run lands. ` +
-  `Either one lets this edit through; this name will not be raised again in this session.\n`
-);
+process.stderr.write(`This edit removes \`${first.token}\` from ${path.basename(target) || 'the file'}, and that name is on this project's ` +
+    `contract surface as a ${first.kind}: something outside this repository may be reading it. ` +
+    `Nothing here says you are wrong - it says nobody outside your context knows yet.\n\n` +
+    `Take one of the two, then make the edit again:\n\n` +
+    `  Ask, if a person's answer would change what you do:\n` +
+    `    write ${runPath}/ask/${chip}-<n>.md naming ${first.token}, what breaks, and your recommendation, then take another task\n\n` +
+    `  Decide, if it would not:\n` +
+    `    echo '{"token":"${first.token}","why":"<why this is safe, and what would have to be true for it not to be>"}' |\n` +
+    `      node <plugin>/scripts/fleet-gate.mjs decide ${runPath} ${chip}\n\n` +
+    `Both are one line and both put the change in front of the operator before the run lands. ` +
+    `Either one lets this edit through; this name will not be raised again in this session.\n`);
 process.exit(2);

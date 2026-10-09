@@ -1,0 +1,10 @@
+{
+  "extends": "../../src/tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "..",
+    "typeRoots": ["../../src/node_modules/@types"]
+  },
+  "include": ["hooks/*.mts"],
+  "exclude": []
+}

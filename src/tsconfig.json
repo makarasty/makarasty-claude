@@ -1,14 +1,16 @@
 {
   "compilerOptions": {
-    "noEmit": true,
     "strict": true,
     "target": "es2023",
     "lib": ["es2023"],
     "module": "nodenext",
     "moduleResolution": "nodenext",
-    "allowImportingTsExtensions": true,
     "erasableSyntaxOnly": true,
-    "types": []
+    "types": ["node"],
+    "rootDir": ".",
+    "outDir": "..",
+    "newLine": "lf"
   },
-  "files": ["node-shim.d.ts", "fleet-analyze.ts", "fleet-analyze-test.ts"]
+  "include": ["hooks/*.mts", "scripts/*.mts", "scripts/fleet/*.mts"],
+  "exclude": ["node_modules"]
 }

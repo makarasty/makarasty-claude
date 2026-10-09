@@ -8,29 +8,28 @@
 //   node unslop.mjs            print the rules when the mode is on
 //
 // The state file is ${CLAUDE_CONFIG_DIR:-~/.claude}/makarasty/unslop.on, the same path the hook tests.
+
 import { existsSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
+
 const stateFile = join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'makarasty', 'unslop.on');
 const rules = () => readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'unslop.txt'), 'utf8');
 const arg = process.argv[2];
+
 if (arg === '--enable') {
-    mkdirSync(dirname(stateFile), { recursive: true });
-    writeFileSync(stateFile, '');
-    console.log(`unslop: on\n\n${rules()}`);
-}
-else if (arg === '--disable') {
-    rmSync(stateFile, { force: true });
-    console.log('unslop: off');
-}
-else if (arg === '--status') {
-    console.log(existsSync(stateFile) ? 'unslop: on' : 'unslop: off');
-}
-else if (arg !== undefined) {
-    console.error('usage: node unslop.mjs [--enable | --disable | --status]');
-    process.exit(1);
-}
-else if (existsSync(stateFile)) {
-    process.stdout.write(rules());
+  mkdirSync(dirname(stateFile), { recursive: true });
+  writeFileSync(stateFile, '');
+  console.log(`unslop: on\n\n${rules()}`);
+} else if (arg === '--disable') {
+  rmSync(stateFile, { force: true });
+  console.log('unslop: off');
+} else if (arg === '--status') {
+  console.log(existsSync(stateFile) ? 'unslop: on' : 'unslop: off');
+} else if (arg !== undefined) {
+  console.error('usage: node unslop.mjs [--enable | --disable | --status]');
+  process.exit(1);
+} else if (existsSync(stateFile)) {
+  process.stdout.write(rules());
 }

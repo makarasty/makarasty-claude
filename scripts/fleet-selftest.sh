@@ -324,7 +324,7 @@ check "showing the queue term it came from" "ready repo tasks" "$out"
 # reading itself: a copy of the script beside a calibration of our own, with a provenance sentence that
 # must not become a constant. The copy beside the script wins over any installed one.
 calrun="${TMPDIR:-/tmp}/fleet-cal-$$"; mkdir -p "$calrun/scripts" "$calrun/run/tasks/ready"
-cp "$fleet" "$calrun/scripts/fleet.sh"
+cp "$fleet" "$calrun/scripts/fleet.sh"; cp -r "$here/fleet.mjs" "$here/fleet" "$calrun/scripts/" 2>/dev/null
 cat > "$calrun/calibration.json" <<'CAL'
 {
   "budget_multiplier": 3,
@@ -367,19 +367,17 @@ case "$out" in *task-77.released*) bad "and status no longer lists it as a live 
 out=$(sh "$fleet" sweep "$run" 2>&1)
 check "and a released claim is not swept twice" "no abandoned claims" "$out"
 
-# Every age in this script is one mtime reading, and without node that reading is empty: the sweep then
-# called a claim quiet for 0 minutes and reported a dead fleet healthy. Build a PATH that still has the
-# shell's own tools and nothing named node; skip where no such PATH exists.
+# fleet.sh's commands run in node [M37]. Without it every command must refuse and say so, never guess: an
+# empty mtime once made sweep call a dead fleet healthy. Build a PATH that still has the shell's own tools
+# and nothing named node; skip where no such PATH exists.
 nonode=""
 for d in /usr/bin /bin; do [ -x "$d/sed" ] && nonode="${nonode:+$nonode:}$d"; done
 if [ -n "$nonode" ] && ! PATH="$nonode" command -v node >/dev/null 2>&1; then
   out=$(PATH="$nonode" sh "$fleet" sweep "$run" 2>&1); rc=$?
-  code "with no node to read an mtime, sweep refuses rather than calling every claim fresh" 2 "$rc"
-  check "and says what it would have been guessing about" "how long a claim has been quiet" "$out"
-  PATH="$nonode" sh "$fleet" recover "$run" >/dev/null 2>&1; rc=$?
-  code "and recover refuses rather than sending a live session down the RESUME branch" 2 "$rc"
-  out=$(PATH="$nonode" sh "$fleet" status "$run" 2>&1)
-  check "while status, which is the planner's view, says the run age ceiling is not being checked" "run age unknown" "$out"
+  code "with no node, sweep refuses rather than calling every claim fresh" 2 "$rc"
+  check "and says what it needs" "needs Node.js" "$out"
+  PATH="$nonode" sh "$fleet" next "$run" 07 repo >/dev/null 2>&1; rc=$?
+  code "and next refuses rather than handing out a task" 2 "$rc"
 else
   echo "  skip  every PATH on this host carries node, so the blind case cannot be built"
 fi
@@ -1002,19 +1000,27 @@ if command -v git >/dev/null 2>&1; then
     ln -s "$wl/main/victimF" "$wtF/node_modules" 2>/dev/null && stuck=1
   fi
   if [ -n "$stuck" ]; then
-    realrm=$(command -v rm)
-    mkdir -p "$wl/fakebin"
-    printf '#!/bin/sh\nfor a; do case $a in -*) ;; *) [ -L "$a" ] && exit 1 ;; esac; done\nexec "%s" "$@"\n' "$realrm" > "$wl/fakebin/rm"
-    printf '#!/bin/sh\nexit 1\n' > "$wl/fakebin/cmd"
-    chmod +x "$wl/fakebin/rm" "$wl/fakebin/cmd"
+    # A link that will not come off: deleting it is denied (an ACL on Windows, a read-only parent elsewhere),
+    # so the unlink fails whatever tries it. A fake `rm` on PATH no longer reaches it: fleet.mjs unlinks in node.
     ( cd "$wl/main" && sh "$fleet" worktree "$wrun" 05 "$wtF" ) >/dev/null 2>&1
-    out=$(cd "$wl/main" && PATH="$wl/fakebin:$PATH" sh "$fleet" clean "$wrun" --remove 2>&1)
+    if command -v icacls >/dev/null 2>&1; then
+      MSYS_NO_PATHCONV=1 icacls "$(cygpath -w "$wtF/node_modules")" /L /deny '*S-1-1-0:(DE)' >/dev/null
+      MSYS_NO_PATHCONV=1 icacls "$(cygpath -w "$wtF")" /deny '*S-1-1-0:(DC)' >/dev/null
+    else
+      chmod a-w "$wtF"
+    fi
+    out=$(cd "$wl/main" && sh "$fleet" clean "$wrun" --remove 2>&1)
     check "a link that would not unlink keeps its tree" "would not unlink" "$out"
     [ -d "$wtF" ] && ok "and the tree is still on disk" || bad "and the tree is still on disk"
     [ -f "$wl/main/victimF/keep.txt" ] && ok "and nothing was deleted through the link" || bad "and nothing was deleted through the link"
-    out=$(PATH="$wl/fakebin:$PATH" sh "$fleet" unlink "$wtF" 2>&1); rc=$?
+    out=$(sh "$fleet" unlink "$wtF" 2>&1); rc=$?
     code "unlink says so with its exit rather than claiming success" 1 "$rc"
     check "and names the link" "STILL LINKED" "$out"
+    if command -v icacls >/dev/null 2>&1; then
+      MSYS_NO_PATHCONV=1 icacls "$(cygpath -w "$wtF")" /reset /T /C /L /Q >/dev/null 2>&1
+    else
+      chmod u+w "$wtF"
+    fi
     ( cd "$wl/main" && sh "$fleet" clean "$wrun" --remove ) >/dev/null 2>&1
   else
     echo "  skip  could not create a junction for the unlink-failure case on this host"
@@ -1460,7 +1466,7 @@ echo "the throttle that keeps a fleet off the page file"
 if command -v node >/dev/null 2>&1; then
   mt=$tmp/tight
   mkdir -p "$mt/scripts" "$mt/r/tasks/ready"
-  cp "$here/fleet.sh" "$here/fleet-load.mjs" "$mt/scripts/" 2>/dev/null
+  cp -r "$here/fleet.sh" "$here/fleet.mjs" "$here/fleet" "$here/fleet-load.mjs" "$mt/scripts/" 2>/dev/null
   printf -- '---\ntask-id: t1\nkind: fix\nneeds: repo\nbudget: 5\n---\n\n# a task\n' > "$mt/r/tasks/ready/t1.md"
 
   # A floor no machine can meet: the refusal must fire whatever this box happens to have free.
@@ -1591,7 +1597,7 @@ fi
 # before `beside` ever runs; and a failed record lookup killed the whole script, silently, under `set -e`.
 bs=$tmp/beside/scripts
 mkdir -p "$bs" "$tmp/beside/home" "$tmp/beside/r/tasks/ready"
-cp "$here/fleet.sh" "$bs/"
+cp -r "$here/fleet.sh" "$here/fleet.mjs" "$here/fleet" "$bs/"
 printf 'if (process.argv.includes("--clear")) process.exit(1);\nconsole.log(JSON.stringify({freeGB:1.23}));\n' > "$bs/fleet-load.mjs"
 printf -- '---\ntask-id: t1\nneeds: repo\nbudget: 5\n---\n' > "$tmp/beside/r/tasks/ready/t1.md"
 out=$(cd "$tmp/beside" && unset FLEET_LOAD && HOME="$tmp/beside/home" USERPROFILE="$tmp/beside/home" sh scripts/fleet.sh status r 2>&1); rc=$?
@@ -1689,6 +1695,19 @@ out=$(CLAUDE_CONFIG_DIR="$ch" sh "$fleet" ctx "$lg" 2>&1)
 out=$(CLAUDE_CONFIG_DIR="$ch" sh "$fleet" status "$lg" 2>&1); rc=$?
 code "status exits 0 with the coordinator below the handoff mark" 0 "$rc"
 check "and still prints its context" "== coordinator context: 120K" "$out"
+# A background command's output past runaway_log_gb is named once. Closed chats left 5 GB of these.
+if command -v node >/dev/null 2>&1; then
+  rl=$tmp/runaway; mkdir -p "$rl/scripts" "$rl/tmp/claude/proj/sess-1/tasks"
+  cp -r "$here/fleet.sh" "$here/fleet.mjs" "$here/fleet" "$rl/scripts/"
+  printf '{\n  "runaway_log_gb": 0.000001\n}\n' > "$rl/calibration.json"
+  head -c 4096 /dev/zero > "$rl/tmp/claude/proj/sess-1/tasks/b1.output"
+  out=$(TMPDIR="$rl/tmp" TEMP="$rl/tmp" TMP="$rl/tmp" CLAUDE_CONFIG_DIR="$ch" sh "$rl/scripts/fleet.sh" ctx "$lg" 2>&1)
+  check "ctx names a background log that keeps growing" "RUNAWAY LOG: " "$out"
+  check "by its file" "sess-1/tasks/b1.output" "$out"
+  out=$(TMPDIR="$rl/tmp" TEMP="$rl/tmp" TMP="$rl/tmp" CLAUDE_CONFIG_DIR="$ch" sh "$rl/scripts/fleet.sh" ctx "$lg" 2>&1)
+  [ -z "$out" ] && ok "and only once" || bad "and only once" "$out"
+  rm -rf "$rl"
+fi
 rm -rf "$lg" "$ch"
 
 echo "== a lane that is no lane, a branch on finish, a run seen from a worktree's cwd"
@@ -2577,14 +2596,28 @@ wl=${TMPDIR:-/tmp}/fleet-watch-$$.sh
 awk '/^```(sh|bash)?$/{if(!f){f=1;next}else{exit}} f' "$here/../commands/fleet-wait.md" > "$wl"
 sh -n "$wl" 2>/dev/null && [ -s "$wl" ]; code "fleet-wait's watch loop parses" 0 "$?"
 rm -f "$wl"
-# The TypeScript scripts: their own test, and the type check when tsc is on PATH. Node 22.18 strips types.
-if command -v node >/dev/null 2>&1 && node -e 'const [a,b]=process.versions.node.split(".").map(Number);process.exit(a>22||(a===22&&b>=18)?0:1)'; then
-  out=$(node "$here/fleet-analyze-test.ts" 2>&1); rc=$?
+# The TypeScript sources under src/ compile to the .mjs files that run: fleet-analyze's own test, then, once
+# `npm install --prefix src` has put the pinned compiler there, the type check and the proof that every
+# committed .mjs is what its source compiles to - a copy compiled from an older source would run old
+# behaviour behind every check above, and another compiler version prints other bytes.
+if command -v node >/dev/null 2>&1; then
+  out=$(node "$here/fleet-analyze-test.mjs" 2>&1); rc=$?
   code "fleet-analyze's own test passes" 0 "$rc"
   check "with nothing failed" " 0 failed" "$out"
-  if command -v tsc >/dev/null 2>&1; then
-    out=$(tsc -p "$here/tsconfig.json" 2>&1); rc=$?
-    code "the TypeScript scripts type-check" 0 "$rc"
+  tsc="$here/../src/node_modules/.bin/tsc"
+  if [ -x "$tsc" ]; then
+    for p in src tools/src; do
+      tso=${TMPDIR:-/tmp}/fleet-tsout-$$
+      out=$("$tsc" -p "$here/../$p" --outDir "$tso" 2>&1); rc=$?
+      code "the TypeScript sources in $p type-check and compile" 0 "$rc"
+      stale=""; built=$(cd "$tso" 2>/dev/null && find . -name '*.mjs' | sort)
+      [ -n "$built" ] || stale=" (tsc wrote nothing)"
+      for f in $built; do cmp -s "$tso/$f" "$here/../$p/../$f" || stale="$stale $f"; done
+      [ -z "$stale" ] && ok "and every .mjs compiled from them is current" || bad "and every .mjs compiled from them is current (npm run build --prefix src)" "$stale"
+      rm -rf "$tso"
+    done
+  else
+    echo "  skip  type check and build parity: no compiler in src/node_modules (npm install --prefix src)"
   fi
 fi
 echo "$pass passed, $fail failed"

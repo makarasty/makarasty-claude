@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// fleet-analyze.ts - how a fleet run spent its wall clock and its tokens, read from the session transcripts.
+// fleet-analyze.mts - how a fleet run spent its wall clock and its tokens, read from the session transcripts.
 //
 // The three questions an operator asks after a run - "how did the fleet work", "why was it slow", "where
 // did the tokens go" - used to cost a chat dozens of model turns of ad-hoc parsing, and every answer was a
@@ -7,12 +7,12 @@
 // time into model, tests, other tools, browser, waits and outages, counts the turn habits that M36 found
 // make workers slow, and prices the tokens per worker, per subagent and per task.
 //
-//   node fleet-analyze.ts <run-dir>                         plain-text report, under ~40 lines
-//   node fleet-analyze.ts <run-dir> --json                  the full structure
-//   node fleet-analyze.ts <run-dir> --projects <dir>        transcripts somewhere other than the default
-//   node fleet-analyze.ts <run-dir> --prices <file.json>    override the list-price table
+//   node fleet-analyze.mjs <run-dir>                         plain-text report, under ~40 lines
+//   node fleet-analyze.mjs <run-dir> --json                  the full structure
+//   node fleet-analyze.mjs <run-dir> --projects <dir>        transcripts somewhere other than the default
+//   node fleet-analyze.mjs <run-dir> --prices <file.json>    override the list-price table
 //
-// Needs Node 22.18 or newer: it runs as TypeScript with the types stripped, and has no dependencies.
+// Compiled to scripts/fleet-analyze.mjs by `npm run build --prefix src`; plain JavaScript, no dependencies.
 //
 // Inputs: chips/<session-id> names each worker session's chip, `coordinator` names the coordinator's
 // session, tasks/claimed/<id>/owner holds `chip NN` and `claimed <iso time>`, and the mtime of
@@ -632,7 +632,7 @@ async function main(): Promise<void> {
   const valued = new Set(['--projects', '--prices']);
   const runArg = args.find((a, i) => !a.startsWith('--') && !valued.has(args[i - 1] ?? ''));
   if (!runArg) {
-    console.error('usage: node fleet-analyze.ts <run-dir> [--projects <dir>] [--json] [--prices <file>]');
+    console.error('usage: node fleet-analyze.mjs <run-dir> [--projects <dir>] [--json] [--prices <file>]');
     process.exit(2);
   }
   const run = resolve(nativePath(runArg));
