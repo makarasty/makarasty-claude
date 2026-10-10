@@ -254,7 +254,8 @@ So every pane worker counts frames first:
 new Promise(res => { let f = 0; requestAnimationFrame(function t(){ f++; requestAnimationFrame(t); }); setTimeout(() => res(f), 1000); })
 ```
 
-Sixty or more is live; anything below, zero included, is blind. A blind worker asks you to open its pane
+Ten or more is live, read twice a second apart; under ten is blind. From ten to fifty-nine the pane is live
+on a busy machine: the worker carries on, reports the number, and asks you nothing. A blind worker asks you to open its pane
 and measures again, because the reading is the proof, not your reply. A worker that stays blind writes
 `.blocked` and no findings, and collection lists blocked workers by name. Two panes in separate sessions
 were measured live at the same time, with the second chat unfocused: what matters is that the pane is

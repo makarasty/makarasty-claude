@@ -15,15 +15,162 @@ The plugin is TypeScript now, and fleet.sh answers in a tenth of the time.
   ship and run: node never runs `.ts`, since type stripping is paid on every start and the hooks start on
   every tool call. The port of the existing `.mjs` files was proven to change types only: the old and the
   new go through one printer and give the same JavaScript. `npm install --prefix src` once, then
-  `npm run build --prefix src`; the self-test type-checks the sources and fails on a stale `.mjs`.
-- **Node.js 20.11 or newer is required.** Without it fleet.sh refuses every command and says why, where it
-  used to run some of them with half their answers missing.
+  `npm run build --prefix src`; the self-test fails on a stale `.mjs`, and type-checks the sources where
+  that install was done.
+- **Node.js 20.11 or newer is required.** Without node fleet.sh refuses every command and says why, where
+  it used to run some of them with half their answers missing; an older node is not checked for, and fails.
 - **The watch loop** no longer forks a `grep` per file every ten seconds, and `ctx` names a background
   command's output past `runaway_log_gb` (1 GB) once: closed chats had left 5 GB of them.
-- Differences from the sh, deliberate: a `budget:` with a leading zero is decimal (the sh read it as octal
-  and died on 08 after making the claim); `status` no longer stops early for a worker with a model wish and
+- Differences from the sh, deliberate: a `budget:` with a leading zero is decimal, in `next` and in the
+  `clock` it arms (the sh read it as octal and died on 08 after making the claim); `status` no longer stops early for a worker with a model wish and
   no record yet; a reader that closes early (`| head`) ends a command quietly with 141; paths read from run
   files in POSIX spelling (`/c/...`, `/tmp/...`) reach git and the filesystem converted, as the shell did.
+- **Defects the port found in the old sh, fixed**, each with a self-test case:
+  - `finish` let `kind:fix` (no space) past the proof gate, and without its task file ended with exit 2 and
+    no message; `beat` and `finish` counted an owner line `achip 07` as chip 07's claim.
+  - The pane broker: a host name was matched as a pattern (`0.` could serve host 02's walk); a `null`
+    result crashed `pane-serve`; `pane-next` claimed directories it could never serve, handed out dotfile
+    walks `pane-status` never counted, and split a walk name with a space in two; one unreadable result
+    dropped every lease after it from the median.
+  - A calibration value like `1.2.3` passed as a number and reached the frame gate as NaN, passing every walk.
+  - `handback` dropped `after:t-a` (no space) instead of renaming it.
+  - `recover --release` released a claim whose owner named no chip, missed a chip file written with CRLF,
+    and glued a FINISHED with no final newline onto the next line; a dependent named twice was released twice.
+  - `width` turned an `operator_reserve_gb` of 0 into 2 and printed `NaN` for a census with no figure;
+    `stranded` skipped a marker's last line when it had no newline; `clean` named the tree it ran from as STRAY.
+  - Git Bash rewrote any argument starting with `/` for node, so a pause reason `/fix the login` arrived
+    as `C:/Program Files/Git/fix the login`. fleet.sh turns that off; node converts the paths itself.
+  - A `finish` landing while `handback`, `sweep --release` or `recover --release` worked on the same claim
+    got the task done and filed again; one claim's close is now serialised, and the releaser re-reads the
+    done marker under the lock.
+  - `clean --remove` deleted, and `handback` left uncommitted without a word, work the repository's config
+    hides from `git status`: untracked files under `status.showUntrackedFiles=no`, edits to files marked
+    assume-unchanged or skip-worktree. `clean` also emptied a tree a chat was still standing in and then
+    said nothing had changed; it now leaves such a tree and says it is in use.
+  - `file` took `after:` values no task can have (`[a, b]`, quoted lists, a `# comment`), the task itself,
+    or a cycle, each of which holds the task for ever; `status` names a cycle written past `file`. A
+    miscased `Needs:` was reported as missing; a quoted `task-id:` was refused.
+  - `handback` of a chip never offered (`2` for `02`) wrote a `2.retired` that `landed` counted as a worker.
+  - A claim left with no owner line (a `next` that died after its mkdir) could never be swept.
+  - The watch re-announced everything an older watch had marked seen, which stored paths another way.
+- **The pane gate is 10 frames a second, not 60** [M38]. A selected pane on a loaded machine read 28-37
+  and the worker asked the operator to focus the chat or use split view, which changes nothing. Under 10
+  on two readings a second apart is blind; 10 to 59 is a busy machine: the worker carries on, reports the
+  number, and asks nobody. `pane-serve` and the design stamp gate on the same number.
+- **Found by the port's own review rounds**, each with a self-test case: a lock (`.closing`, `.chip-NN`)
+  left by a command killed mid-way, or by one whose reader closed the pipe, refused the retry for minutes
+  with a false CLAIM LOST or BUSY; the holder's pid is in the lock now. `handback` would not commit a tree
+  registered through a junction. A fleet.sh copied away from `scripts/` exits 2 and says why. A
+  closed reader no longer stops a command half way: the output goes, the work finishes, the exit is 141.
+  A handback killed mid-way is finished by the next one, and `finish` will not close a claim it already
+  filed again. Two `file` calls for one id at once file it once. A `# comment` after an `after:` id or
+  list item is a comment. `finish` called twice by its chip says BUSY or DONE, never CLAIM LOST.
+  Killed at any point and run again, the commands that change a run finish what the first call began:
+  handback writes task files whole, sweep and recover leave a half-handed-back claim to handback and
+  release the dependents an earlier release left, retire and relaunch give the same chip number, and a
+  relaunch run again after it resumed the fleet does not pause it again, a retire of an idle worker is
+  completed, `finish` writes its marker with the branch in one step, `worktree --create` makes a
+  half-created tree again rather than handing it out, `clean` names a half-removed one, and `fixqueue`
+  puts its queue in place whole. `cleared` removes the top-level operator line however it is cased.
+  `merge` keeps two chips' findings apart when both chose the same `id`, a served pane walk is no longer
+  handed to a replacement as an unanswered question, and `sweep` releases a walk claimed with no owner.
+  `merge` no longer reads `clusters.jsonl` back as a chip's findings; `fleet-gate.mjs asks` lists the
+  decisions taken without asking even when no question was filed, and `decide` refuses a run directory
+  that does not exist; `fleet-retro` reads the transcripts under `CLAUDE_CONFIG_DIR`.
+- **An answer reaches only its own question**: `answer` refuses an id with no question in `ask/` (it used
+  to write it anyway, and the next `ask` that took that number read the stale answer as its reply), and
+  `ask` skips a number an answer already holds; an id with a path in it (`../ask/05-1`) is refused instead
+  of written over the question. `handback` of a pane host puts its walk back to pending, and a retiring
+  host is retired only once it has served the walk it holds and takes no new one meanwhile. A host that
+  cannot serve a walk (a blind pane, its subagent gone) gives it back with `pane-serve ... --release`
+  instead of holding it to the lease, and `drained` no longer finishes a host with a walk unserved.
+  `recover` names a dead host's walk as held and `--release` puts it back to pending (unless another
+  session of that chip can still be resumed); `retire` no longer
+  takes a host waiting on a model switch for idle while its walk runs; and every handback (relaunch,
+  recover, retire) writes the questions and walks its chip still waits on into `.retired` as `unanswered:`.
+- **Hook commands quote the run path**: the commands the memory and contract hooks print broke on a
+  project path with a space.
+- **The contract gate guards both ends of a name**: a YAML key (`server.port:`) was never protected, since
+  the colon after it counted as part of a longer name; a prefix (`/status` -> `/v1/status`, `cache.ttl` ->
+  `app.cache.ttl`) and an event's dotted suffix (`order.created.v2`) went through; a decision or a question
+  about a longer name (`/api/users/:id`) let a shorter one (`/api/users`) go; and moving a route within a
+  CRLF file was blocked as its removal. A name ending a sentence (`Moving /api/x.`) is still that name,
+  while `/api/x.{format}` is another; a route inside a full URL and an event after a namespace
+  (`topic:order.created`) are still counted. Still not gated: an edit made through Bash (`sed -i`), and
+  environment variables, which `surface` does not list.
+- **The memory hook knows the usual spellings of a whole run**: `npm run typecheck`, `pnpm typecheck`,
+  `npm t`, `tsc -p .` (to tsc a root `-p` is the whole project), `tsc --noEmit 2>&1 | tail` and a run given
+  `--config ./vitest.config.ts` (a config file is no scope) all went through on a full machine. A package
+  (`tsc -p packages/a/tsconfig.json`) or a workspace (`npm test -w a`) is a scope, while jest's `-w 2`
+  after `--` is not; a runner's name inside a commit message (`git commit -m "fix; npm t"`) runs nothing,
+  while one inside `bash -c "..."` or `echo "$(npm test)"` still counts (a `git commit -m "$(cat <<'EOF'`
+  message does not); and a `test:watch` script is a watcher, not a run.
+- **`CLAUDE_CONFIG_DIR` is honoured for the plugin's own install**: the installed version (the watch's
+  WORKER PLUGIN line, `retire`'s older-plugin check) and the scripts found beside an install were read from
+  `~/.claude` whatever the config dir, so a host with another config dir compared workers against another
+  install's version. Without `CLAUDE_CONFIG_DIR`, every fleet script and hook now takes the OS home as the
+  host does: the CLI used Git Bash's `$HOME` and the hooks `USERPROFILE`, so a pause marker could land
+  where the guard hook never looked. `recover` finds transcripts under the same directory. The shell
+  snippets in the docs still say `$HOME`, which is the same folder unless HOME was set by hand.
+- **The gate's root task starts where its members do**: `cluster --queue` copies the `base:` its members
+  share into the root task; without it the root was cut from whatever branch the main checkout stood on.
+- **Findings in Russian stay apart**: `merge` kept only ASCII letters of `observed` for its dedupe key, so
+  every all-Cyrillic finding of one area collapsed into one backlog row and one fix task. TORN LINES names
+  the line an editor shows (blank lines were dropped before numbering), `summary` totals count a chip file
+  with no last newline as its row does, and `fleet-retro --dir <path> <run>` takes the run, not the path.
+  `summary` has one row per worker, a pane host or a retired worker with no findings file included (their
+  tasks were in the totals and missing from the rows), a row counts findings as the totals do (an
+  `unreached` line is none), and `find` takes a short `file:line` (`a.txt:1`, `a.ts:10:5`, `a.ts#L10`) as
+  evidence, as the protocol says.
+- **The fix gate no longer counts the reproduction's own output as the fix**: `prove` records the content
+  of the whole checkout (a git tree id, through a copy of the index) just before and just after its
+  command, and `check` wants a path that differs between the red run's end and the green run's start AND
+  was changed between runs. A log, snapshot or coverage file the command writes no longer passes as a fix
+  (nor a flaky second `after`), nor does a fix reverted before the green run or a commit of nothing new; a
+  fix in a file the command also rewrites (a formatter) still proves. `prove` run from a subdirectory sees
+  the whole checkout, a run directory below the top (`app/.fleet`) is left out like `.fleet`, two proves on
+  one claim at once are refused (a killed prove's lock is taken over by its pid), records from two gate
+  versions are refused rather than compared, a green on a commit that does not grow from the red one's is
+  refused, a file git cannot read (held open by another process) is named and left out instead of losing
+  the whole tree, PROVEN names the paths that changed between runs, the refusal names what the gate cannot
+  see (ignored files, the inside of a submodule), and `prove` outside a git checkout refuses. `fleet-load` reads `-w` from the program node runs (past node's own
+  flags and `npx`/`pnpm exec`), not from any word in the line: `tsc -w` and `vitest -w` are watchers, while
+  jest's `-w 2` (--maxWorkers) is a whole suite again, so the memory hook's one-full-run refusal sees it,
+  and neither a `jest` folder in the path nor pnpm's own `-w` decides it.
+- **Task ids and chip ids stay names**: `cleared ../../x` rewrote a file outside the run; it and `file` now
+  refuse such ids, and `file` also refuses ids no git branch can carry (`a..b`, `c.`, `x.lock`). Every
+  worker command refuses a chip id that is not a plain name (`drained <run> ../esc` wrote `esc.done`
+  beside the run).
+- **Trees and canvases**: `unlink` works on a tree that lost its `.git` (it asked the main checkout and
+  refused, though `clean` told the operator to run it); `worktree` refuses a chip id that is a path
+  (`../FINISHED` wrote the run's landed marker); `fleet-canvas plain` on `Cart.DC.html` no longer writes over
+  the artboard, and `stamp` writes a `$'` in a title as text instead of copying the page into the block.
+- **The watch announces a worker blind a second time**: `.waiting` was announced once per run, so a pane
+  worker that went blind again sat unseen; and the stall report now lists the markers. It no longer calls
+  the run complete while a retire's replacement has not started (the count of workers was refreshed once a
+  minute, after the old worker's `.retired` had already landed) or while the run is paused, which is where
+  a relaunch stands after handing its workers back and before their replacements exist.
+- **A pane worker can take its one repo task again** while its browser subagent runs, as docs/LANES.md
+  has said all along: `next` had refused any second claim since 1.5.x. Exit 2 HOLDING is documented, and
+  `drained` refuses the same way instead of writing `.done` over an open claim, and names a task a
+  finished chip still claims instead of sending the worker back to `next`. A chip clicked twice no longer
+  runs two sessions on one task: the second live session as that chip is refused as CHIP TAKEN, and when
+  both sessions' first calls overlapped, the one that registered first keeps the chip (each used to refuse
+  the other for good, leaving any claim it had made open). relaunch
+  offers no worker whose replacement has started, never takes a number a brief file holds, and says when
+  a chip it prints was offered before; `recover` counts a retired chip as landed, and `recover --release`
+  retires every dead queue chip (holding a claim or not, `.waiting` left or not), so the watch does not
+  wait on it, and points a dead brief worker at the relaunch that re-offers its brief; a pause no longer
+  lets the next sweep take a pane walk in progress, and counts its host as holding work; `handback` of such a
+  chip still commits its tree. A session record left by a killed chat does not hold its chip (its pid
+  must be alive, started after boot, and on Windows the very process that wrote it), and the
+  coordinator is never refused as CHIP TAKEN.
+- **The self-test proves the shipped `.mjs` without the compiler too**: the build records a hash of every
+  source and output in `src/build.sha256`, and a source edited without a rebuild fails the run. Cases
+  that stayed green with the behaviour broken were fixed: a hook's exit code is read from the start of its
+  output (the "0 " in "30 s from now" passed for it), payloads reach node as typed (Git Bash had rewritten
+  "/api/..." and "HOME=/x" into paths), and checks that only looked for an absent word now also look for
+  what must be there.
 
 ## makarasty 1.5.14, makarasty-tools 1.5.7 — 2026-10-08
 

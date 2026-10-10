@@ -38,8 +38,9 @@ DOM, so looking at it tells you nothing. Measure:
 new Promise(res => { let f = 0; requestAnimationFrame(function t(){ f++; requestAnimationFrame(t); }); setTimeout(() => res(f), 1000); })
 ```
 
-Sixty or more: live, continue. Anything from zero to fifty-nine: return
-`[{"blocked":"pane not compositing"}]` immediately. Every visual observation you could make in that state
+Under sixty, read it once more a second later and use that. Ten or more: live, continue; from ten to
+fifty-nine the machine is loaded, not the pane hidden, so carry on and put the number in your result [M38].
+Under ten: return `[{"blocked":"pane not compositing"}]` immediately. Every visual observation you could make in that state
 is false, and returning nothing is the right outcome there.
 
 ## Third call: the instruments

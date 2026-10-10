@@ -567,6 +567,19 @@ node is absent. The source is TypeScript and node runs plain JavaScript, never .
 on every start, and the hooks start on every tool call.
 **Status:** current.
 
+## M38 — A loaded machine slows a live pane; it does not hide it
+**2026-10-09**, run `2026-10-08-rm-polish`, while the same box ran four red-team agents' stress loops and
+the plugin's self-test beside the fleet. Worker 11's gate read **28 to 37 frames per second** on a pane that
+was on screen and selected; the rule then in force (below 60 is blind) made it ask the operator to keep the
+chat focused or put it in split view, which the operator answered: nothing is wrong, the computer is busy.
+Against M33's table: a pane that is not drawing reads 0, with stray seconds of 2 to 4 out of a minimised
+window; a selected one reads 263 to 301 on an idle box; the transition seconds in between (57 leaving, 165
+and 242 arriving) do not repeat a second later.
+**Rule:** the gate is 10 frames on two readings a second apart. From 10 to 59 the pane is live on a loaded
+machine: carry on, say so with the number, and ask the operator nothing; a timing or smoothness figure taken
+then measures the machine and is reported as such. Under 10 twice is blind.
+**Status:** current.
+
 ## Appendix: what a pull run spends
 
 Moved here from `PULL.md`, which workers read in full; none of it changes what a worker does.

@@ -184,7 +184,8 @@ as health: `fleet-wait` now emits a stall line on a quiet interval for exactly t
   chips/<NN>.switch    `<has> -> <wants>` while worker NN waits for a switch; `.switch-failed` once the same
                        mismatch came after `switched` and the worker went on
   <NN>.retiring        written by `fleet.sh retire`: worker NN leaves at its next `next` with no claim open
-                       (handback commits its tree, `.retired` follows). Holds the replacement's number
+                       and no walk unserved (handback commits its tree, `.retired` follows); `pane-next`
+                       gives it no new walk meanwhile. Holds the replacement's number
   replaced/<NN>        the chip that replaced NN (`none` when its lane had nothing left), written by `retire`
                        and `relaunch`; a second `retire` reads it and offers nothing again
   coordinator          the session id of whoever arms the watch; `fleet.sh ctx` reads its context size
@@ -294,7 +295,7 @@ were retired: end this turn with one line, commit nothing, start nothing" (`next
 exit 9 or say the same); only closing what it started passes (`tabs_close`, `tabs_context`, `preview_stop`,
 `preview_list`; `TaskStop` is never held). A retired chat is not reused: its hold ends only when the run lands (`FINISHED`, or
 the run directory is gone). A resumed worker carries on with the claim it holds and calls `next` only if it
-holds none; `next` refuses a second claim (exit 2, naming the held one). Without `--take-over` the run stays
+holds none; `next` refuses a second claim (exit 2, naming the held one), except one repo task beside a pane worker's pane task. Without `--take-over` the run stays
 paused until someone resumes it.
 `fleet.sh contexts <run>` lists every session's context size and marks the ones over `coordinator_handoff_k`
 (the coordinator) or `worker_relaunch_k` (a worker) with `OVER`; both are 700 (K) as shipped, the operator's

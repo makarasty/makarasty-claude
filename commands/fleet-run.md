@@ -90,8 +90,10 @@ an hour instead of in one pass [M20].
    new Promise(res => { let f = 0; requestAnimationFrame(function t(){ f++; requestAnimationFrame(t); }); setTimeout(() => res(f), 1000); })
    ```
 
-   Sixty frames or more is live; anything below is blind, and the number goes in the report. Read a zero
-   twice, a second apart, and believe the second [M33]. Why and the symptoms: `docs/BROWSER.md`, "The gate".
+   Read anything under 60 twice, a second apart, and believe the second [M33]. Ten frames or more is
+   live. From 10 to 59 the pane is live **on a loaded machine**: carry on, put the number in the report,
+   and ask the operator nothing - focus, split view and moving the window do not change it [M38]. Under
+   10 on both readings is blind. Why and the symptoms: `docs/BROWSER.md`, "The gate".
 3. Blind: ask **in that same turn**, by the procedure in section 2, so the question is on screen inside a
    minute of the chip being clicked.
 
@@ -139,7 +141,10 @@ step 1. Any other wake, a restart message included, runs `whoami` without it.
    means the run is paused** and **exit 9 that you were retired** (both from `drained` too), or from
    `next`, that the run landed: section 1c. **Exit 10 means a model switch is pending**: run `whoami`.
    **Exit 7 means QUEUE WAITING**: tasks exist, held by an `after:`, a verify lane or an uncleared `operator:` - poll (below),
-   and do not call `drained`. `next` and `drained` register this session as your chip before any of these
+   and do not call `drained`. **Exit 2**: read its line. `HOLDING` means you still hold a claim: finish it
+   or hand it back first (a pane worker may hold one pane and one `repo` task, section 1; `drained`
+   refuses the same way). `BUSY` means another `next` of yours is claiming: use the task it prints. `no
+   such lane` is a typo in the lane. `next` and `drained` register this session as your chip before any of these
    exits, so a pause holds you from your first call. By hand: walk `tasks/ready/`
    in order, read each file's `needs:` line, `mkdir tasks/claimed/<task-id>` on the first one that matches
    your lane, and write `owner` in the same command, never as a second step.
@@ -181,7 +186,8 @@ empty, not that one task ended.
 
 **Exit 5 from `drained` means you are not finished** (if you had already unlinked, run `worktree --create`
 again before the next task: it relinks on reuse): the planner still holds `tasks/queue-open`, or a ready
-task nobody holds yet exists - claim again with `next` first. While `next` answers exit 7, or `drained`
+task nobody holds yet exists - claim again with `next` first (unless `drained` says those are still claimed
+by a chip that finished: `next` cannot hand them out, so file one `ask` naming them and poll). While `next` answers exit 7, or `drained`
 still answers 5, arm a wake on the queue actually changing, with `run_in_background`, end the turn, and
 claim again when it fires:
 
@@ -290,7 +296,9 @@ never a single click. `docs/BROKER.md` has the contract.
 
 **If your chip made you a pane host**, your loop is `pane-next` / run the walk / `pane-serve`; every
 answer carries its frame count, and `pane-serve` refuses a walk served from a blind pane, the only thing
-between a requester and confident fiction it cannot check.
+between a requester and confident fiction it cannot check. A walk you cannot serve (the pane stays blind,
+your subagent is gone) goes back with `pane-serve "$r" <chip> <walk> --release`; `next` will not retire you,
+nor `drained` finish you, while you hold one.
 
 **Kinds that write code** - `kind: implement`, `fix`, `root` or `design`, or a brief with an `isolation:
 worktree` line (a task file often carries only the kind). Check that you are in your own checkout:
@@ -408,7 +416,7 @@ ends. Then, in this order:
    edits, browser actions, `Skill`, `$(...)`, backticks, a lone `&` and redirects stay refused. Do not
    release a claim, write `.done` or message anyone.
 5. **"resumed"**: carry on with the claim you hold, from where you stopped, re-arming what you stopped; call
-   `next` only if you hold none (it refuses a second claim). Paused time does not count against the budget.
+   `next` only if you hold none (it refuses a second claim, except the one repo task a pane worker may hold beside its pane task). Paused time does not count against the budget.
    **"retired"**, **exit 9**, or a call refused with "you were retired: end this turn with one line, commit
    nothing, start nothing": a relaunch gave your open tasks to a fresh worker, or `retire` replaced you at a task boundary. That holds after the run
    resumes (a retired chat is not reused; the hold ends when the run lands). First stop what you started -

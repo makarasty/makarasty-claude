@@ -54,10 +54,11 @@ sh "$f" pane-ask    .fleet/<run-id> 07  <<'EOF'      # requester, does not need 
 Walk the Completed tab of the cases list and answer: does its count equal the rows it lists?
 Steps, the assertion each one settles, and what to return.
 EOF
-sh "$f" pane-next   .fleet/<run-id> 02               # host claims the oldest walk. exit 3 = none pending
+sh "$f" pane-next   .fleet/<run-id> 02               # host claims the oldest walk. exit 3 = none pending, 8 = paused, 9 = retired or landed, 2 = retiring
 sh "$f" pane-serve  .fleet/<run-id> 02 07-1 <<'EOF'  # host answers, and the gate reading is mandatory
 {"gate":301,"conditions":"1440x900, zoom 100","observations":[{"observed":"...","evidence":"..."}]}
 EOF
+sh "$f" pane-serve  .fleet/<run-id> 02 07-1 --release  # host cannot serve it (blind pane, subagent gone): pending again
 sh "$f" pane-status .fleet/<run-id>                  # backlog depth and the oldest wait, for the planner
 ```
 
@@ -73,7 +74,7 @@ executor. A worker already hands a self-contained brief to a `fleet-scenario` su
 bounded result; the broker is the same brief travelling as a file rather than as a spawn.
 
 The boundary is **stronger** than a subagent's, and `pane-serve` enforces it: a
-result without a numeric `gate`, or with a gate under sixty, is refused rather than filed. A parent
+result without a numeric `gate`, or with a gate under `frame_gate_min_fps` (10, calibration.json), is refused rather than filed. A parent
 session cannot check that about its own subagent today. A requester can now refuse a walk measured blind.
 
 ## The request unit is one whole walk, never smaller

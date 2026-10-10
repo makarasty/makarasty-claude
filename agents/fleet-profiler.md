@@ -31,8 +31,10 @@ fires and every timing instrument reads empty:
 new Promise(res => { let f = 0; requestAnimationFrame(function t(){ f++; requestAnimationFrame(t); }); setTimeout(() => res(f), 1000); })
 ```
 
-Zero: return `[{"blocked":"pane not compositing"}]` and stop. An empty timing result reads as "nothing
-happened", the most misleading thing you could report.
+Under sixty, read it once more a second later and use that. Under ten: return
+`[{"blocked":"pane not compositing"}]` and stop. An empty timing result reads as "nothing happened", the
+most misleading thing you could report. From ten to fifty-nine the pane is live on a loaded machine
+[M38]: measure, and put the frame count beside every number, because what you time then is the machine.
 
 ## Method
 

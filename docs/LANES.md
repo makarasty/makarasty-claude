@@ -65,7 +65,9 @@ turn you take it.
 
 One, not several. Beyond one, the subagent returns start queueing behind your own turns and the worker
 becomes the bottleneck it was trying to route around. So a worker may hold one pane task, plus at most one
-repo task, plus the repo task's own fan-out.
+repo task, plus the repo task's own fan-out. `next <chip> repo` enforces it, in either order (a pane task
+that closes first may be followed by the next one beside the repo task), and a `needs: verify` task counts
+as the repo task.
 
 **A pending subagent is not a substitute for the armed wake.** Fanning out leaves something pending, which
 keeps the session alive, and a worker that leans on that will eventually have three subagents all waiting

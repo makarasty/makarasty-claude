@@ -39,7 +39,15 @@ svc=$(sed -n 's/^- Services: *//p' "$fm" 2>/dev/null | sed 's/(start:[^)]*)//g' 
 # svc="$svc http://localhost:5199"   # EXAMPLE only: uncomment with the integration checkout's real dev-server URL
 [ -z "$svc" ] && echo "WATCH: no '- Services:' line in FLEET.md, services are not being checked"
 [ -d "$d" ] || { echo "NO RUN DIR $d from $(pwd)"; exit 1; }
-seen=$d/.watch-seen; touch "$seen"; sl="|$(tr '\n' '|' < "$seen")"; last=$(date +%s); down=""; tick=0; ps=0; acks=""; ps0=0; t0=$last
+d=$(cd "$d" && pwd)
+# .watch-seen holds paths relative to the run, wherever a watch was armed from; older watches wrote them
+# from the cwd (.fleet/<run>/...) or absolute, and an entry in another spelling would be announced again.
+seen="$d"/.watch-seen; touch "$seen"; sed -i "s|^.*\.fleet/$run/||" "$seen"
+# A .waiting is keyed by its mtime, so a worker blind a second time is announced again; an older watch's
+# bare entry gets the mtime of the file it announced.
+while IFS= read -r e; do case "$e" in *.waiting) [ -e "$d/$e" ] && e="$e@$(date -r "$d/$e" +%s)";; esac; printf '%s\n' "$e"; done < "$seen" > "$seen.tmp" && mv "$seen.tmp" "$seen"
+last=$(date +%s); down=""; tick=0; ps=0; acks=""; ps0=0; t0=$last; cr=$(printf '\r'); pl=""
+tok="$$.$t0"; echo "$tok" > "$d/.watch-owner"   # one watch per run: arming a new one ends the one before
 sf=$(grep -ls "\"sessionId\":\"${CLAUDE_CODE_SESSION_ID:-none}\"" "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sessions"/*.json 2>/dev/null | head -1)  # this chat's record; gone when it ends
 [ -n "${CLAUDE_CODE_SESSION_ID:-}" ] && echo "$CLAUDE_CODE_SESSION_ID" > "$d/coordinator"  # whoever watches, coordinates
 FS="${CLAUDE_PLUGIN_ROOT}/scripts/fleet.sh"
@@ -48,11 +56,10 @@ while true; do
   # It ends itself before the monitor's timeout: on Windows the timeout did not reach it, and a watch re-armed
   # every 30 minutes left one more loop running each time (2026-10-08: one ran three hours past its timeout).
   [ $(( $(date +%s) - t0 )) -ge 1780 ] && { echo "watch expired: re-arm it"; break; }
+  cur=""; read -r cur < "$d/.watch-owner" 2>/dev/null; [ "$cur" = "$tok" ] || { echo "watch superseded: a newer watch runs this run"; break; }
   tick=$((tick+1))
   if [ $((tick % 6)) -eq 1 ]; then
     if [ -n "$sf" ] && [ ! -e "$sf" ]; then echo "coordinator chat gone"; break; fi
-    n2=0; for o in "$d"/offered/*; do [ -e "$o" ] || continue; c=${o##*/}   # a chip that started, or a retire's replacement
-      { grep -qx "$c" "$d"/chips/* 2>/dev/null || grep -qx "$c" "$d"/replaced/* 2>/dev/null; } && n2=$((n2+1)); done; [ "$n2" -gt "$n" ] && n=$n2
     for u in $svc; do
       curl -g -s -o /dev/null --max-time 5 "$u"; rc=$?
       case " $down " in *" $u "*) was=1;; *) was=0;; esac
@@ -71,11 +78,12 @@ while true; do
     [ $ps = 1 ] || { ps=1; acks=""; ps0=$(date +%s); last=$ps0; echo "PAUSED: $(head -1 "$d/PAUSED")"; }
     if [ $ps0 -gt 0 ] && [ $(( $(date +%s) - ps0 )) -ge 150 ]; then ps0=0   # once: who has not stopped 150 s in
       [ -f "$FS" ] && sh "$FS" status "$d" | sed -n '/^== PAUSED/,/^== /{/^== PAUSED/p;/still working/p;}'; fi
-    for a in $d/stopped/*; do [ -e "$a" ] || continue; w=$(basename "$a"); case " $acks " in *" $w "*) continue;; esac
+    for a in "$d"/stopped/*; do [ -e "$a" ] || continue; w=$(basename "$a"); case " $acks " in *" $w "*) continue;; esac
       acks="$acks $w"; last=$(date +%s); echo "worker $w stopped"; done
   elif [ $ps = 1 ]; then ps=0; last=$(date +%s); echo "RESUMED"; fi
-  for f in $d/tasks/claimed/*/owner $d/tasks/done/* $d/ask/*.md $d/*.done $d/*.blocked $d/*.retired $d/*.waiting; do
-    [ -e "$f" ] || continue; case "$sl" in *"|$f|"*) continue;; esac; echo "$f" >> "$seen"; sl="$sl$f|"; last=$(date +%s)
+  sl="|$(tr '\n' '|' < "$seen")"   # read each tick: a watch being superseded appends here too
+  for f in "$d"/tasks/claimed/*/owner "$d"/tasks/done/* "$d"/ask/*.md "$d"/*.done "$d"/*.blocked "$d"/*.retired "$d"/*.waiting; do
+    [ -e "$f" ] || continue; r=${f#"$d"/}; case "$f" in *.waiting) r="$r@$(date -r "$f" +%s)";; esac; case "$sl" in *"|$r|"*) continue;; esac; echo "$r" >> "$seen"; sl="$sl$r|"; last=$(date +%s)
     case "$f" in
       *.waiting) echo "NEEDS OPERATOR: $f -- $(cat "$f")";;
       */ask/*) echo "QUESTION FOR PLANNER: $f -- $(head -c 300 "$f")";;
@@ -88,19 +96,30 @@ while true; do
   now=$(date +%s)
   if [ $ps = 0 ] && [ $((now-last)) -ge $quiet ]; then
     echo "STALL: nothing on disk changed for $(( (now-last)/60 ))m"
-    for c in $d/tasks/claimed/*/; do
+    for c in "$d"/tasks/claimed/*/; do
       [ -d "$c" ] || continue; t=$(basename "$c"); [ -e "$d/tasks/done/$t" ] && continue
       echo "  held: $t by $(head -1 "$c/owner" 2>/dev/null || echo 'NO OWNER')"
     done
-    rdy=$(ls $d/tasks/ready/*.md 2>/dev/null | wc -l); dne=$(ls $d/tasks/done 2>/dev/null | wc -l)
-    lw=$(ls $d/*.done $d/*.blocked $d/*.retired 2>/dev/null | sed 's|.*/||; s|\.[^.]*$||' | sort -u | wc -l)
+    rdy=$(ls "$d"/tasks/ready/*.md 2>/dev/null | wc -l); dne=$(ls "$d"/tasks/done 2>/dev/null | wc -l)
+    lw=$(ls "$d"/*.done "$d"/*.blocked "$d"/*.retired 2>/dev/null | sed 's|.*/||; s|\.[^.]*$||' | sort -u | wc -l)
     echo "  progress: $dne of $rdy tasks done, $lw of $n workers landed"
-    if [ -f "$FS" ]; then sh "$FS" status "$d" | sed -n '/^== \(lanes with work\|waits for ever\|bottlenecks\|waiting on the operator\|task files\)/,/^== workers/{/^== workers/!p;}'; fi
+    if [ -f "$FS" ]; then sh "$FS" status "$d" | sed -n '/^== \(markers\|lanes with work\|waits for ever\|bottlenecks\|waiting on the operator\|task files\)/,/^== workers/{/^== workers/!p;}'; fi
     if [ -d "$d/pane/requests" ] && [ -f "$FS" ]; then sh "$FS" pane-status "$d" | sed 's/^/  /'; fi
     last=$now
   fi
-  c=$(ls $d/*.done $d/*.blocked $d/*.retired 2>/dev/null | sed 's|.*/||; s|\.[^.]*$||' | sort -u | wc -l)
-  [ "$c" -ge "$n" ] && { echo "run complete: $c of $n"; break; }
+  # Every tick, right before the count: a retire writes the old worker's .retired and its replacement's
+  # replaced/ in one command, and a count from a minute ago called the run complete in between.
+  # The registered chips, read once per tick with the shell's own read, not a grep per offered chip (a chips
+  # file has no last newline, so cat would run two of them together).
+  reg="|"; for f in "$d"/chips/* "$d"/replaced/*; do [ -f "$f" ] || continue; l=""; read -r l < "$f"; reg="$reg${l%"$cr"}|"; done
+  n2=0; for o in "$d"/offered/*; do [ -e "$o" ] || continue; oc=${o##*/}   # a chip that started, or a retire's replacement
+    case "$reg" in *"|$oc|"*) n2=$((n2+1));; esac; done; [ "$n2" -gt "$n" ] && n=$n2
+  c=$(ls "$d"/*.done "$d"/*.blocked "$d"/*.retired 2>/dev/null | sed 's|.*/||; s|\.[^.]*$||' | sort -u | wc -l)
+  # Never while paused: a relaunch hands its workers back (their .retired) before its replacements exist. A
+  # run whose workers all landed under a pause is said once, since `landed` refuses a paused run too.
+  if [ -e "$d/PAUSED" ]; then
+    [ "$c" -ge "$n" ] && [ -z "${pl:-}" ] && { pl=1; echo "ALL $c OF $n WORKERS LANDED, BUT THE RUN IS PAUSED: resume it (fleet.sh resume) to collect"; }
+  else pl=""; [ "$c" -ge "$n" ] && { echo "run complete: $c of $n"; break; }; fi
   sleep 10
 done
 ```
@@ -109,7 +128,9 @@ Run it with `Monitor`, `timeout_ms: 1800000`, the most a monitor can be given. A
 so **re-arm the same loop on every expiry notice, and when it prints `watch expired: re-arm it`**, until it
 prints `run complete` or `run landed`. A watch
 that is not re-armed dies silently at thirty minutes and the run never collects. `seen` persists
-across re-arms, so nothing already reported is reported twice.
+across re-arms, so nothing already reported is reported twice. A run has one watch: arming a new one
+makes the one before print `watch superseded` within ten seconds and end. That line is not an expiry; do
+not re-arm on it. Two watches at once used to announce events twice or lose them, by how their ticks fell.
 
 For a run with fixed briefs and no queue, drop the three `tasks/` globs from the `for` line. Everything
 else, the stall timer included, still applies.
@@ -140,7 +161,14 @@ line is yours to act on at once and unasked**: run the `fleet.sh retire` it name
 (offer the replacement chip, PushNotification the operator to click it). The worker finishes the task it
 holds and leaves at its next claim with its tree committed; the run does not pause and the watch counts the
 new chip by itself. `REPLACEMENT NN ... has not started` means that chip was not clicked: notify again.
-Answer any `unanswered:` files named in `<NN>.retired` to the replacement.
+For any `ask/` question named after `unanswered:` in `<NN>.retired`, answer it under its own id, the text after
+`ask/` without `.md` (`fleet.sh answer <run> <NN>-<n>`), and add the answer to the re-filed task's file in
+`tasks/ready/`, which is what the replacement reads. If nothing was re-filed (a worker that `next` retired
+held no claim), put the answer in a broadcast naming the replacement chip's lane, or in the next task you file
+for it. `answer` refuses an id that names no question, so never answer under the replacement's number.
+A `pane/requests/<NN>-<n>.md` entry there is a walk the old worker asked for: a host serves it, not you,
+but its result lands in `pane/results/<NN>-<n>.json`, which only the old worker was told to read, so name
+that path in the re-filed task or the broadcast.
 **Your own line, and a brief worker's, you never act on alone**: you do not hand off by chip and you do not
 relaunch unasked. Do what `fleet-plan` section 8b says at that line: `PushNotification`, one `AskUserQuestion` with the numbers and the options (a fourth, "Replace
 workers NN only", when only workers are over), and on "yes" `fleet.sh relaunch`, run with
@@ -185,10 +213,11 @@ shows up by name in the stall report, but it does not wake you on its own. A cla
 planner: of 62 notifications one planner received, 13 were claims it took no action on, each costing a full
 model turn to read and dismiss [M18].
 
-Copy the `seen` matching as it stands: `*"|$f|"*` is a whole-entry test, and the substring version it
+Copy the `seen` matching as it stands: `*"|$r|"*` is a whole-entry test, and the substring version it
 replaced let the presence of `task-22b` silently suppress every event for `task-22`, which is exactly the
-pair a reclaimed task produces. It is matched in the shell, against `sl` read once at the start: a `grep`
-per file every ten seconds forked about a hundred processes a tick on a 60-task run, 1.5 s on Git Bash [M37].
+pair a reclaimed task produces. It is matched in the shell, against `sl` read once a tick (a watch that is
+being superseded still appends for up to one tick): a `grep` per file every ten seconds forked about a hundred processes
+a tick on a 60-task run, 1.5 s on Git Bash [M37].
 
 **A stall report whose counts moved since the last one is a fleet doing long tasks; one whose counts are
 identical is a fleet that has stopped.** You can tell them apart without opening a worker chat, and the next

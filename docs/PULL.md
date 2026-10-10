@@ -75,12 +75,12 @@ rather than hand rolling the shell each time:
 f="<plugin>/scripts/fleet.sh"   # <plugin>: the root fleet-run named; $f and $r are already set there
 r="<the run's absolute directory>"
 sh "$f" whoami  "$r" 03 <model> <effort>   # before the first claim; exit 10 = wrong model: end the turn
-sh "$f" next    "$r" 03 repo # claim IN YOUR LANE; exit 3 drained, exit 7 waiting (poll), exit 8 paused, exit 9 retired or landed, exit 10 switch pending
+sh "$f" next    "$r" 03 repo # claim IN YOUR LANE; exit 3 drained, exit 7 waiting (poll), exit 8 paused, exit 9 retired or landed, exit 10 switch pending, exit 6 machine short of memory (wait as it says), exit 2 HOLDING/BUSY/no such lane (read the line)
 sh "$f" clock   "$r" 03 task-07 25    # prints the self-disarming clock; background it
 sh "$f" beat    "$r" 03 task-07
 printf '%s' '<one JSON finding>' | sh "$f" find "$r" 03   # a pipe, not a herestring: `<<<` is a bashism
 sh "$f" finish  "$r" 03 task-07   # the clock guarding it exits on this marker
-sh "$f" drained "$r" 03 repo      # exit 5 = not finished (queue-open, or a ready task unheld): poll
+sh "$f" drained "$r" 03 repo      # exit 5 = not finished (queue-open, or a ready task unheld): poll; exit 2 HOLDING a claim; 8 paused; 9 retired
 sh "$f" status  "$r"         # the planner's view: claims, ages, never-beat flags, open asks
 sh "$f" answer  "$r" 05-1 06-1    # planner: ONE answer, filed under every question it settles
 sh "$f" broadcast "$r"            # planner: something every worker reads at its next boundary
@@ -294,10 +294,11 @@ It is not idle, and this is the part fixed briefs never allowed:
 - Re-prioritises by filing a new task, never by renaming an existing one. Order lives in the numeric
   prefix and is fixed when the task is published, because renaming a file changes the task id under
   whoever currently holds it.
-- Stops a run early when the operator says so, deleting nothing: park every unclaimed task under a claim
-  directory owned by `chip planner-stop`, so `next` reports the queue drained; tell each worker in
-  `answers/<chip>-notice-STOP.md` to finish what it holds and write `.done`; then collect exactly as for a
-  drained run - `merge`, `render`, `landed`. Un-parking is removing those directories, the one case where
-  deleting a claim is right, because no worker ever held them. A stopped run that is never collected
+- Stops a run early when the operator says so, deleting nothing: `fleet.sh broadcast` one line telling
+  every worker to finish the task it holds and then run `drained`; move every task file nobody has claimed
+  from `tasks/ready/` into `tasks/stopped/`, a directory nothing reads, so `next` reports the queue drained
+  and `landed` does not count them as never claimed; then collect exactly as for a drained run - `merge`,
+  `render`, `landed`. Un-parking is moving them back. (A claim directory owned by a made-up chip, the old
+  way, is an open claim to `landed` and an abandoned one to `sweep`: that run never landed.) A stopped run that is never collected
   leaves its findings in the chips' files: on 2026-09-04, 180 findings, no backlog, and the fourteen open
   decisions typed into a document by hand.

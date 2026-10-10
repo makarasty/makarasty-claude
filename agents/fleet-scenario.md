@@ -35,10 +35,11 @@ still returns plausible DOM, so looking at it tells you nothing. Measure:
 new Promise(res => { let f = 0; requestAnimationFrame(function t(){ f++; requestAnimationFrame(t); }); setTimeout(() => res(f), 1000); })
 ```
 
-Sixty or more: live, continue. Anything from one to fifty-nine is blind as well, and the number is worth
-reporting: it means intermittent compositing, usually a paging machine or a pane closing under you.
+Under sixty, read it once more a second later and use that. Ten or more: live, continue. From ten to
+fifty-nine the machine is loaded, not the pane hidden: carry on, and put the number in your result, since
+a duration you time then measures the machine [M38].
 
-Zero: every visual observation you could make is false - frozen transitions, empty virtualized rows,
+Under ten: every visual observation you could make is false - frozen transitions, empty virtualized rows,
 screenshots that time out, requests that hang to their timeout. Return
 `[{"blocked":"pane not compositing"}]` immediately. Returning nothing is the correct outcome here.
 

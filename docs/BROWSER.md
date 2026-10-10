@@ -47,9 +47,14 @@ anything else, and a pointer there would cost the turn the gate exists to save. 
 new Promise(res => { let f = 0; requestAnimationFrame(function t(){ f++; requestAnimationFrame(t); }); setTimeout(() => res(f), 1000); })
 ```
 
-Sixty or more means the pane is live. Zero means blind. **Anything between one and fifty-nine is also
-blind**, and the number goes in the report: a pane compositing intermittently usually means a paging
-machine or a pane being collapsed while you read it, and timing taken from it looks real and is not.
+Ten or more means the pane is live; under ten means blind (a pane that is not drawing reads zero, with
+stray seconds of 2 to 4 out of a minimised window). **From ten to fifty-nine the pane is live on a loaded
+machine** [M38]: 28 to 37 frames was read on a selected pane while the box ran tests beside the fleet.
+Carry on and put the number in the report. Never ask the operator to focus the chat, use split view or
+move the window over it: none of that changes the reading, and the question costs them a turn. What a
+loaded machine does spoil is timing: a duration or smoothness figure taken then measures the machine,
+and says so beside it. A reading between one and fifty-nine can also be the one second a tab spends
+arriving or leaving, so read again a second later and believe the second reading.
 
 Run it before the first visual step, and again before each batch of visual work. A pane collapsed mid run
 takes the worker blind silently, and every observation after that point is worthless.

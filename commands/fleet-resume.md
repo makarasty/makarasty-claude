@@ -30,7 +30,7 @@ fall behind every chat touched since. Every `fleet <run-id> NN` it lists whose c
 - a queue worker (`offered/NN` is a lane): "Status check after a restart. Invoke /makarasty:fleet-run
   <absolute run dir>/ again first: it resolves the plugin installed now. Then beat the claim you hold, run
   fleet.sh whoami again, re-arm the clock next printed and any dev server you ran, and go on with the claim;
-  call next if you hold none. A pane worker gates its pane before the next observation."
+  call next if you hold none (a pane worker may still take its one repo task). A pane worker gates its pane before the next observation."
 - a brief worker (`offered/NN` is `brief`): "Status check after a restart. Go on with your brief from where
   your notes stop; re-arm any dev server you ran and gate your pane before the next observation."
 
@@ -100,7 +100,11 @@ sh "$f" recover .fleet/<run-id> --release
 
 Never with a chip step 0 messaged still unanswered. This releases the claims of chips whose sessions are gone, and moves their task files to
 `tasks/released/`. As everywhere else, **a released task returns under a NEW id** - re-file it, never hand
-back the old one, or a late write from the old worker lands on live work.
+back the old one, or a late write from the old worker lands on live work. It also writes `<chip>.retired`
+for every queue chip whose session is gone (holding a claim or not), so the re-armed watch does not wait
+for a marker nobody will write (one that left only `.waiting` included). A dead brief worker is left as
+RESPAWN, since its brief is still unworked: run the `relaunch --keep-coordinator <NN>` line recover prints
+for it, which copies the brief to a fresh chip and retires the old one.
 
 ### 4. Re-file, then re-spawn
 

@@ -7,7 +7,7 @@ allowed-tools: Bash, Read, Write, Glob, Grep, Agent, PushNotification, TaskStop,
 The `docs/*` and `scripts/*` files named below live in this plugin's own directory,
 `${CLAUDE_PLUGIN_ROOT}`, not in the project you are working on.
 
-Merge every `.fleet/<run-id>/*.jsonl` into one ranked backlog. Mechanical work: dedupe, group, order. It
+Merge every chip file (`.fleet/<run-id>/<chip>.jsonl`; not the backlog, cluster or decision files) into one ranked backlog. Mechanical work: dedupe, group, order. It
 does not decide whether a finding is worth fixing, and it does not fix anything.
 
 The finding schema is in `docs/PROTOCOL.md`.
@@ -23,7 +23,7 @@ sh "$f" render .fleet/<run-id>     # -> backlog.md and skipped.md, generated fro
 `merge` assigns every finding a stable id, groups by area plus symptom, carries the sighting lineage,
 flags anything observed after a `state_changed` line, and then **refuses to finish** if what it wrote to
 disk does not account for what it read. It reads `backlog.jsonl` and `skipped.jsonl` back off disk and
-matches them against the chip files by finding id, re-lists the directory so a `*.jsonl` it never opened
+matches them against the chip files by finding id, re-lists the directory so a chip file it never opened
 fails the run, and refuses a blocker that landed on a lower-severity row. On a failure it removes the three
 files it generated, because `landed` gates on `backlog.jsonl` existing and a half-written one would let a
 broken run land.
