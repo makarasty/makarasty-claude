@@ -28,6 +28,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import crypto from 'node:crypto';
 import { execSync, spawnSync } from 'node:child_process';
 import { cal, FILE_RE } from '../hooks/run-dir.mjs';
@@ -37,7 +38,8 @@ interface Finding { id: string; area: string; severity: string; mechanism?: stri
 // A line of clusters.jsonl: a candidate root, or a hotspot that gates nothing.
 interface Cluster { key: string; kind: string; shared: string; areas: (string | undefined)[]; members: string[]; severity: string; id?: string }
 // A line of a claim's proof file, written by `prove`.
-interface Proof { phase: string; exit: number; when: string; head: string; digest: string; cmd: string }
+// `pre` and `post` are git tree ids of the checkout's content just before and just after the run.
+interface Proof { phase: string; exit: number; when: string; head: string; digest: string; cmd: string; pre?: string; post?: string }
 // A line of decisions.jsonl, written by `decide`.
 interface Decision { chip: string; token: string; why: string; when: string }
 
@@ -283,6 +285,10 @@ function cluster(runDir: string, queueDir: string | null) {
     const memberTasks = c.members.map((id) => byFinding.get(id)).filter(Boolean) as string[];
     if (memberTasks.length < 2) continue;
     const rootId = `task-${c.id}`;
+    // The members' `base:` when they share one: a root with none was cut from whatever branch the main
+    // checkout stood on, and every member then merged that branch's other work in with the root's.
+    const bases = new Set(memberTasks.map((f) => (fs.readFileSync(path.join(ready, f), 'utf8').match(/^base:[ \t]*(\S+)/m) || [])[1] ?? ''));
+    const base = bases.size === 1 ? [...bases][0] : '';
     const members = c.members.map((id) => {
       const f = take.find((x) => x.id === id)!;
       return `- **${id}** (${f.severity}, ${f.area}) ${f.observed}`;
@@ -293,7 +299,7 @@ kind: root
 severity: ${c.severity}
 needs: repo
 budget: 40
-shared: ${c.shared}
+${base ? `base: ${base}\n` : ''}shared: ${c.shared}
 gates: [${memberTasks.map((f) => f.replace(/\.md$/, '')).join(', ')}]
 ---
 
@@ -360,27 +366,40 @@ say so, not to write a second fix for a defect that is gone.
 // tree is recorded beside it. That last part is what catches the other failure - a build daemon that died
 // mid-run once returned BUILD SUCCESSFUL over a tree whose fix had been reverted, and only a forced
 // rebuild found it. A green whose tree is identical to the red's proves nothing at all.
-function treeState(cwd: string) {
-  const git = (c: string, input?: string) => {
-    try {
-      return execSync(c, { cwd, encoding: 'utf8', input, maxBuffer: 256 * 1024 * 1024, stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'ignore'] });
-    } catch { return ''; }
+// The content of the whole checkout as one git tree id: what `git add -A` would stage, written through a
+// copy of the index so the real one is never touched (the copy keeps its stat cache: only changed files are
+// hashed). Content, not HEAD: a commit between runs, or a fix reverted again, changes no byte and reads so.
+// Not names either: `git status` says ` M src/a.ts` for a half-made change and the finished fix alike.
+// The whole checkout, not the directory prove was run from: a fix one folder over was never seen. The run's
+// own directory is excluded wherever it sits (`.fleet`, `app/.fleet/<run>`), or the proof file just written
+// would be the change.
+function treeState(from: string, runDir: string): { head: string; tree: string } {
+  const run = (c: string, cwd: string, env?: NodeJS.ProcessEnv): string => {
+    try { return execSync(c, { cwd, env, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch { return ''; }
   };
-  const head = git('git rev-parse HEAD').trim() || 'no-head';
-  // The run's own directory is excluded, or this never compares equal: recording the `before` proof writes
-  // a file, so the tree has always moved by the time `after` reads it and the check that catches a green
-  // built over unfixed code would pass every time.
-  //
-  // Contents, not names. `git status --porcelain` says ` M src/a.ts` for a half-made change and for the
-  // finished fix alike, so a fix landing in a file that was already dirty at `before` read as a tree that
-  // never moved. The diff against HEAD covers tracked files, and untracked ones are hashed without being
-  // written to the object store.
-  const scope = '-- . ":(exclude).fleet"';
-  const diff = git(`git diff HEAD --binary ${scope}`);
-  const untracked = git(`git ls-files -o --exclude-standard ${scope}`);
-  const blobs = untracked.trim() ? git('git hash-object --stdin-paths', untracked) : '';
-  const digest = crypto.createHash('sha256').update([head, diff, untracked, blobs].join('\n\0')).digest('hex').slice(0, 16);
-  return { head, digest };
+  const top = run('git rev-parse --show-toplevel', from);
+  if (!top) die(`${from} is not in a git checkout: prove compares the tree around a fix, and there is none here`);
+  const head = run('git rev-parse HEAD', top) || 'no-head';
+  const rel = path.relative(top, path.resolve(runDir)).split(path.sep).join('/');
+  const scope = `-- . ":(exclude).fleet"${rel && !rel.startsWith('..') && !path.isAbsolute(rel) ? ` ":(exclude)${rel}"` : ''}`;
+  const index = path.resolve(top, run('git rev-parse --git-path index', top));
+  const tmp = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'fleet-gate-')), 'index');
+  try {
+    if (fs.existsSync(index)) fs.copyFileSync(index, tmp);
+    const env = { ...process.env, GIT_INDEX_FILE: tmp };
+    // A file another process holds open (a dev db, .vs/) is skipped and named, not the whole add lost: a
+    // failed add left the index copy as it was and every fix read as no change. safecrlf would refuse a
+    // file over its line endings, which say nothing about a fix.
+    // ponytail: changed untracked files land in .git/objects as loose objects until gc prunes them.
+    const add = spawnSync(`git -c core.safecrlf=false add -A --ignore-errors ${scope}`, { cwd: top, env, shell: true, encoding: 'utf8' });
+    if (add.status !== 0) console.error(`prove: git could not read some files, which are left out of the tree:\n${(add.stderr || '').trim()}`);
+    const tree = run('git write-tree', top, env);
+    if (!tree) die(`could not read the content of ${top} (git add -A / write-tree failed there)`);
+    // A submodule's own working tree is one gitlink here: a fix inside it is seen only from inside it.
+    const subs = run('git status --porcelain=2', top).split('\n').filter((l) => /^[12] \S+ S.(M.|.U)/.test(l));
+    if (subs.length) console.error(`prove: changes inside a submodule are not seen from here; prove and check from inside it:\n${subs.map((l) => `  ${l.split(' ').pop()}`).join('\n')}`);
+    return { head, tree };
+  } finally { fs.rmSync(path.dirname(tmp), { recursive: true, force: true }); }
 }
 
 // One command line from what followed `--`. A single argument is a command the caller already quoted and
@@ -394,13 +413,34 @@ function prove(runDir: string, taskId: string, phase: string, command: string[])
   const claim = path.join(runDir, 'tasks', 'claimed', taskId);
   if (!fs.existsSync(claim)) die(`no claim at ${claim} - claim the task before proving it`);
   const line = commandLine(command);
-  const r = spawnSync(line, { shell: true, stdio: 'inherit' });
-  const st = treeState(process.cwd());
-  const rec = { phase, exit: r.status === null ? 124 : r.status, when: now(), head: st.head, digest: st.digest, cmd: line };
-  append(path.join(claim, 'proof'), rec);
-  console.log(`${phase}: exit ${rec.exit}, tree ${rec.digest}`);
-  // A `before` that passes means the reproduction does not reproduce, which is a refutation and a result.
-  if (phase === 'before' && rec.exit === 0) console.log('the reproduction passes already - this finding is refuted, not fixed. Record that and move on.');
+  // One prove at a time per claim: a second one running inside the first's window put its own output in a
+  // gap between runs, which `check` reads as the fix.
+  // A lock whose prove was killed (a Bash timeout, a closed terminal) is taken over at once: its pid is gone.
+  const lock = path.join(claim, 'proof.lock');
+  const alive = (pid: number): boolean => { try { process.kill(pid, 0); return true; } catch (e) { return (e as NodeJS.ErrnoException).code === 'EPERM'; } };
+  try { fs.mkdirSync(lock); } catch {
+    let pid = 0, age = 0;
+    try { pid = Number(fs.readFileSync(path.join(lock, 'pid'), 'utf8')); } catch { /* being written, or none */ }
+    try { age = Date.now() - fs.statSync(lock).mtimeMs; } catch { /* gone meanwhile */ }
+    // No pid yet: a prove in its first instant, or one killed in it (taken over after a minute).
+    // ponytail: a pid Windows reused for another live process holds the lock until it is an hour old, and a
+    // reproduction running longer than an hour loses its lock to a second prove.
+    if (pid ? alive(pid) && age < 3600_000 : age < 60_000) die(`another prove is running on ${taskId} (${lock}): wait for it, one run at a time`);
+  }
+  fs.writeFileSync(path.join(lock, 'pid'), String(process.pid));
+  try {
+    // The tree just before the run and just after it: `check` looks for a change BETWEEN runs, so what the
+    // reproduction writes itself (a log, a snapshot, a formatter's rewrite) is never taken for the fix, and
+    // a fix in a file the command also rewrites still counts.
+    const pre = treeState(process.cwd(), runDir);
+    const r = spawnSync(line, { shell: true, stdio: 'inherit' });
+    const post = treeState(process.cwd(), runDir);
+    const rec: Proof = { phase, exit: r.status === null ? 124 : r.status, when: now(), head: post.head, digest: post.tree.slice(0, 16), cmd: line, pre: pre.tree, post: post.tree };
+    append(path.join(claim, 'proof'), rec);
+    console.log(`${phase}: exit ${rec.exit}, tree ${rec.digest}`);
+    // A `before` that passes means the reproduction does not reproduce, which is a refutation and a result.
+    if (phase === 'before' && rec.exit === 0) console.log('the reproduction passes already - this finding is refuted, not fixed. Record that and move on.');
+  } finally { fs.rmSync(lock, { recursive: true, force: true }); }
 }
 
 function check(runDir: string, taskId: string) {
@@ -413,9 +453,39 @@ function check(runDir: string, taskId: string) {
   if (!after) fail('no reproduction was recorded after the change. `fleet-gate.mjs prove <run> <task> after -- <cmd>`');
   if (before.exit === 0) fail(`the reproduction passed before the change (exit 0), so it never reproduced the defect`);
   if (after.exit !== 0) fail(`the reproduction still fails after the change (exit ${after.exit})`);
-  if (before.digest === after.digest) fail('the tree is byte for byte what it was before the change, so the passing run was made over the unfixed code');
+  // The fix is a path that differs between the red run's end and the green run's start AND was changed in a
+  // gap between runs (one run's end to the next one's start, from the last `before` to the last `after`).
+  // A run's own output (a log, a flaky second `after` over the first one's log) changes only inside runs; a
+  // fix made and reverted again changed in the gaps but is no difference at the end; a commit of nothing new
+  // is neither. A formatter's rewrite of the fixed file still leaves the fix in a gap.
+  const chain = proof.slice(proof.lastIndexOf(before), proof.lastIndexOf(after) + 1);
+  const kinds = new Set(chain.map((p) => typeof p.pre === 'string' && typeof p.post === 'string'));
+  if (kinds.size > 1) fail('the records were written by two versions of this gate, whose trees do not compare: record `before` again (revert the fix, prove before, re-apply it, prove after)');
+  const diff = (a: string, b: string): string[] => {
+    if (a === b) return [];
+    try {
+      return execSync(`git diff-tree -r -z --name-only ${a} ${b}`, { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] }).split('\0').filter(Boolean);
+    } catch { return fail(`the recorded trees are not in this checkout's git (run check from the checkout the proofs were made in, or record \`before\` again here)`); }
+  };
+  // The green run's checkout grew from the red one's: a worktree on an older commit where the defect never
+  // was, or another clone, passes with nobody fixing anything. A handed-back task's tree grows from the old
+  // one's branch, so its carried `before` still holds.
+  if (before.head !== after.head && before.head !== 'no-head') {
+    const anc = spawnSync('git', ['merge-base', '--is-ancestor', before.head, after.head], { stdio: 'ignore' });
+    // 1 is "not an ancestor"; anything else is git unable to answer here (no checkout, an unknown commit).
+    if (anc.status !== 0 && anc.status !== 1) fail(`git cannot compare commits ${before.head.slice(0, 12)} and ${after.head.slice(0, 12)} here: run check from the checkout the proofs were made in, or record \`before\` again there`);
+    if (anc.status !== 0) fail(`the passing run was on commit ${after.head.slice(0, 12)}, which does not grow from ${before.head.slice(0, 12)} where the failing one ran: record \`before\` again in this checkout`);
+  }
+  let moved: boolean, why: string[] = [];
+  if (kinds.has(true)) {
+    const gaps = new Set(chain.flatMap((p, i) => (i > 0 ? diff(chain[i - 1]!.post!, p.pre!) : [])));
+    why = diff(before.post!, after.pre!).filter((p) => gaps.has(p));
+    moved = why.length > 0;
+  } else moved = before.digest !== after.digest;
+  if (!moved) fail('the tree is byte for byte what it was before the change, so the passing run was made over the unfixed code. Not seen: a change saved while a prove was still running (save the fix between runs), files .gitignore leaves out, and the inside of a submodule (prove from inside it)');
   if (before.cmd !== after.cmd) fail(`the two runs are not the same command:\n  before: ${before.cmd}\n  after:  ${after.cmd}`);
-  console.log(`PROVEN ${taskId}: ${before.cmd} exit ${before.exit} -> ${after.exit}, tree ${before.digest} -> ${after.digest}`);
+  // Named, so a reviewer sees a scratch file that happened to appear between runs for what it is.
+  console.log(`PROVEN ${taskId}: ${before.cmd} exit ${before.exit} -> ${after.exit}, tree ${before.digest} -> ${after.digest}${why.length ? `, changed between runs: ${why.slice(0, 10).join(', ')}${why.length > 10 ? `, and ${why.length - 10} more` : ''}` : ''}`);
 }
 
 // ---------------------------------------------------------------------------------------------------
@@ -427,11 +497,12 @@ function check(runDir: string, taskId: string) {
 function asks(runDir: string) {
   const askDir = path.join(runDir, 'ask');
   const ansDir = path.join(runDir, 'answers');
-  if (!fs.existsSync(askDir)) return console.log('no questions have been filed');
-  const open = fs.readdirSync(askDir).filter((f) => f.endsWith('.md'))
+  // The decisions are printed whatever the questions are: `decide` promises they show here.
+  const open = !fs.existsSync(askDir) ? [] : fs.readdirSync(askDir).filter((f) => f.endsWith('.md'))
     .filter((f) => !fs.existsSync(path.join(ansDir, f)));
-  if (!open.length) return console.log('every question filed has an answer beside it');
-  console.log(`${open.length} open question(s). Answer them in one round; each answer goes to answers/<same name>.\n`);
+  if (!fs.existsSync(askDir)) console.log('no questions have been filed');
+  else if (!open.length) console.log('every question filed has an answer beside it');
+  else console.log(`${open.length} open question(s). Answer them in one round; each answer goes to answers/<same name>.\n`);
   for (const [i, f] of open.entries()) {
     const body = fs.readFileSync(path.join(askDir, f), 'utf8').trim();
     const rec = body.match(/^recommend(?:ed|ation)?:\s*(.+)$/im);
@@ -462,7 +533,7 @@ function asks(runDir: string) {
 // a pipe is rewritten.
 function decide(runDir: string, chip: string) {
   let body: { token?: string; why?: string } = {};
-  try { body = JSON.parse(fs.readFileSync(0, 'utf8') || '{}'); }
+  try { body = JSON.parse(fs.readFileSync(0, 'utf8') || '{}'); if (!body || typeof body !== 'object') throw new Error(); }
   catch { die('the decision is JSON on stdin: {"token":"...","why":"..."}'); }
   const { token, why } = body;
   if (!token) die('name the token you changed: {"token":"...","why":"..."}');
@@ -491,6 +562,6 @@ switch (cmd) {
   }
   case 'check': check(runDirOf(args[1]), args[2] || usage()); break;
   case 'asks': asks(runDirOf(args[1])); break;
-  case 'decide': decide(args[1], args[2]); break;
+  case 'decide': decide(runDirOf(args[1]), args[2] || usage()); break;
   default: usage();
 }

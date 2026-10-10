@@ -99,6 +99,33 @@ function posix(): { os: OsMem; procs: Proc[] } {
 const HOSTS = /^(claude[\w-]*|electron|code)(\.exe)?$/i;
 const seg = (names: string) => new RegExp(`(^|[\\\\/\\s"'])(${names})(\\.(c|m)?js|\\.cmd)?(?=[\\\\/\\s"']|$)`);
 const VITE = seg('vite|esbuild'), TSC = seg('tsc|vue-tsc'), TESTS = seg('vitest|jest|jest-worker'), EMU = /firebase|emulators?:/;
+// The program node runs and its own arguments: its script's name (past node's own flags), or behind a package
+// runner (`npx vitest`, `pnpm exec vitest`) the program named after it. A folder of the same name anywhere in
+// the line (`C:/work/jest/...`) is not the program, and a runner's flags (`pnpm -w`) are not its flags.
+const NODE_VALUE = /^(-r|--require|--import|--loader|--experimental-loader|--env-file|--env-file-if-exists|-C|--conditions|--title|--input-type|--inspect-port|--redirect-warnings|--watch-path|--diagnostic-dir|--report-dir|--cpu-prof-dir|--heap-prof-dir|--openssl-config)$/;
+function launched(cmd: string): { name: string; args: string[] } {
+  const t = (cmd.match(/"[^"]*"|\S+/g) || []).map((s) => s.replace(/^"|"$/g, ''));
+  const after = (i: number): number => {
+    while (i < t.length && t[i]!.startsWith('-')) i += NODE_VALUE.test(t[i]!) ? 2 : 1;
+    return i;
+  };
+  const base = (s: string): string => (s.split(/[\\/]/).pop() || '').replace(/\.(c|m)?js$|\.cmd$|\.exe$/, '');
+  let i = after(1);
+  // Behind a runner (yarn's own release file too, `yarn-4.5.0.cjs`): the first bare tool name after its
+  // subcommand (`exec`, `dlx`, `run`), or after the runner when it has none (`yarn workspace app tsc`). A
+  // runner's flags take values no list keeps up with (`-w app`, `--filter jest`, `--package typescript`,
+  // `--dir C:/work/tsc`), before the subcommand and after it, so no word is read as a flag's value; with no
+  // tool name there the program is the runner itself.
+  if (/^(npx(-cli)?|pnpx|pnpm|yarn|npm(-cli)?|bunx?)(-[\d.]+)?$/.test(base(t[i] ?? ''))) {
+    // With no tool after the subcommand word, that word was the tool's own (`npx vitest run`): any tool name
+    // after the runner.
+    const s = Math.max(i, t.findIndex((w, k) => k > i && /^(exec|dlx|x|run|run-script)$/.test(w)));
+    const tool = (from: number): number => t.findIndex((w, k) => k > from && /^(tsc|vue-tsc|vitest|jest|jest-worker)$/.test(w));
+    const j = tool(s) !== -1 ? tool(s) : tool(i);
+    if (j !== -1) i = j;
+  }
+  return { name: base(t[i] ?? ''), args: t.slice(i + 1) };
+}
 function classify(p: Proc): string | null {
   const cmd = p.CommandLine || '';
   const name = p.Name || '';
@@ -107,10 +134,16 @@ function classify(p: Proc): string | null {
     if (/^(java|javaw|qemu[\w-]*|emulator[\w-]*)(\.exe)?$/i.test(name)) return 'toolchain: emulator';
     if (!/^node(\.exe)?$/i.test(name)) return null;
     if (VITE.test(cmd)) return 'toolchain: vite';
+    const prog = launched(cmd);
     // A language server or a watcher is resident, not a run: `tsc --lsp` sat under the typecheck row on
     // the box this was measured on and would have refused every full run for as long as the editor was open.
-    if ((TSC.test(cmd) || TESTS.test(cmd)) && /["\s]--(lsp|watch\w*)\b(?!["=]?false)/.test(cmd)) return 'toolchain: resident';
-    if (TSC.test(cmd)) return 'toolchain: typecheck';
+    // Every spelling of a watcher: `--watch`, `-w` (`tsc -w`, `tsc -b -w`), and vitest's `watch`/`dev`
+    // subcommands. An idle watcher passes the CPU look, so one taken for a one-shot run was killed. `-w` is
+    // watch only to tsc and vitest themselves: to jest it is --maxWorkers, to pnpm the workspace root.
+    if ((TSC.test(cmd) || TESTS.test(cmd)) && (/["\s]--(lsp|watch\w*)\b(?!["=]?false)/.test(cmd)
+      || (['tsc', 'vue-tsc', 'vitest'].includes(prog.name) && prog.args.includes('-w'))
+      || /vitest(\.(c|m)?js)?["']?\s+(watch|dev)\b/.test(cmd))) return 'toolchain: resident';
+    if (TSC.test(cmd) && !['vitest', 'jest'].includes(prog.name)) return 'toolchain: typecheck';
     if (TESTS.test(cmd)) return 'toolchain: tests';
     if (EMU.test(cmd)) return 'toolchain: emulator';
     return 'node, other';
@@ -214,7 +247,8 @@ const CHAT_SHELL = /[\\/]\.claude[\\/]shell-snapshots[\\/]snapshot-|__claudeCode
 // The chats alive now: Claude Code keeps one `sessions/<pid>.json` per running session and removes it when
 // the session ends. One whose pid is no longer in the snapshot crashed, and does not count as alive.
 function liveSessions(byPid: Map<number, Proc>): Session[] | null {
-  const dir = (process.env.CLAUDE_CONFIG_DIR || (process.env.HOME || process.env.USERPROFILE || '') + '/.claude') + '/sessions';
+  // The host's rule, as the fleet scripts and hooks read it.
+  const dir = (process.env.CLAUDE_CONFIG_DIR || `${os.homedir()}/.claude`) + '/sessions';
   let names: string[] = [];
   try { names = fs.readdirSync(dir).filter((f) => f.endsWith('.json')); } catch { return null; }
   const ids: Session[] = [];
@@ -300,7 +334,10 @@ function leftovers(procs: Proc[]): Leftover[] {
       // A dev server, an emulator or an http.server under it may be what the operator is looking at: listed,
       // never ended unasked (2026-10-08: a closed chat's http.server still served the run's mockups).
       if (!listening) listening = listeningPids();
-      const serves = all.some((q) => { const k = classify(q); return listening!.has(q.ProcessId) || k === 'toolchain: vite' || k === 'toolchain: emulator'
+      // A live chat started from the closed one (`claude --continue` in its shell) sits inside this tree:
+      // the tree is somebody's, and ending it would end that chat.
+      const holdsLive = all.some((q) => live!.some((s) => s.pid === q.ProcessId));
+      const serves = holdsLive || all.some((q) => { const k = classify(q); return listening!.has(q.ProcessId) || k === 'toolchain: vite' || k === 'toolchain: emulator'
         || /http\.server|\bserve\b|--port[ =]\d|\b(npm|pnpm|yarn|bun)(\.cmd)?\b.*\brun\s+(dev|start|serve|preview|watch)\b|nodemon|tsx\s+watch|--watch\b|react-scripts\s+start|\b(next|astro|nuxt|remix)\s+dev\b|webpack-dev-server|\bvite\b/i.test(q.CommandLine || ''); });
       const what = all.slice(1).map((q) => (q.Name || '').replace(/\.exe$/i, '')).filter((n) => !/^(bash|sh|conhost)$/i.test(n));
       found.push({ pid: p.ProcessId, class: 'shell whose chat process ended' + (what.length ? ': ' + [...new Set(what)].join(', ') : ''),
@@ -312,8 +349,12 @@ function leftovers(procs: Proc[]): Leftover[] {
     const k = classify(p);
     if (!k || !k.startsWith('toolchain:') || !orphan(p)) continue;
     const all = tree(p);
+    // A run holding a listening port (vitest --ui, a test server) is serving somebody, and is never ended
+    // unasked, as a closed chat's serving tree is not.
+    if (!listening) listening = listeningPids();
+    const serves = servesKept(all) || all.some((q) => listening!.has(q.ProcessId));
     found.push({ pid: p.ProcessId, class: k, mb: Math.round(all.reduce((s, q) => s + (q.WorkingSetSize || 0), 0) / 1048576),
-      minutes: mins, oneShot: k === 'toolchain: tests' || k === 'toolchain: typecheck', cmd: (p.CommandLine || p.Name || '').slice(0, 160),
+      minutes: mins, oneShot: !serves && (k === 'toolchain: tests' || k === 'toolchain: typecheck'), serves, cmd: (p.CommandLine || p.Name || '').slice(0, 160),
       tree: all.map((q) => ({ pid: q.ProcessId, created: q.Created, cpu: q.Cpu })) });
   }
   return found.sort((a, b) => b.mb - a.mb);
@@ -333,13 +374,17 @@ if (has('--leftovers')) {
   let freed = 0;
   for (const f of found) {
     const candidate = f.chatShell || (f.oneShot && f.minutes != null && f.minutes >= 2);
-    let tag = f.chatShell ? 'CLOSED CHAT' : f.serves ? 'CLOSED CHAT SERVING, left alone (ask the operator)' : !candidate ? 'orphaned, left alone (may be the operator\'s service)' : 'ORPHANED RUN';
+    let tag = f.chatShell ? 'CLOSED CHAT'
+      : f.serves ? (f.class.startsWith('toolchain:') ? 'orphaned, holding a port: left alone (ask the operator)' : 'CLOSED CHAT SERVING, left alone (ask the operator)')
+      : !candidate ? 'orphaned, left alone (may be the operator\'s service)' : 'ORPHANED RUN';
     // --pid a,b: end only the pids the operator chose, whatever else is listed.
     const only = String(flag('--pid', '') || '').split(',').filter(Boolean).map(Number);
     if (kill && only.length && !only.includes(f.pid)) { console.log(`not chosen  pid ${f.pid}  ${f.class}`); continue; }
     if (kill && candidate) {
       // A closed chat's shell is ended busy or not: nobody reads what it does.
       if (!f.chatShell && !idle(f)) tag = 'ORPHANED RUN, still using CPU: left alone';
+      // A test's own process table names pids that belong to real processes here: say what would be ended.
+      else if (process.env.FLEET_PROCS_JSON) tag = 'WOULD KILL (a test process list: nothing was ended)';
       else {
         // The pids this walk checked, children first; never taskkill /T, which walks pids without the
         // creation-time check above.

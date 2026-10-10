@@ -28,7 +28,7 @@ const bail = () => process.exit(0);
 let payload = {};
 try {
     const raw = fs.readFileSync(0, 'utf8');
-    payload = raw ? JSON.parse(raw) : {};
+    payload = (raw ? JSON.parse(raw) : null) || {}; // `null` is valid JSON with no fields
 }
 catch {
     bail();
@@ -90,17 +90,20 @@ const apply = (text, { old_string: o = '', new_string: n = '', replace_all: all 
         return null;
     return all ? text.split(o).join(n) : text.replace(o, () => n);
 };
+// The model writes LF: on a CRLF file its old_string matched nothing, and moving a route inside the file
+// read as removing it.
+const base = existing?.includes('\r\n') ? existing.replace(/\r\n/g, '\n') : existing;
 const sides = [];
 if (tool === 'Write') {
-    if (existing === null)
+    if (base === null)
         bail(); // a new file promises nothing yet
-    sides.push([existing, input.content || '']);
+    sides.push([base, input.content || '']);
 }
 else {
     const edits = tool === 'Edit' ? [input] : input.edits || [];
-    const after = edits.reduce(apply, existing);
+    const after = edits.reduce(apply, base);
     if (after !== null)
-        sides.push([existing, after]);
+        sides.push([base, after]);
     else
         for (const e of edits)
             sides.push([e.old_string || '', e.new_string || '']);
@@ -108,13 +111,29 @@ else {
 // Every kind needs its end guarded, not only identifiers. A plain substring count says `/api/server/status`
 // survived an edit that replaced it with `/api/server/statistics`, which is the rename most likely to be
 // made and the one this exists to catch.
+// The start is guarded too (`/status` -> `/v1/status`, `cache.ttl` -> `app.cache.ttl`), an event's dots and
+// colons are part of its name (`order.created` -> `order.created.v2`), and a config key may be followed by
+// its `:` (YAML) where a route may not.
 const escape = (t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-const occurrences = (hay, { kind, token }) => {
+const tokenRe = ({ kind, token }) => {
+    const t = escape(token);
+    // A `.` or `:` that ends a sentence (`Moving /api/x.`) is punctuation, not more of the name: only when a
+    // space, a quote, a closing bracket or the end follows it (`/api/x.{format}`, `/api/x:${verb}` are other
+    // names). `$` is a character of a JS name, which `\b` does not see.
+    // A route may follow a full URL's host (`https://h.com/api/x`), and an event a namespace (`topic:`).
+    const stop = '(?![\\s\'"`)\\]}>,;*.!?”’]|$)';
+    if (kind === 'export')
+        return new RegExp(`(?<![\\w$])${t}(?![\\w$])`, 'g');
+    if (kind === 'event')
+        return new RegExp(`(?<![\\w.-])${t}(?![\\w-]|[.:]${stop})`, 'g');
+    if (kind === 'route')
+        return new RegExp(`(?:(?<![\\w./-])|(?<=:\\/\\/[\\w.:-]+))${t}(?![\\w/-]|[.:]${stop})`, 'g');
+    return new RegExp(`(?<![\\w./-])${t}(?![\\w/-]|\\.${stop})`, 'g');
+};
+const occurrences = (hay, s) => {
     if (!hay)
         return 0;
-    const re = kind === 'export' || kind === 'event'
-        ? new RegExp(`\\b${escape(token)}\\b`, 'g')
-        : new RegExp(`${escape(token)}(?![\\w./:-])`, 'g');
+    const re = tokenRe(s);
     let n = 0;
     while (re.exec(hay))
         n++;
@@ -134,9 +153,10 @@ if (!atRisk.length)
     bail();
 // Already accounted for. Both channels count: a question filed for a person to answer, and a decision the
 // worker recorded and carried on from. Either way the name is visible outside this session.
-const accountedFor = (token) => {
+// The very name, not a longer one that contains it: a decision about `/api/users/:id` let `/api/users` go.
+const accountedFor = (s) => {
     const hunt = (p) => { try {
-        return fs.readFileSync(p, 'utf8').includes(token);
+        return occurrences(fs.readFileSync(p, 'utf8'), s) > 0;
     }
     catch {
         return false;
@@ -147,11 +167,19 @@ const accountedFor = (token) => {
                 return true;
     }
     catch { /* none filed */ }
-    if (hunt(path.join(run, 'decisions.jsonl')))
-        return true;
+    try {
+        for (const l of fs.readFileSync(path.join(run, 'decisions.jsonl'), 'utf8').split('\n')) {
+            try {
+                if (JSON.parse(l).token === s.token)
+                    return true;
+            }
+            catch { /* a torn line decides nothing */ }
+        }
+    }
+    catch { /* none decided */ }
     return false;
 };
-const unaccounted = atRisk.filter((s) => !accountedFor(s.token));
+const unaccounted = atRisk.filter((s) => !accountedFor(s));
 if (!unaccounted.length)
     bail();
 // Once per name per session. A hook that cannot remember what it has already said repeats itself every turn,
@@ -176,10 +204,10 @@ process.stderr.write(`This edit removes \`${first.token}\` from ${path.basename(
     `Nothing here says you are wrong - it says nobody outside your context knows yet.\n\n` +
     `Take one of the two, then make the edit again:\n\n` +
     `  Ask, if a person's answer would change what you do:\n` +
-    `    write ${runPath}/ask/${chip}-<n>.md naming ${first.token}, what breaks, and your recommendation, then take another task\n\n` +
+    `    write "${runPath}/ask/${chip}-<n>.md" naming ${first.token}, what breaks, and your recommendation, then take another task\n\n` +
     `  Decide, if it would not:\n` +
     `    echo '{"token":"${first.token}","why":"<why this is safe, and what would have to be true for it not to be>"}' |\n` +
-    `      node <plugin>/scripts/fleet-gate.mjs decide ${runPath} ${chip}\n\n` +
+    `      node <plugin>/scripts/fleet-gate.mjs decide "${runPath}" ${chip}\n\n` +
     `Both are one line and both put the change in front of the operator before the run lands. ` +
     `Either one lets this edit through; this name will not be raised again in this session.\n`);
 process.exit(2);

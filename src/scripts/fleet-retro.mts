@@ -34,14 +34,16 @@ interface Row {
 }
 
 const args = process.argv.slice(2);
-const run = args.find((a) => !a.startsWith('--'));
+// Not a flag, and not the value after one: `--dir <path> r1` named the path as the run.
+const run = args.find((a, i) => !a.startsWith('--') && !['--dir', '--run-dir'].includes(args[i - 1] ?? ''));
 const flag = (n: string, d: string | null = null): string | null => { const i = args.indexOf(n); return i === -1 ? d : args[i + 1]; };
 if (!run) { console.error('usage: node fleet-retro.mjs <run-id> [--dir <transcripts>] [--json] [--run-dir <.fleet/run>]'); process.exit(2); }
 
 // The host names a project's transcript directory after its path, with every separator and underscore
 // flattened to a dash. Fall back to a search when that rule changes rather than telling the operator the
 // directory does not exist.
-const projects = path.join(os.homedir(), '.claude', 'projects');
+// The config dir the host uses, as fleet-analyze and fleet-load read it.
+const projects = path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), 'projects');
 const slug = process.cwd().replace(/[\\/:_]/g, '-');
 let guess = path.join(projects, slug);
 if (!fs.existsSync(guess) && fs.existsSync(projects)) {

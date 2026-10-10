@@ -2,10 +2,9 @@
 
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { homedir } from 'node:os';
 import { posix, resolve } from 'node:path';
 import type { Command, Ctx } from './lib.mjs';
-import { need, out, err, isDir, isFile, read, firstLine, names, field, BUDGET, operatorOwed, now, calint, live, indent, mtimeMs, slashes, configDir, lf, cksum , shellPath } from './lib.mjs';
+import { need, out, err, isDir, isFile, read, firstLine, names, field, BUDGET, operatorOwed, now, calint, live, indent, mtimeMs, slashes, configDir, lf, cksum, shellPath, HERE, lockToRelease, afterIds, budgetOf, refiledAs, walksOf, openAsks } from './lib.mjs';
 
 // ---- shared pieces ---------------------------------------------------------------------------------------
 
@@ -44,10 +43,10 @@ function stampSuffix(): string {
 // Where this plugin is, from the inside: beside fleet.sh, else under the copy the host says it installed,
 // else the newest cache snapshot (only for a checkout that was never installed).
 function beside(c: Ctx, rel: string, pkg: string, sub: string): string {
-  const here = `${posix.dirname(c.sh)}/${rel}`;
+  const here = `${HERE}/${rel}`;   // where fleet.mjs is, however fleet.sh was spelled
   if (existsSync(here)) return here;
   try {
-    const rec = JSON.parse(readFileSync(`${homedir()}/.claude/plugins/installed_plugins.json`, 'utf8')) as
+    const rec = JSON.parse(readFileSync(`${configDir()}/plugins/installed_plugins.json`, 'utf8')) as
       { plugins: Record<string, Array<{ installPath: string }> | undefined> };
     const ip = rec.plugins[`${pkg}@makarasty`]?.[0]?.installPath;
     if (ip !== undefined) {
@@ -56,7 +55,7 @@ function beside(c: Ctx, rel: string, pkg: string, sub: string): string {
     }
   } catch { /* no install record */ }
   // `ls -t ~/.claude/plugins/cache/*/<pkg>/*/<sub> | head -1`: newest by mtime, by name on a tie.
-  const cache = `${process.env.HOME || homedir()}/.claude/plugins/cache`;
+  const cache = `${configDir()}/plugins/cache`;
   const hits: Array<[string, number]> = [];
   for (const a of names(cache)) for (const v of names(`${cache}/${a}/${pkg}`)) {
     const p = `${cache}/${a}/${pkg}/${v}/${sub}`;
@@ -68,26 +67,34 @@ function beside(c: Ctx, rel: string, pkg: string, sub: string): string {
 
 // release_task: the ready file leaves the queue, and so does every task whose `after:` waited on it, one
 // line per dependent taken along.
+// Every released id is scanned for dependents, not only the one moved now: a release killed between moving
+// a file and scanning for what waited on it left those dependents in ready for ever.
 function releaseTask(c: Ctx, first: string): void {
   const run = c.run;
-  const todo = [first];
+  // The earlier ones are only scanned, never moved, and not at all once a planner put the id back in play.
+  const earlier = new Set(names(`${run}/tasks/released`).filter((n) => n.endsWith('.md')).map((n) => n.slice(0, -3)));
+  earlier.delete(first);
+  const todo = [first, ...earlier];
+  const seen = new Set<string>();
   while (todo.length) {
     const id = todo.shift() ?? '';
-    if (!existsSync(`${run}/tasks/ready/${id}.md`)) continue;
-    mkdirSync(`${run}/tasks/released`, { recursive: true });
-    renameSync(`${run}/tasks/ready/${id}.md`, `${run}/tasks/released/${id}.md`);
+    if (seen.has(id)) continue;
+    seen.add(id);
+    if (earlier.has(id) && (existsSync(`${run}/tasks/ready/${id}.md`) || isDir(`${run}/tasks/claimed/${id}`) || existsSync(`${run}/tasks/done/${id}`))) continue;
+    if (!earlier.has(id) && existsSync(`${run}/tasks/ready/${id}.md`)) {
+      mkdirSync(`${run}/tasks/released`, { recursive: true });
+      renameSync(`${run}/tasks/ready/${id}.md`, `${run}/tasks/released/${id}.md`);
+    } else if (!existsSync(`${run}/tasks/released/${id}.md`)) continue;
     for (const n of names(`${run}/tasks/ready`)) {
       if (!n.endsWith('.md')) continue;
       const b = n.slice(0, -3);
       // A dependent somebody is already working is theirs: taking its file away mid-task is the failure
       // this whole graveyard exists to avoid.
       if (isDir(`${run}/tasks/claimed/${b}`) || existsSync(`${run}/tasks/done/${b}`)) continue;
-      const after = field(lf(read(`${run}/tasks/ready/${n}`)), /^after:[ \t\v\f\r]*(.*)$/s).replace(/[,\r]/g, ' ');
-      for (const d of after.split(/[ \t\n]+/)) {
-        if (d && d === id) {
-          out(`  also released ${b}: its \`after:\` named ${id}, which nobody finished\n`);
-          todo.push(b);
-        }
+      // Once per dependent, however many times its `after:` names the id.
+      if (afterIds(read(`${run}/tasks/ready/${n}`)).includes(id)) {
+        out(`  also released ${b}: its \`after:\` named ${id}, which nobody finished\n`);
+        todo.push(b);
       }
     }
   }
@@ -113,13 +120,23 @@ function sweep(c: Ctx, a: string[]): number {
     const owner = headOr(`${d}/owner`, 'NO OWNER');
     let hb = mtimeSec(`${d}/heartbeat`);
     if (Number.isNaN(hb)) hb = mtimeSec(`${d}/owner`);
+    // A `next` that died between its mkdir and its owner line left only the directory: its age is the claim's.
+    if (Number.isNaN(hb)) hb = mtimeSec(d);
     const age = !Number.isNaN(hb) && nowsec > 0 ? minutes(nowsec, hb) : 0;
-    const budget = field(read(`${run}/tasks/ready/${id}.md`), BUDGET) || '25';
+    const budget = budgetOf(read(`${run}/tasks/ready/${id}.md`));
     // All three terms, as PULL.md requires: no done marker, quiet past one budget, the claim standing.
     if (age > Number(budget)) {
       found++;
       out(`ABANDONED? ${id}  ${owner}  quiet ${age}m against a ${budget}m budget\n`);
-      if (release) {
+      const again = release ? refiledAs(run, id) : '';
+      const lk = release && !again ? lockToRelease(run, id) : '';
+      if (again) {
+        out(`  not released: a handback already filed it again as ${again} and stopped before closing it; run handback for its chip again\n`);
+      } else if (lk === 'closing') {
+        out('  not released: its worker is closing it with finish right now\n');
+      } else if (lk === 'done') {
+        out('  not released: its worker finished it meanwhile (done marker written)\n');
+      } else if (release) {
         const stamp = stampSuffix();
         // The task file goes FIRST, so a `next` in between cannot re-claim the same id; the task returns
         // under a new id.
@@ -135,7 +152,9 @@ function sweep(c: Ctx, a: string[]): number {
   for (const id of names(`${run}/pane/running`, '/')) {
     const d = `${run}/pane/running/${id}`;
     if (!isDir(d) || existsSync(`${run}/pane/results/${id}.json`)) continue;
-    const hb = mtimeSec(`${d}/owner`);
+    let hb = mtimeSec(`${d}/owner`);
+    // A pane-next killed between its mkdir and its owner line: the claim's own age.
+    if (Number.isNaN(hb)) hb = mtimeSec(d);
     const age = !Number.isNaN(hb) && nowsec > 0 ? minutes(nowsec, hb) : 0;
     if (age > lease) {
       found++;
@@ -181,7 +200,7 @@ function recover(c: Ctx, a: string[]): number {
   const nowsec = nowSec();
   // The host lets an operator move its configuration directory: honour its variable, and the plugin's own
   // as the override. Spelled as the shell spells it, since it is printed.
-  const proj = process.env.CLAUDE_PROJECTS_DIR || `${process.env.CLAUDE_CONFIG_DIR || `${process.env.HOME || ''}/.claude`}/projects`;
+  const proj = process.env.CLAUDE_PROJECTS_DIR || `${configDir()}/projects`;
   // Printed as the shell spelled it: Git Bash hands node $HOME and the like converted (/c/Users/x -> C:\Users\x).
   const projShown = process.platform === 'win32' && /^[A-Za-z]:/.test(proj) ? shellPath(proj) : proj;
   // Search rather than reconstruct the slug: one run can span worktrees.
@@ -214,18 +233,22 @@ function recover(c: Ctx, a: string[]): number {
   // A worker that died before writing its marker is invisible to `landed`'s count: say both facts.
   if (existsSync(`${run}/FINISHED`)) {
     out('== this run declared itself finished\n');
-    out(indent(lf(read(`${run}/FINISHED`))));
+    const fin = lf(read(`${run}/FINISHED`));
+    out(indent(fin && !fin.endsWith('\n') ? `${fin}\n` : fin));
     out('  Anything listed as RESUME or RESPAWN below was open when that was written.\n');
   }
 
-  // `cat <f> | tr -d ' \n'`
-  const chipOf = (f: string): string => read(f).replace(/[ \n]/g, '');
+  // What a retired chip still waits on, for the coordinator to pass to its replacement (fleet-wait.md).
+  const unanswered = (ch: string): string => { const a = openAsks(c, ch); return a ? `, unanswered:${a}` : ''; };
+  // The chip a session registered as; a CRLF file's \r is not part of it.
+  const chipOf = (f: string): string => read(f).replace(/[ \r\n]/g, '');
   // Claims standing: live, not done.
   const openClaims = (): string[] => names(`${run}/tasks/claimed`, '/').filter((id) =>
     isDir(`${run}/tasks/claimed/${id}`) && live(id) && !existsSync(`${run}/tasks/done/${id}`));
 
   out('== chips this run registered\n');
   let any = 0;
+  const idleDead: string[] = [], deadWalks: (readonly [string, string])[] = [], withTranscript = new Set<string>();
   for (const sid of names(`${run}/chips`)) {
     const f = `${run}/chips/${sid}`;
     // A session id carries no dot; every dotted name is a hook's own bookkeeping.
@@ -233,13 +256,18 @@ function recover(c: Ctx, a: string[]): number {
     const chip = chipOf(f);
     if (!chip) continue;
     any++;
-    const marker = ['done', 'blocked', 'waiting'].filter((m) => existsSync(`${run}/${chip}.${m}`)).join('+');
-    const open = openClaims().filter((id) => ownedBy(`${run}/tasks/claimed/${id}/owner`, chip)).join(' ');
+    const marker = ['done', 'blocked', 'waiting', 'retired'].filter((m) => existsSync(`${run}/${chip}.${m}`)).join('+');
+    const claims = openClaims().filter((id) => ownedBy(`${run}/tasks/claimed/${id}/owner`, chip)).join(' ');
+    // A pane walk it claimed is held work too: unnamed, a dead host's walk sat claimed until its lease.
+    const walks = walksOf(c, chip);
+    const open = [claims, ...walks.map((w) => `walk ${w}`)].filter(Boolean).join(' ');
     const t = transcript(sid);
     let quiet = '';
     if (t && nowsec > 0) { const m = mtimeSec(t); if (!Number.isNaN(m)) quiet = String(minutes(nowsec, m)); }
-    const findings = existsSync(`${run}/${chip}.jsonl`) ? (grepC(`${run}/${chip}.jsonl`, ANY) || '0') : '0';
-    if (!open && marker) {
+    const findings = existsSync(`${run}/${chip}.jsonl`) ? (grepC(`${run}/${chip}.jsonl`, /"severity"/) || '0') : '0';
+    // .waiting is a question to the operator, not an end: a dead chip that left only that has not landed.
+    const landedAs = ['done', 'blocked', 'retired'].some((m) => existsSync(`${run}/${chip}.${m}`));
+    if (!open && landedAs) {
       // The session id belongs here too: a follow-up run wants a landed worker's context most.
       out(`  LANDED  chip ${chip}  ${marker}, ${findings} findings  (${sid})\n`);
     } else if (t && quiet && Number(quiet) < livemin) {
@@ -250,15 +278,39 @@ function recover(c: Ctx, a: string[]): number {
       out(`  RESUME  chip ${chip}  ${marker || 'no marker'}, ${findings} findings, holding: ${open || 'nothing'}${quiet ? `, quiet ${quiet}m` : ''}\n`);
       // The right directory and a first instruction: a session reopened with no prompt sits there idle.
       const cwd = sessionCwd(t);
-      const fst = open.split(' ')[0] ?? '';
+      const fst = claims.split(' ')[0] ?? '';
       out(`          ${cwd ? `cd "${cwd}" && ` : ''}claude -r ${sid} "Resumed after a crash. ${fst ? `Run fleet.sh beat on ${fst}, then ` : ''}continue the run."\n`);
       if (!cwd) out('          (its working directory is not in the transcript - run this from the directory the chip was started in)\n');
     } else {
       out(`  RESPAWN chip ${chip}  ${marker || 'no marker'}, ${findings} findings, holding: ${open || 'nothing'}\n`);
-      out(`          no transcript under ${projShown} - its context is gone, so re-file the task and spawn a fresh chip\n`);
+      const brief = existsSync(`${run}/brief-${chip}.md`);
+      out(brief
+        ? `          no transcript under ${projShown} - its context is gone. Its brief is unworked: 'fleet.sh relaunch ${c.absrun} --keep-coordinator --wait 0 ${chip}' copies it to a fresh chip and retires this one\n`
+        : `          no transcript under ${projShown} - its context is gone, so re-file the task and spawn a fresh chip\n`);
+      // Not a brief worker: it holds no claim while it works, and its brief would be dropped unworked.
+      if (!claims && !landedAs && !brief) idleDead.push(chip);
+      deadWalks.push(...walks.map((w) => [chip, w] as const));
     }
+    if (t) withTranscript.add(chip);
   }
   if (any === 0) out('  none: no chip ever claimed through fleet.sh in this run\n');
+  // A dead chip holding nothing is retired too under --release: nobody will write its marker, and the watch
+  // counts every chip that ever registered.
+  if (release) {
+    // Not a chip another of its sessions can resume: that session's subagent may be walking it.
+    const done = new Set<string>();
+    for (const [ch, w] of deadWalks) {
+      // Two dead sessions of one chip list its walk twice.
+      if (withTranscript.has(ch) || done.has(w)) continue;
+      done.add(w);
+      try { rmSync(`${run}/pane/running/${w}`, { recursive: true, force: true }); out(`  walk ${w} is pending again: its host's session is gone\n`); } catch { /* the sweep's lease frees it */ }
+    }
+    for (const ch of new Set(idleDead)) {
+      if (withTranscript.has(ch) || existsSync(`${run}/${ch}.retired`)) continue;
+      writeFileSync(`${run}/${ch}.retired`, `respawned: session gone, nothing held, retired by recover ${stampSuffix()}${unanswered(ch)}\n`);
+      out(`  retired chip ${ch}: its session is gone and it held nothing\n`);
+    }
+  }
 
   // Work nobody is holding decides how many chips to open after a cold start.
   let free = 0;
@@ -281,7 +333,8 @@ function recover(c: Ctx, a: string[]): number {
       // A resumable worker keeps its claim: taking it is how a live worker's work lands in the graveyard.
       const ochip = field(lf(read(`${d}/owner`)), /^chip (.*)$/s);
       let keep = false, known = false;
-      for (const s of names(`${run}/chips`)) {
+      // An owner with no chip line matches no session: it is UNKNOWN, never the empty chip file's.
+      for (const s of ochip ? names(`${run}/chips`) : []) {
         if (s.includes('.') || chipOf(`${run}/chips/${s}`) !== ochip) continue;
         known = true;
         if (transcript(s)) keep = true;
@@ -293,12 +346,33 @@ function recover(c: Ctx, a: string[]): number {
         out("          this cannot tell a dead worker from a live one. Use 'fleet.sh sweep --release'.\n");
         continue;
       }
+      // A heartbeat inside the task's budget may be a worker alive somewhere this machine cannot see (another
+      // config dir, a cloud session), or one that died a minute ago in the crash this cold start answers.
+      // Released either way, as recover is for; said, so the coordinator knows a live one would get CLAIM LOST.
+      let hb = mtimeSec(`${d}/heartbeat`);
+      if (Number.isNaN(hb)) hb = mtimeSec(`${d}/owner`);
+      const age = !Number.isNaN(hb) && nowsec > 0 ? minutes(nowsec, hb) : Infinity;
+      const budget = budgetOf(read(`${run}/tasks/ready/${id}.md`));
+      const fresh = age <= budget ? `\n          WARNING: it beat ${age}m ago, inside its ${budget}m budget. A worker still alive elsewhere gets CLAIM LOST at its next beat and stops.` : '';
+      const again = refiledAs(run, id);
+      if (again) {
+        out(`  not released ${id}: a handback already filed it again as ${again} and stopped before closing it; run handback ${ochip} again\n`);
+        continue;
+      }
+      const lk = lockToRelease(run, id);
+      if (lk !== 'ok') {
+        out(`  not released ${id}: ${lk === 'done' ? 'its worker finished it meanwhile (done marker written)' : 'its worker is closing it with finish right now'}\n`);
+        continue;
+      }
       const stamp = stampSuffix();
       freed++;
-      out(`  released ${id} (chip ${ochip || 'unknown'}) - re-file it under a NEW id, never this one\n`);
+      out(`  released ${id} (chip ${ochip || 'unknown'}) - re-file it under a NEW id, never this one${fresh}\n`);
       // Task file first, claim second, as in sweep.
       releaseTask(c, id);
       renameSync(d, `${run}/tasks/claimed/${id}.released-${stamp}`);
+      // Its session is gone and it will be respawned under a new number: retired, so the watch's count of
+      // workers that must land does not wait on it for ever.
+      if (ochip && !existsSync(`${run}/${ochip}.retired`)) writeFileSync(`${run}/${ochip}.retired`, `respawned: session gone, claims released by recover ${stamp}${unanswered(ochip)}\n`);
     }
     if (freed === 0) {
       out(openclaims === 0 ? '  nothing to release: no claim is open\n'
@@ -333,9 +407,10 @@ function procs(c: Ctx, a: string[]): number {
 
 // The run's chips: every `*.jsonl` but what the merge writes beside them.
 const chipIds = (c: Ctx): string[] => names(c.run).filter((n) => n.endsWith('.jsonl')).map((n) => n.slice(0, -6))
-  .filter((n) => !['backlog', 'skipped', 'unreached'].includes(n));
-// `chipcat`: one stream, so a file with no last newline runs into the next, as cat does.
-const chipCat = (c: Ctx): string => chipIds(c).map((i) => read(`${c.run}/${i}.jsonl`)).join('');
+  .filter((n) => !['backlog', 'skipped', 'unreached', 'clusters', 'decisions'].includes(n));
+// `chipcat`: one stream. A file with no last newline gets one: run into the next, its last finding went
+// uncounted in the totals while its own row counted it.
+const chipCat = (c: Ctx): string => chipIds(c).map((i) => read(`${c.run}/${i}.jsonl`)).map((t) => (t && !t.endsWith('\n') ? `${t}\n` : t)).join('');
 
 // The end banner, from disk rather than anyone's memory, plus a JSON line a later script can read back.
 function summary(c: Ctx, a: string[]): number {
@@ -343,15 +418,17 @@ function summary(c: Ctx, a: string[]): number {
   const one = a[0] ?? '';
   const row = (ch: string): void => {
     const f = `${run}/${ch}.jsonl`;
-    const n = (existsSync(f) ? grepC(f, ANY) : '0') || '0';
-    const [b, m, mi, po] = ['blocker', 'major', 'minor', 'polish'].map((s) => grepC(f, SEV(s)));
-    const u = grepC(f, /"unreached"/);
+    const n = (existsSync(f) ? grepC(f, /"severity"/) : '0') || '0';
+    // 0, not blank, for a worker with no findings file.
+    const [b, m, mi, po] = ['blocker', 'major', 'minor', 'polish'].map((s) => grepC(f, SEV(s)) || '0');
+    const u = grepC(f, /"unreached"/) || '0';
     let t = 0;
     for (const id of names(`${run}/tasks/claimed`)) {
       const o = `${run}/tasks/claimed/${id}/owner`;
       if (existsSync(o) && ownedBy(o, ch) && existsSync(`${run}/tasks/done/${id}`)) t++;
     }
     let st = 'running';
+    if (existsSync(`${run}/${ch}.retired`)) st = 'RETIRED';
     if (existsSync(`${run}/${ch}.done`)) st = 'done';
     if (existsSync(`${run}/${ch}.blocked`)) st = 'BLIND';
     if (existsSync(`${run}/${ch}.waiting`)) st = 'WAITING';
@@ -360,15 +437,18 @@ function summary(c: Ctx, a: string[]): number {
   const bar = '==============================================================\n';
   out(bar);
   if (one) {
-    out(` WORKER ${one} FINISHED - ${base(run)}\n`);
+    out(` WORKER ${one} FINISHED - ${base(c.absrun)}\n`);
     out(bar);
     row(one);
     if (existsSync(`${run}/${one}.blocked`)) out(`  blind: ${firstLine(`${run}/${one}.blocked`)}\n`);
     out(`  findings: ${run}/${one}.jsonl     notes: ${run}/${one}.notes.md\n`);
   } else {
-    out(` RUN FINISHED - ${base(run)}\n`);
+    out(` RUN FINISHED - ${base(c.absrun)}\n`);
     out(bar);
-    for (const ch of chipIds(c)) row(ch);
+    // One row per worker: a pane host or a retired worker that filed no finding has no .jsonl, and its tasks
+    // went missing from the rows while the totals counted them.
+    const ends = names(run).filter((n) => /\.(done|blocked|retired|waiting)$/.test(n)).map((n) => n.replace(/\.[^.]*$/, ''));
+    for (const ch of [...new Set([...chipIds(c), ...ends])].sort()) row(ch);
     out('--------------------------------------------------------------\n');
     // The same files the rows were built from: a chip id that is not a number once printed rows full of
     // findings above a total of 0, which `landed` then paged to the phone.
@@ -382,7 +462,7 @@ function summary(c: Ctx, a: string[]): number {
     const dec = grepC(`${run}/decisions.jsonl`, ANY) || '0';
     if (Number(dec) > 0) out(`  contract changes decided without asking: ${dec}, in ${run}/decisions.jsonl - read them before landing\n`);
     out(`  backlog: ${run}/backlog.md\n`);
-    out(`fleet-summary: {"run":"${base(run)}","workers_done":${dn},"blind":${bl},"waiting":${wt},"tasks_done":${td},"tasks_total":${rd},"findings":${tot},"blockers":${tb},"majors":${tm},"decisions":${dec}}\n`);
+    out(`fleet-summary: {"run":"${base(c.absrun)}","workers_done":${dn},"blind":${bl},"waiting":${wt},"tasks_done":${td},"tasks_total":${rd},"findings":${tot},"blockers":${tb},"majors":${tm},"decisions":${dec}}\n`);
   }
   out(bar);
   return 0;
@@ -460,7 +540,7 @@ function landed(c: Ctx, a: string[]): number {
       const all = chipCat(c);
       const tot = countLines(all, /"severity"/), tb = countLines(all, SEV('blocker'));
       const bl = countGlob(run, '.blocked');
-      spawnSync(process.execPath, [nf, 'send', `fleet ${base(run)} FINISHED: ${tot} findings, ${tb} blockers, ${bl} blind, backlog at ${run}/backlog.md`], { stdio: 'inherit' });
+      spawnSync(process.execPath, [nf, 'send', `fleet ${base(c.absrun)} FINISHED: ${tot} findings, ${tb} blockers, ${bl} blind, backlog at ${run}/backlog.md`], { stdio: 'inherit' });
     }
   }
   return fail;

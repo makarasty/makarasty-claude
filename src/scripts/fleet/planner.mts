@@ -1,12 +1,11 @@
 // planner.mts - the planner's queue work: file, cleared, answer, broadcast, stranded, width, chips. Part of fleet.mjs; see src/scripts/fleet.mts.
 
-import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, constants, copyFileSync, existsSync, linkSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { basename, dirname, resolve } from 'node:path';
-import { homedir } from 'node:os';
 import { isatty } from 'node:tty';
 import type { Command, Ctx } from './lib.mjs';
-import { need, out, err, isDir, isFile, read, names, field, NEEDS, operatorOwed, now, slashes, configDir, cal, calint, loadScript, laneGaps, mtimeMs, nativePath, sub, AFTER } from './lib.mjs';
+import { need, out, err, isDir, isFile, read, names, field, NEEDS, operatorOwed, now, slashes, configDir, cal, calint, loadScript, laneGaps, mtimeMs, nativePath, sub, HERE, afterIds, frontmatter, yamlValue } from './lib.mjs';
 
 // ---- shared pieces ---------------------------------------------------------------------------------------
 
@@ -39,17 +38,17 @@ function absdir(d: string): string { return isDir(d) ? slashes(resolve(d)) : d; 
 // `beside <rel> <pkg> <path in the plugin>`: a file beside fleet.sh, else under the copy the host says it
 // installed, else the newest cached copy.
 function beside(c: Ctx, rel: string, pkg: string, inPkg: string): string {
-  const here = `${dirname(c.sh)}/${rel}`;
+  const here = `${HERE}/${rel}`;   // where fleet.mjs is, however fleet.sh was spelled
   if (existsSync(here)) return here;
   let root = '';
   try {
-    const rec = JSON.parse(readFileSync(`${homedir()}/.claude/plugins/installed_plugins.json`, 'utf8')) as
+    const rec = JSON.parse(readFileSync(`${configDir()}/plugins/installed_plugins.json`, 'utf8')) as
       { plugins: Record<string, Array<{ installPath: string }>> };
     root = rec.plugins[`${pkg}@makarasty`][0].installPath.split('\\').join('/');
   } catch { root = ''; }
   if (root && existsSync(`${root}/${inPkg}`)) return `${root}/${inPkg}`;
   // `ls -t ~/.claude/plugins/cache/*/<pkg>/*/<path> | head -1`
-  const cache = `${process.env.HOME || homedir()}/.claude/plugins/cache`;
+  const cache = `${configDir()}/plugins/cache`;
   const hits: string[] = [];
   for (const m of names(cache)) for (const v of names(`${cache}/${m}/${pkg}`)) {
     if (existsSync(`${cache}/${m}/${pkg}/${v}/${inPkg}`)) hits.push(`${cache}/${m}/${pkg}/${v}/${inPkg}`);
@@ -64,15 +63,27 @@ function beside(c: Ctx, rel: string, pkg: string, inPkg: string): string {
 // Measured 2026-10-05: a hand-made filing script ran its heredoc after a failed `&&` chain, so two tasks
 // were never filed and nothing said so, and a cp1252 character broke another task file. One call per
 // task, refused loudly, and `FILED` only when the file is in place.
+// A task id names files in the run and the worker's branch fleet/<chip>/<id>: `../x` reached outside the run,
+// and `a..b`, `c.` or `x.lock` filed a task whose branch git refuses to make.
+function badTaskId(id: string): boolean {
+  return /[^A-Za-z0-9._-]/.test(id) || id.startsWith('.') || id.endsWith('.') || id.includes('..') || id.endsWith('.lock');
+}
+
 function file(c: Ctx, args: string[]): number {
   const run = c.run;
   const id = need(c, args[0], 3, 'task id required');
-  const src = args[1] || '-';
-  if (/[^A-Za-z0-9._-]/.test(id) || id.startsWith('.')) {
-    err(`REFUSED: task id '${id}' may hold only letters, digits, dot, dash and underscore\n`);
+  const src = nativePath(args[1] || '-');
+  if (badTaskId(id)) {
+    err(`REFUSED: task id '${id}' may hold only letters, digits, dot, dash and underscore, and must make a git branch name (no '..', no '.' at either end, no '.lock' at the end)\n`);
     return 2;
   }
-  for (const p of [`${run}/tasks/ready/${id}.md`, `${run}/tasks/claimed/${id}`, `${run}/tasks/done/${id}`, `${run}/tasks/released/${id}.md`]) {
+  // `.dead-` and `.released-` name a closed claim: a task called that would be claimed and then hidden from
+  // sweep, recover, drained and landed, and the run would land over it.
+  if (/\.(dead|released)-/.test(id)) {
+    err(`REFUSED: task id '${id}' holds '.dead-' or '.released-', which name closed claims; choose another id\n`);
+    return 2;
+  }
+  for (const p of [`${run}/tasks/ready/${id}.md`, `${run}/tasks/claimed/${id}`, `${run}/tasks/done/${id}`, `${run}/tasks/released/${id}.md`, `${run}/tasks/handed-back/${id}.md`]) {
     if (existsSync(p)) { err(`REFUSED: ${id} already exists (${p}); a re-filed task takes a new id\n`); return 2; }
   }
   mkdirSync(`${run}/tasks/ready`, { recursive: true });
@@ -103,24 +114,81 @@ function file(c: Ctx, args: string[]): number {
     } else if (!lines.slice(1).some((l) => l.startsWith('---'))) {
       why = 'its frontmatter has no closing --- line';
     } else {
+      // One spelling for the keys the queue acts on. `next` reads `After:` or `kind : fix` too now, but a key
+      // written another way is a typo the planner should see at filing, not a rule that silently holds or not.
+      // First, so a `Needs:` line is named as miscased rather than as missing.
+      let last = '';
+      for (const l of frontmatter(text) ?? []) {
+        if (why) break;
+        const k = /^([ \t]*)([A-Za-z_-]+)([ \t]*):/.exec(l);
+        if (!k) {
+          if (/^[ \t]*-[ \t]/.test(l) && ['after', 'operator', 'needs', 'kind'].includes(last)) {
+            why = `its ${last}: value is a list ('${l.trim()}'): write it on the ${last}: line itself, ids separated by commas`;
+          }
+          continue;
+        }
+        const key = (k[2] ?? '').toLowerCase();
+        last = key;
+        if (['after', 'operator', 'needs', 'kind', 'budget', 'task-id'].includes(key) && (k[1] || k[3] || k[2] !== key)) {
+          why = `its '${l.trim()}' line: write the key as '${key}:' at the start of the line, in lower case`;
+        }
+      }
       // The lane as `next` reads it: the first word of the needs: line.
       const nv = fmValue(text, 'needs');
       lane = /^[a-z]+/.exec(nv ?? '')?.[0] ?? '';
-      if (!['pane', 'repo', 'verify'].includes(lane)) {
+      if (!why && !['pane', 'repo', 'verify'].includes(lane)) {
         why = `its needs: line reads '${(nv ?? '').replace(/[ \t\r]+$/, '')}', and a lane is pane, repo or verify, in lower case`;
       }
-      const tid = (fmValue(text, 'task-id') ?? '').replace(/[ \t\r]+$/, '');
+      // The clock arms from it: 0 elapses at once, and a number past the shell's integers never fires.
+      const bvRaw = fmValue(text, 'budget'), bv = bvRaw === undefined ? undefined : yamlValue(bvRaw);
+      if (!why && bv !== undefined && !/^0*[1-9][0-9]{0,5}$/.test(bv.replace(/[ \t\r]+$/, ''))) {
+        why = `its budget: line reads '${bv.replace(/[ \t\r]+$/, '')}': minutes, a whole number from 1 to 999999`;
+      }
+      const tid = (fmValue(text, 'task-id') ?? '').replace(/[ \t\r]+$/, '').replace(/^(["'])(.*)\1$/, '$2');
       if (!why && tid && tid !== id) why = `its task-id: line says '${tid}', not '${id}'`;
+      // An after: id no task can have (`[a`, `"b"`, `#`, `.`, which `next` finds done at once) or the task's
+      // own holds it for ever. Ids compare as the filesystem does: one id in any case on Windows.
+      const key = (d: string): string => (process.platform === 'win32' ? d.toLowerCase() : d);
+      const bad = afterIds(text).find((d) => /[^A-Za-z0-9._-]/.test(d) || d.startsWith('.') || key(d) === key(id));
+      if (!why && bad !== undefined) {
+        why = key(bad) === key(id) ? `its after: names the task itself, so it would wait for ever`
+          : `its after: names '${bad}', which no task id can be: write ids only, separated by commas or blanks`;
+      }
+      // A chain through filed tasks that comes back here is a cycle: every task on it waits for ever.
+      const seen = new Set<string>(), todo = afterIds(text);
+      while (!why && todo.length) {
+        const d = todo.pop() ?? '';
+        if (key(d) === key(id)) why = 'its after: chain leads back to the task itself, a cycle: every task on it would wait for ever';
+        else if (!seen.has(key(d))) { seen.add(key(d)); todo.push(...afterIds(read(`${run}/tasks/ready/${d}.md`))); }
+      }
+      // On Windows `T-A` finds t-a's files, so `next` releases on it, but handback and sweep rename only the
+      // exact id and left it waiting for ever. One spelling, the filed one.
+      if (!why && process.platform === 'win32') {
+        const known = [...names(`${run}/tasks/ready`).filter((n) => n.endsWith('.md')).map((n) => n.slice(0, -3)), ...names(`${run}/tasks/done`)];
+        for (const d of afterIds(text)) {
+          const same = known.find((k) => k.toLowerCase() === d.toLowerCase());
+          if (same && same !== d) { why = `its after: names '${d}', and the task is filed as '${same}': write it that way`; break; }
+        }
+      }
     }
   }
   if (why) { rmSync(tmp, { force: true }); err(`REFUSED: ${id} NOT filed: ${why}\n`); return 2; }
   const dest = `${run}/tasks/ready/${id}.md`;
-  renameSync(tmp, dest);
+  // Exclusive, not a rename: two `file` calls for one id at once both passed the check above, and the
+  // second rename replaced the first task without a word.
+  try { linkSync(tmp, dest); } catch (e) {
+    const code = (e as NodeJS.ErrnoException).code;
+    try { if (code !== 'EEXIST') copyFileSync(tmp, dest, constants.COPYFILE_EXCL); else throw e; } catch {
+      rmSync(tmp, { force: true });
+      err(`REFUSED: ${id} already exists (${dest}); a re-filed task takes a new id\n`);
+      return 2;
+    }
+  }
+  rmSync(tmp, { force: true });
   const filed = read(dest);
-  const afterRaw = field(filed, AFTER).replace(/[,\r]/g, ' ');
-  const after = afterRaw.split(/[ \t\n]+/).filter(Boolean);
+  const after = afterIds(filed);
   const miss = after.filter((d) => !existsSync(`${run}/tasks/ready/${d}.md`));
-  out(`FILED ${id} lane ${lane}${afterRaw ? ` after ${after.join(' ')}` : ''}\n`);
+  out(`FILED ${id} lane ${lane}${after.length ? ` after ${after.join(' ')}` : ''}\n`);
   // Not refused: a queue filed whole can name a task filed a moment later. Said, because a typo here holds
   // this task for ever.
   if (miss.length) out(`  NOTE: after: names a task not filed yet:${miss.map((d) => ` ${d}`).join('')} - file it, or this task waits for ever\n`);
@@ -133,8 +201,9 @@ function file(c: Ctx, args: string[]): number {
 // The operator did what a task's `operator:` line asked: the line goes, and `next` hands the task out.
 function cleared(c: Ctx, args: string[]): number {
   const id = need(c, args[0], 3, 'task id required');
+  if (badTaskId(id)) { err(`REFUSED: '${id}' is not a task id; nothing was cleared\n`); return 2; }
   const f = `${c.run}/tasks/ready/${id}.md`;
-  if (!existsSync(f)) { err(`no such task: ${id}\n`); return 2; }
+  if (!isFile(f)) { err(`no such task: ${id}\n`); return 2; }
   // Bytes in, bytes out, as awk passes them; every record ends in a newline on the way out. Git Bash's awk
   // reads a CR before a newline, or before the end of the file, as part of the line ending and drops it.
   const text = readFileSync(f, 'latin1').replace(/\r(?=\n|$)/g, '');
@@ -143,9 +212,11 @@ function cleared(c: Ctx, args: string[]): number {
   let fm = false;
   const kept: string[] = [];
   lines.forEach((l, i) => {
-    if (i === 0 && l.startsWith('---')) { fm = true; kept.push(l); return; }
+    // A UTF-8 byte order mark reads as three latin1 characters here.
+    if (i === 0 && /^(\xEF\xBB\xBF)?---/.test(l)) { fm = true; kept.push(l); return; }
     if (fm && l.startsWith('---')) fm = false;
-    if (fm && l.startsWith('operator:')) return;
+    // Every line `next` holds the task on (operatorOwed: top level, any case), or the task waits for ever.
+    if (fm && /^operator[ \t]*:/i.test(l)) return;
     kept.push(l);
   });
   const t = `${f}.tmp-${process.pid}`;
@@ -166,12 +237,18 @@ function cleared(c: Ctx, args: string[]): number {
 // Measured 2026-08-31: four questions answered, all four still listed as unanswered an hour later.
 function answer(c: Ctx, ids: string[]): number {
   if (!ids.length) { err('usage: fleet.sh answer <run-dir> <question-id> [question-id...]\n'); return 2; }
-  mkdirSync(`${c.run}/answers`, { recursive: true });
   const body = stdin();
   if (!body.length) { err('refusing to write an empty answer\n'); return 2; }
-  for (let id of ids) {
-    if (id.endsWith('.md')) id = id.slice(0, -3);
-    if (!existsSync(`${c.run}/ask/${id}.md`)) err(`warning: no question ${id}.md in ask/\n`);
+  // Every id names a question that exists, or nothing is written: an answer filed ahead of its question
+  // (a typo, or one meant for a replacement) was read by the next `ask` that took that number.
+  ids = ids.map((i) => (i.endsWith('.md') ? i.slice(0, -3) : i));
+  // `../ask/05-1` exists as a question too, and the answer was written over it.
+  const bad = ids.filter((i) => !/^[0-9A-Za-z._-]+-[0-9]+$/.test(i));
+  if (bad.length) { err(`REFUSED: ${bad.join(', ')} is not a question id (<chip>-<n>, the name in ask/ without .md); nothing was answered\n`); return 2; }
+  const missing = ids.filter((i) => !existsSync(`${c.run}/ask/${i}.md`));
+  if (missing.length) { err(`REFUSED: no question ${missing.map((m) => `${m}.md`).join(', ')} in ask/; nothing was answered\n`); return 2; }
+  mkdirSync(`${c.run}/answers`, { recursive: true });
+  for (const id of ids) {
     const dest = `${c.run}/answers/${id}.md`;
     try { writeFileSync(dest, body); } catch {
       err(`cp: cannot create regular file '${dest}': No such file or directory\n`);
@@ -227,9 +304,10 @@ function stranded(c: Ctx, args: string[]): number {
     const m = `${run}/tasks/done/${id}`;
     if (!isFile(m)) continue;
     let bs = '', tip = '';
-    // `while IFS=' ' read -r k v`: only newline-terminated lines, blanks trimmed at both ends, one \r cut.
+    // Every line, the last one too when it has no newline (the sh's `while read` dropped it, and with it a
+    // marker's only `branch` line); blanks trimmed at both ends, one \r cut.
     const lines = read(m).split('\n');
-    lines.pop();
+    if (lines[lines.length - 1] === '') lines.pop();
     for (const line of lines) {
       const t = line.replace(/^ +| +$/g, '');
       const sp = t.indexOf(' ');
@@ -286,25 +364,26 @@ function width(c: Ctx): number {
   }
   const per = calint(c, 'repo_tasks_per_worker', 3);
   const want = Math.max(1, Math.floor((ready + per - 1) / per));
-  let cap = '';
-  let reserve = '', ceil = '';
+  // The machine's cap: free memory less what the operator keeps (0 is a real answer; the sh's `|| 2` made
+  // it 2), at most the ceiling. A census that answers no number gives the default of 6, and says so.
+  let cap = 6;
+  const reserve = Number(cal(c, 'operator_reserve_gb', '2'));
+  const ceil = calint(c, 'repo_worker_ceiling', 12);
+  let why = `free memory less the ${reserve} GB the operator keeps, ceiling ${ceil}`;
   const loader = loadScript();
   if (loader) {
-    reserve = cal(c, 'operator_reserve_gb', '2'); ceil = String(calint(c, 'repo_worker_ceiling', 12));
     const j = spawnSync(process.execPath, [loader, '--json'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).stdout || '';
-    const RESERVE = Number(reserve) || 2, CEIL = Number(ceil) || 12;
-    try {
-      const o = JSON.parse(j) as { freeGB: number };
-      cap = String(Math.max(1, Math.min(Math.floor(o.freeGB - RESERVE), CEIL)));
-    } catch { cap = ''; }
+    let free = NaN;
+    try { free = Number((JSON.parse(j) as { freeGB?: unknown }).freeGB); } catch { /* no reading */ }
+    if (Number.isFinite(free)) cap = Math.max(1, Math.min(Math.floor(free - reserve), ceil));
+    else why = 'the memory census gave no free-memory figure, so the default';
+  } else {
+    why = 'no memory census beside this script, so the default';
   }
-  if (!cap) cap = '6';
-  let n = want;
-  // `[ "$n" -gt "$cap" ]`: a census that answers no number leaves the cap unreadable and the width as wanted.
-  if (/^[0-9]+$/.test(cap)) { if (n > Number(cap)) n = Number(cap); } else err(`${c.sh}: [: ${cap}: integer expression expected\n`);
+  const n = Math.min(want, cap);
   out(`REPO_WORKERS ${n}\n`);
   out(`  ready repo tasks ${ready}, one worker per ${per} -> ${want}\n`);
-  out(`  machine cap ${cap} (free memory less the ${reserve || '2'} GB the operator keeps, ceiling ${ceil || '12'})\n`);
+  out(`  machine cap ${cap} (${why})\n`);
   out(`  the pane lane starts at ${cal(c, 'pane_workers_default', '2')} and is bound by memory, not by the display [M33]; the verify lane is 1\n`);
   out('  every constant above comes from calibration.json\n');
   return 0;

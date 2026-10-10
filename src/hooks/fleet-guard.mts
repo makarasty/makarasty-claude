@@ -30,7 +30,7 @@ const windowMin = cal('hook_claim_window_minutes', 10);
 let payload: HookPayload = {};
 try {
   const raw = fs.readFileSync(0, 'utf8');
-  payload = raw ? JSON.parse(raw) : {};
+  payload = (raw ? JSON.parse(raw) : null) || {};   // `null` is valid JSON with no fields
 } catch { bail(); }
 
 if (payload.stop_hook_active) bail();

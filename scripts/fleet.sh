@@ -11,7 +11,12 @@
 #   fleet.sh next    <run-dir> <chip> [lane]       claim the first free task in that lane, print it. exit 3 =
 #                                                  drained, nothing left and nothing waiting. exit 7 = waiting:
 #                                                  tasks exist but an `after:`, a held verify lane or `operator:` holds them.
-#                                                  exit 8 = the run is paused. exit 9 = this chip was retired
+#                                                  exit 8 = the run is paused. exit 9 = this chip was retired.
+#                                                  exit 6 = the machine is short of memory: wait as it prints.
+#                                                  exit 10 = a model switch is pending: run whoami
+#                                                  exit 2 = HOLDING, this chip holds a claim already (a pane
+#                                                  chip may hold one pane and one repo task); BUSY, another
+#                                                  next of this chip is claiming; or a lane it does not know
 #   fleet.sh beat    <run-dir> <chip> <task-id>    refresh heartbeat. exit 4 = claim lost, take another
 #   fleet.sh clock   <run-dir> <chip> <task-id> [budget-min]   print the self-disarming abort clock to background
 #   fleet.sh finish  <run-dir> <chip> <task-id> [branch]   mark the task done; its clock then exits on its own.
@@ -27,7 +32,8 @@
 #   fleet.sh procs   <run-dir> [--kill]            orphaned test runs and typechecks, and shells ended chat
 #                                                  processes left; --kill ends those, never a tree serving something
 #   fleet.sh drained <run-dir> <chip> [lane]       queue empty: write <chip>.done. exit 5 = queue still open,
-#                                                  or a ready task in that lane nobody holds yet
+#                                                  or a ready task in that lane nobody holds yet. exit 2 =
+#                                                  HOLDING, this chip still holds a claim. 8 paused, 9 retired
 #   fleet.sh chips   <run-dir> <NN>[-<NN>] [lane] [--model <id> [--effort <level>]]
 #                                                  coordinator: the exact spawn_task title and prompt per worker,
 #                                                  and the model and effort each should run on (want/<NN>)
@@ -57,8 +63,11 @@
 #                                                  `claude -r`, which must be respawned, what is unheld
 #   fleet.sh width   <run-dir>                     how many repo workers this queue and this machine want
 #   fleet.sh pane-ask   <run-dir> <chip>           file a browser walk for a pane host to run, on stdin
-#   fleet.sh pane-next  <run-dir> <host>           claim the oldest pending walk. exit 3 = none pending
-#   fleet.sh pane-serve <run-dir> <host> <id>      answer one walk with JSON on stdin, gate reading included
+#   fleet.sh pane-next  <run-dir> <host>           claim the oldest pending walk. exit 3 = none pending,
+#                                                  8 = the run is paused, 9 = this host retired or the run landed,
+#                                                  2 = this host is retiring
+#   fleet.sh pane-serve <run-dir> <host> <id>      answer one walk with JSON on stdin, gate reading included;
+#                                                  with --release, give it back to pending unanswered
 #   fleet.sh pane-status <run-dir>                 backlog depth, oldest wait, median lease
 #   fleet.sh summary <run-dir> [chip]              the end banner: counts from disk, plus one JSON line
 #   fleet.sh worktree <run-dir> <chip> [path]      a worktree worker registers its tree (default cwd);
@@ -86,4 +95,18 @@ command -v node >/dev/null 2>&1 || {
 }
 # node.exe under a Git Bash terminal sees a pipe where the shell sees a terminal; `file` asks which it is.
 FLEET_STDIN_TTY=; if [ -t 0 ]; then FLEET_STDIN_TTY=1; fi; export FLEET_STDIN_TTY
+# Git Bash rewrites any argument that looks like a POSIX path for a native program, so a pause reason or a
+# note that starts with `/` reached node as `C:/Program Files/Git/...`. Off for this one exec; fleet.mjs
+# converts the arguments that are paths itself and puts the old setting back for what it runs.
+FLEET_ARG_CONV_PREV=${MSYS2_ARG_CONV_EXCL-__unset__}; MSYS2_ARG_CONV_EXCL='*'; export FLEET_ARG_CONV_PREV MSYS2_ARG_CONV_EXCL
+# The one path node itself has to open, in its own spelling: `pwd -W` where the shell is MSYS (whatever
+# started it), plain `pwd` elsewhere, where a POSIX path is already node's.
+case $_here in /*) _here=$(cd "$_here" && { pwd -W 2>/dev/null || pwd; }) ;; esac
+# A copy away from scripts/ has no fleet.mjs to run: say so, rather than with a node stack trace.
+[ -f "$_here/fleet.mjs" ] || { echo "fleet.sh: no fleet.mjs beside it in $_here: run the fleet.sh in the plugin's scripts/ folder" >&2; exit 2; }
+# `file <run> <id> /dev/stdin` or `<(...)`: the shell can open those, node.exe cannot, so the shell does.
+case "${1:-}:${4:-}" in file:/dev/*)
+  _src=$4; set -- "$1" "$2" "$3" -; FLEET_STDIN_TTY=; export FLEET_STDIN_TTY
+  exec node "$_here/fleet.mjs" "$0" "$@" < "$_src" ;;
+esac
 exec node "$_here/fleet.mjs" "$0" "$@"

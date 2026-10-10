@@ -58,7 +58,7 @@ const GAP_X = 120, GAP_Y = 160, PER_ROW = 3;
 const EMOJI_RE = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{1F000}-\u{1F2FF}]/u;
 // Constants live in calibration.json beside the running plugin, never retyped here and never taken from a
 // cache snapshot that happens to be newer by mtime (e774c09) - `cal` reads the sibling first.
-const GATE = cal('frame_gate_min_fps', 60);
+const GATE = cal('frame_gate_min_fps', 10);
 // ---------------------------------------------------------------------------------------------------
 // Provenance
 // ---------------------------------------------------------------------------------------------------
@@ -112,10 +112,11 @@ function stamp() {
     }
     const block = '<!-- fleet-canvas\n' + Object.entries(next).map(([k, v]) => `${k}: ${v}`).join('\n') + '\n-->\n';
     let out;
+    // Replacements as functions: a `$'` in a title is a replacement pattern, and copied the page into the block.
     if (PROV_RE.test(src.slice(0, 8192)))
-        out = src.replace(PROV_RE, block.trimEnd());
+        out = src.replace(PROV_RE, () => block.trimEnd());
     else if (/^<!doctype html>\s*\n/i.test(src))
-        out = src.replace(/^(<!doctype html>\s*\n)/i, '$1' + block);
+        out = src.replace(/^(<!doctype html>\s*\n)/i, (m) => m + block);
     else
         out = block + src;
     fs.writeFileSync(file, out);
@@ -425,8 +426,13 @@ function plain() {
     }
     const helmet = (body.match(/<helmet>([\s\S]*?)<\/helmet>/) || ['', ''])[1];
     const content = body.replace(/<helmet>[\s\S]*?<\/helmet>/, '');
-    const outPath = path.resolve(opt('out', file.replace(/\.dc\.html$/, '.plain.html')));
-    const title = path.basename(file).replace(/\.dc\.html$/, '');
+    const outPath = path.resolve(opt('out', file.replace(/\.dc\.html$/i, '.plain.html')));
+    // `Cart.DC.html` kept its name and the render went over the artboard.
+    if (outPath.toLowerCase() === file.toLowerCase()) {
+        console.error(`REFUSED: the plain render would overwrite the artboard ${file}; name it with --out`);
+        process.exit(1);
+    }
+    const title = path.basename(file).replace(/\.dc\.html$/i, '');
     fs.writeFileSync(outPath, `<!doctype html>
 <html>
 <head>

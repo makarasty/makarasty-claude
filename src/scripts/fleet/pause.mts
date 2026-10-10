@@ -1,11 +1,11 @@
 // pause.mts - stopping and replacing workers: pause, resume, paused, retire, handback, relaunch. Part of fleet.mjs; see src/scripts/fleet.mts.
 
-import { appendFileSync, copyFileSync, existsSync, mkdirSync, readSync, renameSync, rmdirSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs';
+import { appendFileSync, copyFileSync, existsSync, mkdirSync, readSync, realpathSync, renameSync, rmdirSync, rmSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import type { SpawnSyncReturns } from 'node:child_process';
 import { basename, dirname, resolve } from 'node:path';
 import type { Command, Ctx } from './lib.mjs';
-import { need, out, err, isDir, isFile, read, firstLine, names, field, NEEDS, now, slashes, configDir, calint, live, laneGaps, wakeLoop, openAsks, indent, noCr, mtimeMs, newer, chipFinished, recordedVersion, versionReadable, versionOlder, claimHolders, registerChip, coordinatorSid, STOP_WHAT_YOU_STARTED, nativePath, cksum, sub, lf, claimsOf, started, AFTER } from './lib.mjs';
+import { need, out, err, isDir, isFile, read, firstLine, names, field, NEEDS, now, slashes, configDir, calint, live, laneGaps, wakeLoop, openAsks, indent, noCr, mtimeMs, newer, chipFinished, recordedVersion, versionReadable, versionOlder, claimHolders, registerChip, coordinatorSid, STOP_WHAT_YOU_STARTED, nativePath, cksum, sub, lf, claimsOf, started, lockToRelease, afterIds, renameAfter, unsaved, writeWhole, walksOf } from './lib.mjs';
 
 // ---- the shared pieces -----------------------------------------------------------------------------------
 
@@ -19,8 +19,6 @@ const retiredMark = (c: Ctx): string => `${pauseMark(c)}.retired`;
 
 // `rm -f a b ... 2>/dev/null || true`: each file on its own, a directory left standing.
 function rmf(...ps: string[]): void { for (const p of ps) { try { unlinkSync(p); } catch { /* gone or a directory */ } } }
-
-// `sed -n 's/^after:[[:space:]]*\(.*\)/\1/p'`: lib's AFTER ends in `(.*)$`, and JS `.` stops at a \r.
 
 // This session belongs to a fleet run, recorded where the tools plugin's context hook looks.
 function fleetSession(c: Ctx): void {
@@ -49,7 +47,8 @@ function worktreeOf(c: Ctx, chip: string): string {
 function git(wt: string, args: string[]): SpawnSyncReturns<string> {
   return spawnSync('git', ['-C', wt, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
 }
-const dirty = (wt: string): boolean => (git(wt, ['status', '--porcelain']).stdout || '').split('\n')[0] !== '';
+// Anything a commit has not saved, config-hidden work included (lib unsaved).
+const dirty = (wt: string): boolean => isDir(wt) && unsaved(wt);
 
 // The mtime in whole seconds, or '' (fleet.sh's `mtime`).
 function mtimeS(p: string): string { const m = mtimeMs(p); return Number.isNaN(m) ? '' : String(Math.floor(m / 1000)); }
@@ -174,10 +173,15 @@ function resume(c: Ctx, a: string[]): number {
     if (!live(d) || !isDir(`${run}/tasks/claimed/${d}`) || !existsSync(hb)) continue;
     try { const t = new Date(); utimesSync(hb, t, t); } catch { /* as touch 2>/dev/null */ }
   }
+  // A pane walk's lease runs from its owner file: paused time must not count there either, or the first
+  // sweep after a long pause hands every walk in progress to another host.
+  for (const w of names(`${run}/pane/running`)) {
+    try { const t = new Date(); utimesSync(`${run}/pane/running/${w}/owner`, t, t); } catch { /* no owner */ }
+  }
   rmf(`${run}/PAUSED`, pauseMark(c), ...names(`${run}/stopped`).map((n) => `${run}/stopped/${n}`), `${run}/relaunch-waited`);
   try { rmdirSync(`${run}/stopped`); } catch { /* not empty, or absent */ }
   takeSeat();
-  out(`RESUMED ${basename(c.absrun)}: workers wake within ${calint(c, 'clock_poll_seconds', 30)} s; resumed: carry on with the claim you hold, call next only if you hold none\n`);
+  out(`RESUMED ${basename(c.absrun)}: workers wake within ${calint(c, 'clock_poll_seconds', 30)} s; resumed: carry on with the claim you hold, call next only if you hold none (a pane worker may still take its one repo task)\n`);
   return 0;
 }
 
@@ -223,7 +227,7 @@ function paused(c: Ctx, a: string[]): number {
   }
   out('Background this wake loop now, end your turn, and start nothing else:\n');
   out(wakeLoop(c, chip));
-  out('It prints resumed (carry on with the claim you hold; call next only if you hold none), retired (end with one line, nothing else) or run-finished.\n');
+  out('It prints resumed (carry on with the claim you hold; call next only if you hold none, or a pane worker for its one repo task), retired (end with one line, nothing else) or run-finished.\n');
   return 0;
 }
 
@@ -239,12 +243,31 @@ function retire(c: Ctx, a: string[]): number {
   const lane = noCr(firstLine(`${run}/offered/${ch}`));
   if (lane === 'brief') { err(`chip ${ch} works a brief, which has no task boundary to leave at: use the relaunch ask (docs/RELAUNCH.md)\n`); return 2; }
   if (chipFinished(c, ch)) { err(`chip ${ch} has already finished: nothing to retire\n`); return 2; }
-  if (existsSync(`${run}/replaced/${ch}`)) {
-    if (noCr(firstLine(`${run}/replaced/${ch}`)) === 'none') {
+  // replaced/<ch> is written before the chip is made and .retiring after it: one without the other is a
+  // retire that was killed in between, finished below with the same number.
+  const prior = noCr(firstLine(`${run}/replaced/${ch}`));
+  const resumeAt = existsSync(`${run}/replaced/${ch}`) && !existsSync(`${run}/${ch}.retiring`) && !existsSync(`${run}/${ch}.retired`) && prior !== 'none' && existsSync(`${run}/offered/${prior}`) ? prior : '';
+  // A worker waiting on a model switch or acked into a pause holds nothing and may not call next for hours.
+  // A host waiting on a switch may still have its subagent mid-walk: idle only once the walk is served. One
+  // acked into a pause has stopped its subagent already.
+  const idle = (): boolean => !claimsOf(c, ch).length
+    && ((existsSync(`${run}/chips/${ch}.switch`) && !walksOf(c, ch).length) || existsSync(`${run}/stopped/${ch}`));
+  const retireIdle = (nw: string): void => {
+    let hb = '';
+    handback(c, ch, (s) => { hb += s; });
+    out(indent(hb));
+    rmf(`${run}/${ch}.retiring`);
+    appendFileSync(`${run}/${ch}.retired`, `context, replaced by ${nw}, idle when retired\n`);
+    out(`  ${ch} was idle (waiting on a switch or a pause), so it is retired now.\n`);
+  };
+  if (existsSync(`${run}/replaced/${ch}`) && !resumeAt) {
+    if (prior === 'none') {
       out(`already retiring: chip ${ch} leaves at its next claim, and its lane had nothing left, so no chip replaces it.\n`);
     } else {
       out(`already retiring: chip ${ch} is replaced by ${sub(read(`${run}/replaced/${ch}`))}. Its chip was offered already: do not offer it again.\n`);
     }
+    // A retire killed while it retired an idle worker: that worker never reaches a claim to leave at.
+    if (prior !== 'none' && !existsSync(`${run}/${ch}.retired`) && idle()) retireIdle(prior);
     return 0;
   }
   // A worker on 1.5.13 or older never reads `.retiring` and would never leave.
@@ -265,16 +288,16 @@ function retire(c: Ctx, a: string[]): number {
     if (nd === lane || (lane === 'repo' && nd === 'verify')) left = true;
   }
   mkdirSync(`${run}/replaced`, { recursive: true });
-  if (!left) {
-    writeFileSync(`${run}/replaced/${ch}`, 'none\n');
+  if (!left && !resumeAt) {
     writeFileSync(`${run}/${ch}.retiring`, '\n');
+    writeFileSync(`${run}/replaced/${ch}`, 'none\n');
     out(`RETIRING ${ch}: it leaves at its next claim. Lane ${lane} has nothing left to claim, so no chip replaces it.\n`);
     return 0;
   }
   // The number, taken atomically: two retires in one minute must not both print chip 09. A number a brief
   // file already names belongs to that brief's chip.
   let n = Math.max(0, ...names(`${run}/offered`).map((o) => o.replace(/^0*/, '')).filter((o) => /^[0-9]+$/.test(o)).map(Number)) + 1;
-  let nw = '', tries = 0;
+  let nw = resumeAt, tries = 0;
   while (!nw && tries < 50) {
     const nn = pad2(n); tries++;
     let made = false;
@@ -284,30 +307,21 @@ function retire(c: Ctx, a: string[]): number {
     n++;
   }
   if (!nw) { err(`no free chip number found after ${tries} tries\n`); return 2; }
+  writeFileSync(`${run}/replaced/${ch}`, `${nw}\n`);
   // `$(sh "$0" chips ... 2>&1)`: both streams, in their order.
   const r = spawnSync('sh', ['-c', 'sh "$0" chips "$1" "$2" "$3" 2>&1', c.sh, run, nw, lane], { encoding: 'utf8', stdio: ['inherit', 'pipe', 'inherit'] });
   const chipOut = sub(r.stdout || '');
   if (r.status !== 0) {
-    rmf(`${run}/offered/${nw}`);
+    rmf(`${run}/offered/${nw}`); rmf(`${run}/replaced/${ch}`);
     err(`chips refused worker ${nw}, so nothing was retired: ${chipOut}\n`);
     return 2;
   }
-  writeFileSync(`${run}/replaced/${ch}`, `${nw}\n`);
   writeFileSync(`${run}/${ch}.retiring`, `${nw}\n`);
   if (existsSync(`${run}/want/${ch}`)) { mkdirSync(`${run}/want`, { recursive: true }); copyWant(c, ch, nw); }
   out(`RETIRING ${ch}: it finishes the task it holds and leaves at its next claim, its tree committed. Worker ${nw} takes lane ${lane}:\n`);
   out(chipBlocks(`${chipOut}\n`));
   out(`Offer that chip now, as its own spawn_task, then PushNotification the operator to click 'fleet ${basename(c.absrun)} ${nw}'. A watch armed from 1.5.14's fleet-wait counts it from now on, clicked or not; one armed earlier (a saved watch.sh pinned to an older plugin) must be re-armed from the current fleet-wait first.\n`);
-  // A worker waiting on a model switch or acked into a pause holds nothing and may not call next for hours.
-  if (!claimsOf(c, ch).length && (existsSync(`${run}/chips/${ch}.switch`) || existsSync(`${run}/stopped/${ch}`))) {
-    let hb = '';
-    handback(c, ch, (s) => { hb += s; });
-    out(indent(hb));
-    rmf(`${run}/${ch}.retiring`);
-    const open = openAsks(c, ch);
-    appendFileSync(`${run}/${ch}.retired`, `context, replaced by ${nw}, idle when retired${open ? `, unanswered:${open}` : ''}\n`);
-    out(`  ${ch} was idle (waiting on a switch or a pause), so it is retired now.\n`);
-  }
+  if (idle()) retireIdle(nw);
   return 0;
 }
 
@@ -322,13 +336,45 @@ function retire(c: Ctx, a: string[]): number {
 // Unsaved work is committed as `wip: handed back` on the tree's branch; a detached HEAD first gets branch
 // fleet/<chip>/<id>-handback. The old task file goes to tasks/handed-back/, not released/: `landed` refuses
 // a released/ file nobody accounted for. Tasks whose `after:` named the old id are pointed at the new one.
+// '' when <dir> is the top of a checkout of its own, else why not: git answering for a directory above it,
+// or the checkout that holds the run itself (the operator's, never a worker's).
+function ownWorktree(dir: string, run: string): string {
+  const norm = (p: string): string => slashes(p).replace(/\/+$/, '').toLowerCase();
+  const top = git(dir, ['rev-parse', '--show-toplevel']);
+  if (top.status !== 0) return 'git does not call it a checkout';
+  const t = (top.stdout || '').replace(/\n+$/, '');
+  // git names the tree a junction or symlink leads to; compare with where <dir> really is.
+  let real = resolve(dir);
+  try { real = realpathSync.native(real); } catch { /* compared as given */ }
+  if (norm(t) !== norm(real)) return `git answers for ${t}`;
+  const runTop = (git(run, ['rev-parse', '--show-toplevel']).stdout || '').replace(/\n+$/, '');
+  if (runTop && norm(runTop) === norm(t)) return 'it is the checkout this run lives in';
+  return '';
+}
+
 function handback(c: Ctx, chip: string, o: (s: string) => void = out): number {
   const run = c.run;
+  // A chip is a number: `./01` or `01/` named 01's files and wrote 01.retired over its open claims.
+  if (!/^[0-9]+$/.test(chip)) { err(`chip id '${chip}' is not a number\n`); return 2; }
   const ids = claimsOf(c, chip);
-  if (existsSync(`${run}/${chip}.retired`) && !ids.length) { o(`already retired: ${chip}\n`); return 0; }
+  // Retired by recover (its claims released, `respawned:`) is not handed back yet: its tree's unsaved work
+  // still wants its commit, and the pause hooks their marker.
+  if (existsSync(`${run}/${chip}.retired`) && !ids.length && !firstLine(`${run}/${chip}.retired`).startsWith('respawned:')) { o(`already retired: ${chip}\n`); return 0; }
+  // A typo (`2` for `02`) would write a `2.retired` that `landed` counts as a finished worker.
+  if (!ids.length && !existsSync(`${run}/offered/${chip}`) && !existsSync(`${run}/brief-${chip}.md`)) {
+    err(`chip ${chip} was never offered in this run and holds no claim: nothing to hand back\n`);
+    return 2;
+  }
   const wt = worktreeOf(c, chip), nwt = wt ? nativePath(wt) : '';
   let br = '';
-  if (wt && isDir(nwt)) {
+  // Only a linked worktree of its own is written to. A registered directory that is no longer one (a removal
+  // that stopped half way) or that names the main checkout would let `git -C` walk up to the main checkout,
+  // and commit the operator's uncommitted work onto the main branch.
+  const own = wt && isDir(nwt) ? ownWorktree(nwt, run) : '';
+  if (wt && isDir(nwt) && own) {
+    o(`  WARNING: ${wt} is not a worktree of its own (${own}): nothing was committed there. Look at it by hand.\n`);
+  }
+  if (wt && isDir(nwt) && !own) {
     const h = git(nwt, ['rev-parse', '--abbrev-ref', 'HEAD']);
     br = h.status === 0 ? (h.stdout || '').replace(/\n+$/, '') : '';
     const firstid = ids[0] ?? '';
@@ -349,6 +395,8 @@ function handback(c: Ctx, chip: string, o: (s: string) => void = out): number {
         o(`  COMMITTED the unsaved work of ${chip} on ${br} as 'wip: handed back'. Files:\n`);
         const f = git(nwt, ['diff-tree', '--no-commit-id', '--name-only', '-r', 'HEAD']).stdout || '';
         if (f) o(f.replace(/\n$/, '').split('\n').map((l) => `    ${l}\n`).join(''));
+        // `add -A` skips files marked assume-unchanged or skip-worktree: their edits are still only on disk.
+        if (dirty(nwt)) o(`  WARNING: ${wt} still holds work no commit saved (files marked assume-unchanged or skip-worktree?): see 'git -C "${wt}" ls-files -v' and commit it by hand\n`);
       } else {
         o(`  WARNING: ${wt} has uncommitted work and it could NOT be committed${br ? ` on ${br}` : ''}. It is not saved: commit it by hand before the fresh worker starts:\n`);
         o(`    git -C "${wt}" add -A; git -C "${wt}" commit -m "wip: handed back"\n`);
@@ -357,9 +405,19 @@ function handback(c: Ctx, chip: string, o: (s: string) => void = out): number {
   }
   let n = 0;
   for (const id of ids) {
+    // A worker finishing this claim right now wins it: filing it again as well would get it worked twice.
+    const lk = lockToRelease(run, id);
+    if (lk === 'closing') {
+      o(`  SKIPPED ${id}: its worker is closing it with finish right now; run handback again if no done marker lands\n`);
+      continue;
+    }
+    if (lk === 'done') { o(`  SKIPPED ${id}: its worker finished it meanwhile (done marker written)\n`); continue; }
     const base = id.replace(/-r[0-9]+$/, '');
     let k = 1;
-    while (existsSync(`${run}/tasks/ready/${base}-r${k}.md`) || existsSync(`${run}/tasks/handed-back/${base}-r${k}.md`)) k++;
+    // A handback that died after filing the new task and before closing the old claim is finished, not
+    // repeated: its task is the one whose handback-of: names this id.
+    while ((existsSync(`${run}/tasks/ready/${base}-r${k}.md`) && !lf(read(`${run}/tasks/ready/${base}-r${k}.md`)).split('\n').includes(`handback-of: ${id}`))
+      || existsSync(`${run}/tasks/handed-back/${base}-r${k}.md`)) k++;
     const nw = `${base}-r${k}`;
     const src = `${run}/tasks/ready/${id}.md`;
     const cf = br === `fleet/${chip}/${id}` || br === `fleet/${chip}/${id}-handback` ? br : '';
@@ -368,45 +426,52 @@ function handback(c: Ctx, chip: string, o: (s: string) => void = out): number {
       let t = lf(read(src));
       if (t.endsWith('\n')) t = t.slice(0, -1);
       let done = false, body = '';
-      for (let l of t ? t.split('\n') : []) {
+      // `file` takes a task with no task-id: line; its lines go in after the opening --- instead, or a fix
+      // task lost its proof (handback-of) and the fresh worker its branch.
+      const noId = !/^task-id:/m.test(t);
+      for (let [i, l] of (t ? t.split('\n') : []).entries()) {
         if (/^(continue-from|continued-from-chip|handback-of):/.test(l)) continue;
         if (l.startsWith('task-id:')) l = `task-id: ${nw}`;
         body += `${l}\n`;
+        if (noId && i === 0 && /^(﻿)?---/.test(l)) { body += `task-id: ${nw}\n`; l = 'task-id:'; }
         if (l.startsWith('task-id:') && !done) {
           if (cf) body += `continue-from: ${cf}\n`;
           body += `continued-from-chip: ${chip}\nhandback-of: ${id}\n`;
           done = true;
         }
       }
-      writeFileSync(`${run}/tasks/ready/${nw}.md`, body);
+      writeWhole(`${run}/tasks/ready/${nw}.md`, body);
       for (const fn of names(`${run}/tasks/ready`)) {
         if (!fn.endsWith('.md') || fn === `${nw}.md`) continue;
         const f = `${run}/tasks/ready/${fn}`;
-        const deps = field(read(f), AFTER).replace(/[,\r]/g, ' ');
-        if (!` ${deps} `.includes(` ${id} `)) continue;
-        // awk: every `after:` line re-split on blanks, its first field dropped (so `after:x` with no space
-        // loses x), the old id swapped for the new one.
-        let ft = lf(read(f));
-        if (ft.endsWith('\n')) ft = ft.slice(0, -1);
-        writeFileSync(f, (ft ? ft.split('\n') : []).map((l) => {
-          if (!l.startsWith('after:')) return `${l}\n`;
-          const parts = l.split(',').join(' ').split(/[ \t]+/).filter(Boolean).slice(1);
-          return `after:${parts.map((p) => ` ${p === id ? nw : p}`).join('')}\n`;
-        }).join(''));
+        if (!afterIds(read(f)).includes(id)) continue;
+        // Every place `next` reads an id (quoted, a list item, `after:x` with no space, which the sh's awk lost).
+        writeWhole(f, renameAfter(read(f), id, nw));
         o(`  ${fn.slice(0, -3)}: its after: now names ${nw}\n`);
       }
       mkdirSync(`${run}/tasks/handed-back`, { recursive: true });
       renameSync(src, `${run}/tasks/handed-back/${id}.md`);
       o(`  ${id} -> ${nw}${cf ? `  continue-from ${cf}` : ''}\n`);
       if (!cf) o(`  WARNING: ${chip} has no registered worktree on fleet/${chip}/${id}${br ? ` (it is on ${br})` : ''}, so ${nw} has no continue-from: the fresh worker starts from base and reads the notes of chip ${chip}\n`);
+    } else if (existsSync(`${run}/tasks/handed-back/${id}.md`) && existsSync(`${run}/tasks/ready/${nw}.md`)) {
+      // An earlier handback filed it and stopped before closing the claim: telling the planner to re-file
+      // it would file it twice.
+      o(`  ${id} -> ${nw}  (filed by an earlier handback that stopped before closing this claim)\n`);
     } else {
       o(`  WARNING: ${id} has no task file in tasks/ready/ to file again; its claim is released and the planner re-files it\n`);
     }
     renameSync(`${run}/tasks/claimed/${id}`, `${run}/tasks/claimed/${id}.released-${stamp()}`);
     n++;
   }
+  // A walk this chip was hosting goes back to pending now, not when its lease runs out half an hour later.
+  for (const w of walksOf(c, chip)) {
+    try { rmSync(`${run}/pane/running/${w}`, { recursive: true, force: true }); o(`  walk ${w} is pending again: its host was handed back\n`); } catch { /* the sweep's lease frees it */ }
+  }
   rmf(`${run}/tight/${chip}`);
-  writeFileSync(`${run}/${chip}.retired`, `retired ${now()}\n`);
+  // Its questions and the walks it asked for stay unanswered under its number: the coordinator reads them here.
+  const asks = openAsks(c, chip);
+  if (asks) o(`  unanswered:${asks} - their answers go to the replacement (fleet-wait.md)\n`);
+  writeFileSync(`${run}/${chip}.retired`, `retired ${now()}${asks ? `, unanswered:${asks}` : ''}\n`);
   // The hooks hold a retired chip after the pause lifts, and find the run through this marker.
   mkdirSync(pausedRoot(), { recursive: true });
   writeFileSync(retiredMark(c), `${c.absrun}\n`);
@@ -451,13 +516,19 @@ function relaunch(c: Ctx, a: string[]): number {
   // resume removes) and every chip being replaced is retired. A silent worker then is still silent.
   const nowait = existsSync(`${run}/PAUSED`) && existsSync(`${run}/relaunch-waited`) && list.every((ch) => existsSync(`${run}/${ch}.retired`));
 
+  // Run again after it resumed the run (its output lost to a kill): print the same chips, pause nothing.
+  // relaunched/<ch>, not replaced/<ch>: `retire` writes that too, and a first relaunch of a retired chip is
+  // not a rerun.
+  const again = keep && !existsSync(`${run}/PAUSED`) && list.every((ch) => existsSync(`${run}/${ch}.retired`) && existsSync(`${run}/relaunched/${ch}`));
+  if (again) out('already relaunched: the run is running; the same chips again:\n');
+
   // 1. pause
-  if (existsSync(`${run}/PAUSED`)) out(`already paused: ${firstLine(`${run}/PAUSED`)}\n`);
+  if (again) { /* nothing to stop */ } else if (existsSync(`${run}/PAUSED`)) out(`already paused: ${firstLine(`${run}/PAUSED`)}\n`);
   else pause(c, ['relaunch']);
 
   // 2. wait for every worker holding a claim to stop, naming the ones that never do. With --keep-coordinator
   //    only the workers being replaced matter: the others are resumed within a minute.
-  const waitSet = (): string[] => keep ? list.filter((ch) => claimsOf(c, ch).length > 0 || briefBusy(c, ch)) : claimHolders(c);
+  const waitSet = (): string[] => keep ? list.filter((ch) => claimsOf(c, ch).length > 0 || briefBusy(c, ch) || claimHolders(c).includes(ch)) : claimHolders(c);
   const nowS = (): number => Math.floor(Date.now() / 1000);
   const deadline = nowS() + Number(waitMin) * 60;
   let lastSilent = '-';
@@ -466,7 +537,7 @@ function relaunch(c: Ctx, a: string[]): number {
     const k = [...seen].filter((ch) => existsSync(`${run}/stopped/${ch}`)).length;
     out(`acks: ${k} of ${seen.size} (not waited again)\n`);
   }
-  while (!nowait) {
+  while (!nowait && !again) {
     const silent = waitSet().filter((ch) => !existsSync(`${run}/stopped/${ch}`)).map((ch) => ` ${ch}`).join('');
     if (!silent) { out('every worker holding a claim has stopped\n'); break; }
     const left = deadline - nowS();
@@ -479,10 +550,10 @@ function relaunch(c: Ctx, a: string[]): number {
     sleepS(5);
   }
 
-  writeFileSync(`${run}/relaunch-waited`, '');
+  if (!again) writeFileSync(`${run}/relaunch-waited`, '');
 
   // 3. hand back the chips being replaced
-  for (const ch of list) handback(c, ch);
+  if (!again) for (const ch of list) handback(c, ch);
 
   // 4. the chips - only from a STATE.md written after the pause and the handbacks, which is what makes the
   //    first call end here and the second one print.
@@ -512,10 +583,22 @@ function relaunch(c: Ctx, a: string[]): number {
   }
   mkdirSync(`${run}/replaced`, { recursive: true });
   out('\n');
+  let offeredNow = 0;
   for (const ch of list) {
     let nw = noCr(firstLine(`${run}/replaced/${ch}`));
     // `retire` may have written `none`, or a replacement that is already running as its own worker.
-    if (!nw || nw === 'none' || started(c, nw)) nw = pad2(++maxn);
+    // A number a brief file already names belongs to that brief's chip, as in retire: a later wave's brief.
+    if (!nw || nw === 'none') { do nw = pad2(++maxn); while (existsSync(`${run}/brief-${nw}.md`)); }
+    // The replacement (this relaunch's, on a rerun, or retire's) may be running already: it takes the
+    // handed-back work, and another chip would be one worker too many.
+    if (started(c, nw)) { out(`${nw} replaced ${ch} and has started: nothing to offer for it\n`); continue; }
+    // Printed again either way (a chip whose first print was lost leaves the lane without a worker): a
+    // second click is refused as CHIP TAKEN, so a repeat costs nothing.
+    if (existsSync(`${run}/offered/${nw}`)) out(`${nw} replaces ${ch} and was offered before: offer its chip below only if it is not on screen already.\n`);
+    // Recorded before the chip is made, so a call killed in between gives the same number when run again.
+    writeFileSync(`${run}/replaced/${ch}`, `${nw}\n`);
+    mkdirSync(`${run}/relaunched`, { recursive: true });
+    writeFileSync(`${run}/relaunched/${ch}`, `${nw}\n`);
     const lane = firstLine(`${run}/offered/${ch}`);
     if (lane === 'brief') {
       if (!existsSync(`${run}/brief-${nw}.md`)) {
@@ -531,19 +614,21 @@ function relaunch(c: Ctx, a: string[]): number {
       // The replacement runs on what its predecessor was meant to run on.
       if (existsSync(`${run}/want/${ch}`)) copyWant(c, ch, nw);
     }
-    writeFileSync(`${run}/replaced/${ch}`, `${nw}\n`);
+    offeredNow++;
   }
+  if (again && !offeredNow) { out('RELAUNCH DONE already: every replacement has started and the run is running. Nothing to do.\n'); return 0; }
 
   // How many workers the watch counts as finished at the end: every chip ever offered, retired included.
   const total = names(`${run}/offered`).length;
-  const fsh = `${absdir(dirname(c.sh))}/fleet.sh`;
+  const fsh = `${absdir(nativePath(dirname(c.sh)))}/fleet.sh`;
   const gap = laneGaps(c).filter((l) => !l.includes('is not a lane')).join('\n');
   if (keep) {
     if (gap) out(`STILL WITHOUT A WORKER:\n${gap}\n`);
-    resume(c, []);
+    if (!again) resume(c, []);
     out(`RELAUNCH READY for ${runid} (same coordinator): the run is resumed, the workers not replaced carry on.\n`);
     out('Do these now, in this order, in this one turn:\n');
     out(`  1. Re-arm the watch for the new worker count: TaskStop the fleet-wait monitor, then arm /makarasty:fleet-wait ${runid} ${total}.\n`);
+    if (!offeredNow) { out('  Nothing to offer: every replacement above has started.\n'); return 0; }
     out('  2. Offer every CHIP above, each as its own mcp__ccd_session__spawn_task with exactly that title, tldr and prompt.\n');
     out('  3. Tell the operator in one line: click the worker chips; nothing else to do, the run is already running.\n');
     return 0;

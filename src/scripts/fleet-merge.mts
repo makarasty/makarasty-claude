@@ -40,27 +40,44 @@ const SEV = ['blocker', 'major', 'minor', 'polish'];
 // The three files this script writes into the run directory. They are output, and a second merge that read
 // one back as a chip file would count its own backlog as findings.
 const GENERATED = ['backlog.jsonl', 'skipped.jsonl', 'unreached.jsonl'];
+// What fleet-gate.mjs writes beside them (cluster, decide): not a chip's findings either, and never this
+// script's to remove.
+const GATE_FILES = ['clusters.jsonl', 'decisions.jsonl'];
 // A blank or whitespace-only line (a stray `\r`, an editor's trailing newline) is no finding and no torn
 // one either; counting it torn refused the whole merge over nothing.
 const read = (f: string) => fs.readFileSync(path.join(runDir, f), 'utf8').split('\n').filter((l) => l.trim());
 const rows = <T,>(f: string): T[] => (fs.existsSync(path.join(runDir, f)) ? read(f).map((l) => JSON.parse(l)) : []);
-const key = (o: Finding) =>
-  `${String(o.area || '').toLowerCase().trim()}|${String(o.observed || '').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60)}`;
+// Letters and digits of any script: keeping only [a-z0-9] reduced every Cyrillic observation to '' and
+// merged all of an area's findings into one row. An observation with none left matches nothing but itself.
+const key = (o: Finding) => {
+  const obs = String(o.observed || '').normalize('NFC').toLowerCase().replace(/[^\p{L}\p{N} ]+/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, 60);
+  return `${String(o.area || '').toLowerCase().trim()}|${obs || `\0${o.id}`}`;
+};
 
 function load() {
   const findings: Finding[] = [], unreached: Finding[] = [], aux: Finding[] = [], torn: { chip: string; line: number }[] = [], chips: string[] = [], ignored: string[] = [];
+  const ids = new Set<string>();
   // A chip id is whatever the worker was told it was: `07`, and since 2026-09-03 `cid-03` as well.
   // Matching only the bare numbers dropped every finding the other chips filed, silently, while `fleet.sh
   // find` had accepted each one and printed FILED. Read every chip file, and say which files were not one.
   for (const f of fs.readdirSync(runDir).filter((x) => x.endsWith('.jsonl')).sort()) {
     if (GENERATED.includes(f)) { ignored.push(`${f} (written by this merge, never read back as input)`); continue; }
+    if (GATE_FILES.includes(f)) { ignored.push(`${f} (written by fleet-gate.mjs, not a chip's findings)`); continue; }
     const chip = f.replace(/\.jsonl$/, '');
     chips.push(f);
-    read(f).forEach((line, i) => {
+    // Numbered before blank lines are skipped: TORN LINES names the line an editor shows.
+    fs.readFileSync(path.join(runDir, f), 'utf8').split('\n').forEach((line, i) => {
+      if (!line.trim()) return;
       let o: Finding;
       try { o = JSON.parse(line); } catch { torn.push({ chip, line: i + 1 }); return; }
       o.chip = chip;
-      o.id = o.id || `${runId}-${chip}-${i + 1}`;
+      // A string, whatever the worker wrote: an object id compared unequal to itself after the round trip
+      // through backlog.jsonl and failed the reconcile.
+      o.id = o.id ? (typeof o.id === 'string' ? o.id : JSON.stringify(o.id)) : `${runId}-${chip}-${i + 1}`;
+      // An id a worker chose is unique only in its own head: two chips filing F-001 were reconciled as one
+      // finding, and a blocker "landed" on the other's polish row. A second use gets its own name.
+      if (ids.has(o.id)) o.id = `${o.id}@${chip}-${i + 1}`;
+      ids.add(o.id);
       if (o.severity) findings.push(o);
       else if (o.unreached) unreached.push(o);
       else aux.push(o);
@@ -169,7 +186,7 @@ if (cmd === 'merge') {
   // The directory is listed a second time here rather than trusted from `load`. A file that was never
   // opened files no findings, so nothing downstream of `load` can miss it, which is how `cid-03.jsonl`
   // went unread for a week under a reconciliation that said everything was accounted for.
-  const unread = fs.readdirSync(runDir).filter((f) => f.endsWith('.jsonl') && !chips.includes(f) && !GENERATED.includes(f));
+  const unread = fs.readdirSync(runDir).filter((f) => f.endsWith('.jsonl') && !chips.includes(f) && !GENERATED.includes(f) && !GATE_FILES.includes(f));
 
   const failed = [];
   if (unread.length) failed.push(`${unread.length} .jsonl file(s) in the run directory this merge never opened: ${name(unread)}`);
@@ -232,7 +249,10 @@ if (cmd === 'fixqueue') {
     console.error(`REFUSED: ${dir} already holds tasks. Remove ${path.dirname(path.dirname(dir))} to write the queue again.`);
     process.exit(1);
   }
-  fs.mkdirSync(dir, { recursive: true });
+  // Written into a hidden directory and renamed into place whole: a fixqueue killed half way left part of
+  // the queue, and the refusal above then read the same for it as for a complete one.
+  const stage = path.join(path.dirname(dir), `.ready-${process.pid}`);
+  fs.mkdirSync(stage, { recursive: true });
   // Twins: entries whose evidence names the same file are one seam, so they carry each other's ids. Read
   // only here, so a merge run from a copy of this file (the selftest's sabotaged ones) never needs it.
   const { FILE_RE } = await import('../hooks/run-dir.mjs');
@@ -243,7 +263,7 @@ if (cmd === 'fixqueue') {
     const twins = [...new Set(fileOf(m).flatMap((f) => byFile.get(f) || []))].filter((id) => id !== m.id);
     const slug = String(m.area).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'finding';
     const n = String(i + 1).padStart(3, '0');
-    fs.writeFileSync(path.join(dir, `task-${n}-${slug}.md`), `---
+    fs.writeFileSync(path.join(stage, `task-${n}-${slug}.md`), `---
 task-id: task-${n}-${slug}
 kind: ${m.rects || m.probe ? 'design' : 'fix'}
 finding-id: ${m.id}
@@ -272,5 +292,11 @@ twins: [${twins.join(', ')}]
 - A regression test covers the reproduction, per the project's own testing rules.
 `);
   });
+  // No task in it (the check above refused that), but maybe a README or .gitkeep: they move along.
+  if (fs.existsSync(dir)) {
+    for (const f of fs.readdirSync(dir)) fs.renameSync(path.join(dir, f), path.join(stage, f));
+    fs.rmdirSync(dir);
+  }
+  fs.renameSync(stage, dir);
   console.log(`wrote ${take.length} fix tasks to ${dir}`);
 }

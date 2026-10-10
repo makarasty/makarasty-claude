@@ -3,12 +3,12 @@
 // The one destructive path in the plugin outside its own scratch. The procedure and the measurement behind
 // the unlink-first step are in docs/WORKTREES.md [M32]; the reasoning behind the guards in docs/SAFETY.md.
 
-import { appendFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import type { Stats } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { posix } from 'node:path';
 import type { Command, Ctx } from './lib.mjs';
-import { cal, err, field, isDir, names, need, out, read, slashes, nativePath, cksum } from './lib.mjs';
+import { cal, err, field, isDir, names, need, out, read, slashes, nativePath, cksum, unsaved } from './lib.mjs';
 
 // `$(git ... 2>/dev/null || echo "")`: stdout with its trailing newlines cut whether git succeeded or not,
 // and whether it did, for the `if git ...` callers. stderr is dropped unless the sh lets it through.
@@ -136,6 +136,8 @@ const cksumLine = (s: string): string => `${cksum(s)} ${Buffer.byteLength(s, 'ut
 // no other run's. A path not under a `.claude/worktrees/` segment is refused: a worker not actually in a
 // worktree has nothing to register, and recording its cwd would point `clean` at the project root.
 function worktree(c: Ctx, chip: string, arg: string, baseArg: string): number {
+  // The chip names a file in the run and a tree's directory: `../FINISHED` wrote the run's landed marker.
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(chip)) { err(`chip id '${chip}' is not a name (letters, digits, . _ -)\n`); return 2; }
   let wt = arg || slashes(process.cwd());
   // `--create [base]`: the session is not in a worktree of its own, so make one where cleanup can reach it,
   // link the dependencies, and register it. A coordinator with no such command put its trees at C:/wtRM01,
@@ -152,7 +154,24 @@ function worktree(c: Ctx, chip: string, arg: string, baseArg: string): number {
     wt = `${main}/.claude/worktrees/fleet-${tag}-${chip}`;
     // Reuse needs the directory as well as git's record of it: a tree deleted by hand stays listed until
     // pruned, and "reusing" it handed the worker a path that does not exist.
-    if (isDir(wt) && lines(git(['-C', main, 'worktree', 'list', '--porcelain'], 'inherit').out).includes(`worktree ${wt}`)) {
+    const wl = git(['-C', main, 'worktree', 'list', '--porcelain'], 'inherit').out;
+    // A `git worktree add` killed half way leaves the tree locked `initializing` with part of its files: as
+    // it stands, every missing file reads as a deletion a commit would record. Nothing was worked there yet.
+    let blk = false, half = false;
+    for (const l of lines(wl)) { if (l.startsWith('worktree ')) blk = l === `worktree ${wt}`; else if (blk && l === 'locked initializing') half = true; }
+    // Removed only while it is still detached at the base, where nobody has started: a worker starts each
+    // task on a branch of its own.
+    if (half) {
+      const at = git(['-C', wt, 'symbolic-ref', '-q', 'HEAD']).ok ? '' : git(['-C', wt, 'rev-parse', 'HEAD']).out;
+      if (!at || at !== git(['-C', main, 'rev-parse', base]).out) {
+        err(`${wt} was left half created (locked 'initializing') and has moved since: look at it by hand, then git worktree unlock it\n`);
+        return 2;
+      }
+      unlinkLinks(wt);
+      gitQuiet(['-C', main, 'worktree', 'remove', '--force', '--force', wt]);
+      out(`removed ${wt}: a creation had stopped half way\n`);
+    }
+    if (!half && isDir(wt) && lines(wl).includes(`worktree ${wt}`)) {
       out(`reusing ${wt}\n`);
     } else {
       gitQuiet(['-C', main, 'worktree', 'prune']);
@@ -235,7 +254,12 @@ function nodeModules(main: string): string[] {
 function unlink(c: Ctx): number {
   let wt = c.run;
   const t = git(['-C', wt, 'rev-parse', '--show-toplevel']).out;
-  if (t) wt = t;
+  // Not when git answers for the checkout a tree sits in: a tree that lost its .git names the main checkout,
+  // and its links are still to go. Then the tree is the directory under .claude/worktrees/ the path is in.
+  const own = slashes(nativePath(wt)).replace(/\/+$/, '');
+  const pre = `${t}/.claude/worktrees/`;
+  const lost = t && own.toLowerCase().startsWith(pre.toLowerCase()) ? `${own.slice(0, pre.length)}${own.slice(pre.length).split('/')[0]}` : '';
+  if (t) wt = lost || t;
   // Only the reparse points inside the tree are deleted, never the tree, so the working-directory term does
   // not apply: the documents call this from inside the tree, the last thing a worker does there [M32].
   const why = unsafePath(wt, '.claude/worktrees', true, minFloor(c));
@@ -279,7 +303,9 @@ function clean(c: Ctx, args: string[]): number {
   // A worktree this run cannot clean is named rather than ignored: only the operator can move it. Never touched.
   for (const w of trees) {
     if (!w || w === main) continue;
-    const why = unsafePath(w, '.claude/worktrees', false, min);
+    // Where it lives, not where this shell stands: the cwd rule is the removal loop's, and here it named a
+    // tree run from inside as STRAY besides its SKIP.
+    const why = unsafePath(w, '.claude/worktrees', true, min);
     if (why) {
       out(`STRAY ${why}\n`);
       out("      nothing here will delete it. Move it under <project>/.claude/worktrees/ with 'git worktree move', or remove it yourself.\n");
@@ -307,7 +333,13 @@ function clean(c: Ctx, args: string[]): number {
       kept++; continue;
     }
     // git's own spelling while the tree is on disk, so the membership test matches `git worktree list`.
-    if (existsSync(nativePath(wt))) { const t = git(['-C', nativePath(wt), 'rev-parse', '--show-toplevel']).out; if (t) wt = t; }
+    // Not when git answers for a directory above it: a tree half deleted by a killed removal has no .git
+    // left, and git then names the main checkout.
+    if (existsSync(nativePath(wt))) {
+      const t = git(['-C', nativePath(wt), 'rev-parse', '--show-toplevel']).out;
+      const own = slashes(nativePath(wt)).replace(/\/+$/, '');
+      if (t && !own.toLowerCase().startsWith(`${t.toLowerCase()}/`)) wt = t; else if (t) wt = own;
+    }
     // The branch read from the tree NOW, never the registration: a worker may have switched since.
     let br = git(['-C', nativePath(wt), 'rev-parse', '--abbrev-ref', 'HEAD']).out;
     if (!br) br = field(text, /^branch (.*)$/s);
@@ -318,7 +350,9 @@ function clean(c: Ctx, args: string[]): number {
     const why = unsafePath(wt, '.claude/worktrees', false, min);
     if (why) { out(`SKIP  ${chip}: ${why}\n`); kept++; continue; }
     if (main && wt === main) { out(`SKIP  ${chip}: ${wt} is the main checkout\n`); kept++; continue; }
-    if (!lines(wtlist).includes(`worktree ${wt}`)) {
+    const listed = trees.find((t) => t.toLowerCase() === wt.toLowerCase());
+    if (listed) wt = listed;
+    if (!listed) {
       if (existsSync(nativePath(wt))) {
         out(`SKIP  ${chip}: ${wt} exists but git does not call it a worktree - leaving it for a human\n`); kept++;
       } else {
@@ -327,15 +361,28 @@ function clean(c: Ctx, args: string[]): number {
       }
       continue;
     }
+    // Listed, with its .git gone: a removal killed half way. Every check below would ask the main checkout.
+    if (existsSync(nativePath(wt)) && !existsSync(`${nativePath(wt)}/.git`)) {
+      out(`PARTLY removed  ${chip}: ${wt} lost its .git and part of its files to a removal that stopped half way.\n`);
+      out(`      clean checked it held no work before it began. Finish it: fleet.sh unlink "${wt}", then delete the directory and run git worktree prune\n`);
+      kept++; continue;
+    }
     // 2. A locked worktree is one git will refuse: found out BEFORE unlinking anything, or the tree is left
     //    worse than it was found while the message claims nothing changed.
     if (locked(wtlist, wt)) {
       out(`SKIP  ${chip}: ${wt} is locked. Unlock it with 'git worktree unlock' if you meant to remove it\n`);
       kept++; continue;
     }
+    // A worktree nested inside this one is only an ignored directory to it (`.claude/worktrees/` is excluded),
+    // and `git worktree remove` would delete it with its uncommitted work. Whatever it holds, this one stays.
+    const inner = trees.find((t) => t !== wt && t.toLowerCase().startsWith(`${wt.toLowerCase()}/`));
+    if (inner) {
+      out(`SKIP  ${chip}: ${wt} holds another worktree, ${inner}; removing it would delete that tree too\n`);
+      kept++; continue;
+    }
     // 3. Keep anything holding work: uncommitted changes, or commits neither in the main checkout's
     //    branch, nor on the upstream, nor on another local branch.
-    const dirty = git(['-C', wt, 'status', '--porcelain']).out !== '';
+    const dirty = unsaved(wt);
     let unpushed = false;
     let brdesc: string;
     if (!br || br === 'HEAD') {
@@ -374,7 +421,7 @@ function clean(c: Ctx, args: string[]): number {
     }
     // 4. Ignored files are invisible to every check above and go with the tree. Say what they are: a .env
     //    is exactly what a person did not mean to lose.
-    const ign = lines(git(['-C', wt, 'status', '--porcelain', '--ignored']).out)
+    const ign = lines(git(['-C', wt, 'status', '--porcelain', '--ignored', '--untracked-files=normal']).out)
       .filter((l) => l.startsWith('!! ')).slice(0, 5).map((l) => `${l.slice(3)} `).join('');
     if (!doRemove) {
       const links = findLinks(wt).length;
@@ -382,6 +429,18 @@ function clean(c: Ctx, args: string[]): number {
       if (links) out(`              unlinks ${links} reparse point(s) first\n`);
       if (ign) out(`              ignored files that go with it: ${ign}\n`);
       continue;
+    }
+    // A tree a process stands in (a chat still open in it, a shell) or holds a file open in: Windows lets git
+    // delete every file and then refuses the directory, which leaves an empty tree git no longer lists.
+    // Renaming the directory is refused in the same cases, and when allowed it is undone at once.
+    const probe = `${wt}.fleet-probe-${process.pid}`;
+    try { renameSync(wt, probe); } catch {
+      out(`SKIP  ${chip}: ${wt} is in use (a chat or a shell standing in it, or a file held open): close that, then re-run\n`);
+      kept++; continue;
+    }
+    try { renameSync(probe, wt); } catch {
+      out(`SKIP  ${chip}: ${wt} was renamed to ${probe} to test it and could not be renamed back: rename it back by hand\n`);
+      kept++; continue;
     }
     if (ign) out(`      ignored files removed with the tree: ${ign}\n`);
     // 5. Unlink every reparse point, at any depth, before anything recursive runs [M32].
@@ -411,6 +470,11 @@ function clean(c: Ctx, args: string[]): number {
       }
       try { unlinkSync(entry); } catch { /* rm -f */ }
       removed++;
+    } else if (!lines(git(['worktree', 'list', '--porcelain']).out).includes(`worktree ${wt}`)) {
+      // git deletes the files before the directory; a directory it then could not remove is all that is left.
+      out(`PARTLY removed  ${chip}: git deleted ${wt}'s files and its worktree entry, then could not remove the\n`);
+      out('      directory itself (something holds it open). Remove the empty directory once that is closed\n');
+      kept++;
     } else {
       out(`SKIP  ${chip}: git refused to remove ${wt}. Its links were unlinked first, so re-run once the\n`);
       out('      reason is cleared; nothing else about the tree was changed\n');
@@ -422,7 +486,7 @@ function clean(c: Ctx, args: string[]): number {
 }
 
 export const commands: Record<string, Command> = {
-  worktree: (c, a) => worktree(c, need(c, a[0], 3, 'chip id required'), a[1] ?? '', a[2] ?? ''),
+  worktree: (c, a) => worktree(c, need(c, a[0], 3, 'chip id required'), nativePath(a[1] ?? ''), a[2] ?? ''),
   unlink: (c) => unlink(c),
   clean: (c, a) => clean(c, a),
 };

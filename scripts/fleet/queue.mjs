@@ -1,8 +1,8 @@
 // queue.mts - a worker's side of the queue: next, clock, beat, finish, find, ask, drained, whoami. Part of fleet.mjs; see src/scripts/fleet.mts.
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { basename, dirname } from 'node:path';
-import { RUN_FORMAT, lf, need, out, err, isDir, isFile, read, firstLine, names, field, NEEDS, AFTER, BUDGET, HANDBACK_OF, operatorOwed, now, cal, calint, pluginVersion, loadScript, claimsOf, verifyHeld, laneGaps, registerChip, chatGone, wakeLoop, openAsks, indent, cat, STOP_WHAT_YOU_STARTED, nativePath } from './lib.mjs';
+import { basename } from 'node:path';
+import { HERE, RUN_FORMAT, lf, need, out, err, isDir, isFile, read, firstLine, names, field, NEEDS, HANDBACK_OF, operatorOwed, now, cal, calint, pluginVersion, loadScript, claimsOf, verifyHeld, laneGaps, registerChip, chatGone, wakeLoop, indent, cat, STOP_WHAT_YOU_STARTED, nativePath, takeLock, dropLock, closing, CLOSING_STALE_MS, afterIds, taskKind, asText, noCr, chipFinished, budgetOf, refiledAs, writeWhole, walksOf } from './lib.mjs';
 // ---- next ------------------------------------------------------------------------------------------------
 export function next(c, chip, lane) {
     const run = c.run;
@@ -34,18 +34,28 @@ export function next(c, chip, lane) {
     }
     // `retire` asked this worker to leave at a task boundary, and `next` with no claim open is that boundary.
     if (existsSync(`${run}/${chip}.retiring`) && claimsOf(c, chip).length === 0) {
+        // A walk this host is still running is not a boundary: handback would hand it to another host under its
+        // browser subagent, and the subagent's pane-serve would find no claim.
+        // Under a pause it is not served either: the pause below answers, with its wake loop.
+        const walks = walksOf(c, chip);
+        if (walks.length && !existsSync(`${run}/PAUSED`)) {
+            err(`HOLDING walk ${walks.join(', ')}: you are retiring. Serve it with pane-serve, or if you cannot (a blind pane, your subagent gone) give it back with pane-serve <run> ${chip} <walk> --release; then call next again: it retires you and hands out nothing.\n`);
+            return 2;
+        }
+    }
+    if (existsSync(`${run}/${chip}.retiring`) && claimsOf(c, chip).length === 0 && !walksOf(c, chip).length) {
         const hb = spawnSync('sh', [c.sh, 'handback', run, chip], { encoding: 'utf8', stdio: ['inherit', 'pipe', 'inherit'] });
         out(indent(hb.stdout || ''));
         const r = firstLine(`${run}/${chip}.retiring`).split('\r').join('');
         rmSync(`${run}/${chip}.retiring`, { force: true });
-        const open = openAsks(c, chip);
-        appendFileSync(`${run}/${chip}.retired`, `context${r ? `, replaced by ${r}` : ''}${open ? `, unanswered:${open}` : ''}\n`);
+        // handback wrote the unanswered asks into .retired already.
+        appendFileSync(`${run}/${chip}.retired`, `context${r ? `, replaced by ${r}` : ''}\n`);
         out(`RETIRED: your context is past its mark${r ? ` and worker ${r} takes your lane` : ''}. You were retired: end this turn with one line, commit nothing, start nothing. ${STOP_WHAT_YOU_STARTED}\n`);
         return 9;
     }
     if (existsSync(`${run}/PAUSED`)) {
         out(`RUN PAUSED: ${firstLine(`${run}/PAUSED`)}. Nothing is handed out while a pause stands.\n`);
-        out('Background this, end your turn, and after it prints resumed carry on with the claim you hold; call next only if you hold none:\n');
+        out('Background this, end your turn, and after it prints resumed carry on with the claim you hold; call next only if you hold none (a pane worker may still take its one repo task):\n');
         out(wakeLoop(c, chip));
         return 8;
     }
@@ -53,8 +63,34 @@ export function next(c, chip, lane) {
         out('SWITCH PENDING: run whoami before claiming; on exit 10 end this turn as it says.\n');
         return 10;
     }
-    const openid = claimsOf(c, chip)[0];
-    if (openid) {
+    mkdirSync(`${run}/tasks/claimed`, { recursive: true });
+    // One chip, one claim, even from two `next` calls at once (two Bash calls in one turn took four tasks
+    // between them): the check that it holds none and the claim it then makes happen under one lock.
+    const lock = `${run}/tasks/claimed/.chip-${chip}`;
+    if (!takeLock(lock, 2 * 60 * 1000)) {
+        err(`BUSY: another next for chip ${chip} is claiming right now; use the task it prints.\n`);
+        return 2;
+    }
+    try {
+        return nextHeld(c, chip, lane);
+    }
+    finally {
+        dropLock(lock);
+    }
+}
+function nextHeld(c, chip, lane) {
+    const run = c.run;
+    const mine = claimsOf(c, chip);
+    const openid = mine[0];
+    // One repo task beside one pane task: the pane worker's idle window (docs/LANES.md), while its browser
+    // subagent runs. Anything more is a second claim the worker cannot be working.
+    // Either order: a pane task that closed first leaves the repo one, and the pane may take its next walk.
+    // A verify task is the repo task: it is claimed through the repo lane.
+    const heldLane = mine.length === 1 ? (field(read(`${run}/tasks/ready/${openid}.md`), NEEDS) || 'repo').replace(/^verify$/, 'repo') : '';
+    // Only a chip offered for the pane lane: a repo worker asking for `pane` has no pane to walk it with.
+    const paneChip = noCr(firstLine(`${run}/offered/${chip}`)) === 'pane';
+    const idleWindow = !existsSync(`${run}/${chip}.retiring`) && ((heldLane === 'pane' && lane === 'repo') || (heldLane === 'repo' && lane === 'pane' && paneChip));
+    if (openid && !idleWindow) {
         err(`HOLDING ${openid}: chip ${chip} already holds an open claim. Finish it, or hand it back, before asking for another task: next hands out nothing while you hold one.\n`);
         return 2;
     }
@@ -94,14 +130,15 @@ export function next(c, chip, lane) {
         rmSync(`${run}/tight/${chip}`, { force: true });
     }
     let waiting = 0;
-    let held; // verify_held, read once: nothing is claimed until the scan returns
+    let held; // verify_held, read again after any claim this scan lost to another worker
     for (const n of names(`${run}/tasks/ready`)) {
-        if (!n.endsWith('.md'))
+        const f = `${run}/tasks/ready/${n}`;
+        // A directory named `<id>.md` was claimed and then crashed the read, leaving a claim nobody could close.
+        if (!n.endsWith('.md') || !isFile(f))
             continue;
         const id = n.slice(0, -3);
         if (existsSync(`${run}/tasks/done/${id}`))
             continue;
-        const f = `${run}/tasks/ready/${n}`;
         const text = read(f);
         // A worker with no pane must not claim a pane task; a repo worker, or one that named no lane, takes a
         // verify task, one at a time across the fleet.
@@ -123,32 +160,65 @@ export function next(c, chip, lane) {
             waiting++;
             continue;
         }
-        const deps = field(text, AFTER).replace(/[,\r]/g, ' ').split(/[ \t\n]+/).filter(Boolean);
+        const deps = afterIds(text);
         if (deps.some((d) => !existsSync(`${run}/tasks/done/${d}`))) {
             waiting++;
             continue;
         }
-        try {
-            mkdirSync(`${run}/tasks/claimed/${id}`);
+        // mkdir is the claim's atomicity. The verify lane is one worker wide, and two workers could pass the held
+        // check with two different verify tasks at the same instant: for a verify task, the check and the claim
+        // happen together under the lane's own lock.
+        if (want === 'verify') {
+            const vlock = `${run}/tasks/claimed/.verify-lane`;
+            if (!takeLock(vlock, 2 * 60 * 1000)) {
+                waiting++;
+                continue;
+            }
+            let won = false;
+            try {
+                held = verifyHeld(c);
+                if (!held) {
+                    try {
+                        mkdirSync(`${run}/tasks/claimed/${id}`);
+                        won = true;
+                    }
+                    catch { /* taken */ }
+                }
+            }
+            finally {
+                dropLock(vlock);
+            }
+            if (!won) {
+                if (held)
+                    waiting++;
+                continue;
+            }
         }
-        catch {
-            continue;
-        } // mkdir is the claim's atomicity
+        else {
+            try {
+                mkdirSync(`${run}/tasks/claimed/${id}`);
+            }
+            catch {
+                held = undefined;
+                continue;
+            }
+        }
         const t = now();
         writeFileSync(`${run}/tasks/claimed/${id}/owner`, `chip ${chip}\nclaimed ${t}\n`);
         writeFileSync(`${run}/tasks/claimed/${id}/heartbeat`, `${t}\n`);
         // A handed-back task carries its fix proof across: only the `before` line, never the old tree's `after`.
+        // From the old claim as it stands too: handback files the new task before it closes the old claim.
         const ho = field(text, HANDBACK_OF).split('\r').join('');
         if (ho) {
             for (const d of names(`${run}/tasks/claimed`, '/proof')) {
                 const p = `${run}/tasks/claimed/${d}/proof`;
-                if (!d.startsWith(`${ho}.released-`) || !isFile(p))
+                if ((d !== ho && !d.startsWith(`${ho}.released-`)) || !isFile(p))
                     continue;
                 const before = lf(read(p)).split('\n').filter((l) => l.includes('"phase":"before"'));
                 appendFileSync(`${run}/tasks/claimed/${id}/proof`, before.length ? `${before[before.length - 1]}\n` : '');
             }
         }
-        const b = field(text, BUDGET) || '25';
+        const b = String(budgetOf(text));
         out(`CLAIMED ${id}\nLANE ${lane || 'any'}\n`);
         if (want === 'verify' && lane !== 'verify') {
             out('VERIFY LANE: this is a verify task and the lane is one worker wide across the fleet.\n');
@@ -189,8 +259,9 @@ export function next(c, chip, lane) {
 // ---- the small readers this group shares -----------------------------------------------------------------
 // Git Bash's grep, sed and awk read a CRLF line as if it ended at the LF; a lone CR stays.
 const lines = (text) => lf(text).split('\n');
-// `grep -q "chip <chip>$" <owner>`: some line ends with it.
-const owns = (owner, chip) => lines(read(owner)).some((l) => l.endsWith(`chip ${chip}`));
+// The owner file names this chip on a line of its own. The sh's `grep "chip $chip$"` had no `^`, so a line
+// `achip 07` counted as chip 07's, and the chip was read as a regular expression.
+const owns = (owner, chip) => lines(read(owner)).includes(`chip ${chip}`);
 // All of stdin as bytes, as `cat` reads it.
 function stdin() { try {
     return readFileSync(0);
@@ -206,15 +277,10 @@ catch {
 // counted while PAUSED stands, so a resumed worker is not told its budget elapsed.
 export function clock(c, chip, id, mins) {
     const mult = calint(c, 'budget_multiplier', 2), poll = calint(c, 'clock_poll_seconds', 30);
-    // `$(( mins * ... ))`: decimal, or octal with a leading zero, as sh reads it.
+    // Decimal even with a leading zero, as `next` reads the task's budget: the sh read 010 as octal (8) and
+    // died on 08, so a clock armed from `budget: 09` never ran.
     const m = /^[ \t\n]*(-?)([0-9]+)[ \t\n]*$/.exec(mins);
-    const digits = m?.[2] ?? '';
-    const octal = digits.length > 1 && digits.startsWith('0');
-    if (octal && !/^[0-7]+$/.test(digits)) {
-        err(`${c.sh}: ${digits}: value too great for base (error token is "${digits}")\n`);
-        return 1;
-    }
-    const v = !m ? NaN : octal ? parseInt(digits, 8) : Number(digits);
+    const v = !m ? NaN : Number(m[2]);
     if (Number.isNaN(v)) {
         err(`${c.sh}: ${mins}: not a number\n`);
         return 1;
@@ -246,31 +312,55 @@ export function finish(c, chip, id, branch) {
         out(`CLAIM LOST ${id}, done marker NOT written\n`);
         return 4;
     }
+    // Held from here to the marker; a handback, sweep or recover that got here first renamed the claim.
+    if (!takeLock(closing(d), CLOSING_STALE_MS, `chip ${chip}`)) {
+        // The lock may be this chip's own finish, called twice: never tell a worker its finished task is lost.
+        if (existsSync(`${run}/tasks/done/${id}`)) {
+            out(`DONE ${id} (already)\n`);
+            return 0;
+        }
+        if (read(`${closing(d)}/pid`).split('\n')[1] === `chip ${chip}`) {
+            out(`BUSY: another finish of ${id} by chip ${chip} is running; run this again in a few seconds\n`);
+            return 2;
+        }
+        out(`CLAIM LOST ${id}, done marker NOT written: it is being handed back\n`);
+        return 4;
+    }
+    try {
+        // A handback killed after filing the task again and before closing this claim left its lock to a dead
+        // pid; finishing over it got the task done and worked a second time under its new id.
+        const again = refiledAs(run, id);
+        if (again) {
+            out(`CLAIM LOST ${id}, done marker NOT written: it was handed back as ${again}; the coordinator runs handback again to close it\n`);
+            return 4;
+        }
+        return finishHeld(c, chip, id, branch);
+    }
+    finally {
+        dropLock(closing(d));
+    }
+}
+function finishHeld(c, chip, id, branch) {
+    const run = c.run, d = `${run}/tasks/claimed/${id}`;
     writeFileSync(`${d}/heartbeat`, `${now()}\n`);
     // A fix arrives with a reproduction that failed before it and passes after; one fix run landed 164
     // changes with nothing checking that. Every fix task walks through here, so the gate reads the proof the
     // worker recorded with `fleet-gate.mjs prove`, and refuses a green over a tree that never moved.
-    let kind = '', task;
-    // fleet.sh's `kind=$(awk ... <task file>)` under `set -e`: a task file that is gone ends it silently with 2.
+    let task;
+    // No task file is no way to tell a fix from anything else, so no done marker: the sh ended here silently.
     const tf = `${run}/tasks/ready/${id}.md`;
     try {
         task = readFileSync(tf, 'utf8');
     }
     catch {
-        if (!isDir(tf))
-            return 2;
-        task = '';
+        err(`done marker NOT written for ${id}: ${tf} cannot be read, so whether it is a fix that needs its proof cannot be told. A planner who moved it can put it back.\n`);
+        return 2;
     }
-    for (const l of lines(task)) {
-        if (l.startsWith('kind:')) {
-            kind = l.split(/[ \t]+/).filter(Boolean)[1] ?? '';
-            break;
-        }
-    }
+    // Any spelling of the kind line: `kind:fix`, `Kind: Fix` and `kind: "fix"` are fixes too.
+    const kind = taskKind(task);
     if (kind === 'fix' || kind === 'root') {
-        // ponytail: only the gate beside fleet.sh, where the plugin ships it and where fleet.mjs itself sits;
-        // fleet.sh also asks the install record and the plugin cache, for a copy without one.
-        const g = `${dirname(c.sh)}/fleet-gate.mjs`;
+        // The gate ships beside fleet.mjs.
+        const g = `${HERE}/fleet-gate.mjs`;
         // No gate to ask is no proof, not a pass.
         if (!existsSync(g)) {
             err(`done marker NOT written for ${id}: it is a ${kind} task and node or fleet-gate.mjs is missing,\n`);
@@ -293,8 +383,9 @@ export function finish(c, chip, id, branch) {
     // one used to truncate the line the first recorded.
     mkdirSync(`${run}/tasks/done`, { recursive: true });
     const marker = `${run}/tasks/done/${id}`;
-    if (!existsSync(marker))
-        writeFileSync(marker, '');
+    // Worked out first and written once, whole: a finish killed between an empty marker and its branch line
+    // left a done task whose branch nobody would merge.
+    let body = '';
     // Where the committed work is, for whoever merges it. Only the marker's existence means done.
     if (branch) {
         let wt = '';
@@ -309,21 +400,20 @@ export function finish(c, chip, id, branch) {
         if (spawnSync('git', ['-C', gd, 'rev-parse', '--verify', '-q', ref], { stdio: 'ignore' }).status !== 0) {
             err(`WARNING: branch '${branch}' does not resolve in ${wt || 'the current directory'}; the marker records it anyway.\n`);
         }
-        writeFileSync(marker, `branch ${branch}\n`);
         // The commit the task finished at: `stranded` reads it to see a branch merged and then worked on.
         const g = spawnSync('git', ['-C', gd, 'rev-parse', '-q', '--verify', ref], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
         const tip = g.status === 0 ? (g.stdout || '').replace(/\n+$/, '') : '';
-        if (tip)
-            appendFileSync(marker, `tip ${tip}\n`);
+        body = `branch ${branch}\n${tip ? `tip ${tip}\n` : ''}`;
     }
+    if (body || !existsSync(marker))
+        writeWhole(marker, body);
     out(`DONE ${id}${branch ? ` (branch ${branch})` : ''}\n`);
     out('The clock guarding it sees this marker within 30 seconds and exits on its own.\n');
     return 0;
 }
 const get = (v, k) => (v !== null && typeof v === 'object' ? v[k] : undefined);
-// The value as JavaScript's `+` and Math.min see it, whatever JSON put there: the check is the one fleet.sh
-// ran in node, string concatenation included.
-const num = (v, k) => get(v, k);
+// A coordinate, when JSON put a number there; NaN otherwise.
+const num = (v, k) => { const x = get(v, k); return typeof x === 'number' ? x : NaN; };
 // One JSON finding on stdin, validated - the only place the finding contract is enforced rather than
 // requested - and appended to <chip>.jsonl only once it passed: appending first left an empty file behind
 // a refused first finding, read later as a chip that filed nothing.
@@ -363,15 +453,15 @@ export function find(c, chip) {
         // on `severity` alone, so a severity here would enter the backlog with nothing behind it.
         if (get(o, 'severity'))
             problems.push('an auxiliary line carries no severity; file what you found as its own finding');
-        if (get(o, 'created') && !String(get(o, 'where') || '').trim())
+        if (get(o, 'created') && !asText(get(o, 'where')).trim())
             problems.push('created needs where: the next person to read that sandbox has to find the row');
-        if (get(o, 'state_changed') && !String(get(o, 'when') || '').trim())
+        if (get(o, 'state_changed') && !asText(get(o, 'when')).trim())
             problems.push('state_changed needs when: collection reads it as the window every later sighting was measured in');
     }
     else {
         for (const k of ['area', 'severity', 'observed', 'evidence', 'mechanism_status']) {
             const v = get(o, k);
-            if (!v || String(v).trim() === '')
+            if (!v || asText(v).trim() === '')
                 problems.push(`missing ${k}`);
         }
         const s = get(o, 'severity'), ms = get(o, 'mechanism_status'), ev = get(o, 'evidence');
@@ -379,7 +469,8 @@ export function find(c, chip) {
             problems.push(`severity not one of ${sev.join('|')}`);
         if (ms && !['established', 'hypothesis', 'unknown'].includes(ms))
             problems.push('mechanism_status not established|hypothesis|unknown');
-        if (ev && String(ev).length < 12)
+        // A `file:line` is evidence however short (`a.txt:1`), as the protocol says.
+        if (ev && asText(ev).length < 12 && !/^([A-Za-z]:)?[^\s:#,]+\.\w+((:\d+)+([-,]\d+)?|#L\d+(-L?\d+)?)$/.test(asText(ev).trim()))
             problems.push('evidence too thin to reproduce from');
         // A visual claim carries the two rectangles it is about, and they have to intersect: a model shown a
         // screenshot reports overlaps that are not there; geometry does not.
@@ -388,13 +479,18 @@ export function find(c, chip) {
             const a = get(rects, 'a'), b = get(rects, 'b');
             if (!a || !b)
                 problems.push('rects needs both a and b');
+            else if (!['x', 'y', 'w', 'h'].every((k) => Number.isFinite(num(a, k)) && Number.isFinite(num(b, k)))) {
+                // A string coordinate used to be concatenated ("10" + "5" is "105"), and anything else read as NaN,
+                // which no comparison refuses: a pair that proved nothing passed as overlapping.
+                problems.push('rects needs numbers for x, y, w and h in both a and b');
+            }
             else {
                 const ox = Math.min(num(a, 'x') + num(a, 'w'), num(b, 'x') + num(b, 'w')) - Math.max(num(a, 'x'), num(b, 'x'));
                 const oy = Math.min(num(a, 'y') + num(a, 'h'), num(b, 'y') + num(b, 'h')) - Math.max(num(a, 'y'), num(b, 'y'));
                 if (ox <= 0 || oy <= 0)
                     problems.push('the rects in this finding do not intersect');
             }
-            if (!/\d/.test(String(get(o, 'conditions') || '')))
+            if (!/\d/.test(asText(get(o, 'conditions'))))
                 problems.push('a visual finding states its viewport and zoom in conditions');
         }
     }
@@ -414,7 +510,8 @@ export function find(c, chip) {
 export function ask(c, chip) {
     mkdirSync(`${c.run}/ask`, { recursive: true });
     let n = 1;
-    while (existsSync(`${c.run}/ask/${chip}-${n}.md`))
+    // A number an answer already holds is taken too: that answer was meant for another question.
+    while (existsSync(`${c.run}/ask/${chip}-${n}.md`) || existsSync(`${c.run}/answers/${chip}-${n}.md`))
         n++;
     writeFileSync(`${c.run}/ask/${chip}-${n}.md`, stdin());
     // Absolute: the asker is often in a worktree, where `.fleet/` does not exist under its cwd.
@@ -437,6 +534,18 @@ export function drained(c, chip, lane) {
         out(wakeLoop(c, chip));
         return 8;
     }
+    // A worker that still holds a claim has not drained: .done would end it with the task open until a sweep.
+    const holding = claimsOf(c, chip)[0];
+    if (holding) {
+        err(`HOLDING ${holding}: chip ${chip} still holds an open claim. Finish it, or hand it back, before drained: no .done was written.\n`);
+        return 2;
+    }
+    // So does a host with a walk unserved: its requester would wait for it until the lease.
+    const walks = walksOf(c, chip);
+    if (walks.length) {
+        err(`HOLDING walk ${walks.join(', ')}: serve it with pane-serve, or give it back with pane-serve <run> ${chip} <walk> --release, before drained: no .done was written.\n`);
+        return 2;
+    }
     // A drained worker still holds its renderer, and only closing that tab gives it back [M34]. Closing the
     // LAST tab closes the pane, which only the operator can show again, so the tab is swapped.
     out('GIVE YOUR BROWSER MEMORY BACK if you opened a pane: tabs_create, tabs_select the new tab, then\n');
@@ -455,12 +564,20 @@ export function drained(c, chip, lane) {
     // WAITING, and a worker that took that for the end wrote `.done` while its wave was still coming. The lane
     // rules are next's.
     let unheld = 0, opheld = 0;
+    const stranded = [];
     for (const n of names(`${run}/tasks/ready`)) {
-        if (!n.endsWith('.md'))
+        if (!n.endsWith('.md') || !isFile(`${run}/tasks/ready/${n}`))
             continue;
         const id = n.slice(0, -3);
-        if (existsSync(`${run}/tasks/done/${id}`) || isDir(`${run}/tasks/claimed/${id}`))
+        if (existsSync(`${run}/tasks/done/${id}`))
             continue;
+        // A claim whose worker already wrote .done, .blocked or .retired is held by nobody: the last worker of
+        // a lane writing .done over it left the task open while the watch called the run complete.
+        if (isDir(`${run}/tasks/claimed/${id}`)) {
+            const holder = noCr(field(read(`${run}/tasks/claimed/${id}/owner`), /^chip ([^\n]*)$/));
+            if (holder && !chipFinished(c, holder))
+                continue;
+        }
         const text = read(`${run}/tasks/ready/${n}`);
         if (lane) {
             const want = field(text, NEEDS) || 'repo';
@@ -472,6 +589,9 @@ export function drained(c, chip, lane) {
                 continue;
         }
         unheld++;
+        // `next` cannot hand those out: the claim stands until somebody hands it back.
+        if (isDir(`${run}/tasks/claimed/${id}`))
+            stranded.push(`${id} (chip ${noCr(field(read(`${run}/tasks/claimed/${id}/owner`), /^chip ([^\n]*)$/)) || 'unknown'})`);
         if (operatorOwed(text))
             opheld++;
     }
@@ -479,7 +599,10 @@ export function drained(c, chip, lane) {
         out(`QUEUE NOT EMPTY: ${unheld} ready task(s) nobody holds yet. Do NOT write .done.\n`);
         if (opheld > 0)
             out(`  ${opheld} of them wait on the operator; the coordinator has asked, and fleet.sh cleared releases each one.\n`);
-        out('Claim again with next, and while it answers QUEUE WAITING poll rather than finishing:\n');
+        if (stranded.length)
+            out(`  still claimed by a chip that has finished: ${stranded.join(', ')}. next cannot hand ${stranded.length === 1 ? 'it' : 'those'} out: file one ask naming ${stranded.length === 1 ? 'it' : 'them'}, so the coordinator runs fleet.sh handback for that chip.\n`);
+        out(stranded.length === unheld ? 'Poll while the coordinator hands them back, rather than finishing:\n'
+            : 'Claim again with next, and while it answers QUEUE WAITING poll rather than finishing:\n');
         out(poll);
         return 5;
     }
@@ -537,7 +660,7 @@ export function whoami(c, chip, model, effort, after) {
             }
             rm('.switch-warned');
             writeFileSync(`${ch}.switch`, `${line}\n`);
-            const held = claimsOf(c, chip)[0];
+            const held = claimsOf(c, chip).join(' and ');
             out(`SWITCH: this session runs ${model} at ${effort}, and the run wants ${wm} at ${we}. Claim nothing new.${held ? ` Beat ${held} first.` : ''}\n`);
             out('Then end this turn with the one line: waiting for the coordinator to switch my model. Its message\n');
             out('wakes you; run whoami again as it says, and on exit 0 go on.\n');
@@ -547,13 +670,22 @@ export function whoami(c, chip, model, effort, after) {
     rm('.switch', '.switch-warned', '.switch-failed', '.switch-failed-warned');
     return 0;
 }
+// A lane is one of three words. A typo (`Repo`) matched no task, so the worker was told the queue had drained
+// while its lane still held work, and wrote `.done`.
+function laneOf(a) {
+    const l = a ?? '';
+    if (l === '' || l === 'pane' || l === 'repo' || l === 'verify')
+        return l;
+    err(`no such lane: ${l} (pane, repo, verify, or leave it out for any)\n`);
+    return null;
+}
 export const commands = {
-    next: (c, a) => next(c, need(c, a[0], 3, 'chip id required'), a[1] ?? ''),
+    next: (c, a) => { const chip = need(c, a[0], 3, 'chip id required'), l = laneOf(a[1]); return l === null ? 2 : next(c, chip, l); },
     clock: (c, a) => clock(c, need(c, a[0], 3, 'chip id required'), need(c, a[1], 4, 'task id required'), a[2] || '25'),
     beat: (c, a) => beat(c, need(c, a[0], 3, 'chip id required'), need(c, a[1], 4, 'task id required')),
     finish: (c, a) => finish(c, need(c, a[0], 3, 'chip id required'), need(c, a[1], 4, 'task id required'), a[2] ?? ''),
     find: (c, a) => find(c, need(c, a[0], 3, 'chip id required')),
     ask: (c, a) => ask(c, need(c, a[0], 3, 'chip id required')),
-    drained: (c, a) => drained(c, need(c, a[0], 3, 'chip id required'), a[1] ?? ''),
+    drained: (c, a) => { const chip = need(c, a[0], 3, 'chip id required'), l = laneOf(a[1]); return l === null ? 2 : drained(c, chip, l); },
     whoami: (c, a) => whoami(c, need(c, a[0], 3, 'chip id required'), need(c, a[1], 4, 'model required'), a[2] || 'unknown', a[3] ?? ''),
 };

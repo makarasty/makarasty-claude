@@ -2,7 +2,7 @@
   "private": true,
   "description": "Build-time only: the TypeScript compiler and Node's types for src/. Nothing here ships to a plugin user; the compiled .mjs files do.",
   "scripts": {
-    "build": "tsc -p . && tsc -p ../tools/src"
+    "build": "tsc -p . && tsc -p ../tools/src && node ../scripts/fleet-manifest.mjs write"
   },
   "devDependencies": {
     "@types/node": "26.6.4",

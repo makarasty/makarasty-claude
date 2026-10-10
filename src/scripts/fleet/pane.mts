@@ -1,9 +1,9 @@
 // pane.mts - the pane broker: pane-ask, pane-next, pane-serve, pane-status. Part of fleet.mjs; see src/scripts/fleet.mts.
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, readSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, readSync, rmSync, writeFileSync } from 'node:fs';
 import type { Command, Ctx } from './lib.mjs';
-import { need, out, err, isDir, read, names, field, now, cal, mtimeMs } from './lib.mjs';
+import { need, out, err, isDir, isFile, lf, read, names, field, now, cal, mtimeMs, firstLine, wakeLoop, STOP_WHAT_YOU_STARTED , asText } from './lib.mjs';
+import { basename } from 'node:path';
 
 // `cat` of stdin: every byte, however the pipe hands them over.
 function stdin(): Buffer {
@@ -23,28 +23,16 @@ function stdin(): Buffer {
   return Buffer.concat(parts);
 }
 
-// `grep -q "host $host\$"`: the host is a basic regular expression, unanchored at the start.
-// ponytail: `.`, `*` and bracket expressions only; GNU's `\(` `\{` `\|` and [:classes:] read as literals.
+// The walk's owner line names exactly this host. The sh matched `host $host$` as a regular expression,
+// unanchored at the start, so a host `0.` or `[0-9]2` could serve the walk host 02 had claimed.
 function ownerMatches(text: string, host: string): boolean {
-  const p = `host ${host}`;
-  let re = '';
-  for (let i = 0; i < p.length; i++) {
-    const ch = p[i] ?? '';
-    if (ch === '\\' && i + 1 < p.length) { re += `\\${p[++i] ?? ''}`.replace(/^\\([A-Za-z0-9])$/, '$1'); continue; }
-    if (ch === '.' || ch === '*') { re += ch; continue; }
-    if (ch === '[') {
-      let j = i + 1;
-      if (p[j] === '^') j++;
-      if (p[j] === ']') j++;
-      while (j < p.length && p[j] !== ']') j++;
-      if (j < p.length) { re += p.slice(i, j + 1).replace(/\\/g, '\\\\'); i = j; continue; }
-      return false;   // an unclosed bracket: grep refuses the pattern, which reads as no match
-    }
-    re += ch.replace(/[$^+?(){}|/\]]/g, '\\$&');
-  }
-  let r: RegExp;
-  try { r = new RegExp(`${re}$`, 's'); } catch { return false; }
-  return text.split('\n').some((l) => r.test(l));
+  return lf(text).split('\n').includes(`host ${host}`);
+}
+
+// The walks waiting to be handed out: regular files `<id>.md`, no dotfiles (pane-status never counts them),
+// no directories (a claimed directory could never be served), an id with a space kept whole.
+function pendingWalks(run: string): string[] {
+  return names(`${run}/pane/requests`).filter((f) => f.endsWith('.md') && isFile(`${run}/pane/requests/${f}`));
 }
 
 function paneDirs(run: string): void {
@@ -66,33 +54,45 @@ function paneAsk(c: Ctx, chip: string): number {
 
 function paneNext(c: Ctx, host: string): number {
   const run = c.run;
+  // A retired host, a landed run and a paused one hand out nothing, as `next` refuses: a walk claimed then
+  // is work nobody reads, or work done through a pause.
+  if (existsSync(`${run}/${host}.retired`)) {
+    out(`RETIRED: host ${host} was replaced. End this turn with one line and start nothing. ${STOP_WHAT_YOU_STARTED}\n`);
+    return 9;
+  }
+  if (existsSync(`${run}/FINISHED`)) {
+    out(`RUN FINISHED: ${basename(c.absrun)} has landed; no walk is handed out. ${STOP_WHAT_YOU_STARTED}\n`);
+    return 9;
+  }
+  // A host that keeps taking walks never reaches the boundary `retire` waits for.
+  if (existsSync(`${run}/${host}.retiring`)) {
+    err(`RETIRING: host ${host} takes no new walk. Serve the walk you hold, if any, then call next: it retires you.\n`);
+    return 2;
+  }
+  if (existsSync(`${run}/PAUSED`)) {
+    out(`RUN PAUSED: ${firstLine(`${run}/PAUSED`)}. No walk is handed out while a pause stands.\n`);
+    out('Background this, end your turn, and after it prints resumed ask for a walk again:\n');
+    out(wakeLoop(c, host));
+    return 8;
+  }
   paneDirs(run);
   // Oldest first by the time it was filed. The glob's order is lexical, which put `07-10` before `07-2`
   // and every walk of chip 02 before any of chip 07, whatever waited longest.
-  let order = '';
-  try {
-    const d = `${run}/pane/requests`;
-    const r = readdirSync(d).filter((f) => f.endsWith('.md')).map((f) => [statSync(join(d, f)).mtimeMs, f.slice(0, -3)] as const);
-    r.sort((a, b) => a[0] - b[0] || (a[1] < b[1] ? -1 : 1));
-    order = r.map((x) => x[1]).join(' ');
-  } catch { order = ''; }
-  if (!order) {
-    for (const f of names(`${run}/pane/requests`)) if (f.endsWith('.md')) order += ` ${f.slice(0, -3)}`;
-  }
-  // ponytail: `for id in $order` also glob-expands each id; a walk id is <chip>-<n>, never a pattern.
-  for (const id of order.split(/[ \t\n]+/).filter(Boolean)) {
-    const f = `${run}/pane/requests/${id}.md`;
-    if (!existsSync(f)) continue;
+  const d = `${run}/pane/requests`;
+  const order = pendingWalks(run).map((f) => [mtimeMs(`${d}/${f}`), f.slice(0, -3)] as const)
+    .sort((a, b) => a[0] - b[0] || (a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0)).map((x) => x[1]);
+  for (const id of order) {
+    const f = `${d}/${id}.md`;
     if (existsSync(`${run}/pane/results/${id}.json`)) continue;
+    // Read before claiming: a request that cannot be read is refused without leaving a claim behind.
+    let body: Buffer;
+    try { body = readFileSync(f); } catch (e) {
+      err(`pane-next: cannot read ${f}: ${(e as NodeJS.ErrnoException).code ?? String(e)}; skipped\n`);
+      continue;
+    }
     try { mkdirSync(`${run}/pane/running/${id}`); } catch { continue; }   // mkdir is the claim's atomicity
     writeFileSync(`${run}/pane/running/${id}/owner`, `host ${host}\nclaimed ${now()}\n`);
     out(`WALK ${id}\n---\n`);
-    // A `cat` that fails ends the script with 1 and leaves the claim standing.
-    let body: Buffer;
-    try { body = readFileSync(f); } catch (e) {
-      err(`cat: ${f}: ${(e as NodeJS.ErrnoException).code === 'EISDIR' ? 'Is a directory' : 'Permission denied'}\n`);
-      return 1;
-    }
     out(body);
     return 0;
   }
@@ -102,18 +102,29 @@ function paneNext(c: Ctx, host: string): number {
 
 interface WalkResult { gate?: unknown; conditions?: unknown; observations?: unknown; served_at?: string; host?: string; claimed_at?: string }
 
-function paneServe(c: Ctx, host: string, id: string): number {
+function paneServe(c: Ctx, host: string, id: string, release: boolean): number {
   const run = c.run;
   if (!isDir(`${run}/pane/running/${id}`)) { err(`no claimed walk ${id}\n`); return 2; }
   const owner = `${run}/pane/running/${id}/owner`;
   if (!existsSync(owner) || !ownerMatches(read(owner), host)) { err(`WALK LOST ${id}\n`); return 4; }
-  const gateMin = cal(c, 'frame_gate_min_fps', '60');
+  // A host that cannot serve (a blind pane, its subagent gone) gives the walk back now, not at the lease.
+  if (release) {
+    rmSync(`${run}/pane/running/${id}`, { recursive: true, force: true });
+    out(existsSync(`${run}/pane/results/${id}.json`) ? `RELEASED ${id}: it was served already; only its claim was dropped\n` : `RELEASED ${id}: pending again for another host\n`);
+    return 0;
+  }
+  const gateMin = cal(c, 'frame_gate_min_fps', '10');
   const claimedAt = field(read(owner), /^claimed ([^\n]*)/);
   const input = stdin().toString('utf8');
   const res = `${run}/pane/results/${id}.json`;
   if (!isDir(`${run}/pane/results`)) { err(`${c.sh}: ${res}: No such file or directory\n`); return 1; }
   let o: WalkResult;
-  try { o = JSON.parse(input) as WalkResult; } catch (e) {
+  try {
+    const v: unknown = JSON.parse(input);
+    // `null`, a number or an array parses too, and has no fields to check.
+    if (typeof v !== 'object' || v === null || Array.isArray(v)) throw new Error('not an object');
+    o = v as WalkResult;
+  } catch (e) {
     err(`REFUSED: not one JSON object: ${(e as Error).message}\n`);
     rmSync(res, { force: true });
     return 1;
@@ -121,18 +132,11 @@ function paneServe(c: Ctx, host: string, id: string): number {
   const p: string[] = [];
   // The requester never saw the pane, so the result has to carry the proof the pane was real. This is
   // the one thing a session driving its own pane could never check about itself.
-  const floor = Number(gateMin || 60);
-  try {
-    if (typeof o.gate !== 'number') p.push('gate: the frame count this walk was measured under, as a number');
-    else if (o.gate < floor) p.push(`gate reads ${o.gate}, which is blind below ${floor}: do not serve a blind walk`);
-    if (!o.conditions || !/\d/.test(String(o.conditions))) p.push('conditions naming viewport and zoom');
-    if (!Array.isArray(o.observations)) p.push('observations: an array, empty is a real answer');
-  } catch (e) {
-    // `null` parses and then has no fields: the shell's node dies here with a stack trace.
-    err(`${String(e)}\n`);
-    rmSync(res, { force: true });
-    return 1;
-  }
+  const floor = Number(gateMin);
+  if (typeof o.gate !== 'number') p.push('gate: the frame count this walk was measured under, as a number');
+  else if (o.gate < floor) p.push(`gate reads ${o.gate}, which is blind below ${floor}: do not serve a blind walk`);
+  if (!o.conditions || !/\d/.test(asText(o.conditions))) p.push('conditions naming viewport and zoom');
+  if (!Array.isArray(o.observations)) p.push('observations: an array, empty is a real answer');
   if (p.length) { err(`REFUSED: ${p.join('; ')}\n`); rmSync(res, { force: true }); return 1; }
   o.served_at = new Date().toISOString(); o.host = host;
   // The claim time travels into the result because the claim directory is about to be deleted, and
@@ -149,8 +153,7 @@ function paneStatus(c: Ctx): number {
   if (!isDir(`${run}/pane/requests`)) { out('no pane broker in this run\n'); return 0; }
   let pend = 0, oldest = 0;
   const nowsec = Math.floor(Date.now() / 1000);
-  for (const n of names(`${run}/pane/requests`)) {
-    if (!n.endsWith('.md') || !existsSync(`${run}/pane/requests/${n}`)) continue;
+  for (const n of pendingWalks(run)) {
     if (existsSync(`${run}/pane/results/${n.slice(0, -3)}.json`)) continue;
     pend++;
     const m = mtimeMs(`${run}/pane/requests/${n}`);
@@ -158,21 +161,20 @@ function paneStatus(c: Ctx): number {
     const age = Math.trunc((nowsec - t) / 60);
     if (age > oldest) oldest = age;
   }
-  // ponytail: `ls results/*.json | wc -l` counts the names; a directory named *.json would list its contents.
-  const served = names(`${run}/pane/results`).filter((n) => n.endsWith('.json')).length;
-  let median = '';
   const d = `${run}/pane/results`;
+  const results = names(d).filter((n) => n.endsWith('.json') && isFile(`${d}/${n}`));
+  const served = results.length;
+  let median = '';
   const mins: number[] = [];
-  try {
-    for (const f of readdirSync(d)) {
-      if (!f.endsWith('.json')) continue;
-      const o = JSON.parse(readFileSync(join(d, f), 'utf8')) as { claimed_at?: string; served_at?: string };
-      if (o.claimed_at && o.served_at) {
-        const m = (Date.parse(o.served_at) - Date.parse(o.claimed_at)) / 60000;
-        if (Number.isFinite(m) && m >= 0) mins.push(m);
-      }
+  // One unreadable result skips itself, not every lease after it.
+  for (const f of results) {
+    let o: { claimed_at?: string; served_at?: string } | null;
+    try { o = JSON.parse(readFileSync(`${d}/${f}`, 'utf8')) as typeof o; } catch { continue; }
+    if (o && o.claimed_at && o.served_at) {
+      const m = (Date.parse(o.served_at) - Date.parse(o.claimed_at)) / 60000;
+      if (Number.isFinite(m) && m >= 0) mins.push(m);
     }
-  } catch { /* what was read so far stands, as it did */ }
+  }
   if (mins.length) { mins.sort((a, b) => a - b); median = String(Math.round(mins[Math.floor(mins.length / 2)] ?? 0)); }
   out(`pane walks: ${pend} pending, oldest waiting ${oldest}m, ${served} served${median ? `, median lease ${median}m` : ''}\n`);
   // One host is enough until a walk waits longer than a walk takes. Falls back to a flat twenty minutes
@@ -191,6 +193,6 @@ function paneStatus(c: Ctx): number {
 export const commands: Record<string, Command> = {
   'pane-ask': (c, a) => paneAsk(c, need(c, a[0], 3, 'chip id required')),
   'pane-next': (c, a) => paneNext(c, need(c, a[0], 3, 'host chip id required')),
-  'pane-serve': (c, a) => paneServe(c, need(c, a[0], 3, 'host chip id required'), need(c, a[1], 4, 'walk id required')),
+  'pane-serve': (c, a) => paneServe(c, need(c, a[0], 3, 'host chip id required'), need(c, a[1], 4, 'walk id required'), a[2] === '--release'),
   'pane-status': (c) => paneStatus(c),
 };

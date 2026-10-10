@@ -34,7 +34,7 @@ const bail: () => never = () => process.exit(0);
 let payload: HookPayload = {};
 try {
   const raw = fs.readFileSync(0, 'utf8');
-  payload = raw ? JSON.parse(raw) : {};
+  payload = (raw ? JSON.parse(raw) : null) || {};   // `null` is valid JSON with no fields
 } catch { bail(); }
 
 const tool = payload.tool_name || '';
@@ -60,11 +60,27 @@ if (!SHELL && !BROWSER.test(tool)) bail();
 // and a commit message that mentions jest name a runner without running one. The scoping arguments are the
 // ones that make it bounded: a path, a project, a name filter, or the changed set. `--watch` is excluded
 // because a watcher is the operator's own long-running process - but `--watch=false` is a full run.
-const RUNNERS = /(?:^|[;&|(]|\bthen|\bdo)\s*(?:[A-Z_][A-Z0-9_]*=\S*\s+)*(?:(?:npx|bunx|pnpm\s+(?:exec|dlx)|yarn(?:\s+run)?|python3?\s+-m)\s+(?:--?[\w-]+(?:=\S+)?\s+)*)?(vitest|jest|pytest|vue-tsc|tsc|(?:\.[\\/])?gradlew(?:\.bat)?|gradle|mvn|cargo\s+test|go\s+test|(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?test)(?![\w.-])/;
-const SCOPED = /(--changed|--project|--filter|--testPathPattern|--test-name-pattern|(?:^|\s)-[tp]\s|--tests\s|--watch(?:All)?(?!=false)\b|--related|\.(test|spec)\.[jt]sx?|[\\/][\w.-]+\.(ts|tsx|js|py|kt|java)\b|--noEmit\s+[^-])/;
+const RUNNERS = /(?:^|[;&|(]|\bthen|\bdo)\s*(?:[A-Z_][A-Z0-9_]*=\S*\s+)*(?:(?:npx|bunx|pnpm\s+(?:exec|dlx)|yarn(?:\s+run)?|python3?\s+-m)\s+(?:--?[\w-]+(?:=\S+)?\s+)*)?(vitest|jest|pytest|vue-tsc|tsc|(?:\.[\\/])?gradlew(?:\.bat)?|gradle|mvn|cargo\s+test|go\s+test|(?:npm|pnpm(?:\s+(?:-r|--recursive))?|yarn(?:\s+workspaces\s+foreach(?:\s+-\S+)*)?|bun)\s+(?:run\s+)?test|(?:npm\s+run|pnpm(?:\s+(?:-r|--recursive))?(?:\s+run)?|yarn(?:\s+run)?|bun\s+run)\s+(?:typecheck|type-check|tsc)|npm\s+t)(?![\w.-]|:watch(?![\w-]))/;
+// A config file is not a scope (`--config ./vitest.config.ts` runs everything), and `--noEmit` is followed
+// by a path only when the next word on its line is not a redirect, a pipe or a comment (`2>&1 | tail`).
+const SCOPED = /(--changed|--project|--filter|--testPathPattern|--test-name-pattern|(?:^|\s)-[tp]\s|--tests\s|--watch(?:All)?(?!=false)\b|--related|\.(test|spec)\.[jt]sx?|[\\/](?![\w.-]*\.config\.)[\w.-]+\.(ts|tsx|js|py|kt|java)\b|--noEmit[ \t]+(?![|&;<>#]|\d*>)[^-\s])/;
 
 const cmd = SHELL ? String(input.command || '') : '';
-if (SHELL && (!RUNNERS.test(cmd) || SCOPED.test(cmd))) bail();
+// A message names a runner without running one (`git commit -am "fix; npm t"`, `-m"..."`, `$'...'`), so its
+// text is blanked; a `bash -c "npm test"` body is a command, so other quotes are not. `echo "npm test" | sh`
+// is missed for the same reason. A `:watch` script given `--run` or `--watch=false` is a one-shot run.
+// sh single quotes have no escapes; a double-quoted body holding `$(...)` runs a command, so it stays
+// (`echo "$(npm test)"`) - except `$(cat <<'EOF'`, the usual way to pass a long commit message.
+let shown = cmd.replace(/((?:^|\s)(?:-[a-z]*m|--message|echo|printf)(?:\s*|=))(\$?"(?:[^"\\]|\\.)*"|\$'(?:[^'\\]|\\.)*'|'[^']*')/g,
+  (m: string, pre: string, body: string) => (/^\$?"/.test(body) && /\$\((?!\s*cat\s+<<)/.test(body) ? m : `${pre}""`));
+if (/--run\b|--watch=false/.test(shown)) shown = shown.replace(/:watch\b/g, '');
+const runner = SHELL ? RUNNERS.exec(shown) : null;
+// To tsc, `-p .` or `-p tsconfig.json` is the whole project; `-p packages/a/tsconfig.json` is one package.
+const scopeOf = runner && /tsc|typecheck|type-check/.test(runner[1]!)
+  ? cmd.replace(/(?:^|\s)(?:-p|--project)(?:\s+|=)(?:\.\/)?[^\s/\\]+(?=\s|$)/g, ' ') : cmd;
+// A workspace is a scope to the package manager, before any `--`; to jest after it, `-w 2` is --maxWorkers.
+const workspace = !!runner && /^(npm|pnpm|yarn|bun)\b/.test(runner[1]!) && /(?:^|\s)(?:-w|-F|--workspace)[\s=]/.test(cmd.split(/\s--(?:\s|$)/)[0]!);
+if (SHELL && (!runner || workspace || SCOPED.test(scopeOf))) bail();
 
 const { fleetDir, runs } = findRuns(payload.cwd || process.cwd());
 if (!fleetDir) bail();
@@ -75,6 +91,8 @@ if (!run || !chip) bail();
 // census costs two PowerShell spawns - 0.7 s on an idle box, past its own timeout on a paging one. Free
 // physical memory is one stdlib call, and the census cannot call the box tight while it is above the
 // release line. `FLEET_LOAD` skips this, since a stub census is the only way to test the refusal.
+// The census's release line: below 4 GB it calls the box tight when much is paged out, so this cannot be
+// lower (2.25 let browser calls through on a box the census called tight).
 const CLEAR_GB = 4;
 if (BROWSER.test(tool) && !process.env.FLEET_LOAD && os.freemem() / 2 ** 30 >= CLEAR_GB) bail();
 
@@ -160,7 +178,7 @@ say(
     ? `Scope it: name the file, the project, or --changed. A brief has no verify lane; leave the full run to the coordinator.\n\n`
     : `Scope it, or claim the verify lane. The verify lane is one worker wide and it exists for this:\n\n` +
       `  scoped now:   name the file, the project, or --changed\n` +
-      `  whole thing:  sh <plugin>/scripts/fleet.sh next ${rel(run)} ${chip} repo\n` +
-      `                and run it when a \`needs: verify\` task is yours\n\n`) +
+      `  whole thing:  finish (or hand back) the repo task you hold, then sh <plugin>/scripts/fleet.sh next "${rel(run)}" ${chip} repo\n` +
+      `                and run it when a \`needs: verify\` task is yours (a pane worker's pane task may stay open)\n\n`) +
   `The full sweep runs once, at the end, by whoever holds that task. This will not be raised again in this session.`
 );

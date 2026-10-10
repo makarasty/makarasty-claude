@@ -4,7 +4,7 @@ import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSyn
 import { basename } from 'node:path';
 import { tmpdir } from 'node:os';
 import type { Command, Ctx } from './lib.mjs';
-import { lf, sub, out, isDir, read, firstLine, names, now, slashes, configDir, cal, calint, pluginVersion, live, claimsOf, laneGaps, cat, noCr, mtimeMs, newer, olderThanMin, chipFinished, started, recordedVersion, versionReadable, versionOlder, installedVersion, claimHolders, workerSessions, sessionCtx, coordinatorSid, coordCtx, gt } from './lib.mjs';
+import { lf, sub, out, isDir, read, firstLine, names, now, slashes, configDir, cal, calint, pluginVersion, live, claimsOf, laneGaps, cat, noCr, mtimeMs, newer, olderThanMin, chipFinished, started, recordedVersion, versionReadable, versionOlder, installedVersion, claimHolders, workerSessions, sessionCtx, coordinatorSid, coordCtx, gt, afterIds, operatorOwed, isFile } from './lib.mjs';
 
 // ---- ctx and contexts ------------------------------------------------------------------------------------
 
@@ -36,7 +36,7 @@ export function ctx(c: Ctx): number {
     const lv = wat + Math.floor((Number(wk) - wat) / step) * step;
     if (!gt(lv, cat(st, '0'))) continue;
     writeFileSync(st, `${lv}\n`);
-    const h = claimsOf(c, chip)[0];
+    const h = claimsOf(c, chip).join(' ');
     const held = h ? `holds ${h}` : 'no claim';
     const relaunch = `put it in the ONE relaunch ask to the operator (fleet-plan, 8b; the option 'Replace workers ${chip} only' is fleet.sh relaunch ${absrun} --keep-coordinator ${chip}).`;
     if (existsSync(`${run}/${chip}.retiring`) || existsSync(`${run}/${chip}.retired`)) continue;
@@ -162,7 +162,7 @@ export function contexts(c: Ctx): number {
   }
   for (const [chip, sid] of workerSessions(c).sort((a, b) => { const x = `${a[0]} ${a[1]}`, y = `${b[0]} ${b[1]}`; return x < y ? -1 : x > y ? 1 : 0; })) {
     const k = sessionCtx(sid);
-    const h = claimsOf(c, chip)[0];
+    const h = claimsOf(c, chip).join(' ');
     let state = '';
     if (existsSync(`${c.run}/${chip}.retired`)) state = '  retired';
     else if (chipFinished(c, chip)) state = '  finished';
@@ -288,7 +288,7 @@ function queueShape(run: string): void {
   const ls = (d: string): string[] => { try { return readdirSync(d); } catch { return []; } };
   const done = new Set(ls(`${T}/done`)), filed = new Set<string>(), bad: string[] = [];
   const t: Record<string, { after: string[]; op: string; who: string }> = {};
-  for (const f of ls(`${T}/ready`)) if (f.endsWith('.md')) filed.add(f.slice(0, -3));
+  for (const f of ls(`${T}/ready`)) if (f.endsWith('.md') && isFile(`${T}/ready/${f}`)) filed.add(f.slice(0, -3));
   for (const id of filed) {
     const b = readFileSync(`${T}/ready/${id}.md`);
     // A file that went in by hand rather than through `fleet.sh file` is checked the same way here.
@@ -301,8 +301,8 @@ function queueShape(run: string): void {
     if (done.has(id)) continue;
     let who = '';
     try { who = (readFileSync(`${T}/claimed/${id}/owner`, 'utf8').match(/^chip (\S+)/m) || [])[1] || ''; } catch { /* unclaimed */ }
-    const op = g('operator');
-    t[id] = { after: g('after').split(/[\s,]+/).filter(Boolean), op: /^(none|no|-|n.a|nothing|false|done)?$/i.test(op) ? '' : op, who };
+    // What `next` holds the task on, read the way `next` reads it.
+    t[id] = { after: afterIds(s), op: operatorOwed(s), who };
   }
   const behind = (id: string): number => {
     const seen = new Set<string>(), q = [id];
@@ -313,7 +313,15 @@ function queueShape(run: string): void {
   // `next` releases a task only on a done marker for every after: id, so one naming an id nothing filed
   // and nothing finished waits for ever.
   const dangling = Object.keys(t).flatMap((id) => (t[id]?.after ?? []).filter((a) => !done.has(a) && !filed.has(a)).map((a) => [id, a] as const));
-  if (dangling.length) { out('== waits for ever\n'); for (const [id, a] of dangling) out(`  ${id}: after: ${a}, which is neither filed nor done (${behind(id)} behind it)\n`); }
+  // So does one whose after: chain through open tasks comes back to it.
+  const cyclic = Object.keys(t).filter((id) => {
+    const seen = new Set<string>(), q = [...(t[id]?.after ?? [])];
+    while (q.length) { const x = q.pop() ?? ''; if (x === id) return true; if (!seen.has(x) && t[x]) { seen.add(x); q.push(...(t[x]?.after ?? [])); } }
+    return false;
+  });
+  if (dangling.length || cyclic.length) out('== waits for ever\n');
+  for (const [id, a] of dangling) out(`  ${id}: after: ${a}, which is neither filed nor done (${behind(id)} behind it)\n`);
+  for (const id of cyclic) out(`  ${id}: its after: chain comes back to it, a cycle (${behind(id)} behind it)\n`);
   const roots = Object.keys(t).filter((id) => (t[id]?.after ?? []).every((a) => done.has(a))).map((id) => [id, behind(id)] as const)
     .filter((x) => x[1] >= 3).sort((a, b) => b[1] - a[1]).slice(0, 5);
   if (roots.length) { out('== bottlenecks\n'); for (const [id, n] of roots) out(`  ${id}: ${n} open task(s) wait behind it, ${st(id)}${t[id]?.op ? ', WAITS ON THE OPERATOR' : ''}\n`); }
