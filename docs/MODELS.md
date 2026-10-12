@@ -6,14 +6,14 @@ says so.
 ## The roster
 
 Write the alias in a brief's `model:` line and in agent frontmatter; the alias follows the tier, the ID
-pins one release. Lineup as of 2026-09-29:
+pins one release. Lineup as of 2026-10-12:
 
 | Alias | Model, ID | Fits |
 |---|---|---|
 | `fable` | Fable 5.1, `claude-fable-5-1` | The design model: proposing how a screen should look, writing markup and copy meant to be seen, ruling on taste. The top tier, and nothing cheaper touches its result afterwards: `MISSIONS.md`, design. On an account without it, `opus`. |
 | `opus` | Opus 5.5, `claude-opus-5-5` | Judgement. Deciding whether an observation is a defect, ranking severity, writing a brief another model will execute without supervision. |
 | `sonnet` | Sonnet 5.5, `claude-sonnet-5-5` | Execution carrying judgement. Walking a scenario, noticing that something is wrong rather than merely different, following a spec that has gaps in it. |
-| `haiku` | Haiku 4.5, `claude-haiku-4-5-20251001` | Mechanical work under an exact contract. Fetching a value, running a fixed probe, reformatting, counting. |
+| `haiku` | Haiku 5.5, `claude-haiku-5-5` (Haiku 4.5 on Bedrock, Vertex and Foundry) | Mechanical work under an exact contract. Fetching a value, running a fixed probe, reformatting, counting. |
 
 ## The delegation measurement
 
@@ -85,6 +85,24 @@ Guidance:
   Opus for the facts behind it, because "every number about this topic" is not a clear spec and a weaker
   model finishes it early and quietly. `CALL.md` has the stages.
 - **Uncertain**: go one tier up. A missed defect costs a release and a tier costs cents.
+
+## The router
+
+`makarasty-tools` carries a function hook on `agent.spawn` (`tools/hooks/router.ts`) that moves a spawn to
+a cheaper model only where the caller says that is safe. It touches only the built-in `general-purpose` and `Explore` agents spawned without
+`model` from an Opus or Fable parent; a named model, any other agent (your own `Explore.md` included: the `agent.offer` event says where each type came from), a workflow agent and a fork go through
+as written.
+
+- `Explore` goes to `haiku`: it locates, it does not judge.
+- A description that starts with `[exec]` goes to `sonnet`, one that starts with `[mech]` to `haiku`.
+- Anything else keeps the parent's model.
+
+Tag `[exec]` only when something independent checks the result afterwards: an Opus review, or tests the
+agent did not write. Replayed on three real ports [M39], Sonnet tied Opus twice at 26-40 % of the cost and
+once closed a task the shell would have left open, which its own 146 test cases never exercised; only the
+other side's tests and a blind review found it. A keyword guess was tried first and dropped for the same
+reason: it would have sent that port to Sonnet. `/router` prints what it changed; `MAKARASTY_ROUTER=off`
+turns it off.
 
 ## Reasoning effort
 

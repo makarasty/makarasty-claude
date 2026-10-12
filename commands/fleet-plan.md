@@ -409,7 +409,9 @@ You are the one session the whole run depends on, and the one nothing restarts. 
   branch into the integration branch, resolves what conflicts, runs the scoped checks and returns one
   verdict line and the resulting commit), **the `STATE.md` updates from the run directory** (it reads
   `tasks/`, `ask/` and the markers and edits the file; you state the decisions it cannot read there), and
-  **any reading of a large file or a log**. Keep the verdicts, the decisions and the status lines. Read
+  **any reading of a large file or a log**. Pass `model: "sonnet"` to the merge and `STATE.md` agents, and
+  start their description with `[exec]`: a merge on Opus cost $8.29 and 62 calls against $1.69 and 28 on
+  Sonnet [M39]. A review keeps the task's `verdict-model`, or your own tier, as above. Keep the verdicts, the decisions and the status lines. Read
   `fleet.sh status` and `fleet.sh contexts` output, the reviewer's verdict and the `ask/` files, never a
   diff, a log or a findings file. Every tool result you read stays in your context for the rest of the run,
   and so does every worker's.

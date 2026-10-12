@@ -580,6 +580,41 @@ machine: carry on, say so with the number, and ask the operator nothing; a timin
 then measures the machine and is reported as such. Under 10 twice is blind.
 **Status:** current.
 
+## M39 — Where three weeks of a Max plan went, and which levers are worth anything
+**2026-10-12**, every transcript on the operator's machine from 2026-09-20 to 2026-10-12: 165 K API calls,
+deduplicated by message id and request id, priced at API list rates as a proxy for limit weight ($24.4 K once the streamed output that the first
+transcript line undercounts is taken at its final value; $23.5 K before),
+and checked against the app's own per-account usage log (`plan-usage-history.json`). One weekly limit of the
+Max 20x account held $4.3-4.5 K of that proxy in its two latest weeks.
+- **Cache reads were 75 %** of the weight: every call re-reads its whole context. Subagents and workflow
+  agents were 59 %, main sessions 41 %. Output was 7 %; effort level changed cost per call by under 5 % at
+  the same context.
+- **Opus general-purpose subagents cost $9.5 K, and $7.8 K of it (975 agents) was spawned with an explicit
+  `model: "opus"`.** Only $1.74 K inherited the parent's model, so a default changes little and the policy
+  that names Opus changes a lot. Merge agents: $8.29 and 62 calls each on Opus, $1.69 and 28 on Sonnet.
+- **Long workers pay for context they could drop.** 33 of 54 worker sessions passed 450 K and then made
+  139 calls each before 700 K. A relaunch writes about 165 K tokens to the 1 h cache ($1.65 on Opus) and
+  each later call reads about 325 K fewer ($0.16), so it pays back in about ten calls: retiring at 450 K
+  instead of 700 K would have saved about $700, and stays ahead at three times that relaunch cost.
+- **Small:** coordinator wakes for a finished task, a stall or an expiry ($30 in all), a hand-back's second
+  notification turn ($29, mostly batched into the same turn), the caveman, ponytail and unslop injections
+  (under 1 %), batching reviews ($100-250, against slower merges).
+- **Sonnet on real execution tasks, replayed:** three of the 2026-10-09 ports, Sonnet given the original
+  prompt and brief in a clone of the starting state, graded by both sides' test cases and a blind Opus
+  review run twice with the labels swapped. Pane broker: a tie. Worktrees: a tie, Sonnet a little ahead.
+  Worker commands: Opus clearly better; Sonnet's `finish` closed a task whose file was missing (the sh exits
+  2) and a CRLF owner file gave a false CLAIM LOST, and its own 146 cases exercised neither. Sonnet cost 26-40
+  % of Opus. n=3.
+- **Style plugins, blind:** seven prompts answered with no plugin, caveman, unslop, ponytail, and all three,
+  rated blind by the operator and by an Opus reviewer. The operator's picks carried caveman in three of four
+  prose answers and ponytail in both code answers; the plain answer was never first. caveman cut replies
+  17-29 %, ponytail halved code answers, unslop alone made every reply longer. Correctness was 9 of 10 almost
+  everywhere; the one real error was the plain answer claiming it had written a file with no tools present.
+**Rule:** spend effort on context length and on which model a spawn names, not on wakes or prose. Merges and
+`STATE.md` updates name Sonnet; reviews keep their tier; Sonnet does execution only where something
+independent checks it afterwards, which is what the router's `[exec]` tag asserts (`docs/MODELS.md`).
+**Status:** current. The operator kept 700 K on 2026-10-12: some chats need the whole context to stay good, and a relaunch loses what only the context held.
+
 ## Appendix: what a pull run spends
 
 Moved here from `PULL.md`, which workers read in full; none of it changes what a worker does.

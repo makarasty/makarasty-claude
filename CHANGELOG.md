@@ -1,5 +1,22 @@
 # Changelog
 
+## makarasty 1.6.1, makarasty-tools 1.6.0 — 2026-10-12
+
+Cheaper runs without a weaker result: three weeks of the operator's transcripts were measured against the
+account's own usage log first [M39], and only the levers that moved money were kept.
+
+- **A model router** (`makarasty-tools`, `tools/hooks/router.ts`, a function hook on `agent.spawn`). A
+  built-in `general-purpose` subagent spawned by Opus or Fable with no `model` runs on Sonnet when its description starts
+  with `[exec]`, on Haiku with `[mech]`, and `Explore` runs on Haiku. Untagged work keeps the parent's
+  model: a keyword guess was measured and dropped, because on a replay Sonnet lost one port of three on
+  shell edge cases that its own tests missed. `/router` shows the counts, `MAKARASTY_ROUTER=off` turns it off.
+  Function hooks are early access: tested on Claude Code 2.1.293.
+- **Merge and `STATE.md` agents name Sonnet.** A merge on Opus cost $8.29 and 62 calls, on Sonnet $1.69
+  and 28. Reviews keep their tier: moving them is exactly the loss of quality this release refuses.
+- `docs/MODELS.md`: Haiku 5.5 in the roster, and the router. `docs/MEASUREMENTS.md` M39: where the plan went
+  (cache reads 75 %, subagents 59 %, long contexts) and which proposals were measured and dropped as too
+  small: fewer coordinator wakes, batched reviews, quieter replies, trimming the style plugins.
+
 ## makarasty 1.6.0, makarasty-tools 1.5.8 — 2026-10-09
 
 The plugin is TypeScript now, and fleet.sh answers in a tenth of the time.

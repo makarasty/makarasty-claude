@@ -1,2 +1,4 @@
 node_modules
 evals/results/
+tools/.claude-plugin/types/
+tools/tsconfig.json

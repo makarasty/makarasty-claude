@@ -164,6 +164,11 @@ as me", "закоммить от меня", "ping me when the tests are done".
 told to offer a handoff in one line (a chat that coordinates or works a fleet run gets none: the run's own marks watch it, below). `MAKARASTY_HANDOFF_AT` and `MAKARASTY_HANDOFF_STEP` move the levels;
 `MAKARASTY_HANDOFF_AT=0` turns it off.
 
+**Model router.** A subagent that Opus or Fable spawns without naming a model runs on Sonnet when its
+description starts with `[exec]` and on Haiku with `[mech]`; an `Explore` agent runs on Haiku. Untagged
+work keeps the parent's model, and a named model is never changed. `/router` shows what it changed;
+`MAKARASTY_ROUTER=off` turns it off. Why it waits for a tag: `docs/MODELS.md`, "The router".
+
 **Relaunch instead of a chain of handoffs.** A queue worker on 1.5.14 or later that nears the context limit
 (`worker_relaunch_k` in `calibration.json`, 700K as shipped) is replaced by the coordinator without asking:
 it finishes its task and leaves at its next claim, and you click the replacement chip. A fleet coordinator, or
