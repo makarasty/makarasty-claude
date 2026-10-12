@@ -67,7 +67,7 @@ below it is worked in place. The worker's own model is the coordinator's to set,
 which outranks the agent definition's own frontmatter, so a brief naming a tier gets it. `verdict-model:`
 is honoured by spawning a second pass at that tier over the returned observations, and a definition whose
 own frontmatter already carries the tier - `fleet-design-eye` on `fable` - honours it without the brief saying
-anything. Effort does not travel this way: it comes from the agent file alone, per the section below.
+anything. Effort travels the same way since Claude Code 2.1.292, as the call's `effort` parameter, below.
 
 Guidance:
 
@@ -120,10 +120,17 @@ Effort is settable per subagent, in the definition file's frontmatter. The `effo
 effort level. Default: inherits from session. Options: `low`, `medium`, `high`, `xhigh`, `max`; available
 levels depend on the model." Each of the four agents in `agents/` carries one, with its reason in the file.
 
-The `Agent` tool call itself still takes no effort parameter. Its parameters are `model`, `subagent_type`,
-`isolation`, `run_in_background`, and the prompt. So effort reaches a subagent through its definition file
-or not at all, and a brief asking a running session to raise its own effort, or to dispatch one stage at an
-effort its agent file does not carry, is describing something that cannot happen.
+From Claude Code 2.1.292 the `Agent` call also takes a per-invocation `effort`, which outranks the
+frontmatter; `CLAUDE_CODE_EFFORT_LEVEL` outranks both. With neither, a subagent runs at the session's
+effort, and so does one the router moved to Sonnet or Haiku: `agent.spawn` carries no effort field. A
+running session still cannot raise its own effort.
+
+Anthropic's starting points (`platform.claude.com/docs/en/build-with-claude/effort`, 2026-10-12): Sonnet
+5.5 `medium` for well-specified agentic work and `high` for harder or longer tasks; Haiku 5.5 `medium`, and
+`high` for long agent tasks and strict instruction following, because at `low` it skips searches and checks;
+nothing recommends `xhigh` for either. In Claude Code the 5.5 models default to `medium`. Measured here
+[M39], effort changed cost per call by under 5 % at the same context; what it changes is how much a call
+checks.
 
 Model reaches a subagent through four places, in this order: the per-invocation `model` parameter, then the
 definition's `model` frontmatter, where `inherit` selects the main conversation's model, then the
@@ -137,7 +144,7 @@ What the ordering means for this plugin: `fleet-run` spawns its pane agents with
 per-invocation parameter, which is the top of the order, so the `model:` line in `fleet-scenario`,
 `fleet-profiler` and `fleet-design-eye` is the fallback for a brief that omits one, not the tier those
 agents actually run at. `fleet-triage` is spawned by `fleet-collect` with no model, so its frontmatter is
-what runs. The `effort:` line matters in all four, because nothing overrides it per call.
+what runs. The `effort:` line is what runs in all four unless a call passes its own `effort`.
 
 ## Switching a worker
 

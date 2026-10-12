@@ -15,7 +15,7 @@ Walk the scenario you were given, then report findings.
 Sonnet at `high`: the walk takes judgement as well as mechanics - noticing that a screen is wrong, not just
 different - which is the middle tier's job. The effort is pinned here rather than inherited, because a
 session dialled lower would quietly turn all thirty steps into a shallower look at the same screens. A
-brief's `model:` outranks the tier above; the effort cannot be overridden per call.
+brief's `model:` outranks the tier above; a call's own `effort` outranks this one.
 
 ## First call
 
