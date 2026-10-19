@@ -10,19 +10,27 @@ export type SpawnFacts = {
   parentModel: string
   subagentType: string
   description: string
+  plugin: string
   builtIn: boolean
   workflow: boolean
   fork: boolean
 }
 
 const TOP = /opus|fable/i
+// The fleet's own coder and reviewer: their prompt carries the task file, so a tag is as safe as on general-purpose
+// for the coder; the reviewer is the check, so it is never routed down.
+const FLEET = /^(makarasty:)?fleet-(coder|reviewer)$/
 
 export function route(f: SpawnFacts): Route {
   if (f.model) return { why: 'model named' }
-  if (!f.builtIn || f.workflow || f.fork) return { why: 'not a plain built-in spawn' }
+  // provider.plugin may carry the marketplace (makarasty@...): only the name before it is checked.
+  const fleet = /^makarasty(@|$)/.test(f.plugin) && FLEET.test(f.subagentType)
+  if ((!f.builtIn && !fleet) || f.workflow || f.fork) return { why: 'not a plain built-in spawn' }
   if (!TOP.test(f.parentModel)) return { why: 'parent below the top tier' }
   if (f.subagentType === 'Explore') return { to: 'haiku', why: 'locator' }
-  if (f.subagentType !== 'general-purpose') return { why: 'other agent' }
+  if (f.subagentType !== 'general-purpose' && !fleet) return { why: 'other agent' }
+  // The reviewer is the independent check that makes a tag safe, so it keeps the parent's model [M41].
+  if (fleet && /fleet-reviewer$/.test(f.subagentType)) return { why: 'reviewer is the check' }
   if (/^\s*\[mech\]/i.test(f.description)) return { to: 'haiku', why: 'tagged mech' }
   if (/^\s*\[exec\]/i.test(f.description)) return { to: 'sonnet', why: 'tagged exec' }
   return { why: 'untagged' }
@@ -46,6 +54,7 @@ export const register: Register = on => {
       parentModel: e.parentModel,
       subagentType: e.subagentType,
       description: e.description,
+      plugin: e.provider.plugin,
       builtIn: e.provider.plugin === 'engine' && !ownNames.has(e.subagentType),
       workflow: e.workflow !== undefined,
       fork: e.fork,

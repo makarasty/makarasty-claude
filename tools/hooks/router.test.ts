@@ -2,7 +2,7 @@ import { test, expect } from 'claude-code/testing'
 import { route, type SpawnFacts } from './router.ts'
 
 const spawn = (description: string, more: Partial<SpawnFacts> = {}): SpawnFacts => ({
-  parentModel: 'claude-opus-5-5', subagentType: 'general-purpose', description,
+  parentModel: 'claude-opus-5-5', subagentType: 'general-purpose', description, plugin: 'engine',
   builtIn: true, workflow: false, fork: false, ...more,
 })
 
@@ -33,4 +33,22 @@ test('a leading tag routes, a tag elsewhere does not; a locator goes to haiku', 
 test("a user's own agent keeps its frontmatter model even when tagged", () => {
   expect(route(spawn('[exec] Port worker commands', { subagentType: 'my-porter' })).to).toBeUndefined()
   expect(route(spawn('[mech] Collect', { subagentType: 'Plan' })).to).toBeUndefined()
+})
+
+test("the fleet's coder routes on a tag, with or without the plugin prefix, and its reviewer never does", () => {
+  const fleet = (type: string, d: string, more: Partial<SpawnFacts> = {}): SpawnFacts =>
+    spawn(d, { subagentType: type, plugin: 'makarasty', builtIn: false, ...more })
+  expect(route(fleet('makarasty:fleet-coder', '[exec] Fix t-12')).to).toBe('sonnet')
+  expect(route(fleet('fleet-coder', '[mech] Rename helpers')).to).toBe('haiku')
+  // The reviewer is the independent check that makes [exec] safe: it keeps the parent's model.
+  expect(route(fleet('makarasty:fleet-reviewer', '[exec] Review wave 2')).to).toBeUndefined()
+  expect(route(fleet('fleet-reviewer', '[mech] Review wave 2')).to).toBeUndefined()
+  expect(route(fleet('makarasty:fleet-reviewer', '[exec] Review wave 2')).why).toBe('reviewer is the check')
+  expect(route(fleet('makarasty:fleet-coder', '[exec] Fix t-12', { plugin: 'makarasty@makarasty' })).to).toBe('sonnet')
+  expect(route(fleet('makarasty:fleet-coder', 'Fix t-12')).to).toBeUndefined()
+  expect(route(fleet('makarasty:fleet-coder', '[exec] Fix t-12', { parentModel: 'claude-sonnet-5-5' })).to).toBeUndefined()
+  expect(route(fleet('makarasty:fleet-coder', '[exec] Fix t-12', { model: 'opus' })).to).toBeUndefined()
+  expect(route(fleet('makarasty:fleet-scenario', '[exec] Walk login')).to).toBeUndefined()
+  // A user's own fleet-coder.md comes from the engine, not the plugin: its frontmatter model stands.
+  expect(route(fleet('fleet-coder', '[exec] Fix t-12', { plugin: 'engine' })).to).toBeUndefined()
 })
