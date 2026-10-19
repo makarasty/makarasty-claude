@@ -1,5 +1,150 @@
 # Changelog
 
+## makarasty 1.7.0, makarasty-tools 1.6.2 — 2026-10-19
+
+A fleet runs in one chat by default. The coordinator claims each task and spawns one fresh background
+subagent for it; separate worker chats and worktrees are opt-ins. `docs/ONECHAT.md` is the loop.
+
+- **One chat, one subagent per task.** `fleet.sh chips <run> <NN-MM> <lane> --agents` registers slots
+  (`SLOT NN lane <lane>`) instead of chips; the coordinator calls `next`/`finish`/`drained` for a slot and
+  the subagent only `find` and `beat`. A fresh subagent starts at 40-75 k against 92-107 k for a chat
+  worker and re-reads no earlier task; estimated 14-20 % cheaper than the chat-plus-subagent hybrid of
+  2026-10-14, 2-3x cheaper than inline chat workers [M43]. An estimate: measure the first one-chat run with
+  `/makarasty:fleet-analyze`.
+- **The hooks see subagents.** A subagent shares its coordinator's session id, so pause, the memory guard
+  and the contract hook let every worker subagent through. They now key it as chip `agent-<agent_id>`;
+  the coordinator itself is never held. `paused <run> NN` acks a slot.
+- **No worktrees by default.** Code tasks carry `owns:`; overlapping tasks are ordered with `after:`.
+  Workers never commit; one Haiku `[mech]` agent commits with explicit paths, once at the end by default.
+- **Round 0 of every plan is one form of at most four questions** (scale, speed or quality, economy,
+  isolation and commits), each with a recommended answer, asked at once, `fast` included. The answers
+  become a `pace:` line that sets the tiers and review rounds. Width stays measured, never asked.
+- **The coordinator's model decides, cheaper ones do the rest:** commits, `STATE.md` and log reading on
+  Haiku, merges (worktree opt-in) on Sonnet. `docs/MODELS.md`, "Pace".
+- **One chat has one live browser tab** [M42]: a background tab drew 0-2 frames a second while the
+  foreground one drew 272-300. In one chat the pane lane is 1; more than one live check at once is the
+  separate-chats opt-in.
+- **The frame gate is read twice, always,** and the second reading is believed at any value: the first
+  reading of a freshly opened background tab was 268 fps, the next ones 1-3.
+- **`git-guard` closes its holes:** `2>&1`, `> file`, `$(...)`, backticks, subshells and `bash -c` /
+  `sh -c` / `eval` no longer hide `git stash` or `reset --hard`; `git worktree remove`, `push --force`
+  (not `--force-with-lease`) and `branch -D` are refused. A pipe into a shell and aliases are still
+  not seen.
+- **A shared checkout without losing anyone's work:** a fix or root task records its `prove ... before`
+  at the claim, before the coder edits; `before.diff` is saved at the claim; each finished task writes its
+  file list to `tasks/claimed/<id>/files`; the end commit is `git commit --only -- <paths>` from those
+  lists minus `dirty-at-start`, so the operator's staged work stays out; reviews also read untracked files.
+  Verify and pane tasks run `after:` their wave's code tasks. A resumed chat re-takes the coordinator seat
+  with `chips ... --agents`. While paused, the coordinator writes `STATE.md` itself.
+- **An end-to-end one-chat run passed** on a scratch project: a real fix proven before and after, a new
+  function, a verify task, real background subagents as workers and reviewers, one `commit --only` at the
+  end, and the operator's staged and unstaged changes untouched. Its 14 doc gaps are closed: `RULES.md` is
+  defined, `landed` follows `merge`, porcelain lines are stripped to paths, an empty `owns:` never becomes
+  an empty pathspec, and which slot takes a verify task is stated.
+- **STALL is information in one chat;** only the task's own clock stops a subagent. The watch counts no
+  heartbeats, so a STALL after ten quiet minutes would have stopped healthy long tasks.
+- **A rejected cheap-tier task is re-run once a tier up,** then asked of the operator.
+- The contract hook blocks in one chat (it could not write its marker without `chips/`); the verify
+  exemption holds only while every open claim is a verify or pane claim; `after: [a, b]` is accepted; `prove` is
+  quiet about an ignored run directory; every self-test part has a kill-after limit
+  (`FLEET_SELFTEST_TIMEOUT_MS`, 10 minutes), reported as a failure; `width` says the pane lane is 1 in one
+  chat.
+- **`git-guard` takes the dcg rules it lacked** (`filter-branch`, `reflog expire`, `update-ref -d`,
+  `read-tree --reset`, `rm -f`, `gc --prune=now`), sees a quoted or full-path git binary, and refuses a
+  subcommand held in a variable rather than guessing.
+- **A fix or root that cannot be proven is handed back, never finished:** `fleet.sh handback` on a slot
+  releases the claim and re-files it as `<id>-r<k>`, carrying its `before` and moving every `after:` to the
+  new id; a second failure goes to the operator. A root ruled a coincidence closes with `FLEET_REFUTED=1`
+  and a `refuted <id>: <reason>` line in the slot's notes; a fix still needs a `before` that passed.
+- **`fleet-gate check` counts only what the task owns:** another task's edit in the shared checkout no
+  longer passes for this task's change, and `owns:` is read relative to the folder holding `.fleet`, so a
+  project below the git top proves. Root tasks from `cluster` get `owns:` before the first claim.
+- **Clocks stop with their subagents** on pause and relaunch, so a resumed run never meets an old clock.
+  The watch is read through Monitor where the host has it. `fleet-profiler` reads the frame gate twice and
+  files through `find`. The memory hook reads `needs:` the way `next` does.
+- `git-guard` also refuses `git apply -R` (not with `--cached`, `--check` or `--stat`), `-qf`-style
+  combined flags, `find -exec` and `submodule foreach` wrappers, shell keywords and brace blocks
+  (`for ...; do git checkout -- ...`, PowerShell `{ git stash }`), `cmd /c` and `pwsh -Command` with an
+  unquoted command, and `timeout`/`nice`/`sudo -u` wrappers; it lets `--force-create`, `rm --cached`,
+  `stash create` and non-git commands with a variable head through.
+- **Every command that can hang carries a kill-after limit** (`timeout 590 <cmd>`, about twice its normal
+  time) in `fleet-coder`, `fleet-reviewer`, `fleet-run` and the one-chat spawn prompt, and a hit limit is
+  reported, never retried: the task clock stops a hung subagent, not necessarily the test run it started.
+  Per shell: Bash `timeout 590 <cmd>` (exit 124) under the tool's own 600000 ms; PowerShell the tool's own
+  `timeout` parameter, never `timeout` (timeout.exe); macOS without coreutils `gtimeout`; past 600000 ms,
+  which both shell tools stop at, a background run plus `TaskStop`.
+- **The memory guard sees a runner behind a wrapper:** `timeout 600 npm test`, `timeout -k 10 600 npm test`,
+  `gtimeout`, `nice -n N`, `time`, `env X=1` before a test or typecheck run no longer escape the RAM gate.
+  Nor do `time -p` (its `-p` was read as a project scope), `timeout --signal KILL 600`, `env -u X`, a shell
+  `-c`/`/c`/`-Command` body or a PowerShell `{ }` block. That flag counts only after a shell's name, and
+  quoted text naming a runner runs none, so `rg -c "npm test"`, `grep -E "jest|vitest"` and
+  `gh pr create --body "fix; npm test"` pass without spending the once-per-session warning.
+- **A cluster root's `repro:` joins its members with ` || `**, not ` && `: its proof is of the seam fix
+  (`before` fails while every member reproduces, `after` passes once one is resolved); a member that still
+  needs its own change is proved by its own task.
+- **`fixqueue` leaves a `repro:` with a backslash empty** (`node sub\x.mjs`, `.\gradlew.bat test`): `prove`
+  runs it in bash, which read `sub\x` as `subx` and falsely reproduced. Write repros with forward slashes.
+- **`prove` single-quotes each word of a multi-word command under bash/sh** (`'` as `'\''`): the double
+  quotes it used let `price $5` and backticks expand.
+- **The router never routes `fleet-reviewer`:** it is the independent check, so a tag on it is ignored.
+- **`node scripts/fleet-selftest.mjs --jobs N`** (or `FLEET_SELFTEST_JOBS`), default 3, and it prints free
+  memory and the live node count before it starts: as many parts as CPUs fought the verify budget when
+  several sessions ran it.
+- Fixes: the gate's Stop branch blocks with a reason when the guard printed none; `pauses.log` writes
+  "resumed" before `PAUSED` goes; a reason with a newline no longer splits a log line; one helper writes
+  `fleet-sessions/<sid>`; `docs/LANES.md` states the repo-lane cap the code applies; `.fleet/` is ignored;
+  README lists `fleet-coder` and `fleet-reviewer`; `fleet-coder` reads with Read and Grep.
+- **Fix tasks carry a runnable `repro:` in their frontmatter.** `fixqueue` writes a one-line command finding's `repro` there (empty for steps or prose, which the coordinator turns into a command before `prove before`); `cluster` gives a root its members' commands as `(a) || (b)`. PROTOCOL documents `repro:` and `test:`.
+- **Below the git top, the end commit runs at the top:** `files` and `dirty-at-start` hold top-relative paths, so the `[mech]` commit runs `git -C "$(git rev-parse --show-toplevel)" add`/`commit --only`, and crash attribution prefixes `owns:` with `git rev-parse --show-prefix`.
+- **On Windows `prove` runs a reproduction in bash, not cmd.exe:** `$SHELL` when it names a file, else Git for Windows' `bash.exe`, so `CI=1 node ...`, `./x.sh` and single quotes no longer fail as "not recognized" and pass for a red `before`; the line reaches bash through the environment, so `\\` is no longer collapsed to `\`. `repro:` is left empty for a line with a ` #` comment (it swallowed a root's later members) or a JS expression like `performance.getEntriesByType(...)`.
+
+## Unreleased (folded into 1.7.0)
+
+The self-tests are strict TypeScript, and the fleet's runs in a quarter of the time.
+
+- **`node scripts/fleet-selftest.mjs`** replaces `sh scripts/fleet-selftest.sh`. The 3,737-line sh file,
+  every case leaning on the state the cases above it left, is nine parts in `scripts/selftest/`, each
+  building its own state, run at once on `node:test` (one process per part, three at once by default, `--jobs N`).
+  The check names are the sh version's, one for one. 1,148 checks in 71-75 s on a 16-thread Windows box,
+  against 1,128 in about 4.5 minutes; `--keep` still keeps the temporary directories.
+- **`node tools/hooks/notify-selftest.mjs`** replaces `sh tools/hooks/notify-selftest.sh`: the same 137
+  checks, 16.5 s.
+- **The browser probes are TypeScript** (`src/probes/*.ts`, compiled to the same pasteable
+  `scripts/design-probe.js` and `scripts/visual-probe.js`). On a test page with every defect they look
+  for, the old and new probes return byte-identical JSON.
+- The build-parity checks now cover the probes' tsconfig too, and the build manifest the self-test files.
+  `scripts/fleet.sh` stays sh: it is the entry a worker calls.
+
+Fewer tokens per task, from one live run measured end to end [M41].
+
+- **Two lean subagent types, `fleet-coder` and `fleet-reviewer`.** Workers spawned `general-purpose` for
+  fixes and reviews, which starts at 77-78 k tokens against about 40 k, and every turn re-reads the start.
+  The reviewer is told not to edit. The router routes `fleet-coder` on a tag and never `fleet-reviewer`.
+- **DELEGATE is a step of the task loop,** to `fleet-coder`, with the measured growth (a median 54 k per
+  inline task, not 20-30 k): 6 of 11 workers ignored it and 55 % of what they re-read was earlier tasks.
+- **A coordinator files what does not depend on an answer before it asks:** one ask held 110 minutes and
+  7 workers ran dry.
+- **`pause` and `resume` write `pauses.log`, and `fleet-analyze` counts that window as paused**, not as an
+  outage. It also prints the carry-over share and the subagent start context, each beside its target.
+
+## makarasty 1.6.2, makarasty-tools 1.6.1 — 2026-10-12
+
+A chat that is not in a fleet pays nothing for the plugins.
+
+- **The fleet hooks are one function hook** (`hooks/gate.ts`, on `tool.call` and `classic.Stop`). The three
+  command hooks ran bash and node on every shell, edit, browser and subagent call of every chat, fleet or
+  not, and bailed: 0.1-0.2 s a call idle, more on a loaded box [M40]. The gate checks
+  `fleet-sessions/<session>` inside the engine and only a fleet chat reaches `fleet-memory.mjs`,
+  `fleet-contract.mjs` and `fleet-guard.mjs`, with the same stdin and the same exit 2. Outside a fleet: 0.048 s
+  a Bash call against 0.047 s with no plugin. A hook that cannot start lets the call through, as before.
+  Needs Claude Code with function hooks (tested on 2.1.293 and 2.1.294); an older one runs no fleet hook.
+- **A git guard** (`makarasty-tools`, `tools/hooks/git-guard.ts`): a shell call that would throw away
+  uncommitted work is refused with the reason, in-engine, with no process per call. `MAKARASTY_GIT_GUARD=off`.
+- **One line sends reads to the tools** (`tools/hooks/reads.ts`, on `prompt.compose`): 84 K of 115 K shell
+  calls in four weeks were reads, each 0.1-1 s of harness against 0.02-0.07 s for Read or Grep [M40].
+  `MAKARASTY_READS=off`.
+- The tools plugin's three function hooks load from one module, `tools/hooks/index.ts`: the engine takes one per plugin.
+
 ## makarasty 1.6.1, makarasty-tools 1.6.0 — 2026-10-12
 
 Cheaper runs without a weaker result: three weeks of the operator's transcripts were measured against the
