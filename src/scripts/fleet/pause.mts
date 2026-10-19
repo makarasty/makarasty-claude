@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process';
 import type { SpawnSyncReturns } from 'node:child_process';
 import { basename, dirname, resolve } from 'node:path';
 import type { Command, Ctx } from './lib.mjs';
-import { need, out, err, isDir, isFile, read, firstLine, names, field, NEEDS, now, slashes, configDir, calint, live, laneGaps, wakeLoop, openAsks, indent, noCr, mtimeMs, newer, chipFinished, recordedVersion, versionReadable, versionOlder, claimHolders, registerChip, coordinatorSid, STOP_WHAT_YOU_STARTED, nativePath, cksum, sub, lf, claimsOf, started, lockToRelease, afterIds, renameAfter, unsaved, writeWhole, walksOf } from './lib.mjs';
+import { need, out, err, isDir, isFile, read, firstLine, names, field, NEEDS, now, slashes, configDir, calint, live, laneGaps, wakeLoop, openAsks, indent, noCr, mtimeMs, newer, chipFinished, recordedVersion, versionReadable, versionOlder, claimHolders, registerChip, recordFleetSession, coordinatorSid, STOP_WHAT_YOU_STARTED, nativePath, cksum, sub, lf, claimsOf, started, lockToRelease, afterIds, renameAfter, unsaved, writeWhole, walksOf } from './lib.mjs';
 
 // ---- the shared pieces -----------------------------------------------------------------------------------
 
@@ -19,16 +19,6 @@ const retiredMark = (c: Ctx): string => `${pauseMark(c)}.retired`;
 
 // `rm -f a b ... 2>/dev/null || true`: each file on its own, a directory left standing.
 function rmf(...ps: string[]): void { for (const p of ps) { try { unlinkSync(p); } catch { /* gone or a directory */ } } }
-
-// This session belongs to a fleet run, recorded where the tools plugin's context hook looks.
-function fleetSession(c: Ctx): void {
-  const sid = process.env.CLAUDE_CODE_SESSION_ID || '';
-  if (!sid) return;
-  try {
-    mkdirSync(`${configDir()}/makarasty/fleet-sessions`, { recursive: true });
-    writeFileSync(`${configDir()}/makarasty/fleet-sessions/${sid}`, `${c.absrun}\n`);
-  } catch { /* a courtesy */ }
-}
 
 // A brief worker holds no claim; it has something in hand until its .done, .blocked or .retired.
 const briefBusy = (c: Ctx, chip: string): boolean => existsSync(`${c.run}/brief-${chip}.md`) && !chipFinished(c, chip);
@@ -104,14 +94,19 @@ const absdir = (d: string): string => isDir(d) ? slashes(resolve(d)) : d;
 function pause(c: Ctx, a: string[]): number {
   const run = c.run;
   let reason = a[0] ?? '';
-  if (reason === '-') reason = readStdin(500).split('\n').join(' ').replace(/ *$/, '');
+  if (reason === '-') reason = readStdin(500);
+  // One line: PAUSED's first line and each pauses.log record are read line by line.
+  reason = reason.replace(/[\r\n]+/g, ' ').replace(/ *$/, '');
   if (existsSync(`${run}/PAUSED`)) {
     out(`already paused: ${firstLine(`${run}/PAUSED`)}\n`);
   } else {
     // Acks left by an earlier pause would read as workers that have already stopped this time.
     rmf(...names(`${run}/stopped`).map((n) => `${run}/stopped/${n}`), `${run}/relaunch-waited`);
     mkdirSync(`${run}/stopped`, { recursive: true });
-    writeFileSync(`${run}/PAUSED`, `${now()}${reason ? ` - ${reason}` : ''}\n`);
+    const at = now();
+    writeFileSync(`${run}/PAUSED`, `${at}${reason ? ` - ${reason}` : ''}\n`);
+    // resume deletes PAUSED: this log keeps the window, which fleet-analyze counts as paused, not lost.
+    appendFileSync(`${run}/pauses.log`, `paused ${at} ${reason}\n`);
   }
   mkdirSync(pausedRoot(), { recursive: true });
   writeFileSync(pauseMark(c), `${c.absrun}\n`);
@@ -158,7 +153,7 @@ function resume(c: Ctx, a: string[]): number {
     const sid = process.env.CLAUDE_CODE_SESSION_ID || '';
     if (!sid) { out('coordinator-pending is still set: no session id here, so no coordinator was recorded\n'); return; }
     writeFileSync(`${run}/coordinator`, `${sid}\n`);
-    fleetSession(c);
+    recordFleetSession(c.absrun);
     rmf(`${run}/coordinator-pending`, `${run}/.ctx-warned`, `${run}/chips/${sid}`);
     out(`this session is now the coordinator of ${basename(c.absrun)}\n`);
   };
@@ -178,6 +173,8 @@ function resume(c: Ctx, a: string[]): number {
   for (const w of names(`${run}/pane/running`)) {
     try { const t = new Date(); utimesSync(`${run}/pane/running/${w}/owner`, t, t); } catch { /* no owner */ }
   }
+  // Logged before PAUSED goes: a resume that dies between the two still closes its window in the log.
+  appendFileSync(`${run}/pauses.log`, `resumed ${now()}\n`);
   rmf(`${run}/PAUSED`, pauseMark(c), ...names(`${run}/stopped`).map((n) => `${run}/stopped/${n}`), `${run}/relaunch-waited`);
   try { rmdirSync(`${run}/stopped`); } catch { /* not empty, or absent */ }
   takeSeat();
@@ -196,7 +193,8 @@ function paused(c: Ctx, a: string[]): number {
   // The coordinator is never paused: having run this to see what it does, it would register as the chip and
   // every hook would then hold the session that runs the run.
   const sid = process.env.CLAUDE_CODE_SESSION_ID || '';
-  if (sid && coordinatorSid(c) === sid) {
+  // One chat: the coordinator acks for a subagent slot (`chips --agents`), as it claims for one.
+  if (sid && coordinatorSid(c) === sid && !existsSync(`${run}/slots/${chip}`)) {
     err(`REFUSED: this session is the coordinator of ${basename(c.absrun)}, not worker ${chip}. The coordinator is never paused; nothing to acknowledge.\n`);
     return 2;
   }
@@ -365,6 +363,8 @@ function handback(c: Ctx, chip: string, o: (s: string) => void = out): number {
     err(`chip ${chip} was never offered in this run and holds no claim: nothing to hand back\n`);
     return 2;
   }
+  // One chat: a slot is the coordinator's own number, so only its claim goes back and the slot stays open.
+  const slot = existsSync(`${run}/slots/${chip}`);
   const wt = worktreeOf(c, chip), nwt = wt ? nativePath(wt) : '';
   let br = '';
   // Only a linked worktree of its own is written to. A registered directory that is no longer one (a removal
@@ -452,7 +452,7 @@ function handback(c: Ctx, chip: string, o: (s: string) => void = out): number {
       mkdirSync(`${run}/tasks/handed-back`, { recursive: true });
       renameSync(src, `${run}/tasks/handed-back/${id}.md`);
       o(`  ${id} -> ${nw}${cf ? `  continue-from ${cf}` : ''}\n`);
-      if (!cf) o(`  WARNING: ${chip} has no registered worktree on fleet/${chip}/${id}${br ? ` (it is on ${br})` : ''}, so ${nw} has no continue-from: the fresh worker starts from base and reads the notes of chip ${chip}\n`);
+      if (!cf && !slot) o(`  WARNING: ${chip} has no registered worktree on fleet/${chip}/${id}${br ? ` (it is on ${br})` : ''}, so ${nw} has no continue-from: the fresh worker starts from base and reads the notes of chip ${chip}\n`);
     } else if (existsSync(`${run}/tasks/handed-back/${id}.md`) && existsSync(`${run}/tasks/ready/${nw}.md`)) {
       // An earlier handback filed it and stopped before closing the claim: telling the planner to re-file
       // it would file it twice.
@@ -468,6 +468,10 @@ function handback(c: Ctx, chip: string, o: (s: string) => void = out): number {
     try { rmSync(`${run}/pane/running/${w}`, { recursive: true, force: true }); o(`  walk ${w} is pending again: its host was handed back\n`); } catch { /* the sweep's lease frees it */ }
   }
   rmf(`${run}/tight/${chip}`);
+  if (slot) {
+    o(`RELEASED ${chip}: ${n} task(s) filed again; slot ${chip} is still yours, claim on it with next (docs/ONECHAT.md)\n`);
+    return 0;
+  }
   // Its questions and the walks it asked for stay unanswered under its number: the coordinator reads them here.
   const asks = openAsks(c, chip);
   if (asks) o(`  unanswered:${asks} - their answers go to the replacement (fleet-wait.md)\n`);

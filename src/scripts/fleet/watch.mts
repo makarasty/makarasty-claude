@@ -4,7 +4,7 @@ import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSyn
 import { basename } from 'node:path';
 import { tmpdir } from 'node:os';
 import type { Command, Ctx } from './lib.mjs';
-import { lf, sub, out, isDir, read, firstLine, names, now, slashes, configDir, cal, calint, pluginVersion, live, claimsOf, laneGaps, cat, noCr, mtimeMs, newer, olderThanMin, chipFinished, started, recordedVersion, versionReadable, versionOlder, installedVersion, claimHolders, workerSessions, sessionCtx, coordinatorSid, coordCtx, gt, afterIds, operatorOwed, isFile } from './lib.mjs';
+import { lf, sub, out, isDir, read, firstLine, names, now, slashes, configDir, cal, calint, pluginVersion, live, claimsOf, laneGaps, cat, noCr, mtimeMs, newer, olderThanMin, chipFinished, started, recordedVersion, versionReadable, versionOlder, installedVersion, claimHolders, workerSessions, sessionCtx, coordinatorSid, recordFleetSession, coordCtx, gt, afterIds, operatorOwed, isFile } from './lib.mjs';
 
 // ---- ctx and contexts ------------------------------------------------------------------------------------
 
@@ -53,12 +53,7 @@ export function ctx(c: Ctx): number {
   }
   // The watch runs this in the coordinator's session: that keeps its fleet-sessions record fresh.
   const sid = process.env.CLAUDE_CODE_SESSION_ID || '';
-  if (sid && coordinatorSid(c) === sid) {
-    try {
-      mkdirSync(`${configDir()}/makarasty/fleet-sessions`, { recursive: true });
-      writeFileSync(`${configDir()}/makarasty/fleet-sessions/${sid}`, `${absrun}\n`);
-    } catch { /* a courtesy */ }
-  }
+  if (sid && coordinatorSid(c) === sid) recordFleetSession(absrun, sid);
   runawayLogs(c);
   const iv = installedVersion();
   const runid = basename(absrun);

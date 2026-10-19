@@ -25,6 +25,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { findRuns, chipOf, rel, pauseGate } from './run-dir.mjs';
 import type { HookPayload } from './run-dir.mjs';
+import { field, NEEDS } from '../scripts/fleet/lib.mjs';
 
 // What `fleet-load.mjs --json` prints, the fields this hook reads.
 interface Census { tight?: boolean; freeGB?: number; groups?: Record<string, { n: number; totalMB?: number; maxMB?: number }> }
@@ -60,31 +61,49 @@ if (!SHELL && !BROWSER.test(tool)) bail();
 // and a commit message that mentions jest name a runner without running one. The scoping arguments are the
 // ones that make it bounded: a path, a project, a name filter, or the changed set. `--watch` is excluded
 // because a watcher is the operator's own long-running process - but `--watch=false` is a full run.
-const RUNNERS = /(?:^|[;&|(]|\bthen|\bdo)\s*(?:[A-Z_][A-Z0-9_]*=\S*\s+)*(?:(?:npx|bunx|pnpm\s+(?:exec|dlx)|yarn(?:\s+run)?|python3?\s+-m)\s+(?:--?[\w-]+(?:=\S+)?\s+)*)?(vitest|jest|pytest|vue-tsc|tsc|(?:\.[\\/])?gradlew(?:\.bat)?|gradle|mvn|cargo\s+test|go\s+test|(?:npm|pnpm(?:\s+(?:-r|--recursive))?|yarn(?:\s+workspaces\s+foreach(?:\s+-\S+)*)?|bun)\s+(?:run\s+)?test|(?:npm\s+run|pnpm(?:\s+(?:-r|--recursive))?(?:\s+run)?|yarn(?:\s+run)?|bun\s+run)\s+(?:typecheck|type-check|tsc)|npm\s+t)(?![\w.-]|:watch(?![\w-]))/;
+// A wrapper in command position (`timeout -k 10 600`, `--signal KILL`, `gtimeout`, `nice -n 5`, `time`, `env -u X`, `env X=1`) still runs the runner.
+// A shell `-c`/`/c`/`-Command` body and a PowerShell `{ ... }` block (`Measure-Command`, `Start-Job`) are command positions too.
+// The flag counts only after a shell's name: `rg -c "npm test"` and `ls -c` are counts, not shells.
+const SHELL_C = String.raw`(?<![\w.-])(?:(?:ba|z|da|k)?sh|pwsh|powershell|cmd)(?:\.exe)?(?:\s+[-/]\S+)*?\s+(?:-[a-z]*c|/[cC]|-Command)\s+`;
+const RUNNERS = new RegExp(String.raw`(?:^|[;&|({]|\bthen|\bdo|${SHELL_C}\$?["']?)\s*(?:(?:[A-Z_][A-Z0-9_]*=\S*|g?timeout(?:\s+(?:-[ks]\s*\S+|--(?:signal|kill-after)\s+\S+|--?[\w-]+(?:=\S+)?))*\s+\d+(?:\.\d+)?[smhd]?|nice(?:\s+-n\s*-?\d+|\s+-\d+)?|time(?:\s+-p)?|env(?:\s+(?:-u\s*\S+|--unset\s+\S+|-\S+))*|command|nohup)\s+)*(?:(?:npx|bunx|pnpm\s+(?:exec|dlx)|yarn(?:\s+run)?|python3?\s+-m)\s+(?:--?[\w-]+(?:=\S+)?\s+)*)?(vitest|jest|pytest|vue-tsc|tsc|(?:\.[\\/])?gradlew(?:\.bat)?|gradle|mvn|cargo\s+test|go\s+test|(?:npm|pnpm(?:\s+(?:-r|--recursive))?|yarn(?:\s+workspaces\s+foreach(?:\s+-\S+)*)?|bun)\s+(?:run\s+)?test|(?:npm\s+run|pnpm(?:\s+(?:-r|--recursive))?(?:\s+run)?|yarn(?:\s+run)?|bun\s+run)\s+(?:typecheck|type-check|tsc)|npm\s+t)(?![\w.-]|:watch(?![\w-]))`);
 // A config file is not a scope (`--config ./vitest.config.ts` runs everything), and `--noEmit` is followed
 // by a path only when the next word on its line is not a redirect, a pipe or a comment (`2>&1 | tail`).
 const SCOPED = /(--changed|--project|--filter|--testPathPattern|--test-name-pattern|(?:^|\s)-[tp]\s|--tests\s|--watch(?:All)?(?!=false)\b|--related|\.(test|spec)\.[jt]sx?|[\\/](?![\w.-]*\.config\.)[\w.-]+\.(ts|tsx|js|py|kt|java)\b|--noEmit[ \t]+(?![|&;<>#]|\d*>)[^-\s])/;
 
 const cmd = SHELL ? String(input.command || '') : '';
 // A message names a runner without running one (`git commit -am "fix; npm t"`, `-m"..."`, `$'...'`), so its
-// text is blanked; a `bash -c "npm test"` body is a command, so other quotes are not. `echo "npm test" | sh`
-// is missed for the same reason. A `:watch` script given `--run` or `--watch=false` is a one-shot run.
+// text is blanked; so is any other quoted text that names a runner (`gh pr create --body "fix; npm test"`,
+// `grep -E "jest|vitest"`). A quoted path stays: it is the runner's scope. A shell's `-c` body is a command,
+// so it stays and only the quotes inside it are read this way; `echo "npm test" | sh` is missed for that.
+// A `:watch` script given `--run` or `--watch=false` is a one-shot run.
 // sh single quotes have no escapes; a double-quoted body holding `$(...)` runs a command, so it stays
 // (`echo "$(npm test)"`) - except `$(cat <<'EOF'`, the usual way to pass a long commit message.
-let shown = cmd.replace(/((?:^|\s)(?:-[a-z]*m|--message|echo|printf)(?:\s*|=))(\$?"(?:[^"\\]|\\.)*"|\$'(?:[^'\\]|\\.)*'|'[^']*')/g,
-  (m: string, pre: string, body: string) => (/^\$?"/.test(body) && /\$\((?!\s*cat\s+<<)/.test(body) ? m : `${pre}""`));
+const QUOTED = new RegExp(String.raw`(?:(${SHELL_C})|((?:^|\s)(?:-[a-z]*m|--message|echo|printf)(?:\s*|=)))?(\$?"(?:[^"\\]|\\.)*"|\$'(?:[^'\\]|\\.)*'|'[^']*')`, 'g');
+const blank = (s: string): string => s.replace(QUOTED, (m: string, sh: string | undefined, msg: string | undefined, body: string) => {
+  const open = body.startsWith('$') ? 2 : 1;
+  if (sh) return sh + body.slice(0, open) + blank(body.slice(open, -1)) + body.slice(-1);
+  if (/^\$?"/.test(body) && /\$\((?!\s*cat\s+<<)/.test(body)) return m;
+  // A quoted path (`"jest/setup.test.ts"`) is a scope even when it starts with a runner's name: keep it.
+  const inner = body.slice(open, -1);
+  return msg || (RUNNERS.test(inner) && !SCOPED.test(inner)) ? `${msg || ''}""` : m;
+});
+let shown = blank(cmd);
 if (/--run\b|--watch=false/.test(shown)) shown = shown.replace(/:watch\b/g, '');
 const runner = SHELL ? RUNNERS.exec(shown) : null;
+// Scope is read from the runner on: a wrapper's own flags (`time -p`) are not the runner's `-p`/`-t`.
+const fromRunner = runner ? shown.slice(runner.index + runner[0].length - runner[1]!.length) : '';
 // To tsc, `-p .` or `-p tsconfig.json` is the whole project; `-p packages/a/tsconfig.json` is one package.
 const scopeOf = runner && /tsc|typecheck|type-check/.test(runner[1]!)
-  ? cmd.replace(/(?:^|\s)(?:-p|--project)(?:\s+|=)(?:\.\/)?[^\s/\\]+(?=\s|$)/g, ' ') : cmd;
+  ? fromRunner.replace(/(?:^|\s)(?:-p|--project)(?:\s+|=)(?:\.\/)?[^\s/\\]+(?=\s|$)/g, ' ') : fromRunner;
 // A workspace is a scope to the package manager, before any `--`; to jest after it, `-w 2` is --maxWorkers.
 const workspace = !!runner && /^(npm|pnpm|yarn|bun)\b/.test(runner[1]!) && /(?:^|\s)(?:-w|-F|--workspace)[\s=]/.test(cmd.split(/\s--(?:\s|$)/)[0]!);
 if (SHELL && (!runner || workspace || SCOPED.test(scopeOf))) bail();
 
 const { fleetDir, runs } = findRuns(payload.cwd || process.cwd());
 if (!fleetDir) bail();
-const { run, chip } = chipOf(runs, session);
+const { run, chip } = chipOf(runs, session, payload.agent_id);
+// A once-marker per agent: subagents of one chat are separate workers, each told once.
+const who = payload.agent_id ? `${session}.${payload.agent_id}` : session;
 if (!run || !chip) bail();
 
 // A browser action is not rare the way a full suite is: every click and screenshot lands here, and the
@@ -98,7 +117,7 @@ if (BROWSER.test(tool) && !process.env.FLEET_LOAD && os.freemem() / 2 ** 30 >= C
 
 // A browser refusal is said once per session, like the one for a suite below: a worker refused on every
 // click stops reading the reason and starts working around it.
-const browserOnce = path.join(run, 'chips', `${session}.browser-warned`);
+const browserOnce = path.join(run, 'chips', `${who}.browser-warned`);
 if (BROWSER.test(tool) && fs.existsSync(browserOnce)) bail();
 
 // Only now, with a fleet worker about to do something expensive, is the census worth its spawn.
@@ -124,7 +143,7 @@ const say = (msg: string) => { process.stderr.write(msg + '\n'); process.exit(2)
 
 if (BROWSER.test(tool)) {
   if (!census || !census.tight) bail();
-  try { fs.writeFileSync(browserOnce, new Date().toISOString()); } catch { bail(); }
+  try { fs.mkdirSync(path.dirname(browserOnce), { recursive: true }); fs.writeFileSync(browserOnce, new Date().toISOString()); } catch { bail(); }
   const heaviest = census.groups?.['browser pane or window']?.maxMB;
   say(
     `The machine is down to ${census.freeGB} GB free and this session is driving a browser pane` +
@@ -141,20 +160,37 @@ if (BROWSER.test(tool)) {
 
 // A full run, from a worker. Two things make it acceptable: holding the run's verify claim, which is the
 // lane that exists for exactly this, or a machine with room and nobody else already running one.
+// Open claims only: a claim stays in claimed/ after its done marker, and a dead or released one is no claim.
 const claimed = (() => {
   try {
     return fs.readdirSync(path.join(run, 'tasks', 'claimed'), { withFileTypes: true })
-      .filter((e) => e.isDirectory()).map((e) => e.name);
+      .filter((e) => e.isDirectory() && !e.name.includes('.dead-') && !e.name.includes('.released-') &&
+        !fs.existsSync(path.join(run, 'tasks', 'done', e.name)))
+      .map((e) => e.name);
   } catch { return []; }
 })();
-const holdsVerify = claimed.some((id) => {
-  try {
-    const owner = fs.readFileSync(path.join(run, 'tasks', 'claimed', id, 'owner'), 'utf8');
-    if (!owner.split('\n').some((l) => l.trim() === `chip ${chip}`)) return false;
-    const task = fs.readFileSync(path.join(run, 'tasks', 'ready', `${id}.md`), 'utf8');
-    return /^needs:\s*verify/m.test(task);
-  } catch { return false; }
-});
+// One chat: the coordinator claims as `chip NN` for a slot, but its subagent calls in as `chip agent-<id>`, a
+// new id on every spawn. A subagent there holds whatever its run's slots hold.
+const agent = chip.startsWith('agent-');
+const slots = (() => {
+  if (!agent) return [];
+  try { return fs.readdirSync(path.join(run, 'slots')); } catch { return []; }
+})();
+const mine = new Set([`chip ${chip}`, ...slots.map((n) => `chip ${n}`)]);
+const owned = (id: string): boolean => {
+  try { return fs.readFileSync(path.join(run, 'tasks', 'claimed', id, 'owner'), 'utf8').split('\n').some((l) => mine.has(l.trim())); } catch { return false; }
+};
+// The lane as `next` reads it, so the hook and the queue never disagree on what a task needs.
+const needs = (id: string): string => {
+  try { return field(fs.readFileSync(path.join(run, 'tasks', 'ready', `${id}.md`), 'utf8'), NEEDS) || 'repo'; } catch { return ''; }
+};
+const verify = (id: string): boolean => needs(id) === 'verify';
+// Which slot a subagent works cannot be told from its id, so a verify slot beside a repo slot made every
+// subagent exempt and a coder's full suite ran beside the verify one. Exempt only while every open claim is
+// verify or a pane walk: pane tasks, like verify, run after the code tasks, so no coder's suite is beside them.
+const holdsVerify = agent
+  ? claimed.some((id) => owned(id) && verify(id)) && claimed.every((id) => ['verify', 'pane'].includes(needs(id)))
+  : claimed.some((id) => owned(id) && verify(id));
 if (holdsVerify) bail();
 
 const live = ['toolchain: typecheck', 'toolchain: tests']
@@ -165,9 +201,10 @@ if (!census?.tight && !live) bail();
 
 // Raised once per session: a worker that cannot get past this stops trusting it and starts working around
 // it, which is worse than the run it was going to make.
-const once = path.join(run, 'chips', `${session}.memory-warned`);
+const once = path.join(run, 'chips', `${who}.memory-warned`);
 if (fs.existsSync(once)) bail();
-try { fs.writeFileSync(once, new Date().toISOString()); } catch { bail(); }
+// One chat registers no chip, so chips/ may not exist yet.
+try { fs.mkdirSync(path.dirname(once), { recursive: true }); fs.writeFileSync(once, new Date().toISOString()); } catch { bail(); }
 
 say(
   `A full run of \`${(cmd.match(RUNNERS) || [])[1] || 'the suite'}\` is the whole machine, and the machine is not free right now` +
@@ -176,6 +213,9 @@ say(
   // A brief worker has no queue to claim the verify lane from: `next` sends it back to its brief.
   (fs.existsSync(path.join(run, `brief-${chip}.md`))
     ? `Scope it: name the file, the project, or --changed. A brief has no verify lane; leave the full run to the coordinator.\n\n`
+    // A one-chat subagent claims nothing itself: the coordinator holds the verify lane for it.
+    : chip.startsWith('agent-')
+    ? `Scope it: name the file, the project, or --changed. If the whole run is needed, return and say so; the coordinator runs it under the verify lane.\n\n`
     : `Scope it, or claim the verify lane. The verify lane is one worker wide and it exists for this:\n\n` +
       `  scoped now:   name the file, the project, or --changed\n` +
       `  whole thing:  finish (or hand back) the repo task you hold, then sh <plugin>/scripts/fleet.sh next "${rel(run)}" ${chip} repo\n` +

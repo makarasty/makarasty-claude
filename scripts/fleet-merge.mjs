@@ -271,6 +271,20 @@ if (cmd === 'fixqueue') {
     for (const m of take)
         for (const f of fileOf(m))
             byFile.set(f, [...(byFile.get(f) || []), m.id]);
+    const PANE = /\b(click|type|hover|scroll|drag|screenshot|overlaps?|zoom)\b/i;
+    // A finding's `repro` is an expression or steps (PROTOCOL, "Finding schema"). Only a one-line command that
+    // names no pane action and opens like one (lower case, a path, `[`, or VAR=x) goes into `repro:`; a
+    // sentence or numbered steps leave it empty and stay in the body, for the coordinator to turn into one.
+    // shortcut: a lower-case prose line ("open settings") passes; its `prove before` then fails as an unknown
+    // command and its `after` too, so `finish` refuses it rather than closing it - upgrade if a run shows one.
+    // A ` #` comment is refused too (a root joins member repros, and it would swallow the rest), and so is a
+    // JS expression a profiler writes (`performance.getEntriesByType('navigation')[0].duration`).
+    // A backslash too: prove runs the line in bash, where `node sub\x.mjs` runs `subx.mjs` and `before` fails falsely.
+    const shellRepro = (r) => {
+        const s = String(r || '').trim();
+        return !/[\r\n\\]/.test(s) && !/^\d+[.)]\s/.test(s) && !PANE.test(s) && !/\s#/.test(s)
+            && !/^[a-z_$][\w$]*(\.[\w$]+)+\s*[([]/.test(s) && /^([A-Z_][A-Z0-9_]*=\S*\s+)*[a-z.\/\[~$]/.test(s) ? s : '';
+    };
     take.forEach((m, i) => {
         const twins = [...new Set(fileOf(m).flatMap((f) => byFile.get(f) || []))].filter((id) => id !== m.id);
         const slug = String(m.area).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'finding';
@@ -280,9 +294,10 @@ task-id: task-${n}-${slug}
 kind: ${m.rects || m.probe ? 'design' : 'fix'}
 finding-id: ${m.id}
 severity: ${m.severity}
-needs: ${/\b(click|type|hover|scroll|drag|screenshot|overlaps?|zoom)\b/i.test(m.repro || '') ? 'pane' : 'repo'}
+needs: ${PANE.test(m.repro || '') ? 'pane' : 'repo'}
 budget: 25
 twins: [${twins.join(', ')}]
+repro:${shellRepro(m.repro) ? ` ${shellRepro(m.repro)}` : ''}
 ---
 
 # ${m.area}

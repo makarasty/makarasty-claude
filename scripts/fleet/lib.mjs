@@ -317,10 +317,13 @@ export function taskKind(text) {
 }
 // The ids a task waits for: every `after:` line of its frontmatter (handback rewrites them all, so all of
 // them count), commas or blanks between ids. A file with no frontmatter: its first `after:` line, as before.
+// One pair of brackets around the whole value is a list too (`after: [t01, t02]`, the flow list `owns:`
+// takes); an unclosed `[t01` stays as written, for `file` to refuse.
+export const idList = (v) => v.trim().replace(/^\[(.*)\]$/, '$1').split(/[ \t,\r]+/).filter(Boolean);
 export function afterIds(text) {
     const fm = frontmatter(text);
     if (!fm)
-        return field(text, AFTER).split(/[ \t,\r]+/).filter(Boolean);
+        return idList(field(text, AFTER));
     // A YAML list under an empty `after:` (`  - base`), written by hand past `file`, holds the task too.
     const ids = [];
     let inList = false;
@@ -329,7 +332,7 @@ export function afterIds(text) {
         if (k) {
             inList = (k[1] ?? '').toLowerCase() === 'after';
             if (inList)
-                ids.push(...yamlValue(k[2] ?? '').split(/[ \t,\r]+/));
+                ids.push(...idList(yamlValue(k[2] ?? '')));
             continue;
         }
         const item = /^[ \t]*-[ \t]+(.*?)[ \t\r]*$/.exec(l);
@@ -358,7 +361,7 @@ export function budgetOf(text) {
 // (`after: x y`, list items kept as items). Only the frontmatter: an `After:` line in the body is prose.
 export function renameAfter(text, id, nw) {
     const ls = lf(text).replace(/^﻿/, '').split('\n');
-    const swap0 = (v) => v.split(/[ \t,\r]+/).filter(Boolean).map((p) => (p === id ? nw : p)).join(' ');
+    const swap0 = (v) => idList(v).map((p) => (p === id ? nw : p)).join(' ');
     if (!/^(﻿)?---/.test(ls[0] ?? '')) {
         // No frontmatter: afterIds reads the first `after:` line, so that is the one renamed.
         const i = ls.findIndex((l) => AFTER.test(l));
@@ -366,7 +369,7 @@ export function renameAfter(text, id, nw) {
             ls[i] = `after: ${swap0((ls[i] ?? '').replace(/^after:/, ''))}`;
         return ls.join('\n');
     }
-    const swap = (v) => yamlValue(v).split(/[ \t,\r]+/).filter(Boolean).map((p) => (p === id ? nw : p)).join(' ');
+    const swap = (v) => idList(yamlValue(v)).map((p) => (p === id ? nw : p)).join(' ');
     let inList = false;
     for (let i = 1; i < ls.length; i++) {
         const l = ls[i] ?? '';
@@ -550,9 +553,15 @@ export function registerChip(c, chip) {
             writeFileSync(`${c.run}/chips/${sid}`, chip);
     }
     catch { /* `|| true` */ }
+    recordFleetSession(c.absrun, sid);
+}
+// This session belongs to the run at <absrun>, recorded where the tools plugin's context hook looks.
+export function recordFleetSession(absrun, sid = process.env.CLAUDE_CODE_SESSION_ID || '') {
+    if (!sid)
+        return;
     try {
         mkdirSync(`${configDir()}/makarasty/fleet-sessions`, { recursive: true });
-        writeFileSync(`${configDir()}/makarasty/fleet-sessions/${sid}`, `${c.absrun}\n`);
+        writeFileSync(`${configDir()}/makarasty/fleet-sessions/${sid}`, `${absrun}\n`);
     }
     catch { /* the context hook's record is a courtesy */ }
 }

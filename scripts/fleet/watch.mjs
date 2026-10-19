@@ -1,8 +1,8 @@
 // watch.mts - the coordinator's views: status, ctx, contexts. Part of fleet.mjs; see src/scripts/fleet.mts.
-import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename } from 'node:path';
 import { tmpdir } from 'node:os';
-import { lf, sub, out, isDir, read, firstLine, names, now, slashes, configDir, cal, calint, pluginVersion, live, claimsOf, laneGaps, cat, noCr, mtimeMs, newer, olderThanMin, chipFinished, started, recordedVersion, versionReadable, versionOlder, installedVersion, claimHolders, workerSessions, sessionCtx, coordinatorSid, coordCtx, gt, afterIds, operatorOwed, isFile } from './lib.mjs';
+import { lf, sub, out, isDir, read, firstLine, names, now, slashes, cal, calint, pluginVersion, live, claimsOf, laneGaps, cat, noCr, mtimeMs, newer, olderThanMin, chipFinished, started, recordedVersion, versionReadable, versionOlder, installedVersion, claimHolders, workerSessions, sessionCtx, coordinatorSid, recordFleetSession, coordCtx, gt, afterIds, operatorOwed, isFile } from './lib.mjs';
 // ---- ctx and contexts ------------------------------------------------------------------------------------
 // One line per session whose context crosses its next mark, nothing otherwise; the watch calls this every
 // minute. Past either mark the coordinator asks the operator once (fleet-plan, 8b).
@@ -58,13 +58,8 @@ export function ctx(c) {
     }
     // The watch runs this in the coordinator's session: that keeps its fleet-sessions record fresh.
     const sid = process.env.CLAUDE_CODE_SESSION_ID || '';
-    if (sid && coordinatorSid(c) === sid) {
-        try {
-            mkdirSync(`${configDir()}/makarasty/fleet-sessions`, { recursive: true });
-            writeFileSync(`${configDir()}/makarasty/fleet-sessions/${sid}`, `${absrun}\n`);
-        }
-        catch { /* a courtesy */ }
-    }
+    if (sid && coordinatorSid(c) === sid)
+        recordFleetSession(absrun, sid);
     runawayLogs(c);
     const iv = installedVersion();
     const runid = basename(absrun);

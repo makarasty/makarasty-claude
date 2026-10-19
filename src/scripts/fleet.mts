@@ -6,7 +6,7 @@
 //
 // fleet.sh stays the interface: it hands a ported command to `node fleet.mjs <fleet.sh path> <cmd> <run>
 // [args]` before its own preamble, and runs its shell branch only where node is absent. Every printed
-// line and exit code matches the shell branch it replaces; fleet-selftest.sh pins them.
+// line and exit code matches the shell branch it replaces; the self-test pins them.
 //
 // Compiled rather than run as .ts: node strips types again on every start, measured +14 ms for a small
 // file and +82 ms for a 3,400-line one, on a path every worker walks before every task.

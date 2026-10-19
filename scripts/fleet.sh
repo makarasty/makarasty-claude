@@ -37,6 +37,9 @@
 #   fleet.sh chips   <run-dir> <NN>[-<NN>] [lane] [--model <id> [--effort <level>]]
 #                                                  coordinator: the exact spawn_task title and prompt per worker,
 #                                                  and the model and effort each should run on (want/<NN>)
+#   fleet.sh chips   <run-dir> <NN>[-<NN>] <lane> --agents
+#                                                  one chat: register subagent slots (SLOT NN lane <lane>), no chip,
+#                                                  no want/; the coordinator runs next/finish for each slot
 #   fleet.sh status  <run-dir>                     planner view: claims, ages, markers, questions, lane gaps,
 #                                                  workers and their models, budgets, coordinator context
 #   fleet.sh whoami  <run-dir> <chip> <model> [effort]  worker: record the model, effort and plugin version it

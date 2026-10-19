@@ -3,7 +3,7 @@ import { appendFileSync, constants, copyFileSync, existsSync, linkSync, mkdirSyn
 import { spawnSync } from 'node:child_process';
 import { basename, dirname, resolve } from 'node:path';
 import { isatty } from 'node:tty';
-import { need, out, err, isDir, isFile, read, names, field, NEEDS, operatorOwed, now, slashes, configDir, cal, calint, loadScript, laneGaps, mtimeMs, nativePath, sub, HERE, afterIds, frontmatter, yamlValue } from './lib.mjs';
+import { need, out, err, isDir, isFile, read, names, field, NEEDS, operatorOwed, now, slashes, configDir, cal, calint, loadScript, laneGaps, recordFleetSession, mtimeMs, nativePath, sub, HERE, afterIds, frontmatter, yamlValue } from './lib.mjs';
 // ---- shared pieces ---------------------------------------------------------------------------------------
 // sed's `.` takes a \r, JS's does not, so lib's AFTER misses `after:` on a CRLF line; this one does not.
 // `$(...)`: trailing newlines cut, and Git Bash's bash takes the CR before each of them too.
@@ -488,7 +488,9 @@ function width(c) {
     out(`REPO_WORKERS ${n}\n`);
     out(`  ready repo tasks ${ready}, one worker per ${per} -> ${want}\n`);
     out(`  machine cap ${cap} (${why})\n`);
-    out(`  the pane lane starts at ${cal(c, 'pane_workers_default', '2')} and is bound by memory, not by the display [M33]; the verify lane is 1\n`);
+    // One chat (slots/) has one browser pane, the coordinator's, so its pane lane is one subagent wide.
+    out(isDir(`${c.run}/slots`) ? '  the pane lane is 1 in one chat: browser subagents share its one pane, one at a time [M42]; the verify lane is 1\n'
+        : `  pane lane: 1 in one chat (browser subagents share its one pane [M42]); with separate chats it starts at ${cal(c, 'pane_workers_default', '2')} and is bound by memory, not by the display [M33]; the verify lane is 1\n`);
     out('  every constant above comes from calibration.json\n');
     return 0;
 }
@@ -501,11 +503,13 @@ function width(c) {
 function chips(c, args) {
     const run = c.run;
     const range = args[0] ?? '';
-    let lane = '', wmodel = '', weffort = '';
+    let lane = '', wmodel = '', weffort = '', agents = false;
     const rest = args.slice(1);
     while (rest.length) {
         const a = rest.shift() ?? '';
-        if (a === '--model' || a === '--effort') {
+        if (a === '--agents')
+            agents = true;
+        else if (a === '--model' || a === '--effort') {
             const v = rest[0] ?? '';
             if (!v) {
                 err(`${a} needs a value\n`);
@@ -543,6 +547,11 @@ function chips(c, args) {
     }
     if (weffort && !wmodel) {
         err('--effort needs --model beside it\n');
+        return 2;
+    }
+    // A slot's subagent gets its model on its own Agent call: no session reads want/ for it.
+    if (agents && wmodel) {
+        err('--model is for chips: a subagent slot takes its model on the Agent call (docs/ONECHAT.md)\n');
         return 2;
     }
     const dash = range.lastIndexOf('-');
@@ -584,7 +593,11 @@ function chips(c, args) {
     for (let j = i; j <= end; j++) {
         const nn = nnOf(j);
         let want;
-        if (existsSync(`${run}/brief-${nn}.md`)) {
+        if (agents && existsSync(`${run}/brief-${nn}.md`)) {
+            err(`worker ${nn} has a brief: a brief is a chat worker's, so offer it as a chip, not a slot\n`);
+            return 2;
+        }
+        else if (existsSync(`${run}/brief-${nn}.md`)) {
             want = 'brief';
             // A brief is one turn, and a switch lands on the next one.
             if (wmodel) {
@@ -615,15 +628,24 @@ function chips(c, args) {
     const sid = process.env.CLAUDE_CODE_SESSION_ID || '';
     if (sid) {
         writeFileSync(`${run}/coordinator`, `${sid}\n`);
-        try {
-            mkdirSync(`${configDir()}/makarasty/fleet-sessions`, { recursive: true });
-            writeFileSync(`${configDir()}/makarasty/fleet-sessions/${sid}`, `${c.absrun}\n`);
+        recordFleetSession(c.absrun, sid);
+    }
+    // One chat: the coordinator claims and finishes for slot NN itself and hands each task to a subagent.
+    if (agents) {
+        // slots/NN: the coordinator acts for this number (paused acks it); a chat chip is never in it.
+        mkdirSync(`${run}/slots`, { recursive: true });
+        for (; i <= end; i++) {
+            const nn = nnOf(i);
+            writeFileSync(`${run}/offered/${nn}`, `${lane}\n`);
+            writeFileSync(`${run}/slots/${nn}`, '');
+            out(`SLOT ${nn} lane ${lane}\n`);
         }
-        catch { /* the context hook's record is a courtesy */ }
+        out('spawn one background subagent per claimed task; see docs/ONECHAT.md\n');
     }
     for (; i <= end; i++) {
         const nn = nnOf(i);
         let seepane = '', prompt, what;
+        rmSync(`${run}/slots/${nn}`, { force: true }); // a chat worker now, which the coordinator never acks for
         // What this worker should run on; `whoami` checks it. A re-offer without --model keeps the wish a
         // respawn would otherwise lose; `none` drops it.
         if (wmodel === 'none')
@@ -645,9 +667,11 @@ function chips(c, args) {
         }
         out(`CHIP ${nn}\ntitle: fleet ${runid} ${nn}\ntldr: Worker ${nn} of fleet run ${runid}, ${what}. It works by itself and reports to the coordinator chat; open it.${seepane}\nprompt: ${prompt}\n\n`);
     }
-    out('Offer every CHIP above now, each as its own mcp__ccd_session__spawn_task with exactly that title, tldr and prompt.\n');
-    out('The title is the worker\'s address: fleet-wait, fleet-resume and send_message find it by that title and no other.\n');
-    out('A chip is an offer the operator can decline with one click, so offer every one of them. If a project or memory rule seems to forbid chips for fleet workers, quote that rule to the operator in this same turn, with the chips already offered; never replace chips with paste lines.\n');
+    if (!agents) {
+        out('Offer every CHIP above now, each as its own mcp__ccd_session__spawn_task with exactly that title, tldr and prompt.\n');
+        out('The title is the worker\'s address: fleet-wait, fleet-resume and send_message find it by that title and no other.\n');
+        out('A chip is an offer the operator can decline with one click, so offer every one of them. If a project or memory rule seems to forbid chips for fleet workers, quote that rule to the operator in this same turn, with the chips already offered; never replace chips with paste lines.\n');
+    }
     // Every lane the queue already holds work for needs a worker from the first minute: tasks filed at 18:34
     // waited 19 minutes on 2026-10-05 for chips that were promised "for wave 3". A `needs:` that is not a
     // lane is fixed in the task file; no chip can cover it.
@@ -655,7 +679,7 @@ function chips(c, args) {
     const lanes = gap.filter((l) => !l.includes('is not a lane'));
     const bad = gap.filter((l) => l.includes('is not a lane'));
     if (lanes.length)
-        out(`STILL WITHOUT A WORKER:\n${lanes.join('\n')}\nOffer chips for those lanes in this same turn.\n`);
+        out(`STILL WITHOUT A WORKER:\n${lanes.join('\n')}\n${agents ? 'Register slots (chips <run> <NN> <lane> --agents)' : 'Offer chips'} for those lanes in this same turn.\n`);
     if (bad.length)
         out(`FIX THE TASK, not the chips:\n${bad.join('\n')}\n`);
     return 0;

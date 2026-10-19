@@ -189,8 +189,9 @@ function nextHeld(c: Ctx, chip: string, lane: string): number {
         if (lf(read(owner)).split('\n').includes(`chip ${chip}`) && existsSync(`${run}/tasks/done/${d}`)) dn++;
       }
       if (dn >= calint(c, 'delegate_past_tasks', 3)) {
-        out(`DELEGATE: you have finished ${dn} tasks in this session and each left 20-30 k of context behind [M30].\n`);
-        out('  Hand this task to ONE subagent at the task\'s model - task file, RULES.md, your notes - with findings filed through find. Keep your own context flat.\n');
+        // Measured on 2026-10-12-owner-polish-2: a task worked inline grew the session by 54k at p50, 130k at p90.
+        out(`DELEGATE: you have finished ${dn} tasks in this session; a task worked inline leaves 54 k of context behind (p50), 130 k (p90) [M41].\n`);
+        out('  Hand this task to ONE makarasty:fleet-coder subagent at the task\'s model - task file, RULES.md, your notes in its prompt - with findings filed through find. Keep your own context flat.\n');
       }
     }
     out(`ARM_CLOCK background what this prints: sh "${c.sh}" clock "${c.absrun}" ${chip} ${id} ${b}\n---\n`);
@@ -309,7 +310,31 @@ function finishHeld(c: Ctx, chip: string, id: string, branch: string): number {
       err('  A reproduction that passes BEFORE the change refutes the finding, which is a result and\n');
       err('  not a failure: write it up in your notes and finish with FLEET_REFUTED=1 set.\n');
       if (!process.env.FLEET_REFUTED) return 1;
-      err(`FLEET_REFUTED set: closing ${id} as a refutation rather than as a fix.\n`);
+      if (kind === 'root') {
+        // A root ruled a coincidence leaves each member's defect real, so its reproduction fails before and
+        // after alike: no passing `before` ever comes, and without a marker its members wait for ever. It
+        // closes on a written reason instead, in the chip's notes where every other reason is kept.
+        const notes = `${run}/${chip}.notes.md`, tag = `refuted ${id}:`;
+        if (!lines(read(notes)).some((l) => l.startsWith(tag) && l.slice(tag.length).trim() !== '')) {
+          err(`FLEET_REFUTED refused for ${id}: a root closes as a coincidence only on a written reason, and\n`);
+          err(`  ${notes} has no line \`${tag} <why the shared cause is a coincidence>\`. Add it, then finish again.\n`);
+          return 1;
+        }
+        err(`FLEET_REFUTED set: closing root ${id} as a coincidence; its members are fixed on their own evidence.\n`);
+      } else {
+        // Only a `before` that passed refutes the finding: no `before`, or one that failed and an `after` that
+        // still fails, is an unproven fix, and the flag is no way past that.
+        let before = -1;
+        for (const l of read(`${d}/proof`).split('\n')) {
+          try { const p = JSON.parse(l) as { phase?: string; exit?: number }; if (p.phase === 'before') before = p.exit ?? -1; } catch { /* a blank or torn line */ }
+        }
+        if (before !== 0) {
+          err(`FLEET_REFUTED refused for ${id}: ${before < 0 ? 'no `before` run was recorded' : `the last \`before\` run failed (exit ${before})`},\n`);
+          err('  so the reproduction never passed before the change and nothing is refuted. Prove the fix instead.\n');
+          return 1;
+        }
+        err(`FLEET_REFUTED set: closing ${id} as a refutation rather than as a fix.\n`);
+      }
     }
   }
 

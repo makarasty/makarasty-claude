@@ -30,6 +30,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { execSync, spawnSync } from 'node:child_process';
 import { cal, FILE_RE } from '../hooks/run-dir.mjs';
+import { frontmatter, idList, yamlValue } from './fleet/lib.mjs';
 const args = process.argv.slice(2);
 const cmd = args[0];
 const die = (msg, code = 2) => { console.error(msg); process.exit(code); };
@@ -286,6 +287,12 @@ function cluster(runDir, queueDir) {
         // checkout stood on, and every member then merged that branch's other work in with the root's.
         const bases = new Set(memberTasks.map((f) => (fs.readFileSync(path.join(ready, f), 'utf8').match(/^base:[ \t]*(\S+)/m) || [])[1] ?? ''));
         const base = bases.size === 1 ? [...bases][0] : '';
+        // The root's reproduction is the members' joined with `||`: it fails only while every member reproduces
+        // and passes once the seam fix resolves at least one - a member may still need its own change, which its
+        // own task proves. One member without a command leaves it empty, for the coordinator to rule on, and so
+        // does one with a ` #` comment, which would swallow every member joined after it.
+        const repros = memberTasks.map((f) => (((fs.readFileSync(path.join(ready, f), 'utf8').split(/^---\r?$/m)[1] || '').match(/^repro:[ \t]*(.*)$/m) || [])[1] ?? '').trim());
+        const repro = repros.every((x) => x && !/\s#/.test(x)) ? repros.map((x) => `(${x})`).join(' || ') : '';
         const members = c.members.map((id) => {
             const f = take.find((x) => x.id === id);
             return `- **${id}** (${f.severity}, ${f.area}) ${f.observed}`;
@@ -298,6 +305,7 @@ needs: repo
 budget: 40
 ${base ? `base: ${base}\n` : ''}shared: ${c.shared}
 gates: [${memberTasks.map((f) => f.replace(/\.md$/, '')).join(', ')}]
+repro:${repro ? ` ${repro}` : ''}
 ---
 
 # One cause, or ${c.members.length} coincidences: \`${c.shared}\`
@@ -319,14 +327,17 @@ editing beside you.
    right one more often than it feels: measured across one application, roughly 15 findings in every 100
    were refuted the moment somebody tried to fix them, and the refutation was almost always of the
    mechanism rather than the symptom.
-2. **If refuted:** write the refutation into your notes, finish this task, and say in the notes that the
-   members are independent. They unblock on your done marker either way, and each is then fixed on its own
-   evidence.
+2. **If refuted:** write the refutation into your notes as one line, \`refuted <this task's id>: <why the shared
+   cause is a coincidence>\`, say there that the members are independent, and finish with \`FLEET_REFUTED=1\`.
+   The members unblock on your done marker either way, and each is then fixed on its own evidence.
 3. **If one cause holds:** fix it once, here, at the seam. Then say for each member whether it is now
    resolved, still needs a change of its own, or was never a defect. A member you resolve is still worked
    by its own task, which re-runs its reproduction and confirms - never by deleting the task.
 4. **Prove it the way every fix in this queue is proved.** \`fleet-gate.mjs prove\` before your change with the
    reproduction failing, and after it with the reproduction passing. \`finish\` refuses this task otherwise.
+   The \`repro:\` above joins the members' with \`||\`: it fails only while every member reproduces and passes
+   once your seam fix resolves at least one. It proves the seam fix, not each member; each member's own task
+   proves that one.
 
 ## Done when
 
@@ -384,7 +395,11 @@ function treeState(from, runDir) {
         die(`${from} is not in a git checkout: prove compares the tree around a fix, and there is none here`);
     const head = run('git rev-parse HEAD', top) || 'no-head';
     const rel = path.relative(top, path.resolve(runDir)).split(path.sep).join('/');
-    const scope = `-- . ":(exclude).fleet"${rel && !rel.startsWith('..') && !path.isAbsolute(rel) ? ` ":(exclude)${rel}"` : ''}`;
+    // An exclude naming an ignored path makes `git add` fail with "paths are ignored" for every prove of a
+    // run whose .fleet is gitignored; add -A never takes an ignored path, so it needs no exclude.
+    const ex = ['.fleet', ...(rel && !rel.startsWith('..') && !path.isAbsolute(rel) ? [rel] : [])]
+        .filter((p) => spawnSync('git', ['check-ignore', '-q', p], { cwd: top }).status !== 0);
+    const scope = `-- .${ex.map((p) => ` ":(exclude)${p}"`).join('')}`;
     const index = path.resolve(top, run('git rev-parse --git-path index', top));
     const tmp = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'fleet-gate-')), 'index');
     try {
@@ -413,8 +428,24 @@ function treeState(from, runDir) {
 }
 // One command line from what followed `--`. A single argument is a command the caller already quoted and
 // runs as written; several are re-quoted, since joining them bare re-split `-t "login flow"` into two words.
-const commandLine = (args) => (args.length === 1 ? args[0]
-    : args.map((a) => (/^[\w@%+=:,./\\-]+$/.test(a) ? a : JSON.stringify(a))).join(' '));
+// A POSIX shell expands `$5` and backticks inside double quotes, so there each word is single-quoted (`'` as
+// `'\''`), a `C:\x` path too; cmd.exe has no single quotes and takes double ones.
+const commandLine = (args, posix) => (args.length === 1 ? args[0]
+    : args.map((a) => (posix ? (/^[\w@%+=:,./-]+$/.test(a) ? a : `'${a.replace(/'/g, "'\\''")}'`)
+        : /^[\w@%+=:,./\\-]+$/.test(a) ? a : JSON.stringify(a))).join(' '));
+// The shell a reproduction runs in. On Windows `shell: true` is cmd.exe, where a POSIX line from the agent's
+// Git Bash (`CI=1 node x`, `./x.sh`, 'quotes') failed as "not recognized" and a `before` falsely reproduced:
+// there it is $SHELL when that names a file, else the bash of the Git for Windows that runs git, else cmd.
+function reproShell() {
+    if (process.platform !== 'win32')
+        return true;
+    let exec = '';
+    try {
+        exec = execSync('git --exec-path', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    }
+    catch { /* no git: prove dies on it later */ }
+    return [process.env.SHELL, exec && path.resolve(exec, '../../../bin/bash.exe')].find((s) => s && fs.existsSync(s)) || true;
+}
 function prove(runDir, taskId, phase, command) {
     if (phase !== 'before' && phase !== 'after')
         usage();
@@ -423,7 +454,8 @@ function prove(runDir, taskId, phase, command) {
     const claim = path.join(runDir, 'tasks', 'claimed', taskId);
     if (!fs.existsSync(claim))
         die(`no claim at ${claim} - claim the task before proving it`);
-    const line = commandLine(command);
+    const shell = reproShell();
+    const line = commandLine(command, shell !== true || process.platform !== 'win32');
     // One prove at a time per claim: a second one running inside the first's window put its own output in a
     // gap between runs, which `check` reads as the fix.
     // A lock whose prove was killed (a Bash timeout, a closed terminal) is taken over at once: its pid is gone.
@@ -460,7 +492,12 @@ function prove(runDir, taskId, phase, command) {
         // reproduction writes itself (a log, a snapshot, a formatter's rewrite) is never taken for the fix, and
         // a fix in a file the command also rewrites still counts.
         const pre = treeState(process.cwd(), runDir);
-        const r = spawnSync(line, { shell: true, stdio: 'inherit' });
+        // Windows bash gets the line through the environment: as a `shell:` it went through the Windows command
+        // line, where MSYS collapsed `\\` to `\`. Elsewhere `shell: true` hands the line to /bin/sh as one argv
+        // entry, unchanged already, and cmd needs its own command line.
+        const r = typeof shell === 'string'
+            ? spawnSync(shell, ['-c', 'eval "$FLEET_REPRO"'], { stdio: 'inherit', env: { ...process.env, FLEET_REPRO: line } })
+            : spawnSync(line, { shell, stdio: 'inherit' });
         const post = treeState(process.cwd(), runDir);
         const rec = { phase, exit: r.status === null ? 124 : r.status, when: now(), head: post.head, digest: post.tree.slice(0, 16), cmd: line, pre: pre.tree, post: post.tree };
         append(path.join(claim, 'proof'), rec);
@@ -472,6 +509,48 @@ function prove(runDir, taskId, phase, command) {
     finally {
         fs.rmSync(lock, { recursive: true, force: true });
     }
+}
+// The `owns:` paths of a task, as written in its frontmatter (`owns: a, b`, `owns: [a, b]`, or a YAML list
+// under an empty `owns:`), written relative to the project folder that holds `.fleet` and returned from git's
+// top, as `git diff-tree` names paths: `owns: src/a.ts` of `app/.fleet/<run>` is `app/src/a.ts`. None, or no
+// task file: an empty list.
+// shortcut: a glob counts as the plain prefix before its first `*`, and a path with a blank in it splits in two;
+// match with path.matchesGlob once it is stable on every supported node.
+function ownsOf(runDir, taskId) {
+    let text;
+    try {
+        text = fs.readFileSync(path.join(runDir, 'tasks', 'ready', `${taskId}.md`), 'utf8');
+    }
+    catch {
+        return [];
+    }
+    const found = [];
+    let inList = false;
+    for (const l of frontmatter(text) ?? []) {
+        const k = /^[ \t]*([A-Za-z_-]+)[ \t]*:[ \t]*(.*?)[ \t\r]*$/.exec(l);
+        if (k) {
+            inList = (k[1] ?? '').toLowerCase() === 'owns';
+            if (inList)
+                found.push(...idList(yamlValue(k[2] ?? '')));
+            continue;
+        }
+        const item = /^[ \t]*-[ \t]+(.*?)[ \t\r]*$/.exec(l);
+        if (inList && item)
+            found.push(...idList(yamlValue(item[1] ?? '')));
+    }
+    const parts = path.resolve(runDir).split(path.sep), at = parts.lastIndexOf('.fleet');
+    let pre = '';
+    if (at > 0) {
+        try {
+            pre = execSync('git rev-parse --show-prefix', { cwd: parts.slice(0, at).join(path.sep) + path.sep, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+        }
+        catch { /* no checkout there: as written */ }
+    }
+    return found.map((o) => {
+        const p = pre + o.replace(/^["']|["']$/g, '').split('\\').join('/').replace(/^(\.\/)+/, '');
+        const star = p.indexOf('*');
+        return star < 0 ? { path: p.replace(/\/+$/, ''), glob: false } : { path: p.slice(0, star), glob: true };
+    });
 }
 function check(runDir, taskId) {
     const claim = path.join(runDir, 'tasks', 'claimed', taskId);
@@ -521,6 +600,14 @@ function check(runDir, taskId) {
     if (kinds.has(true)) {
         const gaps = new Set(chain.flatMap((p, i) => (i > 0 ? diff(chain[i - 1].post, p.pre) : [])));
         why = diff(before.post, after.pre).filter((p) => gaps.has(p));
+        // In the one shared checkout another task's edit between the runs is a change too: with `owns:`, only
+        // what this task may touch counts as its fix.
+        const owned = ownsOf(runDir, taskId);
+        const others = why;
+        if (owned.length)
+            why = why.filter((p) => owned.some((o) => o.glob ? p.startsWith(o.path) : o.path === '' || p === o.path || p.startsWith(`${o.path}/`)));
+        if (!why.length && others.length)
+            fail(`nothing the task owns changed between the runs; what did change is outside its \`owns:\` (${others.slice(0, 10).join(', ')}${others.length > 10 ? ', ...' : ''}), so the passing run was made over its unfixed code`);
         moved = why.length > 0;
     }
     else

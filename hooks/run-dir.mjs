@@ -69,15 +69,31 @@ export function findRuns(cwd) {
     }
     return { fleetDir: null, runs: [] };
 }
+// The chip this session is in one run, or ''. One chat: the coordinator registers no chip, and each task
+// runs in a subagent of its session, so a call from a subagent there (agent_id set) is chip agent-<agent_id>.
+// The coordinator's own calls stay chipless: a pause holds the workers, never the chat that lifts it.
+export function chipIn(run, session, agentId) {
+    try {
+        const chip = fs.readFileSync(path.join(run, 'chips', session), 'utf8').trim();
+        if (chip)
+            return chip;
+    }
+    catch { /* no chip here */ }
+    if (!agentId)
+        return '';
+    try {
+        if (fs.readFileSync(path.join(run, 'coordinator'), 'utf8').trim() === session)
+            return `agent-${agentId}`;
+    }
+    catch { /* no coordinator recorded */ }
+    return '';
+}
 // The chip this session is, in the first run that registered it, and the run it belongs to.
-export function chipOf(runs, session) {
+export function chipOf(runs, session, agentId) {
     for (const run of runs) {
-        try {
-            const chip = fs.readFileSync(path.join(run, 'chips', session), 'utf8').trim();
-            if (chip)
-                return { run, chip };
-        }
-        catch { /* not this run */ }
+        const chip = chipIn(run, session, agentId);
+        if (chip)
+            return { run, chip };
     }
     return { run: null, chip: null };
 }
@@ -445,15 +461,9 @@ export function pauseGate(payload) {
         if (!run || seen.has(run))
             continue;
         seen.add(run);
-        let chip;
-        try {
-            chip = fs.readFileSync(path.join(run, 'chips', session), 'utf8').trim();
-        }
-        catch {
-            continue;
-        } // not a worker of this run
+        const chip = chipIn(run, session, payload.agent_id);
         if (!chip)
-            continue;
+            continue; // not a worker of this run
         // A chip a relaunch replaced is held whether or not the run is paused: the pause lifts, the retirement
         // does not. Checked first, because a retired worker has nothing in hand worth protecting.
         // Until the run lands: a finished run holds nobody, and a retired chat is never reused.
@@ -515,6 +525,9 @@ export function pauseGate(payload) {
             const why = shell && !scan(String(input.command || ''))
                 ? ' This line was refused for its shell syntax, not its commands: a backtick, $(, <(, a lone &, a > redirect other than 2>&1 or /dev/null, a ( in mid-line, an escaped quote or an unbalanced quote. Put a note or message in single quotes, without backticks, and run it again.'
                 : '';
+            if (subagent && chip === `agent-${payload.agent_id}`) {
+                return `RUN PAUSED by the operator${acked ? '' : ' and the grace is over'}: this call did not run. You are a fleet subagent of the coordinator: stop now, commit nothing, and return what you have done and what is left.`;
+            }
             if (subagent) {
                 return `RUN PAUSED by the operator${acked ? '' : ' and the grace is over'}: this call did not run. You are a subagent of worker ${chip}: stop now and return what you have; your parent commits it and stops.`;
             }

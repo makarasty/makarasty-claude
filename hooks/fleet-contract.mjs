@@ -55,7 +55,9 @@ const target = input.file_path || '';
 const { fleetDir, runs } = findRuns(payload.cwd || process.cwd());
 if (!fleetDir)
     bail();
-const { run, chip } = chipOf(runs, session);
+const { run, chip } = chipOf(runs, session, payload.agent_id);
+// A once-marker per agent: subagents of one chat are separate workers, each told once.
+const who = payload.agent_id ? `${session}.${payload.agent_id}` : session;
 if (!run || !chip)
     bail();
 // The surface is generated per project and edited by hand. Absent means this project has not opted in, and
@@ -185,10 +187,12 @@ if (!unaccounted.length)
 // Once per name per session. A hook that cannot remember what it has already said repeats itself every turn,
 // and a worker that cannot get past it stops trusting it and starts working around it.
 const first = unaccounted.find((s) => {
-    const mark = path.join(run, 'chips', `${session}.contract-${Buffer.from(s.token).toString('hex').slice(0, 40)}`);
+    const mark = path.join(run, 'chips', `${who}.contract-${Buffer.from(s.token).toString('hex').slice(0, 40)}`);
     if (fs.existsSync(mark))
         return false;
+    // One chat registers no chip, so chips/ may not exist yet: a write that threw here let every edit through.
     try {
+        fs.mkdirSync(path.dirname(mark), { recursive: true });
         fs.writeFileSync(mark, new Date().toISOString());
     }
     catch {
@@ -204,7 +208,7 @@ process.stderr.write(`This edit removes \`${first.token}\` from ${path.basename(
     `Nothing here says you are wrong - it says nobody outside your context knows yet.\n\n` +
     `Take one of the two, then make the edit again:\n\n` +
     `  Ask, if a person's answer would change what you do:\n` +
-    `    write "${runPath}/ask/${chip}-<n>.md" naming ${first.token}, what breaks, and your recommendation, then take another task\n\n` +
+    `    write "${runPath}/ask/${chip}-<n>.md" naming ${first.token}, what breaks, and your recommendation, then ${chip.startsWith('agent-') ? 'return and report it' : 'take another task'}\n\n` +
     `  Decide, if it would not:\n` +
     `    echo '{"token":"${first.token}","why":"<why this is safe, and what would have to be true for it not to be>"}' |\n` +
     `      node <plugin>/scripts/fleet-gate.mjs decide "${runPath}" ${chip}\n\n` +

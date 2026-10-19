@@ -28,7 +28,11 @@
 // tool's time, a background test run counts from its launch to its notification, and a gap that ends in a
 // plain user line is a wait, named by what woke the session. Overlapping work - parent and subagents at
 // once - is shared fractionally, so the parts sum to the wall clock. An idle stretch longer than 45 minutes
-// is an outage, not a wait. Only tasks that did not overlap another task of the same chip enter the split.
+// is an outage, not a wait, except where it lies in a pause the operator called: that part is "paused".
+// Pause windows come from <run>/pauses.log (`paused <ts> <reason>` / `resumed <ts>`, written by fleet.sh);
+// a run older than that log falls back to each chip's `stopped (paused <ts>)` notes line paired with the
+// next `resumed` its wake loop printed, and to none at all when a pairing is not clear-cut.
+// Only tasks that did not overlap another task of the same chip enter the split.
 //
 // HOST SPECIFIC, like fleet-retro.mjs: it assumes Claude Code's transcript layout. Assistant lines repeat
 // one message across several lines (one per content block), so usage is deduplicated by message.id.
@@ -85,7 +89,7 @@ interface Msg {
 }
 interface Transcript {
   file: string; tag: Tag; iv: Iv[]; msgs: Msg[]; tools: ToolRec[]; first: number | null; last: number | null;
-  badLines: number; meta: SubMeta;
+  badLines: number; meta: SubMeta; resumes: number[];
 }
 interface Session { sid: string; parent: Transcript; subs: Transcript[] }
 interface Task {
@@ -186,6 +190,10 @@ const STALL = 300;
 const OUTAGE = 45 * 60;
 const MISS_GAP = 300;
 const MISS_MIN = 20000;
+const CARRY_TARGET = 0.35; // report lines, not gates: parent carry-over share, and a fleet subagent's first prompt
+const SUB_START_TARGET = 45000;
+// The wake loop's last line when a pause lifts (lib wakeLoop): the fallback's resume evidence.
+const RESUMED_RE = /(?:^|\n)resumed\s*$/;
 const PRIO = ['ask-operator', 'model-stall', 'idle:coordinator', 'idle:operator', 'idle:wait-subagent',
   'agent-spawn-sync', 'idle', 'wait', 'bg:'];
 
@@ -228,6 +236,7 @@ async function parse(file: string, tag: Tag, meta: SubMeta = {}): Promise<Transc
   let first: number | null = null;
   let last: number | null = null;
   let badLines = 0;
+  const resumes: number[] = [];
 
   const rl = createInterface({ input: createReadStream(file, { encoding: 'utf8' }), crlfDelay: Infinity });
   for await (const raw of rl) {
@@ -314,6 +323,7 @@ async function parse(file: string, tag: Tag, meta: SubMeta = {}): Promise<Transc
         if (rec) {
           const txt = blockText(b.content);
           rec.dur = now - rec.ts;
+          if (RESUMED_RE.test(txt)) resumes.push(now);
           const bgm = /running in background with ID: (\w+)/.exec(txt);
           if (bgm && bgm[1]) { bg.set(bgm[1], [now, k]); bgRec.set(bgm[1], rec); }
           if (rec.name === 'Agent' || rec.name === 'Task') {
@@ -349,7 +359,7 @@ async function parse(file: string, tag: Tag, meta: SubMeta = {}): Promise<Transc
     u.out = x.stop === null ? Math.max(u.outRecorded, Math.round(x.chars / 4)) : u.outRecorded;
     x.cost = costOf(x);
   }
-  return { file, tag, iv, msgs: list, tools, first, last, badLines, meta };
+  return { file, tag, iv, msgs: list, tools, first, last, badLines, meta, resumes };
 }
 
 // ---------------------------------------------------------------------------------------------- run dir
@@ -417,6 +427,53 @@ function readTasks(run: string): Task[] {
   return tasks;
 }
 
+type Window = [start: number, end: number];
+
+// The operator's pauses. A pause still standing (PAUSED present) runs to now; a pause line with no resume
+// after it and no PAUSED is a log cut short and is dropped.
+function readPauses(run: string, byChip: Map<string, Session[]>): { source: string; windows: Window[] } {
+  const log = readText(join(run, 'pauses.log'));
+  const ws: Window[] = [];
+  if (log) {
+    let open: number | null = null;
+    for (const l of log.split(/\r?\n/)) {
+      const m = /^(paused|resumed) (\S+)/.exec(l);
+      const t = m ? Date.parse(m[2]!) / 1000 : NaN;
+      if (!m || !Number.isFinite(t)) continue;
+      if (m[1] === 'paused') open ??= t;
+      else if (open !== null) { if (t > open) ws.push([open, t]); open = null; }
+    }
+    if (open !== null && existsSync(join(run, 'PAUSED'))) ws.push([open, Date.now() / 1000]);
+    return { source: 'pauses.log', windows: merge(ws) };
+  }
+  // Fallback: each ack to its chip's next `resumed`. Two acks before one resume, or none after an ack, is a
+  // guess either way: then no window at all, and the idle time stays where it was.
+  let any = false;
+  for (const [chip, ss] of byChip) {
+    const stops = [...readText(join(run, `${chip}.notes.md`)).matchAll(/^stopped \(paused (\S+)\)/gm)]
+      .map((m) => Date.parse(m[1]!) / 1000).filter(Number.isFinite).sort((a, b) => a - b);
+    if (!stops.length) continue;
+    any = true;
+    const ev = ss.flatMap((s) => s.parent.resumes).sort((a, b) => a - b);
+    for (const [i, st] of stops.entries()) {
+      const end = ev.find((t) => t > st);
+      const next = stops[i + 1];
+      if (end === undefined || (next !== undefined && next < end)) return { source: 'notes, ambiguous: not used', windows: [] };
+      ws.push([st, end]);
+    }
+  }
+  return { source: any ? 'notes' : 'none', windows: merge(ws) };
+}
+
+function merge(ws: Window[]): Window[] {
+  const out: Window[] = [];
+  for (const [a, b] of [...ws].sort((x, y) => x[0] - y[0])) {
+    const last = out[out.length - 1];
+    if (last && a <= last[1]) last[1] = Math.max(last[1], b); else out.push([a, b]);
+  }
+  return out;
+}
+
 function projectsRoot(): string {
   return join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'projects');
 }
@@ -465,7 +522,7 @@ async function loadSession(sid: string, dir: string): Promise<Session> {
 
 const add = (m: Map<string, number>, k: string, v: number): void => { m.set(k, (m.get(k) ?? 0) + v); };
 
-function sweep(ivs: Iv[], a: number, b: number): { res: Map<string, number>; where: Map<string, number> } {
+function sweep(ivs: Iv[], a: number, b: number, paused: Window[] = []): { res: Map<string, number>; where: Map<string, number> } {
   const use: Iv[] = [];
   const ev: [number, boolean, number][] = [];
   for (const iv of ivs) {
@@ -480,10 +537,17 @@ function sweep(ivs: Iv[], a: number, b: number): { res: Map<string, number>; whe
   const where = new Map<string, number>();
   const realOn = new Map<number, Iv>();
   const idleOn = new Map<number, Iv>();
-  let idleRun: [number, string][] = [];
+  let idleRun: [number, number, string][] = [];
+  const inPause = (x: number, y: number): number => paused.reduce((t, [p, q]) => t + Math.max(0, Math.min(y, q) - Math.max(x, p)), 0);
+  // Idle inside a pause is paused; only what is left of the stretch can make it an outage.
   const flush = (): void => {
-    const total = idleRun.reduce((t, [d]) => t + d, 0);
-    for (const [d, lab] of idleRun) { add(res, total > OUTAGE ? 'outage(idle run>45m)' : lab, d); add(where, 'idle', d); }
+    const total = idleRun.reduce((t, [x, y]) => t + y - x - inPause(x, y), 0);
+    for (const [x, y, lab] of idleRun) {
+      const p = inPause(x, y);
+      if (p) add(res, 'paused', p);
+      if (y - x > p) add(res, total > OUTAGE ? 'outage(idle run>45m)' : lab, y - x - p);
+      add(where, 'idle', y - x);
+    }
     idleRun = [];
   };
   const seg = (x: number, y: number): void => {
@@ -503,7 +567,7 @@ function sweep(ivs: Iv[], a: number, b: number): { res: Map<string, number>; whe
       const hit = cov.find((k) => k.startsWith(p));
       if (hit) { lab = hit.startsWith('idle') ? hit : 'idle:' + hit; break; }
     }
-    idleRun.push([y - x, lab]);
+    idleRun.push([x, y, lab]);
   };
   let cur = a;
   for (let i = 0; i < ev.length;) {
@@ -527,11 +591,12 @@ function bucket(k: string): string {
   if (k === 'tests' || k === 'typecheck') return 'tests/typecheck';
   if (k === 'browser') return 'browser';
   if (k.startsWith('outage')) return 'outages >45m';
+  if (k === 'paused') return 'paused';
   if (k === 'idle:ask-operator' || k === 'idle:operator/prompt') return 'waits on operator';
   if (k.startsWith('idle')) return 'other waits';
   return 'other tools';
 }
-const BUCKETS = ['model', 'tests/typecheck', 'other tools', 'browser', 'waits on operator', 'other waits', 'outages >45m'];
+const BUCKETS = ['model', 'tests/typecheck', 'other tools', 'browser', 'waits on operator', 'other waits', 'outages >45m', 'paused'];
 
 function pct(xs: number[], p: number): number {
   const s = [...xs].sort((a, b) => a - b);
@@ -683,6 +748,7 @@ async function main(): Promise<void> {
     process.exit(1);
   }
   const done = tasks.filter((t) => t.done);
+  const pauses = readPauses(run, byChip);
 
   // ---- per chip: intervals, task splits, tokens, habits
   const taskRows: Record<string, unknown>[] = [];
@@ -696,6 +762,10 @@ async function main(): Promise<void> {
   const models = new Map<string, number>();
   let badLines = 0;
   const taskTok = new Map<string, ReturnType<typeof emptyTok>>();
+  // A turn's context is its whole prompt: input + cache read + cache write.
+  const ctxOf = (m: Msg): number => m.u.in + m.u.cr + m.u.cw;
+  let carry = 0;
+  const subStart = new Map<string, number[]>();
 
   for (const [chip, ss] of byChip) {
     const ivs: Iv[] = [];
@@ -720,6 +790,8 @@ async function main(): Promise<void> {
           nsub++;
           const start = t.iv.length ? Math.min(...t.iv.map((x) => x[0])) : (t.first ?? 0);
           const firstEdit = t.tools.find((x) => x.kind === 'edit' || x.kind === 'bash-edit');
+          const st = str(t.meta.agentType) || '?';
+          if (t.msgs[0]) subStart.set(st, [...(subStart.get(st) ?? []), ctxOf(t.msgs[0])]);
           subRows.push({ chip, desc: str(t.meta.description) || basename(t.file), model: str(t.meta.model),
             min: ((t.last ?? start) - start) / 60, firstEditMin: firstEdit ? (firstEdit.ts - start) / 60 : null,
             cost: t.msgs.reduce((c, m) => c + m.cost, 0) });
@@ -733,8 +805,22 @@ async function main(): Promise<void> {
       for (const t of ctasks) if (t.start <= m.ts && m.ts <= t.end) owner = t;
       if (owner) { const tt = taskTok.get(owner.id) ?? emptyTok(); addTok(tt, m); taskTok.set(owner.id, tt); }
     }
+    // Carry-over: what each later task of a session re-read of the tasks before it, every turn. Per session,
+    // since a fresh session starts from nothing.
+    for (const s of ss) {
+      const per = new Map<Task, { first: number; turns: number }>();
+      for (const m of s.parent.msgs) {
+        let owner: Task | null = null;
+        for (const t of ctasks) if (t.start <= m.ts && m.ts <= t.end) owner = t;
+        if (!owner) continue;
+        const p = per.get(owner);
+        if (p) p.turns++; else per.set(owner, { first: ctxOf(m), turns: 1 });
+      }
+      const [t1, ...later] = [...per.values()];
+      for (const p of later) carry += Math.max(0, p.first - t1!.first) * p.turns;
+    }
     for (const t of ctasks) {
-      const { res, where: w } = sweep(ivs, t.start, t.end);
+      const { res, where: w } = sweep(ivs, t.start, t.end, pauses.windows);
       const overlaps = ctasks.filter((o) => o !== t && o.start < t.end && o.end > t.start).map((o) => o.id);
       if (t.done && !overlaps.length) { for (const [k, v] of res) add(total, k, v); for (const [k, v] of w) add(totalWhere, k, v); }
       const buckets = new Map<string, number>();
@@ -776,7 +862,9 @@ async function main(): Promise<void> {
   // ---- recommendations: only where a number crosses a line, biggest first
   const recs: [number, string][] = [];
   const m1 = (b: string): string => `${((bucketsTotal.get(b) ?? 0) / 60).toFixed(0)} min (${(share(b) * 100).toFixed(0)}%)`;
-  if (share('outages >45m') >= 0.1) recs.push([share('outages >45m'), `Idle stretches over 45 min took ${m1('outages >45m')} of task time: nothing was recorded then, so find what stopped the workers (crash, restart, blind pane; M35) before blaming speed.`]);
+  // An operator's pause is not lost time: it has its own bucket and no recommendation.
+  const pausedNote = bucketsTotal.get('paused') ? ` (pauses the operator called, ${m1('paused')}, are not counted here)` : '';
+  if (share('outages >45m') >= 0.1) recs.push([share('outages >45m'), `Idle stretches over 45 min took ${m1('outages >45m')} of task time${pausedNote}: nothing was recorded then, so find what stopped the workers (crash, restart, blind pane; M35) before blaming speed.`]);
   if (share('waits on operator') >= 0.05) recs.push([share('waits on operator'), `Workers waited on the operator ${m1('waits on operator')}: settle the open questions in the brief or a decisions file before launch.`]);
   if (share('tests/typecheck') >= 0.15) recs.push([share('tests/typecheck'), `Tests and typecheck took ${m1('tests/typecheck')}; ${hab.repTests} identical runs were repeated: scope runs to the changed files and keep one full run per task.`]);
   const mergeShare = hab.turns ? hab.mergeable / hab.turns : 0;
@@ -787,6 +875,9 @@ async function main(): Promise<void> {
   const fe = pct(firstEdits, 0.5);
   if (firstEdits.length >= 3 && fe >= 4) recs.push([0.05, `Subagents made their first edit after a median ${fe.toFixed(1)} min: pass them the files and line numbers already found instead of a bare goal (M36).`]);
   recs.sort((a, b) => b[0] - a[0]);
+  const carryShare = parentTok.cr ? carry / parentTok.cr : 0;
+  const subStartBy = Object.fromEntries([...subStart].sort((a, b) => b[1].length - a[1].length)
+    .map(([k, v]) => [k, { n: v.length, median: pct(v, 0.5) }]));
 
   const report = {
     run: basename(run), run_dir: run, projects_dir: primary, brief_mode: briefMode,
@@ -800,6 +891,10 @@ async function main(): Promise<void> {
     habits: { ...hab, one_tool_share: hab.turns ? hab.oneTool / hab.turns : 0, reread_share: reShare },
     subagents: { count: subRows.length, median_min: pct(subRows.map((s) => s.min), 0.5), p90_min: pct(subRows.map((s) => s.min), 0.9),
       median_first_edit_min: firstEdits.length ? fe : null, list: subRows },
+    pauses: { source: pauses.source, paused_min: +((bucketsTotal.get('paused') ?? 0) / 60).toFixed(1),
+      windows: pauses.windows.map(([a, b]) => ({ start: new Date(a * 1000).toISOString(), end: new Date(b * 1000).toISOString() })) },
+    context: { carry_over: { share: carryShare, tokens: carry, parent_cache_read: parentTok.cr, target_max: CARRY_TARGET },
+      subagent_start: { by_type: subStartBy, target_max: SUB_START_TARGET } },
     cache_misses: { count: misses.length, tokens: missTok, extra_usd: missUsd, list: misses.map((m) => ({ ...m, at: new Date(m.at * 1000).toISOString() })) },
     tokens: { workers: workerTok, workers_parent: parentTok, workers_subagents: subTok, coordinator: coordTok },
     cost: { total_usd: totalUsd, workers_usd: workerTok.cost, coordinator_usd: coordTok.cost, per_done_task_usd: perTask },
@@ -831,6 +926,10 @@ async function main(): Promise<void> {
   L.push(`turns ${f0(hab.turns)}: one tool call ${(report.habits.one_tool_share * 100).toFixed(0)}%, read-only turns after another ${f0(hab.mergeable)}, streaks of 8+ single reads ${hab.streaks} (${f0(hab.streakTurns)} turns)`);
   L.push(`re-reads ${f0(hab.rereads)} of ${f0(hab.reads)} file reads (${(reShare * 100).toFixed(0)}%) overlap lines already read; ${f0(hab.sameFile)} reopen a file already read`);
   L.push(`subagents ${subRows.length}: median ${report.subagents.median_min.toFixed(1)} min, first edit after median ${firstEdits.length ? fe.toFixed(1) : '-'} min; identical test/typecheck re-runs ${hab.repTests} (${(hab.repTestSec / 60).toFixed(1)} min)`);
+  L.push(`parent context carry-over: ${(carryShare * 100).toFixed(0)}% of parent cache reads (${Mt(carry)} of ${Mt(parentTok.cr)}); target < ${CARRY_TARGET * 100}%`);
+  const ssl = Object.entries(subStartBy).slice(0, 4).map(([k, v]) => `${k} ${Mt(v.median)} (${v.n})`);
+  L.push(`subagent first-turn context, median: ${ssl.join(', ') || '-'}; fleet subagent target <= ${Mt(SUB_START_TARGET)}`);
+  if (pauses.source !== 'none') L.push(`pauses (${pauses.source}): ${pauses.windows.length}, ${f0((bucketsTotal.get('paused') ?? 0) / 60)} min of idle task time paused, not lost`);
   L.push(`cache rewrites after >5 min idle: ${misses.length}, ${Mt(missTok)} tokens, ~${usd(missUsd)} over a cache read`);
   L.push(`tokens (workers): cache read ${Mt(workerTok.cr)}, cache write ${Mt(workerTok.cw)}, input ${Mt(workerTok.in)}, output ${Mt(workerTok.out)}`);
   L.push(`cost, list-price estimate: total ${usd(totalUsd)} = workers ${usd(workerTok.cost)} (parents ${usd(parentTok.cost)}, subagents ${usd(subTok.cost)}) + coordinator ${usd(coordTok.cost)}${coordSession ? '' : ' (not found)'}`);
