@@ -14,11 +14,19 @@ are the one part of this plugin that generalises past browser testing.
 | **verify** | the machine's RAM and cores | one across the whole fleet | `needs: verify` |
 | **repo** | nothing scarce, files are read only | as many as the machine holds, sized from the queue | `needs: repo` |
 
+**In one chat, the default, the lanes are widths the coordinator holds** (the loop is in
+[`ONECHAT.md`](ONECHAT.md)). The pane lane is **1**: one chat has one live tab, and a background tab is blind
+[M42], so browser subagents run one at a time, each told its tab. The repo lane is whatever `fleet.sh width`
+answers from the queue and free memory, never an answer to a question. A `verify` task and a `needs: pane` task
+are filed `after:` the code tasks of their wave, so `next` holds them while a coder of that wave runs: a
+coder's half-saved file trips the dev server's hot reload and the walker files a false finding. Separate worker chats are opt-in, and everything below that speaks of a worker's pane, its idle
+window or a chip describes them.
+
 **The pane lane has a second shape**, new in 1.0.0 and described in [`BROKER.md`](BROKER.md): one or two
 sessions own the panes and everyone else files a browser walk as a file. Seven open panes carried 104
 minutes of driving, under one pane's worth, and one of them was driven for zero minutes over 61 [M15] - the
-pane is bound to a session when the scarce thing is the walk. Size the pane lane at **two** by default
-whatever shape you use.
+pane is bound to a session when the scarce thing is the walk. With separate chats start the pane lane at **two**;
+in one chat it is **1** (one live tab [M42], `docs/ONECHAT.md`).
 
 **The lane is also what a worker claims by**, not only what a task declares:
 `sh fleet.sh next <run-dir> <chip> repo` refuses to hand a paneless worker a browser task. Before it did,
@@ -95,9 +103,11 @@ provably bad at guessing, before the run, which is the failure `PULL.md` exists 
 together is not the objective. Finishing the repo lane **early** is, because its findings are the cheapest
 instrument for retargeting the pane lane's remaining queue.
 
-The machine cap is the same shape as the fan-out rule below: free physical memory at chip time, ceiling
-`cores - 2`, and never above what the project's `FLEET.md` records on its concurrency line. Measure it
-rather than reasoning about it - `node scripts/fleet-load.mjs` prints the census by class:
+The machine cap is free physical memory less `operator_reserve_gb` (default 2), at most
+`repo_worker_ceiling` (default 12), both in `calibration.json`; `width` prints the terms it used
+(`scripts/fleet/planner.mjs`). It reads neither `cores` nor `FLEET.md`, and where the memory census
+gives no figure it falls back to 6 and says so. Measure the machine rather than reasoning about it:
+`node scripts/fleet-load.mjs` prints the census by class:
 
 | what | measured on one desktop, 31.2 GB [M21] | how it was measured |
 |---|---|---|

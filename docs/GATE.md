@@ -52,9 +52,10 @@ Regenerate after a release, or whenever a run starts asking about names that no 
 
 ## The hook
 
-`hooks/fleet-contract.mjs` runs on `PreToolUse` for `Edit`, `Write`, `MultiEdit` and `NotebookEdit`. It
-compares the two sides of the edit and fires when a surface token occurs **fewer times** in the text coming
-in than in the text going out. Matching respects the token's end, so `/api/server/status` renamed to
+`hooks/fleet-contract.mjs` runs before `Edit`, `Write`, `MultiEdit` and `NotebookEdit` in a fleet chat
+(`hooks/gate.ts` calls it, so a chat outside a fleet runs no process for it [M40]). It compares the two
+sides of the edit and fires when a surface token occurs **fewer times** in the text coming in than in the
+text going out. Matching respects the token's end, so `/api/server/status` renamed to
 `/api/server/statistics` counts as a loss. The same count on both sides is a line being worked around; a
 token on neither side is an edit that never touched it.
 
@@ -105,7 +106,8 @@ while it runs, so nothing is editing beside it. Exclusive file ownership everywh
 runs while three separate documents recorded that it should be fixed once.
 
 **Refuting is a complete result.** A root that finds the shared name to be a coincidence writes that down
-and finishes; the members unblock on the done marker either way and are then fixed on their own evidence.
+and finishes with `FLEET_REFUTED=1` plus a `refuted <id>: <reason>` line in its notes, whatever its `before` did
+(a `kind: fix` closes this way only when its `before` passed); the members unblock on the done marker either way and are then fixed on their own evidence.
 Roughly 15 findings in every 100 are refuted the moment somebody tries to fix them, almost always on the
 mechanism rather than the symptom, so a root that never refuted anything is not ruling on anything.
 

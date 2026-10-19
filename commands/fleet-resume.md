@@ -1,7 +1,7 @@
 ---
 description: Bring a fleet run back after a restart or crash - wake or reopen the workers whose context survived, respawn the ones whose did not. Use after a crash, a power cut or a Claude Code restart, and on "продолжи" when the watch is gone.
 argument-hint: <run-id>
-allowed-tools: Bash, Read, Write, Glob, Grep, Monitor, TaskStop, ToolSearch, mcp__ccd_session_mgmt__list_sessions, mcp__ccd_session_mgmt__send_message
+allowed-tools: Bash, Read, Write, Glob, Grep, Monitor, Agent, TaskStop, ToolSearch, mcp__ccd_session_mgmt__list_sessions, mcp__ccd_session_mgmt__send_message
 ---
 
 A restart ends every session's turn and leaves the run on disk looking alive. This command wakes the
@@ -14,7 +14,27 @@ session list had none of them [M27]. What survives either way is
 reopened worker is worth several fresh ones**: it still holds the files it read, the refutations it already
 made, and the half-written finding it was about to file.
 
-## Do this
+## One chat, the default
+
+There are no worker chats to wake or reopen: the subagents died with the coordinator's turn, and their
+claims and partial edits survived on disk. `r` is the run's absolute directory, `f` as in step 1 below.
+
+0. Re-take the coordinator seat before any `next`: run `sh "$f" chips "$r" <NN-MM> <lane> --agents` again
+   for each lane, with the ranges `STATE.md` lists. It rewrites `$r/coordinator` with this session, which
+   is what makes the hooks treat your subagents as `agent-<id>`; re-registering a slot in its own lane is
+   allowed.
+1. `<run>/PAUSED` means paused (`/makarasty:fleet-pause <run-id> off`); `<run>/FINISHED` means landed.
+2. `git status --porcelain -uall`, and attribute each changed path: one in a done task's
+   `$r/tasks/claimed/<id>/files` is that task's, one under `$(git rev-parse --show-prefix)<owns path>` of a
+   held claim is that claim's (porcelain paths are top-relative, `owns:` is not; `sh "$f" status "$r"` lists
+   the claims), and one in `$r/dirty-at-start` is the operator's. Never discard a partial edit,
+   and never `stash`, `checkout --` or `reset`.
+3. Re-spawn one subagent per held claim, as the loop's step 3 (`docs/ONECHAT.md`), its prompt adding that
+   the edits in its `owns:` are its predecessor's to continue; background a fresh clock for each.
+4. Re-arm `/makarasty:fleet-wait <run-id> <slot count>` and go on with the loop. Report in one block which
+   claims were re-spawned and which paths had no claim to own them.
+
+## Opt-in: separate chats
 
 ### 0. Wake every worker the app still lists
 

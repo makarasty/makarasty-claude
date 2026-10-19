@@ -151,8 +151,8 @@ them and can be regenerated. Whether to commit either is the operator's decision
 and never commits.
 
 Isolation is `none`. A capture task reads source and writes exactly one new file no other task names, so
-there is nothing to merge. It is the one kind that writes into the tree without a worktree, because of the
-one-file rule; a task that finds itself editing anything else has left its brief.
+there is nothing to merge. The one-file rule is what keeps it safe in the shared checkout; a task that
+finds itself editing anything else has left its brief.
 
 ### Recon
 

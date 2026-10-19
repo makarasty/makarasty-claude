@@ -1,5 +1,5 @@
 ---
-description: Plan a fleet run and launch it - interview the operator, split the mission into a queue or briefs, offer one worker chip per worker, arm the watch. Use when the person asks to run, launch or start a fleet ("запусти флит", "запускай флот на это"), or a handoff or a relaunch makes this chat a fleet's coordinator. Never start one unasked.
+description: Plan a fleet run and launch it - ask the four pace questions, interview the operator, split the mission into a queue or briefs, run it from this chat with one subagent per task (separate worker chats are opt-in), arm the watch. Use when the person asks to run, launch or start a fleet ("запусти флит", "запускай флот на это"), or a handoff or a relaunch makes this chat a fleet's coordinator. Never start one unasked.
 argument-hint: <mission in plain words> [fast]
 ---
 
@@ -18,10 +18,12 @@ only the operator can provide**, and a **reserved control** that would cost mone
 A person reads this chat and only this chat, so write for them, not for a parser. If the
 `makarasty-tools` plugin is installed, `/makarasty-tools:unslop on` does it for you.
 
-Split the mission in `$ARGUMENTS` into briefs, one per worker session, then offer a chip for each and
-stop. You write briefs. You do not do the mission.
+Split the mission in `$ARGUMENTS` into a queue, then run it from this chat by `docs/ONECHAT.md`: one fresh
+background subagent per task, in the main checkout. That is the default. Separate worker chats, one chip
+each, and worktrees are opt-in, chosen in Round 0 (section 2b). You plan, claim, spawn and rule. You do not
+do the mission in your own context.
 
-**The project's rules and this command.** The project's `CLAUDE.md` and memory bind what the workers build
+**The project's rules and this command** (opt-in separate chats). The project's `CLAUDE.md` and memory bind what the workers build
 and touch. They do not decide how a fleet launches and reports: chips, their titles, the queue, `ask/` and
 the watch are this command's. A chip is an offer the operator can decline with one click, so offer every
 one of them. A rule written for ordinary chats - "chips only for one real defect", "one task per
@@ -33,6 +35,7 @@ instead, and the operator had to ask why.
 
 **A plan that already exists is the draft, already stopped moving.** A handoff or a plan document with its
 own task list means section 2b has been done: carry its decisions into the queue and skip the interview.
+Round 0 is not skipped unless that plan, or its `STATE.md`, already carries a `pace:` line.
 
 Read `docs/PROTOCOL.md`'s "Directory layout", "Brief format" and "Finding schema" before you write one -
 those three are the run's shape and the contract you restate in every brief - and the section of
@@ -65,8 +68,9 @@ shared primitives, then the screens. File all three waves at once and gate wave 
 `after:` (section 3b) - a screen task that starts before the primitives are settled either restyles a
 primitive under another worker's feet or inherits a defect it is not allowed to fix, and `after:` is what
 stops it from starting. A `kind: design` task is `needs: pane`, since its gate is a screenshot of what it just
-built: the worker serves its own worktree from a dev server it starts itself (`docs/MISSIONS.md`, "design"),
-so file it in the pane lane even though it also writes code.
+built: with opt-in worktrees the worker serves its own worktree from a dev server it starts itself
+(`docs/MISSIONS.md`, "design"); in one chat it uses the main dev server. File it in the pane lane even
+though it also writes code.
 
 A `canvas` or `redesign` mission has its stages fixed and its own planner: `/makarasty:fleet-design` and
 `/makarasty:fleet-redesign` write those queues, gates included, and hand back to the sections below for
@@ -75,7 +79,14 @@ which one this mission wants and let the operator run it. A `critique` mission i
 verify one, with the "Critique" section of `docs/DESIGN.md` - and nothing else from that file - supplying
 what the task carries: the screens and their states, the token file, and the assertion lines.
 
-Count the independent slices the axis produces. That is your worker count, and **it is capped per lane,
+Count the independent slices the axis produces. **In one chat, the default, the lanes are slot widths**:
+the pane lane is 1, because one chat has one live tab [M42]; the repo lane is `fleet.sh width`; the verify
+lane is one task. File every verify task and every `needs: pane` task `after:` the code tasks of its wave,
+so none runs beside a coder: a coder's half-saved file trips the dev server's hot reload and a walker files
+a false finding (`docs/ONECHAT.md`, "One checkout"). The pane numbers in the rest of
+this section size opt-in separate chats.
+
+With separate chats, that count is your worker count, and **it is capped per lane,
 never once for the whole fleet.** The repo lane is capped by the machine and sized from the queue, by the
 rule in `docs/LANES.md`; the verify lane is one; and the pane lane has three numbers that are not
 interchangeable. **The default is two**, and you start there: `pane_workers_default` in the plugin's
@@ -118,9 +129,33 @@ run filed every task `repo`, the coordinator did the screen checks, and its pane
 ## 2b. Interview the operator until the plan stops changing
 
 The operator writes a mission in plain words from a fresh chat that knows nothing. Turn that into a plan
-good enough to run unattended; the only way is to ask. Default to depth: an argument of `fast` means stop
-after the first round with whatever the draft says, and without it you keep going until the plan stops
-moving.
+good enough to run unattended; the only way is to ask.
+
+### Round 0: pace, right after the first draft, even with `fast`
+
+Draft the plan first (below), then ask **one** `AskUserQuestion` call holding exactly these four questions,
+all at once, never more than four, the recommended option first in each:
+
+1. **Scale**: "Let the plan count it (Recommended)" / "Small (a few tasks)" / "Medium (an afternoon)" /
+   "Large (a day+, queue it)".
+2. **Speed against quality**: "Balanced (Recommended)" / "Fastest finish" / "Best quality".
+3. **Economy**: "Maximum economy (Recommended)" / "Balanced" / "Spend for speed".
+4. **Isolation and commits**: "One chat, main checkout, one commit at the end (Recommended)" / "One chat, a
+   commit per wave" / "Worktrees for code tasks, commit per task branch" / "Separate chats for browser
+   workers, one commit at the end".
+
+Write the answers as one `pace:` line in `STATE.md`, for example `pace: scale=plan speed=balanced
+economy=max isolation=onechat commits=end` (the other three: `isolation=onechat commits=wave`,
+`isolation=worktrees commits=branch`, `isolation=chats commits=end`), and show the edit each answer makes
+to the draft: the queue's size and the overnight warning, the models and efforts per step, the review
+rounds, the commit cadence, chats or subagents, worktrees or `owns:` (`docs/MODELS.md`, "Pace";
+`docs/ONECHAT.md`). Width is never a question: it is `fleet.sh width`.
+
+### Later rounds: plan content
+
+Default to depth: an argument of `fast` means stop after the first content round with whatever the draft
+says, and without it you keep going until the plan stops moving. No later round re-asks what Round 0
+answered.
 
 **Hold a complete draft plan from the first exchange.** Not a list of open questions, a plan: run id, kind,
 axis, the slices with their lanes, what correct looks like for each, the reserved actions. It may be
@@ -162,8 +197,9 @@ Anything policy already answers. A question whose answer cannot change what is p
 question: production writes, vendor calls that cost money, messages to real people are reserved whatever
 anyone says.
 
-Budgets and worker counts. You have the measurements: budgets written at 40 and 45 minutes were met by
-three tasks out of 36, and the pane lane holds as many workers as the display holds panes. For the first
+Budgets and worker counts, Round 0 included. You have the measurements: budgets written at 40 and 45
+minutes were met by three tasks out of 36, the repo lane is `fleet.sh width`, and the pane lane is 1 in one
+chat [M42] and as many workers as the display holds panes with separate chats. For the first
 wave state a default budget and say it is replaced by the run's own measured median (`fleet.sh status`,
 section 3b) once three tasks are done. State those and move on.
 
@@ -174,7 +210,9 @@ was the last one.
 
 ## 3. Write the briefs
 
-One file per worker at `.fleet/<run-id>/brief-NN.md`, in the format `PROTOCOL.md` gives.
+One file per worker at `.fleet/<run-id>/brief-NN.md`, in the format `PROTOCOL.md` gives. Briefs are opt-in,
+separate chats only: one chat cannot run them (`chips --agents` refuses a number that has a
+`brief-NN.md`), so in one chat, the default, you always file a queue (3b).
 
 Every brief carries:
 
@@ -185,7 +223,8 @@ Every brief carries:
 - **The evidence contract**, restated in one line: a finding carries a `file:line`, a reproducing
   expression, or three readings with spread and machine load.
 - **A model per queue worker, a model per task.** `model:` names the tier a task wants and `verdict-model:` the
-  tier that rules on it, from `docs/MODELS.md`. Lanes stay `pane`, `repo` and `verify`: an `opus` lane
+  tier that rules on it, from `docs/MODELS.md` and the `pace:` line. In one chat both are passed on the
+  subagent's `Agent` call and the rest of this bullet does not apply. Lanes stay `pane`, `repo` and `verify`: an `opus` lane
   (2026-10-05) left four idle Opus workers unable to take a waiting task. The worker's own model is yours
   to choose per lane, passed to `fleet.sh chips` as `--model <id> --effort <level>` (a brief worker's is
   picked by the operator before the click) and switched by you when
@@ -194,7 +233,12 @@ Every brief carries:
 - **Whole brief demand.** The worker completes its entire brief before writing findings and does not
   stop at the first interesting thing.
 
-Briefs that write code carry `isolation: worktree`, and queue tasks of `kind: implement`, `fix`, `root` or
+**In one chat, the default, code work stays in the main checkout.** Every task that writes code carries
+`owns:`, the files or directories it may touch, and two tasks whose `owns:` overlap are ordered with
+`after:`. No `base:`, no branch, no worktree (`docs/ONECHAT.md`, "One checkout").
+
+**Opt-in: worktrees** (Round 0 answered "Worktrees for code tasks, commit per task branch", or separate chats). Briefs that write
+code carry `isolation: worktree`, and queue tasks of `kind: implement`, `fix`, `root` or
 `design` are worktree work whether or not they say so. The worker makes its own with `fleet.sh worktree
 <run> <chip> --create <base>` when its chip opened in the main checkout, with the `base:` of its first task;
 every code task carries `base: <the integration branch>`, the branch you merge finished work into (section
@@ -204,13 +248,15 @@ where nothing in the plugin can register or clean them.
 
 ## 3b. Fixed briefs, or a queue
 
-Eight briefs freeze one guess about where the defects are for the whole run. Over a surface larger than
-the plan, write a **queue** instead: read `docs/PULL.md` and put tasks in `tasks/ready/` rather than briefs
-in the run root.
+Eight briefs (opt-in separate chats only) freeze one guess about where the defects are for the whole run.
+In one chat, and over any surface larger than the plan, write a **queue** instead: read `docs/PULL.md` and
+put tasks in `tasks/ready/` rather than briefs in the run root.
 
-Pull mode changes five things for you. **File the whole queue before the first chip**, every wave of it,
-and hold the order with `after:`: a task waits in the queue until the tasks it names are done, and costs
-nothing while it waits. Mind what `after:` waits for: the predecessor's **done marker**, not your merge of its
+Pull mode changes five things for you. **File the whole queue before the first claim or chip**, every wave
+of it, and hold the order with `after:`: a task waits in the queue until the tasks it names are done, and
+costs nothing while it waits. In one chat that is all `after:` needs, since every task edits the same
+checkout; it is also what keeps a verify or `needs: pane` task from running beside a coder, so each is
+`after:` the code tasks of its wave (section 2). With opt-in worktrees, mind what `after:` waits for: the predecessor's **done marker**, not your merge of its
 branch. A task that builds on another's code finds it in neither its base nor its tree unless the worker
 merges the predecessor's `branch <name>` (from the done marker) into its own branch first, which
 `fleet-run` tells it to do; write `base:` and `after:` on such a task so it can. A `needs: pane` check task
@@ -251,15 +297,16 @@ operator`, and under `== bottlenecks` any open task, free to start, that holds t
 2026-10-06: every remaining plan task sat behind one permissions task for about two hours, closing 8 and
 then 4 tasks an hour, before the operator was asked.
 
-And: **`touch .fleet/<run-id>/tasks/queue-open` before you offer a single chip** when you will file
+And: **`touch .fleet/<run-id>/tasks/queue-open` before the first claim or chip** when you will file
 more than you have planned - fix tasks from your reviews, remainders - holding one line saying what. While it exists a worker whose lane runs dry polls instead of
 finishing, which is what lets the repo lane start at full width without losing a chat every time the queue
 runs momentarily dry. **Delete it the moment you will file nothing more** - that deletion is what ends the
 repo lane, and forgetting it leaves workers polling all night. `fleet.sh landed` refuses a run whose queue
 is still open, so this cannot be quietly skipped.
 
-The **pane** fleet size stops being yours to choose: it is however many panes the operator has open. The
-repo lane is still yours, sized from the ready queue by `docs/LANES.md`.
+In one chat the pane lane is 1 slot [M42]. With separate chats the **pane** fleet size stops being yours
+to choose: it is however many panes the operator has open. The repo lane is still yours, sized from the
+ready queue by `docs/LANES.md`.
 
 ## 4. Guard the actions that leave the machine
 
@@ -302,8 +349,18 @@ recorded beside every number, a named comparison arm, `setInterval` for sampling
 
 Schedule those workers in their own wave. They are measuring a machine the other workers are loading.
 
-## 7. Offer the chips
+## 7. Start the run
 
+**Default: run the queue from this chat by the loop in `docs/ONECHAT.md`.** Record `dirty-at-start`,
+register one slot per lane width with `chips <run> <NN-MM> <lane> --agents`, one call per lane, disjoint
+ranges, all in this turn, and start claiming. No chip is offered: each claim becomes one background
+subagent, typed by task kind, with the model and effort from the `pace:` line and a prompt of paths only.
+Read `docs/ONECHAT.md` in full now, before the first claim.
+
+### Opt-in: separate chats
+
+When Round 0 chose "Separate chats for browser workers, one commit at the end", or more than one live visual check must run at once
+(one chat has one live tab [M42]), offer chips for those workers.
 One `mcp__ccd_session__spawn_task` per worker, title and prompt taken verbatim from:
 
 ```bash
@@ -332,7 +389,8 @@ line inside a claim, and `ask/NN-1.md`.
 
 ## 8. Arm the watch, then hand over
 
-**Invoke `/makarasty:fleet-wait <run-id> <count>` yourself, before you stop.** Do not print it as a command
+**Invoke `/makarasty:fleet-wait <run-id> <count>` yourself, before you stop**, `<count>` being the slots
+registered in one chat, the chips offered with separate chats. Do not print it as a command
 for the operator to run. Measured 2026-08-26: a planner that printed the line and stopped left seven
 finished workers sitting on disk unnoticed, because the operator assumed the planner was watching and the
 planner assumed the operator would run it. The watch waits in the shell, so arming it early costs nothing
@@ -346,7 +404,9 @@ as well as on progress, so a fleet that has stopped writing files still produces
 planner asleep for 65 minutes until the operator intervened, and then ran on for five hours and forty two
 minutes after the run had finished [M17].
 
-**When the stall line names a claim nobody is advancing, message that worker** with
+**When the stall line names a claim nobody is advancing**, in one chat do nothing: the line counts no
+heartbeats, so it fires on any long task, and only the task's `budget-elapsed-<id>` clock `TaskStop`s and
+re-spawns its subagent (`docs/ONECHAT.md`, loop step 2). With separate chats, **message that worker** with
 `mcp__ccd_session_mgmt__send_message`, addressed by its title. A cross-session status
 check is the only thing that revives a session which ended a turn with nothing pending, and in that run
 all three came back within seconds of one. Findings still travel by file, never by message.
@@ -361,31 +421,42 @@ no person. So an overnight run is either paneless, which the lane split now make
 it needs is open and stays open before the operator leaves. Say which one this run is, out loud, while
 they can still act on it.
 
-Then tell the operator, in this order: the run id, how many chips are waiting **split by lane**, the model
-and effort each lane runs on (you switch any chip that starts on another, and say whether approval cards are
-coming: `docs/MODELS.md`, "Switching a worker", step 1), the wave order you recommend and why, and that each
-pane worker wants its pane opened and kept on screen.
+Then tell the operator, in this order: the run id, that it runs in this chat with one subagent per task,
+the slots **split by lane**, the `pace:` line in words (models and effort per step, review rounds, commit
+cadence), the wave order and why, and, when there is a pane lane, that this chat's Browser pane must stay
+on screen. Nothing to click.
+
+With separate chats, instead: how many chips are waiting **split by lane**, the model and effort each lane
+runs on (you switch any chip that starts on another, and say whether approval cards are coming:
+`docs/MODELS.md`, "Switching a worker", step 1), the wave order you recommend and why, and that each pane
+worker wants its pane opened and kept on screen.
 
 ## 8b. Coordinate without becoming the bottleneck
 
 You are the one session the whole run depends on, and the one nothing restarts. Ten rules keep you light.
 
-- **Review through a subagent, never in your own context.** When a task finishes, spawn one review agent
+- **Review through a subagent, never in your own context.** In one chat that is `makarasty:fleet-reviewer`
+  on `git diff -- <owns paths>`, the loop's step 4 (`docs/ONECHAT.md`). With separate chats: when a task
+  finishes, spawn one review agent
   at the task's `verdict-model` (your own tier when the task names none) with the branch, the task file
   and the plan section; it returns a verdict and the defects worth a fix task, and you read only that. A
   task whose worker already ran its own review (`fleet-run` step 5) gets a short verdict review here, a
   skim of the diff against the plan, not a second full one. Reading every diff yourself is how the
   2026-10-05 coordinator reached 510 K of context at thirty percent of its plan, and why three questions
   waited eight to sixteen minutes for an answer.
-- **Keep `STATE.md` in the run directory current**: the plan path, the run directory, the worker count
-  `n`, the chips offered by lane, the integration checkout's path and URL, any extra URLs the watch
+- **Keep `STATE.md` in the run directory current**, through a Haiku `[mech]` agent (below), and yourself
+  while the run is paused, since the hooks hold every subagent then: the `pace:`
+  line, the plan path, the run directory, the slot or worker count
+  `n`, the slots or chips by lane, the integration checkout's path and URL (opt-in worktrees), any extra URLs the watch
   checks, whether `tasks/queue-open` is held, the merged branches in order, the reviews in flight, the fix
   tasks filed and why, the operator's decisions and the questions still open to them, and the pane check tasks filed and their state. Update it on
-  every merge. It is what a fresh coordinator reads, and what you read after a compaction; the first six are
+  every finish in one chat, and on every merge with opt-in worktrees. It is what a fresh coordinator reads, and what you read after a compaction; the first six are
   exactly what re-arming the watch and judging the lanes need, and nobody else has them. Stamp each entry
   with the time from the `== now` line of `fleet.sh status`, never an estimate: a coordinator that guessed
   wrote "~13:00" on a snapshot taken at 11:10.
-- **Back from a restart, wake the workers before reading `status`.** A restart stops every chat and leaves
+- **Back from a crash in one chat, your subagents died with you**: `git status`, attribute partial edits by
+  `owns:`, re-spawn per held claim, never discard (`docs/ONECHAT.md`, "Pause, crash, relaunch").
+  With separate chats: **back from a restart, wake the workers before reading `status`.** A restart stops every chat and leaves
   the claims on disk looking alive: `fleet-wait`, "After a restart, wake every worker before you re-arm".
   An expiry notice is not a restart.
 - **Read `status` for what holds the run, and act in that turn.** A `== bottlenecks` line that waits on the
@@ -394,8 +465,8 @@ You are the one session the whole run depends on, and the one nothing restarts. 
   `never ran whoami` under a worker, or a `WORKER PLUGIN` line from the watch, means it follows an older
   protocol (pause and retirement may not hold it, its markers may carry no branch line): ask for a Claude
   Code restart, then have the worker invoke `fleet-run` again, as the line says; `STILL ON` goes in the one
-  relaunch ask as "Replace workers NN only", with the fresh chips (`fleet-wait`). After each
-  merge, and before `landed`, the merge agent runs `fleet.sh stranded <run>`: `STRANDED` is a commit made
+  relaunch ask as "Replace workers NN only", with the fresh chips (`fleet-wait`). With opt-in worktrees,
+  after each merge, and before `landed`, the merge agent runs `fleet.sh stranded <run>`: `STRANDED` is a commit made
   after its branch was merged, which nothing else would pick up; a `not merged` line is a task turned down or forgotten, and `landed` does not repeat it.
 - **Watch the machine's memory, and clean up what nobody waits for.** The watch prints a `LEFTOVER` line
   once per process that `fleet.sh procs <run>` finds: a shell a closed chat left running with everything
@@ -404,14 +475,17 @@ You are the one session the whole run depends on, and the one nothing restarts. 
   serves something - a dev server, an `http.server`, anything holding a listening port - comes as `LEFTOVER,
   ASK THE OPERATOR`: it may be what they are looking at, so ask, and `--kill` never ends it. Never kill a
   process with a live parent.
-- **Spend your context on verdicts, not on material: it should grow by lines, not by files.** Delegate to
-  a subagent not only the reviews but **the merges, conflict resolution included** (the agent merges the
-  branch into the integration branch, resolves what conflicts, runs the scoped checks and returns one
-  verdict line and the resulting commit), **the `STATE.md` updates from the run directory** (it reads
-  `tasks/`, `ask/` and the markers and edits the file; you state the decisions it cannot read there), and
-  **any reading of a large file or a log**. Pass `model: "sonnet"` to the merge and `STATE.md` agents, and
-  start their description with `[exec]`: a merge on Opus cost $8.29 and 62 calls against $1.69 and 28 on
-  Sonnet [M39]. A review keeps the task's `verdict-model`, or your own tier, as above. Keep the verdicts, the decisions and the status lines. Read
+- **Spend your context on verdicts, not on material: it should grow by lines, not by files.** Your top
+  model decides; every mechanical step goes to a cheaper one. Delegate to a subagent not only the reviews
+  but **the commits** (explicit paths, never `-A`, cadence from the `pace:` line: `docs/ONECHAT.md`,
+  "Commits"), **the `STATE.md` updates from the run directory** (it reads `tasks/`, `ask/` and the markers
+  and edits the file; you state the decisions it cannot read there), and **any reading of a large file or
+  a log**: pass those `model: "haiku"` and start the description with `[mech]`. **The merges, conflict
+  resolution included**, exist only with opt-in worktrees (the agent merges the branch into the
+  integration branch, resolves what conflicts, runs the scoped checks and returns one verdict line and the
+  resulting commit): pass `model: "sonnet"` and start the description with `[exec]`: a merge on Opus cost
+  $8.29 and 62 calls against $1.69 and 28 on Sonnet [M39]. A review keeps the task's `verdict-model`, or
+  the `pace:` line's, as above. Keep the verdicts, the decisions and the status lines. Read
   `fleet.sh status` and `fleet.sh contexts` output, the reviewer's verdict and the `ask/` files, never a
   diff, a log or a findings file. Every tool result you read stays in your context for the rest of the run,
   and so does every worker's.
@@ -421,7 +495,8 @@ You are the one session the whole run depends on, and the one nothing restarts. 
   `COORDINATOR CONTEXT <n>K` when your context crosses `coordinator_handoff_k` in `calibration.json` (700 as
   shipped, repeating every `coordinator_handoff_step_k`, 100, so the second line comes at 800), and a
   `WORKER CONTEXT NN` line when a worker crosses `worker_relaunch_k` (700); `fleet.sh contexts <run>` lists
-  every session's size and marks the ones `OVER`. The operator may also just ask. Do not hand off by chip and
+  every session's size and marks the ones `OVER`. In one chat only you cross the mark, since every subagent
+  starts fresh: stop your agents and relaunch naming no chips (`docs/RELAUNCH.md`, "One chat"). The operator may also just ask. Do not hand off by chip and
   do not run `/makarasty-tools:handoff`: a chain of handoff chips re-reads the world at every hop and loses
   what was only in context, and workers with a large context were never moved at all. One controlled
   relaunch replaces the chain. A `WORKER CONTEXT` line for a queue worker is the exception: it names
@@ -438,11 +513,20 @@ You are the one session the whole run depends on, and the one nothing restarts. 
   on sandbox and start pane workers?" sat in the text between two merges). Before asking, put everything
   that does not depend on the answer in motion (reviews and merges in background agents, chips offered),
   send `PushNotification` with the question in one line, ask with your recommended option first, and
-  write it under open questions in `STATE.md` so a fresh coordinator sees it too.
+  write it under open questions in `STATE.md` so a fresh coordinator sees it too. **The ask blocks your
+  chat until it is answered, and the watch with it**, so run `fleet.sh status` first: while it shows fewer
+  ready tasks than live workers, or a watch event you have not handled, file the tasks that do not depend on
+  the answer and handle the events, then ask. The tasks that do depend on it go in with an `operator:`
+  line. On 2026-10-13 one coordinator ask stood 110 minutes with 8 events unhandled behind it, and 7
+  workers ran dry for about 50 minutes each.
 - **A pause is `/makarasty:fleet-pause <run-id>`, never a sentence to the workers.** Telling them to pause
   stopped nobody (2026-10-05: they kept "wrapping up" for a long time). The command writes the file the
   hooks enforce; the watch prints `PAUSED`, `worker NN stopped` and `RESUMED`. A relaunch pauses by itself.
-- **Never hold a check you cannot run.** A screen check belongs to a `needs: pane` task, served from the
+  In one chat you also stop spawning and `TaskStop` every subagent not back within the grace
+  (`fleet-pause`, "One chat").
+- **Never hold a check you cannot run.** A screen check belongs to a `needs: pane` task. In one chat it
+  runs against the main checkout's own dev server, after the build task it is `after:`, one browser
+  subagent at a time on this chat's tab. **Opt-in worktrees:** it is served from the
   integration checkout, never to the build worker, whose pane shows the main checkout and not its
   worktree. The **integration checkout** is the worktree where you merge finished branches, with its own
   dev server on its own port, started once by you (`FLEET.md`'s services line may name how). Make it with
@@ -456,8 +540,12 @@ You are the one session the whole run depends on, and the one nothing restarts. 
   blind, ask the operator in that turn (`docs/BROWSER.md`). On `SERVICE DOWN` from the watch, restart the
   service or tell the operator in that turn.
 
-**Say how this run will announce itself, because that is what they will be waiting for.** Three sentences,
-once, at hand over:
+**Say how this run will announce itself, because that is what they will be waiting for.** In one chat, two
+sentences, once, at hand over: everything happens in this chat, the background task panel shows the
+subagents at work; and the run ends exactly once, here, with one notification and one summary table. No
+notification means it has not finished.
+
+With separate chats, three sentences:
 
 - Every pane worker asks for its pane within a minute of its chip being clicked, so open the chips in a
   wave and walk the row once rather than answering them one at a time over half an hour.
@@ -466,7 +554,7 @@ once, at hand over:
 - The run ends exactly once, here, with one notification and one summary table in this chat. No
   notification means it has not finished.
 
-Say the pane arithmetic out loud, because the operator is about to discover it the hard way. Two numbers,
+With separate chats, say the pane arithmetic out loud, because the operator is about to discover it the hard way. Two numbers,
 and do not blur them: **the default of two is what the work has needed** in both measured runs, and the
 display ceiling above it is what tiles at a readable width before panes stack below at half height. The
 second is a ceiling for a mission that genuinely queues, not a target, and both are in `calibration.json`.
@@ -482,7 +570,8 @@ nothing else is running.
 
 ## Done when
 
-Every brief exists on disk, or the whole queue is filed with its waves held by `after:`, every slice of the
-axis has exactly one owner, a chip is offered for every lane with work, **the watch is armed**, and the
-operator has the wave order and each lane's model. Then stop, without opening a browser and without
-starting the mission.
+The `pace:` line is in `STATE.md`, the whole queue is filed with its waves held by `after:` (or every brief
+exists on disk), every slice of the axis has exactly one owner, **the watch is armed**, and the operator has
+the wave order and each step's model. In one chat a slot is registered for every lane with work and the
+loop of `docs/ONECHAT.md` is running: you stay in it until the run lands. With separate chats a chip is
+offered for every lane with work; then stop, without opening a browser and without starting the mission.

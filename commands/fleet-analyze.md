@@ -16,7 +16,7 @@ a re-read must overlap lines already read - so a figure can sit a little below t
 ```bash
 m=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)")   # the main checkout, from any worktree
 run=".fleet/<run-id>"; [ -d "$run" ] || run="$m/.fleet/<run-id>"
-# only when no run id was given: run=$(dirname "$(ls -td .fleet/*/chips | head -1)")
+# only when no run id was given: run=$(dirname "$(ls -td .fleet/*/offered | head -1)")
 node "${CLAUDE_PLUGIN_ROOT}/scripts/fleet-analyze.mjs" "$run"
 ```
 

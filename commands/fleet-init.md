@@ -104,8 +104,10 @@ command for this operating system from `docs/PORTING.md`.
 
 Then say **two** numbers, one per lane, and write both on `FLEET.md`'s concurrency line:
 
-- **The pane lane**, which is a display question and not a memory one: how many Browser panes fit the
-  operator's screen at a readable size. Five, or ten. Ask them; you cannot measure a monitor.
+- **The pane lane**, whose ceiling is memory, not monitors [M33] (`docs/BROWSER.md`): free memory divided by
+  the weight of this project's page. One chat (the default) has one live tab, so its pane lane is 1
+  [M42]. With separate chats start at two, and ask how many Browser panes the operator's screen shows at a
+  readable size (five, or ten) as the comfort number: you cannot measure a monitor, and it is no ceiling.
 - **The repo lane**, which is a machine question: workers that never open a pane, sized from free physical
   memory and cores by `docs/LANES.md`. This number is usually larger than the pane number, and nothing
   makes them equal.

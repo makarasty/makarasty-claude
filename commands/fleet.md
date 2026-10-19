@@ -6,16 +6,18 @@ disable-model-invocation: true
 The `docs/*` and `scripts/*` files named below live in this plugin's own directory,
 `${CLAUDE_PLUGIN_ROOT}`, not in the project you are working on.
 
-A fleet runs one mission across several Claude Code sessions at once. Each session opens its own browser,
-holds its own context, works one brief, and reports by writing a file. Nothing messages anything.
+A fleet runs one mission as a queue of tasks. By default one coordinator chat runs it: it claims each task
+and spawns one fresh background subagent for it, in the main checkout, and every result is a file on disk
+(`docs/ONECHAT.md`). Separate worker chats, each with its own browser and context, and worktrees are
+opt-in, chosen in the plan's first question round.
 
 ## The commands
 
 | Command | Reach for it when |
 |---|---|
 | `/makarasty:fleet-init` | A project has never run a fleet: writes FLEET.md, sets up the agent login, sizes the machine. The other commands run it themselves when they find it missing |
-| `/makarasty:fleet-plan <mission> [n]` | You have a mission and want it split into briefs with a chip offered per brief |
-| `/makarasty:fleet-run <brief>` | You are inside a worker session and want it to execute its brief |
+| `/makarasty:fleet-plan <mission> [fast]` | You have a mission: four pace questions, a queue, then the run from that chat with one subagent per task (chips per worker only with separate chats) |
+| `/makarasty:fleet-run <brief>` | Opt-in separate chats: you are inside a worker session and want it to execute its brief |
 | `/makarasty:fleet-login [origin]` | A session needs the project's app open and authenticated, at `FLEET.md`'s origin or the one given |
 | `/makarasty:fleet-wait <run-id> [n]` | Workers are running and you want each finish to announce itself |
 | `/makarasty:fleet-collect <run-id>` | Workers have finished and you want one ranked backlog |
@@ -36,21 +38,27 @@ clicking its chip, and the model in that new session is what invokes `fleet-run`
 
 ## A run, start to finish
 
-1. `/makarasty:fleet-plan <mission>` in a planning session. It writes briefs and offers one chip each.
-2. Click the chips in waves. Open the browser pane in each worker's chat for missions that need one.
-3. `/makarasty:fleet-wait <run-id> <count>` reports each finish. If the coordinator or a worker nears its
-   context limit (700K, asked again at 800K; auto-compaction starts a little past 900K), the coordinator
-   asks you once and relaunches: it pauses the run and offers a fresh coordinator chip and fresh worker
-   chips together; click the coordinator first. When only workers are over, you can choose to replace just
-   them and the coordinator carries on.
-4. `/makarasty:fleet-collect <run-id>` merges everything into `.fleet/<run-id>/backlog.md`.
+1. `/makarasty:fleet-plan <mission>` in a planning session. It asks four pace questions in one card, writes
+   the queue, registers the subagent slots and starts the loop in that chat. Keep its Browser pane on
+   screen when the mission has browser work.
+2. `/makarasty:fleet-wait <run-id> <slot count>` watches for what a task notification does not bring:
+   the coordinator's own context, a service down, a stall. Only the coordinator can near its context limit
+   (700K, asked again at 800K; auto-compaction starts a little past 900K): it asks you once, then offers one
+   fresh coordinator chip to click.
+3. `/makarasty:fleet-collect <run-id>` commits as the pace chose, merges the findings into
+   `.fleet/<run-id>/backlog.md`, and lands the run with `landed <run> <slot count>`.
+
+With separate chats (opt-in): the plan offers one chip per worker, you click them in waves and open each
+pane worker's Browser pane, and a relaunch offers a fresh coordinator chip and fresh worker chips together;
+click the coordinator first. When only workers are over, you can choose to replace just them.
 
 ## Reference
 
+- `docs/ONECHAT.md`: the default loop - slots, one subagent per task, commits, the economy flow, pause, crash and relaunch in one chat.
 - `docs/WALKTHROUGH.md`: the fifteen-minute first run, for an operator who has never done one.
 - `docs/PROTOCOL.md`: run layout, brief format, finding schema, project configuration.
 - `docs/MEASUREMENTS.md`: the measurement behind every rule, by id.
-- `docs/MISSIONS.md`: the nine mission kinds and how each one splits.
+- `docs/MISSIONS.md`: the ten mission kinds and how each one splits.
 - `docs/DESIGN.md`: the design half - critique with geometry probes, the canvas on disk, redesign beside it, and the loop back to code.
 - `docs/CALL.md`: the call half - the facts with their evidence, the page a non-native speaker reads aloud, and the live chat that answers from the same facts.
 - `docs/WORKTREES.md`: how a code worker gets its worktree and how a run removes them without reaching the main checkout.

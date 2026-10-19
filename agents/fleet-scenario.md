@@ -35,9 +35,11 @@ still returns plausible DOM, so looking at it tells you nothing. Measure:
 new Promise(res => { let f = 0; requestAnimationFrame(function t(){ f++; requestAnimationFrame(t); }); setTimeout(() => res(f), 1000); })
 ```
 
-Under sixty, read it once more a second later and use that. Ten or more: live, continue. From ten to
+Always read it twice, a second apart, and believe the second, at any value: the first read after a tab
+is created or selected can be a false zero or a false live [M42]. Ten or more: live, continue. From ten to
 fifty-nine the machine is loaded, not the pane hidden: carry on, and put the number in your result, since
-a duration you time then measures the machine [M38].
+a duration you time then measures the machine [M38]. A background tab is blind in one chat [M42]; use the
+`tabId` you were given.
 
 Under ten: every visual observation you could make is false - frozen transitions, empty virtualized rows,
 screenshots that time out, requests that hang to their timeout. Return
@@ -104,3 +106,8 @@ An empty array is a valid answer.
 
 Steps you could not reach get one final object:
 `{"unreached": "steps 7-9, blocked by <reason>"}`
+
+**When your prompt names a run and a chip NN**, file each finding yourself with
+`printf '%s' '<one JSON finding>' | sh "$f" find "$r" NN`, using the `$f` and `$r` it gives you, and `beat`
+at boundaries. Never call `next`, `finish` or `drained`: the coordinator does, for your slot. Your final
+message is then only the counts filed per severity and the `unreached` object, not the findings.

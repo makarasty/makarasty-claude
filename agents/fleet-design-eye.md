@@ -38,7 +38,8 @@ DOM, so looking at it tells you nothing. Measure:
 new Promise(res => { let f = 0; requestAnimationFrame(function t(){ f++; requestAnimationFrame(t); }); setTimeout(() => res(f), 1000); })
 ```
 
-Under sixty, read it once more a second later and use that. Ten or more: live, continue; from ten to
+Always read it twice, a second apart, and believe the second, at any value: the first read after a tab is
+created or selected can be a false zero or a false live [M42]. Ten or more: live, continue; from ten to
 fifty-nine the machine is loaded, not the pane hidden, so carry on and put the number in your result [M38].
 Under ten: return `[{"blocked":"pane not compositing"}]` immediately. Every visual observation you could make in that state
 is false, and returning nothing is the right outcome there.
@@ -147,3 +148,8 @@ a fine finding and says so. Never carry a mechanism over from a similar symptom 
 
 An empty array is a valid answer. Screens you could not reach get one final object:
 `{"unreached": "screens 4-5, blocked by <reason>"}`.
+
+**When your prompt names a run and a chip NN**, file each finding yourself with
+`printf '%s' '<one JSON finding>' | sh "$f" find "$r" NN`, using the `$f` and `$r` it gives you, and `beat`
+at boundaries. Never call `next`, `finish` or `drained`: the coordinator does, for your slot. Your final
+message is then only the counts filed per severity and the `unreached` object, not the findings.

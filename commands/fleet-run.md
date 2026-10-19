@@ -3,6 +3,9 @@ description: Work one fleet brief, or a run's task queue, in this session and re
 argument-hint: <path to brief file>
 ---
 
+**Opt-in separate chats only.** In the default one-chat mode workers are subagents briefed by the
+coordinator (`docs/ONECHAT.md`), and this command is not used.
+
 The files named below (`docs/PROTOCOL.md`, `scripts/fleet.sh` and their siblings) live in this plugin's own
 directory, `${CLAUDE_PLUGIN_ROOT}`, not in the project you are working on. Use `$f` for every protocol
 boundary below: that bookkeeping done by hand cost one measured run 235 shell calls
@@ -90,10 +93,11 @@ an hour instead of in one pass [M20].
    new Promise(res => { let f = 0; requestAnimationFrame(function t(){ f++; requestAnimationFrame(t); }); setTimeout(() => res(f), 1000); })
    ```
 
-   Read anything under 60 twice, a second apart, and believe the second [M33]. Ten frames or more is
+   Always read it twice, a second apart, and believe the second, at any value: the first read on a fresh
+   background tab said 268 fps and was false [M42] [M33]. Ten frames or more on the second read is
    live. From 10 to 59 the pane is live **on a loaded machine**: carry on, put the number in the report,
    and ask the operator nothing - focus, split view and moving the window do not change it [M38]. Under
-   10 on both readings is blind. Why and the symptoms: `docs/BROWSER.md`, "The gate".
+   10 on the second reading is blind. Why and the symptoms: `docs/BROWSER.md`, "The gate".
 3. Blind: ask **in that same turn**, by the procedure in section 2, so the question is on screen inside a
    minute of the chip being clicked.
 
@@ -151,6 +155,11 @@ step 1. Any other wake, a restart message included, runs `whoami` without it.
 2. Read the task file and take the first real action on it **in the same turn as the claim**. If the task's
    `model:` is a tier above the one `whoami` recorded for you, delegate the work to one `Agent` at that tier
    (task file and `RULES.md` in its prompt) and review what it returns: a session never switches itself.
+   **When `next` printed `DELEGATE`, the whole task goes to one `makarasty:fleet-coder`** (task file,
+   `RULES.md`, your notes, the worktree and branch in its prompt), and you only claim, review and finish.
+   This is not optional: on 2026-10-12, 6 of 11 workers were told DELEGATE and kept working inline, their
+   context grew a median 54k per task (90th percentile 130k), and 55% of every token they re-read was left
+   over from earlier tasks [M41].
 3. Work the task exactly as the sections below describe a brief, rewriting
    `claimed/<task-id>/heartbeat` at every natural boundary.
 4. Past twice the task's `budget`, stop that task: write what you have, record the rest as unreached with
@@ -165,7 +174,7 @@ step 1. Any other wake, a restart message included, runs `whoami` without it.
    task's own branch, `fleet/<chip>/<task-id>` unless the task or the run names another, in your worktree,
    cut from the task's `base:` with its predecessors merged in (section 1). Nothing downstream can review
    or merge uncommitted work, and `worktrees/<chip>` records only the branch you are on. Then spawn one
-   subagent at the task's `verdict-model` (your own tier when the task has none) on the committed branch's
+   `makarasty:fleet-reviewer` at the task's `verdict-model` (your own tier when the task has none) on the committed branch's
    diff against the branch you started from, with the task file and `answers/00-broadcast.md` if it exists, whose
    recurring misses it checks one by one: it returns the defects it can show an input for. Fix those. What
    you cannot fix in the budget, or dispute, goes in `<chip>.notes.md` as unreached with the reason, and you
@@ -219,7 +228,13 @@ When you cannot avoid stopping mid-run, arm your own wake first and run it with 
 sleep 120; echo wake
 ```
 
-The notification when it exits re-invokes you. That is also the only timeout this system has: a subagent
+Every test run, typecheck, build or server start gets a kill-after limit of about twice its normal time
+(both shell tools stop at 600000 ms, so the wrapper stays under it. Bash: `timeout 590 <cmd>`, exit 124 =
+limit hit, with the Bash tool's own `timeout` parameter at 600000, since its default of 120000 ms cuts
+first; PowerShell: the tool's own `timeout` parameter in ms, never `timeout`, which is timeout.exe; macOS
+without coreutils: `gtimeout`; longer than 600000 ms in any shell: a background run plus `TaskStop` at
+the limit); a hit limit is reported, never retried silently. The notification when the wake
+exits re-invokes you, and that wake is the only timeout for what has no command to wrap: a subagent
 that never returns, an answer that never comes, a pane nobody displays. When you wait on a file
 (`answers/<chip>-<n>.md`, `pane/results/<id>.json`), wake on it with the same cap:
 `for i in $(seq 24); do [ -e <file> ] && break; sleep 5; done; echo wake`. The rule and its measurements:
@@ -246,8 +261,10 @@ last result into one turn: several tool calls in one message, or one Bash call p
 (`sed -n 10,60p a.ts; sed -n 1,40p b.ts; grep -n X c.ts`). A turn with a single read is for a read that
 needs the previous answer. Read with the `Read` tool (offset and limit for a slice) and search with `Grep`
 when they are offered: a `Read` returned in 0.02 s where a Bash read cost 0.5-0.9 s of harness time, and a
-file `Read` read can be changed with `Edit`. Every repo `Agent` prompt you write (work, review, verify) carries the four
-sentences above verbatim, plus the map of what you already found: the files and line ranges, the scoped
+file `Read` read can be changed with `Edit`. A repo subagent is `makarasty:fleet-coder` for work and
+verify and `makarasty:fleet-reviewer` for review, never `general-purpose`: those two start at about 40k
+tokens where general-purpose starts at 77-78k, and every one of their turns re-reads the start. Their
+bodies already carry the batching rule; every repo `Agent` prompt you write carries the map of what you already found: the files and line ranges, the scoped
 test command, the worktree and the branch. A delegated subagent made its first edit after a median 4.5
 minutes, and 18% of what it read its parent had already read [M36].
 
@@ -269,9 +286,10 @@ repo lane, never in the pane lane". The rest of that file sizes lanes, which is 
   of work rather than one lookup (claims that need a trace, screens, files changed apart), goes to
   subagents in one message, grouped to the task's width, on disjoint files. The subagents edit; you run
   the scoped tests once after they return. **On a long queue, delegate whole tasks, not parts:**
-  each task you work inline leaves 20-30 k of context behind, and four workers who never spawned anything
-  were all compacted around their thirtieth task [M30]. When `next` prints `DELEGATE`, hand the task to
-  one subagent - task file, `RULES.md`, your notes - and keep your own context flat.
+  each task you work inline leaves a median 54k of context behind (130k at the 90th percentile,
+  2026-10-12), and four workers who never spawned anything were all compacted around their thirtieth task
+  [M30]. When `next` prints `DELEGATE`, step 2 of the loop applies: the task goes to one
+  `makarasty:fleet-coder` and your own context stays flat.
 - `needs: verify` - the full suite or the full typecheck is the whole machine. One worker holds it at a
   time and the others verify scoped.
 
@@ -348,15 +366,18 @@ reproduction was not run through the gate, so run it - before you change anythin
 ```bash
 g="${CLAUDE_PLUGIN_ROOT}/scripts/fleet-gate.mjs"
 w="$(sed -n 's/^path //p' "$r/worktrees/<chip>")"   # your worktree: the tree you change
-(cd "$w" && node "$g" prove "$r" <task-id> before -- <the task's reproduction>)
+(cd "$w" && node "$g" prove "$r" <task-id> before -- '<the task's reproduction, word for word>')
 # ... make the change in "$w" ...
-(cd "$w" && node "$g" prove "$r" <task-id> after  -- <the same command>)
+(cd "$w" && node "$g" prove "$r" <task-id> after  -- '<the same command>')
 ```
+
+Pass the reproduction as one single-quoted argument (a `'` inside written `'\''`): `prove` runs a single
+argument as written, and a cluster root's `(a) || (b)` left bare is a syntax error in your own shell.
 
 **Run both calls, and the project's scoped tests, inside the worktree.** `prove` hashes the tree of the cwd it
 runs in, and `--create` leaves yours in the main checkout: a bare `node "$g" prove` hashes the same tree
-before and after, and `finish` says NOT PROVEN. Never use `FLEET_REFUTED` to get past that; it is for a
-reproduction that passed before the change. Run both calls again from the worktree.
+before and after, and `finish` says NOT PROVEN. Never use `FLEET_REFUTED` to get past that; on a fix it is for a
+reproduction that passed before the change (a root has its own rule, below). Run both calls again from the worktree.
 
 A `before` that passes means the finding is refuted: record that, finish the task, and take the next one.
 That is a complete result, and roughly 15 findings in every 100 end that way. A task with `handback-of:` was
@@ -365,7 +386,11 @@ begun by a retired worker, and the gate carries that worker's `before` over (fro
 `before` too if none was recorded.
 
 **A `kind: root` task owns a seam several findings reach**, and every task listed in its `gates:` is held
-until it lands. Rule on the cause first and be willing to refute it; a refutation releases the members to
+until it lands. Rule on the cause first and be willing to refute it; a root ruled a coincidence closes with
+`FLEET_REFUTED=1` and a `refuted <task-id>: <reason>` line in your notes whatever its `before` did (a fix
+needs a passing `before`). A root's `repro:` joins its members' with ` || `: its proof is of the seam fix
+(`before` fails while every member reproduces, `after` passes once one is resolved), and a member that still
+needs its own change is proved by its own task. A refutation releases the members to
 be fixed on their own evidence and is the right answer more often than it feels. If you are working one of
 those members instead, the root has already finished by the time you can claim it, so re-run your
 reproduction before editing. It may already pass, and confirming that is your job; do not write a second

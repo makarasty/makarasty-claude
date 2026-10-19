@@ -89,7 +89,7 @@ Guidance:
 ## The router
 
 `makarasty-tools` carries a function hook on `agent.spawn` (`tools/hooks/router.ts`) that moves a spawn to
-a cheaper model only where the caller says that is safe. It touches only the built-in `general-purpose` and `Explore` agents spawned without
+a cheaper model only where the caller says that is safe. It touches only the built-in `general-purpose` and `Explore` agents, and the fleet's own `fleet-coder` (routed like `general-purpose`) and `fleet-reviewer` (never moved: a tag on it is ignored, because it is the check that makes a tag safe) [M41], spawned without
 `model` from an Opus or Fable parent; a named model, any other agent (your own `Explore.md` included: the `agent.offer` event says where each type came from), a workflow agent and a fork go through
 as written.
 
@@ -103,6 +103,51 @@ once closed a task the shell would have left open, which its own 146 test cases 
 other side's tests and a blind review found it. A keyword guess was tried first and dropped for the same
 reason: it would have sent that port to Sonnet. `/router` prints what it changed; `MAKARASTY_ROUTER=off`
 turns it off.
+
+## Pace
+
+The questionnaire (`fleet-plan`, at most four questions in one `AskUserQuestion` call, each with a
+recommended first option) is what picks the tiers and the review rounds. The answers go to the `pace:` line
+of `STATE.md`. Width is never an answer: it is `fleet.sh width`. The loop that uses these is in
+[`ONECHAT.md`](ONECHAT.md).
+
+| Scale | What it edits in the plan |
+|---|---|
+| Let the plan count it (recommended) | the draft's own count; warn as for Large when it lands past about 150 tasks |
+| Small (a few tasks) | a queue of a few tasks; no warning |
+| Medium (an afternoon) | a queue of an afternoon's tasks; no warning |
+| Large (a day+, queue it) | the whole queue filed at launch; tell the operator it may run overnight and that the coordinator is relaunched at each 700 K mark, about every 150 to 200 tasks (estimate, [M43]) |
+
+One chat always works a queue: `chips --agents` refuses a slot that has a brief. Fixed briefs are for
+separate chats, over a surface no larger than the plan (`fleet-plan` 3b). Scale sets no budget: the first
+wave's default budget is replaced by the run's measured median once three tasks are done (`fleet-plan` 2b).
+
+| Economy | Coder | Reviewer, the verdict |
+|---|---|---|
+| Maximum (recommended) | Sonnet, effort `high`, never `max` | Sonnet, spawned on every code task |
+| Balanced | Sonnet, effort `high` | Sonnet, effort `high`; Opus on implement, root, design |
+| Spend for speed | Opus, `high` | Opus, `xhigh` |
+
+| Speed against quality | Rounds |
+|---|---|
+| Fastest finish | one review; only blockers become fix tasks; one scoped verify at the end |
+| Balanced (recommended) | one review and one fix round |
+| Best quality | review until a round finds nothing, bounded by the 2x-budget clock |
+
+**Economy flow.** The coordinator's top model decides and nothing else; every mechanical step goes to a
+cheaper model. Commits, `STATE.md` updates and log reading go to Haiku, the description starting `[mech]`
+(the router above sends it to `haiku`), except `STATE.md` while the run is paused: the hooks hold every
+subagent then, so the coordinator writes it. Merges, which exist only with the opt-in worktrees, go to Sonnet
+tagged `[exec]`. Design is the exception to all of it and stays on the top tier. A task the reviewer rejects
+after a cheaper tier did it is re-spawned once, one tier up (Haiku, Sonnet, Opus); a second reject goes to
+the operator as one `AskUserQuestion` (`ONECHAT.md`, "Economy").
+
+**Why it is cheaper.** A chat worker starts a task at about 92 to 107 k of context and re-reads its earlier
+tasks, 27 to 54 % of its cache reads and 55 % in [M41]. A fresh subagent per task starts at about 40 to 75 k
+with nothing carried over, and idle gaps over five minutes, which rewrote the cache for 4 to 6 % of spend,
+do not occur. Estimated 14 to 20 % cheaper than the hybrid of the 2026-10-14 run ($735) and two to three
+times cheaper than inline chat workers [M43]. **That is an estimate; no one-chat run has been measured end
+to end.** The first one is analysed with `fleet-analyze`.
 
 ## Reasoning effort
 
@@ -118,7 +163,7 @@ as a workflow of subagents at the current effort; the coordinator asks for it, s
 Effort is settable per subagent, in the definition file's frontmatter. The `effort` field is documented at
 `code.claude.com/docs/en/sub-agents` as "Effort level when this subagent is active. Overrides the session
 effort level. Default: inherits from session. Options: `low`, `medium`, `high`, `xhigh`, `max`; available
-levels depend on the model." Each of the four agents in `agents/` carries one, with its reason in the file.
+levels depend on the model." Four of the six agents in `agents/` carry one, with its reason in the file; `fleet-coder` and `fleet-reviewer` carry neither `model:` nor `effort:`, because the caller sets both. In one chat every `Agent` call passes `effort` and `model` explicitly from the `pace:` line.
 
 From Claude Code 2.1.292 the `Agent` call also takes a per-invocation `effort`, which outranks the
 frontmatter; `CLAUDE_CODE_EFFORT_LEVEL` outranks both. With neither, a subagent runs at the session's
@@ -144,9 +189,12 @@ What the ordering means for this plugin: `fleet-run` spawns its pane agents with
 per-invocation parameter, which is the top of the order, so the `model:` line in `fleet-scenario`,
 `fleet-profiler` and `fleet-design-eye` is the fallback for a brief that omits one, not the tier those
 agents actually run at. `fleet-triage` is spawned by `fleet-collect` with no model, so its frontmatter is
-what runs. The `effort:` line is what runs in all four unless a call passes its own `effort`.
+what runs. The `effort:` line is what runs in all four of those unless a call passes its own `effort`.
 
 ## Switching a worker
+
+**Opt-in chats only.** In one chat, the default, there is no worker session to switch: the coordinator names
+the model on each `Agent` call. What follows is for a run that chose separate worker chats.
 
 The coordinator sets each queue worker's model and effort; the operator does not [M35]. A chip starts on
 whatever the app's model menu shows at the click, so the run says what it wants and the coordinator
@@ -201,7 +249,7 @@ area of the plan. The operator's policy above stands; this one data point does n
 
 Outside a run, the operator still sets defaults once: `model` and `effortLevel` in settings for where
 sessions start, `CLAUDE_CODE_SUBAGENT_MODEL` for every otherwise-unassigned subagent, and `model:` plus
-`effort:` in the four agent files for the work a fleet dispatches.
+`effort:` in the agent files that carry them for the work a fleet dispatches.
 
 ## Cost discipline that is not about models
 

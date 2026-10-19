@@ -13,6 +13,18 @@ no change on disk it names each claim still outstanding and who holds it, alongs
 workers have landed. That line is the cue to send a status check to the worker holding a claim nobody is
 advancing, which is the only thing that revives a dead session.
 
+## One chat, the default
+
+Arm the same loop with `n` = the slots registered (`docs/ONECHAT.md`). A subagent's completion arrives as
+its own task notification, not through this loop; the loop stays armed for `COORDINATOR CONTEXT`, `SERVICE
+DOWN`, `LEFTOVER`, `STALL`, the pause lines and `run complete`. `task finished` and a `.done` line are your
+own `finish` and `drained` writes: nothing to do. In one chat a `STALL` is information only: the loop
+counts claims, done markers, `ask/` and slot markers as progress, never heartbeats, so it fires after
+`quiet` seconds of any long task. Never `TaskStop` on it. Only that task's own clock (`budget-elapsed-<id>`)
+means its subagent hung: `TaskStop` it and re-spawn on the same claim (`docs/ONECHAT.md`, loop step 2).
+There are no worker chats, so no `send_message`: every line below that says to message a worker by title
+is for opt-in separate chats.
+
 ## The loop
 
 `run` and `n` are the run id and the expected worker count. `quiet` is the stall interval in seconds:
@@ -241,12 +253,16 @@ So keep the count as the happy path and give yourself a fallback with a threshol
 > collect what is on disk, and report the missing ones as unaccounted rather than as clean.
 
 A `.done` that lands after that is orphaned unless collection is re-run. Say so in the summary; do not
-pretend the count closed.
+pretend the count closed. In one chat this threshold does not apply: each subagent's `budget-elapsed-<id>`
+clock ends a hung task, and a long one writes no file between its claim and its `finish`.
 
 **If the chats stopped rather than went quiet, none of the above applies.** A stall report and a crash
 look the same from the run directory — no file changes in either — so the next section decides which.
 
 ## After a restart, wake every worker before you re-arm
+
+In one chat there are no workers to wake: your subagents died with your turn. Follow `docs/ONECHAT.md`,
+"Pause, crash, relaunch", then re-arm. The rest of this section is for opt-in separate chats.
 
 A Claude Code restart ends the turn of every session on the machine: your watch, and every worker's loop
 with it. Claim files and heartbeats survive it, so `status` reads like a working run while nothing works

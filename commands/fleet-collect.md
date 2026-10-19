@@ -63,11 +63,14 @@ re-observation.
 sh "$f" fixqueue .fleet/<run-id>   # -> .fleet/fix-<run-id>/tasks/ready/*.md
 ```
 
-Add `base: <the branch the fixes are merged into>` to every task it writes before offering chips; fixqueue
-does not know it. One task per blocker and major, each carrying the finding id, the reproduction, the evidence, the
+After `cluster` below and before the first claim, add `owns:` to every task in the queue, the root tasks
+`cluster` writes included (a root owns the seam's files), and a `repro:` where fixqueue left it empty (one
+shell command that fails while the defect is there; `docs/ONECHAT.md`, step 1), and order overlapping ones with `after:` (one
+chat, `docs/ONECHAT.md`); with opt-in worktrees add `base: <the branch the fixes are merged into>` instead.
+fixqueue knows neither. One task per blocker and major, each carrying the finding id, the reproduction, the evidence, the
 mechanism marked as a lead rather than a diagnosis, the lane it needs, and the twins that share its files.
-A second fleet claims that queue with `/makarasty:fleet-run .fleet/fix-<run-id>/`, or one chat works it
-alone. Either way the input is a queue, not a document somebody has to re-read.
+One chat works it by the loop of `docs/ONECHAT.md`, or, opt-in, a second fleet of chats claims it with
+`/makarasty:fleet-run .fleet/fix-<run-id>/`. Either way the input is a queue, not a document somebody has to re-read.
 
 **Then put the roots in front of it**, before a single chip is offered:
 
@@ -113,15 +116,21 @@ the failure it was written for.
 
 ## Land the run: notify, then stop the watch
 
-These are one act, done once, when the run is **genuinely** finished. That state can be checked, and the
-script checks it:
+These are one act, done once, when the run is **genuinely** finished. In one chat, first commit what the
+`pace:` line still owes (one commit at the end by default): one Haiku `[mech]` agent, given the union of
+the done tasks' `tasks/claimed/<id>/files` lists minus `dirty-at-start`. Those paths are relative to the
+git top, not to the folder holding `.fleet`, so it runs `git -C "$(git rev-parse --show-toplevel)" add --`
+on the new paths only and then `git -C "<top>" commit --only -m <msg> -- <paths>`, so the operator's staged
+work stays out; never `-A` (`docs/ONECHAT.md`, "Commits"). The finished state can
+be checked, and the script checks it:
 
 ```bash
-sh "$f" landed .fleet/<run-id> <expected-chips>
+sh "$f" landed .fleet/<run-id> <slot count>     # one chat; with separate chats, the expected chips
 ```
 
-It passes when every chip has a `.done` or `.blocked`, every claim has a done marker, every task in
-`ready/` was claimed by somebody, `backlog.jsonl` exists and is not empty, and no `.waiting` marker is on
+In one chat the count is the slots registered with `chips --agents`, each landed by your own `drained`. It
+passes when every chip or slot has a `.done` or `.blocked`, every claim has a done marker, every task in
+`ready/` was claimed by somebody, `backlog.jsonl` exists (a zero-finding run writes it empty), and no `.waiting` marker is on
 disk. "The workers went quiet" is a different state: silence is ambiguous between finished and dead, which
 is why this plugin has a stall rule.
 
@@ -163,8 +172,8 @@ on disk before one is sent.
    stopped.
 4. **Rename this session** to `fleet <run-id> - FINISHED <n>f/<b>b`, if the host offers a session-title
    tool (`mcp__ccd_session_mgmt__set_session_title` here, `self`). The sidebar is the only surface visible
-   from a chat the operator is not sitting in, and by now every worker has renamed itself the same way.
-5. **Clean up the run's worktrees**, last, once `FINISHED` is on disk and the findings are merged:
+   from a chat the operator is not sitting in, and with separate chats every worker has renamed itself the same way.
+5. **With opt-in worktrees, clean up the run's worktrees** (one chat has none), last, once `FINISHED` is on disk and the findings are merged:
 
    ```bash
    sh "$f" clean .fleet/<run-id>              # what it would remove, and what it will keep and why

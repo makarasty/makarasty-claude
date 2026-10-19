@@ -32,7 +32,7 @@ Find the cause of a symptom that is already known to exist.
 Split by **hypothesis**, one per worker, each stated as a claim that can be refuted. Splitting by area
 instead produces four workers reading the same stack trace.
 
-Isolation: none for reading, worktree for a worker that needs to add instrumentation.
+Isolation: none for reading. A worker that adds instrumentation does it in the main checkout, under its `owns:`; a worktree is opt-in.
 
 Demand: a worker returns the evidence that killed its hypothesis just as readily as the evidence that
 confirmed it. A refuted hypothesis is a result, and the cheapest kind to produce.
@@ -47,8 +47,10 @@ Build a slice of new work.
 Split by **seam**, one per worker: a module boundary, a route, a table, a screen. Workers that share a
 file share a merge conflict.
 
-Isolation: worktree, always. Two sessions editing one tree produce a merge nobody asked for, and a session
-that reverts a path can destroy another session's uncommitted work.
+Isolation: the main checkout, with disjoint `owns:` and `after:` between tasks that would touch the same path;
+a worktree on opt-in ([`WORKTREES.md`](WORKTREES.md)). Two sessions editing one file produce a merge nobody
+asked for, and a session that reverts a path can destroy another session's uncommitted work, so a worker
+touches only its `owns:` paths and never runs `git add -A`, `stash`, `checkout --` or `switch`.
 
 Demand: each worker ships its slice with the test the project's conventions require, and reports which
 verification it ran. Scoped verification during the work, and a full sweep once at the end, run by the operator.
@@ -62,7 +64,7 @@ Work through a backlog of known defects.
 Split by **file cluster**, so no two workers open the same file. Rank the backlog first: a worker given
 twelve unrelated fixes does the first three well.
 
-Isolation: worktree.
+Isolation: the main checkout, as for `implement`; a worktree on opt-in.
 
 **One kind of task is exempt from that split.** A defect whose cause is shared lives in
 a file somebody else owns, so exclusive ownership - the thing that stops two workers colliding - is also
@@ -120,12 +122,14 @@ Rework a screen so it is right to look at, not merely correct to click.
 Split by **screen**, one per worker, and never by control: a per-control task pays a whole session's
 attachments for a decision worth a line.
 
-Isolation: worktree, always. Same reason as `implement`, plus one of its own — a design task edits shared
-primitives, and two workers restyling one primitive produce a merge nobody can arbitrate on taste.
+Isolation: the main checkout, as for `implement`, plus one rule of its own — a design task edits shared
+primitives, and two workers restyling one primitive produce a merge nobody can arbitrate on taste, so
+tasks that reach one primitive are ordered with `after:`. A worktree is opt-in.
 
 A design task is `needs: pane`: its gate is a screenshot of what it just built, so it is claimed from the
-pane lane. It has to see its own screens, and the shared Browser pane serves the main checkout, not its
-worktree. So it starts the project's dev server from its worktree, in the background (Bash with
+pane lane. In the main checkout the shared Browser pane already serves its code. Only in an
+opt-in worktree does it have to see its own screens, and the pane serves the main checkout, not the
+worktree. So there it starts the project's dev server from its worktree, in the background (Bash with
 `run_in_background`), on a free port, and then calls `preview_start` with that `url` - not by launch-entry
 name, which would run the main checkout's entry and show somebody else's code - and the gate runs there; a
 task may name that address in `origin:`. That server is the worker's own and is not one of the run's shared
@@ -133,7 +137,7 @@ services, which a worker never starts. The worker stops it before it finishes.
 
 **One model owns the screen end to end, and it is the design model.** Reading the code, writing the markup
 and the copy, driving the browser, running the instrument, deciding it is done. A worker session may start
-the dev server, log in, take the first screenshot, run the scoped suite and commit; it may not adjust a
+the dev server, log in, take the first screenshot, run the scoped suite and have it committed; it may not adjust a
 class, a spacing token, a skeleton, a transition or a user-visible string. When verification fails, the
 fix is another design round with the failure attached, never a hand-patch by whoever ran the check.
 

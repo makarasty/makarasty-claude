@@ -1,6 +1,10 @@
 # Worktrees: created safely, cleaned safely
 
-A worker whose brief writes code runs in its own git worktree, so two sessions never edit one tree. The
+**Opt-in since 2026-10-19.** The default is the main checkout, with each code task's `owns:` kept disjoint
+or ordered with `after:` ([`ONECHAT.md`](ONECHAT.md)). Everything below is for a run that chose
+worktrees in the questionnaire, and the M32 warning applies to any worktree you or an agent create by hand.
+
+In such a run, a worker whose brief writes code runs in its own git worktree, so two sessions never edit one tree. The
 worktrees pile up: one per code worker, each with a branch. A project's own setup script may link
 `node_modules` into every worktree to skip a second install, and `fleet.sh worktree --create` does the same
 for the trees it makes; every one of those links is a hole a recursive delete follows. At the end of a run

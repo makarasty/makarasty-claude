@@ -68,7 +68,7 @@ pane.
 
 ## 4. Chips, watch, publish
 
-Repo chips only, from `sh "${CLAUDE_PLUGIN_ROOT}/scripts/fleet.sh" width .fleet/<run-id>`; no pane is opened for a redesign. Pass the chips `--model` for the design tier (`docs/MODELS.md`, "Switching a worker"). The watch as `fleet-plan`
+Repo lane only, sized by `sh "${CLAUDE_PLUGIN_ROOT}/scripts/fleet.sh" width .fleet/<run-id>`; no pane is opened for a redesign. One chat (the default): register the slots with `sh "${CLAUDE_PLUGIN_ROOT}/scripts/fleet.sh" chips .fleet/<run-id> NN-MM repo --agents` and run the loop of `docs/ONECHAT.md`, spawning each task at the design tier (the Agent call carries the model; `--agents` takes no `--model`). Only when Round 0 chose `isolation=chats`: offer repo chips from the same `chips` call with `--model` for the design tier (`docs/MODELS.md`, "Switching a worker"). The watch as `fleet-plan`
 section 8. Publish exactly as `fleet-design` section 5 does, twice when there was a directions task: once
 for the sketches, once for the proposals. Between the two, the operator picks; carry the pick into the
 propose tasks and the broadcast, and never rename a direction.

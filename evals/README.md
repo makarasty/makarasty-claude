@@ -1,6 +1,6 @@
 # Evals: the half the self-test cannot reach
 
-`scripts/fleet-selftest.sh` proves the mechanics — a claim is atomic, a finding without evidence is
+`scripts/fleet-selftest.mjs` proves the mechanics — a claim is atomic, a finding without evidence is
 refused, a clock stops itself. It cannot prove the part that decides whether a run is any good: whether a
 worker reading these documents *does the thing they ask*.
 

@@ -1,5 +1,27 @@
 # Relaunch
 
+## One chat
+
+Only the coordinator crosses the 700 K mark: every subagent starts fresh per task, so there is no
+`WORKER CONTEXT` line and no worker to replace. On `COORDINATOR CONTEXT`, or when the operator asks:
+
+1. Steps 1 and 2 below: `PushNotification`, then one `AskUserQuestion` with your number and the options
+   "Relaunch now (recommended)" and "Not now".
+2. On yes: stop spawning, and start call 1 of step 3 below in the background, **naming no chips**: it
+   pauses the run, and the claims stay held for the new coordinator.
+3. While it waits for acks: `TaskStop` every subagent and every clock you backgrounded (a clock ends only
+   on `FINISHED`, a done marker or `NN.done`/`.blocked`/`.retired`, none of which a relaunch writes, so
+   this chat's clocks would wake it and re-spawn claims the new coordinator works), and ack each slot that holds a claim with
+   `sh "${CLAUDE_PLUGIN_ROOT}/scripts/fleet.sh" paused <absolute run dir> NN`. When call 1 stops on
+   "STATE.md NOT CURRENT", update `STATE.md` yourself, naming the claims whose subagent was stopped
+   mid-task, then run call 2. Not a Haiku `[mech]` agent: while the run is paused the hooks hold every
+   subagent of yours as `agent-<id>`, that one too.
+4. Step 4 below: `TaskStop` your watch, offer the one coordinator chip, stop. The new coordinator takes the
+   seat with `resume --take-over`, re-arms the watch with the slot count, and re-spawns one subagent per
+   held claim, as after a crash (`docs/ONECHAT.md`).
+
+## Opt-in: separate chats
+
 The procedure `fleet-plan` section 8b points at, read when the watch prints `COORDINATOR CONTEXT`, a
 `WORKER CONTEXT` for a brief worker, when `fleet.sh retire` refuses a worker on an older plugin, or when the
 operator asks for a relaunch. A queue worker on 1.5.14 or later is retired instead (`fleet-wait`). `${CLAUDE_PLUGIN_ROOT}` is the makarasty plugin's

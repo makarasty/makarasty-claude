@@ -1,8 +1,22 @@
 ---
 description: Pause a fleet run so every worker really stops, or lift the pause. Use on "поставь флит на паузу", "останови флит", "заморозь воркеров", "сними с паузы", "продолжи флит после паузы", "pause the fleet", "stop the workers", "resume the fleet".
 argument-hint: <run-id> [off] [reason]
-allowed-tools: Bash, Read, Glob, Grep, mcp__ccd_session_mgmt__send_message
+allowed-tools: Bash, Read, Glob, Grep, TaskStop, mcp__ccd_session_mgmt__send_message
 ---
+
+## One chat, the default
+
+Run the Pause below as written; the coordinator is never blocked. Then stop spawning: claim nothing and
+start no `Agent`. The hooks hold each subagent of the coordinator as chip `agent-<agent_id>`, 30 s
+(`pause_grace_seconds`) from the pause. `TaskStop` every subagent not back by then and every clock you backgrounded (a clock ends only on
+`FINISHED`, a done marker or `NN.done`/`.blocked`/`.retired`, and a pause writes none, so after the resume a
+fresh clock would run beside the old one and stop a healthy agent), and ack its slot with
+`sh "$f" paused "$r" NN` so `status` and a relaunch count it stopped. Their partial edits stay in the
+tree. On resume, re-spawn one subagent per held claim, told the edits in its `owns:` are its predecessor's
+to continue (`docs/ONECHAT.md`, "Pause, crash, relaunch"). No `send_message`: there are no worker chats.
+The rest of this file holds for both modes; its status messages by title are for opt-in separate chats.
+
+## How the pause holds a worker
 
 A pause that is only a sentence to the workers does not stop them: on 2026-10-05 the coordinator said
 "pause", and the workers went on "wrapping up" for a long time. This command makes the pause a file the

@@ -1,5 +1,5 @@
 ---
-description: Plan a canvas run - capture the application's screens as artboards on disk and assemble them into a Claude Design canvas the operator can open and edit. One worker per screen; offers a chip per worker and publishes the canvas when they land.
+description: Plan a canvas run - capture the application's screens as artboards on disk and assemble them into a Claude Design canvas the operator can open and edit. One task per screen, run by background subagents in this chat (a chip per worker on isolation=chats); publishes the canvas when they land.
 argument-hint: <screens or area in plain words> [fast]
 disable-model-invocation: true
 ---
@@ -81,26 +81,21 @@ from `docs/MODELS.md`:
   three `fleet-canvas.mjs` calls with the title and the output path, and the instruction to file an
   `ask/` if `seed` cannot find the design skill's helper.
 
-Order the files longest budget first within a stage. Touch `tasks/queue-open` before offering a chip and
+Order the files longest budget first within a stage. Touch `tasks/queue-open` before the first slot or chip and
 delete it once every task is filed - here that is immediately, because a canvas run's queue is known in
 full from the screen list. Use the `after:` gates, not the order, for the stages: `fleet.sh next` holds a
 gated task and tells the worker `QUEUE WAITING`, so a repo worker that starts before recon lands polls
 instead of finishing.
 
-## 4. Offer the chips
+## 4. Register the slots (chips on isolation=chats)
 
-Two pane chips, `lane pane` - the recon stage is ten minutes a screen and the compare stage is twelve,
-so two panes drain either in a wave. Repo chips from `sh "${CLAUDE_PLUGIN_ROOT}/scripts/fleet.sh" width .fleet/<run-id>`, `lane repo`. Chip
-titles and prompts verbatim from `sh "${CLAUDE_PLUGIN_ROOT}/scripts/fleet.sh" chips .fleet/<run-id> <NN>-<NN> <lane>`, one call per lane.
+One chat (the default): register slots, one call per lane, `sh "${CLAUDE_PLUGIN_ROOT}/scripts/fleet.sh" chips .fleet/<run-id> <NN>-<NN> <lane> --agents`, a pane lane of 1 (one chat has one live tab [M42]) and a repo lane from `sh "${CLAUDE_PLUGIN_ROOT}/scripts/fleet.sh" width .fleet/<run-id>`, then run the loop of `docs/ONECHAT.md`. The recon stage is ten minutes a screen and the compare stage is twelve, so say the arithmetic out loud: the single pane slot walks the screens one at a time, and the repo tasks held by `after:` wait (`QUEUE WAITING`, exit 7) until recon lands.
 
-Pass each lane's model to `chips` as `--model <id> --effort <level>`. A task whose `model:` is above its
+Opt-in, on `isolation=chats` or when the operator explicitly wants two live panes at once: two pane chips, `lane pane` (two panes drain either stage in a wave), and repo chips, `lane repo`, titles and prompts verbatim from `chips .fleet/<run-id> <NN>-<NN> <lane>`, one call per lane. Pass each lane's model as `--model <id> --effort <level>` (`--agents` takes no `--model`: a subagent's model is on the Agent call). A task whose `model:` is above its
 worker's tier is delegated by that worker to one `Agent` at that tier (`fleet-run`); the design model on
 the pane lane avoids those spawns, a cheaper tier spends them on the system and screen tasks. Say which you
 chose and why in the hand-over; `docs/MODELS.md`, "Switching a worker", covers a chip that starts on
-another model.
-
-Say the stage arithmetic out loud: repo workers will sit on `QUEUE WAITING` until the pane workers have
-recon'd their screens, which is a few minutes, and the operator should open the pane chips first.
+another model. The operator should open the pane chips first.
 
 ## 5. Arm the watch, and publish when it lands
 
@@ -123,5 +118,5 @@ the project's to commit or not, and the seeded page regenerates from it.
 ## Done when
 
 Every screen in the corrected list has a task, the stages are gated by `after:` and not by prose, the
-chips are offered by lane, the watch is armed, and - once the run lands - the canvas is published and the
+slots are registered by lane (chips on `isolation=chats`), the watch is armed, and - once the run lands - the canvas is published and the
 operator has its link.

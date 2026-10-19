@@ -59,11 +59,13 @@ arriving or leaving, so read again a second later and believe the second reading
 Run it before the first visual step, and again before each batch of visual work. A pane collapsed mid run
 takes the worker blind silently, and every observation after that point is worthless.
 
-**A single zero is not an answer; measure twice with a second between.** The first second after a tab
+**Always read twice, a second apart, and believe the second, at any value.** The first second after a tab
 becomes the selected one delivers **zero frames**, measured at both transitions in the same run [M33]. A
 gate fired the instant an operator says they have opened the pane therefore reads blind, and sends the
 worker back to ask for a pane that is already open - which is the shape that cost six pane workers between
-1 and 34 minutes each [M20]. Read zero, wait a second, read again, and believe the second one.
+1 and 34 minutes each [M20]. The error also runs the other way: the first 1 s gate on a freshly created and
+navigated background tab read **268 frames**, a false live, and every later read on it was 1 to 3 [M42]. So
+a high first reading is no more final than a zero: read, wait a second, read again, believe the second one.
 
 A blind worker asks the operator to display the pane, then **measures again**. This holds for every
 session that reads a pane, the coordinator included, and the ask goes out in the same turn - with
@@ -131,8 +133,8 @@ what hold the line.
 **Two is usually what is needed, whatever the ceiling allows.** Seven open panes carried 104 minutes of
 actual browser driving across a 153 minute run, no pane busy for 38 percent of it, peak three [M15].
 Opening a pane costs the operator a question, a piece of screen and the obligation to keep it displayed,
-and it buys nothing while nobody is driving it. Start at two, and add one when the browser work is visibly
-queueing - `LANES.md` for how to see that, `BROKER.md` for the shape that makes adding one cheap.
+and it buys nothing while nobody is driving it. With separate chats start at two, and add one when the browser work is visibly
+queueing; in one chat the lane is 1, one live tab (`ONECHAT.md`) - `LANES.md` for how to see that, `BROKER.md` for the shape that makes adding one cheap.
 
 Five sessions tile side by side at a readable width with nothing stacked below. That is a comfort number
 for panes the operator intends to watch, not a ceiling: panes nobody is watching can be parked off screen
@@ -237,9 +239,15 @@ A subagent can drive the parent session's pane. Two things belong in its brief:
 - The `mcp__Claude_Browser__*` tools are deferred for subagents. It loads them first with `ToolSearch`,
   query `select:mcp__Claude_Browser__browser_batch,mcp__Claude_Browser__javascript_tool,mcp__Claude_Browser__computer`. Without that line it
   reports having no browser tools and stops.
-- It shares the parent's pane and tab, so browser subagents run one at a time.
 - **The `tabId`.** The agent is told to use the tab it was given and has no way to discover which one that
   is, so a brief that omits it leaves the agent guessing at a pane it may not own.
+
+One chat is one live tab. A background tab reads 0 to 2 frames a second over 12 s, so it is blind, while
+the foreground tab beside it held 272 to 300; driving the background tab took nothing from the foreground
+one [M42]. So in one chat browser subagents run one at a time, each told its `tabId`, and the pane lane is
+1. Per-tab viewport emulation held 375 and 1594 px at once, and `fetch` from a background tab answered in
+514 ms, but a screenshot of a background tab is a photo of a stopped page. More than one live visual check
+at once means separate chats, which is opt-in (`docs/ONECHAT.md`).
 
 Screenshots and DOM reads then land in the subagent's context, and only its final message reaches the
 parent. Give it a bounded output contract, and say that its final message carries findings alone;

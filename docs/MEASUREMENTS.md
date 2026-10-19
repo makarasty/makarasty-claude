@@ -12,7 +12,7 @@ and a status. `current` means the last measurement still supports it. `supersede
 run measured the same thing differently, and both are kept, because a number that was replaced is the only
 way to tell a fact from a habit.
 
-Rules cite entries as `[M07]`. `scripts/fleet-selftest.sh` fails when a citation names an entry that does
+Rules cite entries as `[M07]`. `node scripts/fleet-selftest.mjs` fails when a citation names an entry that does
 not exist here, and when an entry is cited nowhere and is not marked `uncited: deliberate`.
 
 ---
@@ -362,7 +362,7 @@ The remote is not the variable. The recursive delete inside `git worktree remove
 point and removes the target's contents; `--force` does the same. Unlinking first removes the link and
 never what it points at.
 
-The unlink-first rows are one run each, which is thin. `fleet-selftest.sh` re-asserts them on every run:
+The unlink-first rows are one run each, which is thin. The self-test (`node scripts/fleet-selftest.mjs`) re-asserts them on every run:
 it builds a real junction, runs `clean`, and fails if the main checkout's marker file is gone.
 
 Two earlier answers to this question were both worthless, in the same direction and for different reasons.
@@ -614,6 +614,90 @@ Max 20x account held $4.3-4.5 K of that proxy in its two latest weeks.
 `STATE.md` updates name Sonnet; reviews keep their tier; Sonnet does execution only where something
 independent checks it afterwards, which is what the router's `[exec]` tag asserts (`docs/MODELS.md`).
 **Status:** current. The operator kept 700 K on 2026-10-12: some chats need the whole context to stay good, and a relaunch loses what only the context held.
+
+## M40 — A command hook is a process on every tool call of every chat
+**2026-10-12**, the operator's transcripts from 2026-09-14 to 2026-10-12 (160 K paired tool calls), then
+headless sessions on Claude Code 2.1.294, ten `echo` calls each, the first call dropped.
+- **Bash slowed tenfold when the hooks widened.** Trivial Bash calls (grep, cat, sed, ls) went from a p25 of
+  0.09 s before 2026-09-29 to 0.70 s after, and Edit from 0.02 s to 0.56 s; Read and Grep did not move.
+  37 K Bash calls a week paid it.
+- **What one call costs, idle box, median:** no hook 0.088 s; a hook whose `if` does not match 0.109 s (no
+  process); a bash hook doing `exit 0` 0.149 s; a bash file check 0.164 s; `node -e 0` 0.199 s. Under a
+  loaded fleet the two node hooks on the Bash path are an estimated 0.15-0.3 s of the 0.6 s.
+- **The fleet hooks only ever act in a fleet chat,** and found that out with a process each time.
+  `hooks/gate.ts`, a function hook, asks with one `$.fs.exists` on `fleet-sessions/<session>` inside the
+  engine: a chat outside a fleet measured 0.048 s against 0.047 s with no plugin at all, and a fleet chat
+  0.097 s, cheaper than the bash-plus-node pair it replaces.
+- **Not this plugin's:** auto mode's classifier added about 0.4 s to every Bash call not on an allow rule
+  (0.48 s against 0.12 s with a rule), and still reviewed `echo x > f`, `cat a > b` and `sed -i` with one.
+**Rule:** nothing in this plugin spawns a process on the tool-call path of a chat that is not in a fleet.
+**Status:** current.
+
+## M41 — Where one run's tokens went: carry-over, general-purpose starts, a blocked ask
+**2026-10-13**, run `2026-10-12-owner-polish-2` of 5056_life_lines-app, still live: 11 workers, 84 of 86
+tasks done, 182 subagents, 11,912 assistant turns, 2.52 G cache-read tokens, $790 at list price
+(`fleet-analyze`). Every reply was English; language cost nothing.
+- **Cache reads were about 64 % of the weight, output about 10 %.** Every turn re-reads its context, so the
+  levers are how many turns and how big each one is, not how long a reply is.
+- **55 % of worker cache reads (781.6 M of 1,423 M) were left over from earlier tasks** by task windows
+  cut at each claim; `fleet-analyze`, which counts done tasks only, prints 45 %. No worker
+  cleared or compacted; four were retired at 700 K. Context grew a median 54 k per task (p10 9 k, p90
+  130 k), not the 20-30 k of [M30]. `next` printed DELEGATE in 6 of 11 sessions and they kept working
+  inline. Only 38 of 588 files read in tasks 2+ had been read in an earlier task of the same worker, so a
+  flat context loses little.
+- **A general-purpose subagent starts at 77-78 k, `fleet-scenario` at 40 k** (first-turn usage, 129 and 52
+  spawns). The difference is the full tool set, a 105-skill listing and MCP the subagents never called;
+  106 general-purpose subagents (52 of them per-task reviews) carried it through about 5,000 turns, an
+  estimated 160-190 M cache reads.
+- **The overnight 614 minutes were a pause, then the app quit**, not an outage: `pause` at 00:09:40, every
+  background task dead at 00:12, `продолжи` at 10:24 woke all 8 live workers within 40 s. No usage limit,
+  429 or API error in any transcript.
+- **One coordinator `AskUserQuestion` stood 110 minutes** with 8 watch events unhandled behind it; 7 workers
+  ran dry about 50 minutes each.
+- **Read after read:** subagents made 1,822 read-only turns right after a read-only turn, about 82 % of
+  them on a file the previous turn did not touch, although 112 of 182 spawn prompts carried the batching
+  sentences.
+- **Small:** 15 cache rewrites after idle ($22), 4 subagent misses of the 5-minute cache ($4.31), the
+  caveman and ponytail injections (about 20 M).
+**Rule:** delegation after `delegate_past_tasks` is a loop step, to `makarasty:fleet-coder`; reviews go to
+`makarasty:fleet-reviewer`; neither is ever `general-purpose`. The batching rule lives in those agents'
+bodies, not in each prompt. A coordinator never asks while workers would run dry. `pause` and `resume`
+log to `pauses.log`, and `fleet-analyze` counts that window as paused. Targets `fleet-analyze` prints:
+carry-over under 35 % of worker cache reads, fleet subagent start at most 45 k.
+**Status:** current. Not yet measured after the change.
+
+## M42 — In one chat only the foreground tab is live, and the first gate read can lie
+**2026-10-19**, this machine, one Claude desktop session, the app's built-in Browser pane popped out to a
+second monitor; frames per second counted with the gate expression of `docs/BROWSER.md`.
+- **Foreground tab: 272 to 300 frames a second over 12 s. Background tab: 0 to 2 over the same 12 s.** The
+  popped-out pane is still live; the tab that is not selected is blind, as in [M33].
+- **Driving the background tab did not take frames from the foreground one**: it held 272 to 297 while the
+  background tab was driven.
+- **Per-tab viewport emulation held 375 and 1594 px at once**, one width per tab.
+- **`fetch` from the background tab answered in 514 ms.** A screenshot of it arrives, but it is a photo of a
+  stopped page.
+- **The first 1 s gate on a freshly created and navigated background tab read 268 frames**, a false live;
+  the later reads on the same tab were 1 to 3.
+**Rule:** one chat has one live tab, so the pane lane is 1 and browser subagents run one at a time, each told
+its `tabId`; more than one live visual check at once is separate chats, opt-in. The gate is read twice, a
+second apart, and the second is believed at any value, not only between 1 and 59 [M33] [M38].
+**Status:** current. One machine, one run of each reading.
+
+## M43 — Estimate: what one chat with a fresh subagent per task should cost
+**2026-10-19**, an estimate, **not a measurement**. Sources: three runs of project 5056_life_lines-app,
+2026-10-12, 2026-10-14 and 2026-10-16, read with `fleet-analyze`; the 2026-10-14 run cost $735 at list price.
+- **A chat worker starts a task at about 92 to 107 k of context and re-reads earlier tasks**: 27 to 54 % of
+  its cache reads across the three runs, 55 % in [M41]. A fresh subagent per task starts at about 40 to 75 k
+  with no carry-over.
+- **Idle gaps over five minutes rewrote the cache**: 4 to 6 % of spend. A subagent run back to back does not
+  idle.
+- **Estimated saving: 14 to 20 % against the hybrid of the 2026-10-14 run, and 2 to 3 times against chat
+  workers working inline.**
+- **Coordinator context per task: about 3 to 4 k** with a header-only claim, a prompt of paths and a report of
+  at most 15 lines, so about 150 to 200 tasks fit in 700 K.
+**Rule:** `docs/MODELS.md` (Pace) and `docs/ONECHAT.md` carry the economy flow this estimate argues for.
+**Status:** current as an estimate. Unmeasured end to end: the first one-chat run is analysed with
+`fleet-analyze` and this entry is replaced by the result.
 
 ## Appendix: what a pull run spends
 

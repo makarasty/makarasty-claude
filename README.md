@@ -2,10 +2,11 @@
 
 Two Claude Code plugins from one marketplace.
 
-- **`makarasty`** runs one job across several Claude Code sessions at once: a test sweep of a live app, a
+- **`makarasty`** runs one job from one chat first (several sessions at once only on opt-in): a test sweep of a live app, a
   fix run over its backlog, a refactor across a hundred files, a research sweep, a design pass. You plan
-  once, click a chip per worker, and each worker claims tasks from a shared queue and reports by writing
-  files. Between what a run finds and what it changes there is a gate: no fix without a reproduction that
+  once and answer up to four questions. By default the run stays in one chat: the coordinator works the
+  queue and spawns a fresh subagent per task, which reports by writing files ([`docs/ONECHAT.md`](docs/ONECHAT.md)).
+  Separate worker chats, one chip each, are opt-in. Between what a run finds and what it changes there is a gate: no fix without a reproduction that
   failed first.
 - **`makarasty-tools`** is twelve everyday commands that have nothing to do with fleets: commit under your
   own name, ship a branch, review a diff with evidence, hand a chat off before its context runs out, get a
@@ -48,10 +49,11 @@ pass its path to `marketplace add`.
 
 ### Requirements
 
-- Claude Code. The fleet's browser checks and worker chips use the desktop app's Code tab (the built-in
+- Claude Code with function hooks (tested on 2.1.293 and 2.1.294): the fleet's hooks are one in-engine gate,
+  so a chat outside a fleet runs no process for them [M40]. The fleet's browser checks and opt-in worker chips use the desktop app's Code tab (the built-in
   browser pane and the task chips); a fleet with no browser tasks runs anywhere Claude Code does.
 - A POSIX shell. On Windows that is Git Bash, which Claude Code already needs. The self-test passes under
-  `bash` and `dash`.
+  `bash` and `dash` (`FLEET_SELFTEST_SH=dash node scripts/fleet-selftest.mjs` runs it under `dash`).
 - Node.js 20.11 or newer, for the hooks and for `fleet.sh` itself: its commands run in `scripts/fleet.mjs`,
   where a call that took seconds of shell forks on Git Bash takes a tenth of one [M37].
   The plugin ships that JavaScript compiled; nothing is installed or built on your machine.
@@ -60,19 +62,23 @@ pass its path to `marketplace add`.
 ### Check that it works on your machine
 
 ```bash
-sh scripts/fleet-selftest.sh
+node scripts/fleet-selftest.mjs
 ```
 
 From an install rather than a checkout, the plugin's path is `installPath` for `makarasty` in
 `~/.claude/plugins/installed_plugins.json`. The self-test runs the whole protocol (claims, lanes, the
-schema gate, the clocks, the markers, the landing check) against a temporary directory in about a second,
-with no sessions, no browser and no tokens. It should end with `N passed, 0 failed`.
+schema gate, the clocks, the markers, the landing check) against temporary directories in about 75 seconds on a 16-thread
+Windows machine, with no sessions, no browser and no tokens. It should end with `N passed, 0 failed`.
+`--jobs N` (or `FLEET_SELFTEST_JOBS`) sets how many parts run at once, 3 by default, and the run prints the
+free RAM and the live `node.exe` count before it starts. To run one part, use
+`node --test scripts/selftest/<part>.test.mjs`.
 
 ### Changing the code
 
 The scripts and hooks are written in TypeScript under `src/` (and `tools/src/` for the tools plugin) and
-compiled to the `.mjs` files beside them, which are committed and are what runs. Edit the `.mts`, never
-the `.mjs`:
+compiled to the `.mjs` files beside them, which are committed and are what runs. The two browser probes are
+the exception: `src/probes/*.ts` compiles to `scripts/*.js`. Edit the `.mts` or `.ts`, never the `.mjs` or
+the probe's `.js`:
 
 ```bash
 npm install --prefix src
@@ -100,8 +106,9 @@ It finds the app's origin and services, sets up a login path an agent can use on
 /makarasty:fleet-plan <what you want done>
 ```
 
-The planner interviews you, splits the job into a queue, and offers one chip per worker. Click them. When
-the workers land, `/makarasty:fleet-collect <run-id>` merges their findings into one ranked backlog.
+The planner interviews you (at most four questions, asked at once), splits the job into a queue, and runs
+it in this chat. Only if you chose separate chats does it offer one chip per worker for you to click. When
+the run lands, `/makarasty:fleet-collect <run-id>` merges their findings into one ranked backlog.
 
 [`docs/WALKTHROUGH.md`](docs/WALKTHROUGH.md) is a first fleet in fifteen minutes, with two workers and no
 browser.
@@ -112,8 +119,8 @@ browser.
 |---|---|---|
 | `/makarasty:fleet` | you | Lists the other commands and when to use each |
 | `/makarasty:fleet-init` | you or Claude | Prepares a project: origin, services, agent login, `FLEET.md`, machine sizing |
-| `/makarasty:fleet-plan <mission> [fast]` | you or Claude, when asked | Interviews you into a plan, splits it into a queue or briefs, offers one chip per worker |
-| `/makarasty:fleet-run <brief or run dir>` | the worker, after you click its chip | Runs one brief, or works a queue until it is drained |
+| `/makarasty:fleet-plan <mission> [fast]` | you or Claude, when asked | Interviews you into a plan, splits it into a queue or briefs, runs it in one chat; one chip per worker only on opt-in |
+| `/makarasty:fleet-run <brief or run dir>` | the worker (an opt-in chat, after you click its chip) | Runs one brief, or works a queue until it is drained |
 | `/makarasty:fleet-login` | you or Claude | Opens and logs in to the project's local app (or at an origin you pass it), with credentials from the runbook, never from the chat |
 | `/makarasty:fleet-wait <run-id> [n]` | you or Claude | Waits without spending model turns, then collects |
 | `/makarasty:fleet-collect <run-id>` | you or Claude | Merges, enforces the evidence contract, dedupes, ranks |
@@ -126,12 +133,15 @@ browser.
 
 `fleet`, `fleet-design`, `fleet-redesign` and `fleet-call` carry `disable-model-invocation: true`: they
 start paid work and wait on your clicks, so only you can start them. `fleet-pause` is the other one an agent can start. `fleet-plan` can also be started by
-Claude when you ask it to launch a fleet or hand a run to a new chat; it costs nothing until you click a
-chip. `fleet-run` is the exception on purpose. The worker's own model invokes it in the new session, and
+Claude when you ask it to launch a fleet or hand a run to a new chat; in one chat it starts spawning
+subagents after Round 0, and offers chips only on opt-in, so it costs nothing until you answer Round 0. `fleet-run` is the exception on purpose. The worker's own model invokes it in the new session, and
 the flag would stop every worker the moment it tried to begin.
 
 ### Agents
 
+- **`fleet-coder`** does one code task in the shared checkout, touching only the paths its task `owns:`,
+  and commits nothing. One fresh subagent per task.
+- **`fleet-reviewer`** reviews one task's diff and edits nothing.
 - **`fleet-scenario`** walks a multi-step browser scenario and returns bounded JSON. Screenshots and DOM
   reads stay in its context; about eighty tokens come back to the parent.
 - **`fleet-profiler`** measures load, interaction and stability, with the spread of each reading and the
@@ -165,9 +175,20 @@ told to offer a handoff in one line (a chat that coordinates or works a fleet ru
 `MAKARASTY_HANDOFF_AT=0` turns it off.
 
 **Model router.** A subagent that Opus or Fable spawns without naming a model runs on Sonnet when its
-description starts with `[exec]` and on Haiku with `[mech]`; an `Explore` agent runs on Haiku. Untagged
+description starts with `[exec]` and on Haiku with `[mech]`; an `Explore` agent runs on Haiku. `fleet-coder`
+is routed by tag like `general-purpose`; `fleet-reviewer` never is (a tag on it is ignored), because it is the check that makes a tag safe. Untagged
 work keeps the parent's model, and a named model is never changed. `/router` shows what it changed;
 `MAKARASTY_ROUTER=off` turns it off. Why it waits for a tag: `docs/MODELS.md`, "The router".
+
+**Git guard.** A shell call that would throw away uncommitted work (`git stash`, `reset --hard`, `clean -f`,
+`checkout -- <path>`, `restore` without `--staged`, a forced switch) is refused with the reason and a safe
+way round it, because several chats often share one working tree. Commits, plain switches, `stash list` and
+`clean -n` run. It is a function hook, so no shell call pays a process for it; `MAKARASTY_GIT_GUARD=off`
+turns it off.
+
+**Reads through tools.** One line in the system prompt sends file reads and searches to Read, Grep and Glob
+instead of `cat`, `grep` or `sed` through the shell: 0.02-0.07 s a call against 0.1-1 s [M40].
+`MAKARASTY_READS=off` turns it off.
 
 **Relaunch instead of a chain of handoffs.** A queue worker on 1.5.14 or later that nears the context limit
 (`worker_relaunch_k` in `calibration.json`, 700K as shipped) is replaced by the coordinator without asking:
@@ -194,7 +215,7 @@ and start no Node process.
 
 ### Two shapes
 
-**Assigned**: the planner writes one brief per worker, and the run ends when the briefs do.
+**Assigned** (opt-in separate chats only; one chat always files a queue): the planner writes one brief per worker, and the run ends when the briefs do.
 
 **Pull**: the planner writes a queue, workers claim tasks when free, and the planner keeps adding tasks
 while they run. A claim is a directory, because `mkdir` fails atomically on one that exists; with eight
@@ -205,7 +226,7 @@ time. Details in [`docs/PULL.md`](docs/PULL.md).
 
 A fleet queues for whatever the machine has exactly one of. Each task declares a **lane**: `pane` for the
 browser, `verify` for the test suite and typechecker, `repo` for work that only reads and writes files.
-The lanes are capped separately. The pane lane is capped by your display, ten at most; the repo lane by
+The lanes are capped separately. The pane lane is 1 in one chat; with opt-in chats it is capped by your display, ten at most. The repo lane is capped by
 the machine. Capping file work at the width of a monitor is how a run ends up eight browsers wide and two
 files wide.
 
@@ -369,8 +390,8 @@ Under semver, 1.x will not break:
 
 Everything else is calibration, not contract: prose rules, agent briefs, and the numbers in
 `calibration.json` and in this README. A minor version may change any of them when a run measures
-something better. [`scripts/fleet-selftest.sh`](scripts/fleet-selftest.sh) is the contract in
-executable form.
+something better. [`scripts/fleet-selftest.mjs`](scripts/fleet-selftest.mjs) and its parts in
+[`scripts/selftest/`](scripts/selftest/) are the contract in executable form.
 
 ## Known limits
 

@@ -1,14 +1,16 @@
 # Pull mode
 
-The default shape gives each worker one brief and stops when the briefs run out. Pull mode gives the run
-a queue instead: workers claim work when they are free, and the planner can add work while they run.
+The queue is the default: one coordinator chat claims work for a free slot and spawns a subagent on it
+(`ONECHAT.md`), and the planner can add work while they run. The older shape, one brief per worker chat,
+stops when the briefs run out; it is opt-in (separate chats).
 
 Use it when the surface is larger than the plan. A first plan over a big application is a guess about
 where the defects are, and a fixed set of briefs freezes that guess for the whole run. A queue lets the
 guess be wrong.
 
-The fleet size stops being a number the planner chooses. It becomes however many panes the operator has
-open, and any worker with a live pane can take the next task.
+The fleet size stops being a number the planner chooses. In one chat it is the slots registered from the
+queue and free memory; with opt-in separate chats it is however many panes the operator has open, and any
+worker with a live pane can take the next task.
 
 ## Layout
 
@@ -19,7 +21,7 @@ open, and any worker with a live pane can take the next task.
     claimed/   task-07/                       a DIRECTORY, the claim itself
                  owner            chip id and the time it was taken
                  heartbeat        rewritten at every natural boundary
-    done/      task-07                        marker written by the worker; a code task's holds a `branch <name>` line
+    done/      task-07                        marker written by the worker; with opt-in worktrees a code task's holds a `branch <name>` line
   ask/         03-1.md                        a worker's question for the planner
   answers/     03-1.md                        the planner's reply
   03.jsonl     findings, per worker across every task it took
@@ -33,7 +35,7 @@ the unit whose blindness matters.
 ## Claiming
 
 In every command below, `$r` is the run's absolute directory (the chip prompt gives it): a relative
-`.fleet/<run-id>` does not exist from a worktree, where a worker that writes code stands.
+`.fleet/<run-id>` does not exist from an opt-in worktree, where a worker that writes code stands. In one chat the coordinator runs these commands for its slots (`ONECHAT.md`).
 
 ```bash
 mkdir "$r"/tasks/claimed/task-07 2>/dev/null &&
@@ -52,7 +54,8 @@ with the wake in `commands/fleet-run.md` rather than finishing.
 
 A task can also be **gated**: `after: <task-id>` in its frontmatter holds it until that task's done marker
 exists, which is how a mission with waves keeps wave three out of wave two's files without asking anybody
-to remember the order. The marker is the worker's, not the coordinator's merge, so a task that builds on a
+to remember the order. The marker is the worker's, not the coordinator's merge. In one chat the predecessor's
+edits are already in the shared checkout, so nothing is merged. With opt-in worktrees a task that builds on a
 predecessor's code merges the predecessor's `branch <name>` (read from its done marker) into its own branch
 first; the task's `base:` is where that branch is cut from (`commands/fleet-run.md`, section 1). `next` says `QUEUE WAITING` and exits 7, rather than `QUEUE DRAINED` and exit 3, when that
 is why it handed you nothing, and the two mean opposite things - a gated queue opens again on its own, so
@@ -226,7 +229,7 @@ is not.
 with the reason, marks the task done, and takes the next one. An unbounded task starves the queue, and a
 worker that quietly runs four times its estimate is indistinguishable from one that hung.
 
-That limit is armed, not intended: at claim time the worker backgrounds what
+That limit is armed, not intended: at claim time the worker (in one chat, the coordinator, for its subagent) backgrounds what
 `sh "$f" clock "$r" <chip> <task-id> <budget>` prints, and the notification when it fires is
 both the clock and the thing keeping the session alive. Nothing else in a fleet measures elapsed time, and a worker three
 subagent rounds into a scenario cannot tell twenty minutes from eighty.
@@ -236,7 +239,7 @@ exits when it appears, so the boundary that closes the task also silences the cl
 things, not one: the task closing, the worker writing `.done` **or** `.blocked`, and the run being landed
 at all - so one `fleet.sh landed` ends every clock still armed anywhere on the machine.
 
-**Every path in that loop is absolute**, and it has to be. A worker that writes code runs inside a git
+**Every path in that loop is absolute**, and it has to be. With opt-in worktrees a worker that writes code runs inside a git
 worktree, `.fleet/` is gitignored in every project that has run a fleet, and a fresh checkout therefore
 has no `.fleet/` under it at all. With relative paths the exit condition could never be met for exactly
 the population the clock is guarding: every one of those clocks ran its full term, up to twice the
@@ -280,7 +283,10 @@ intervened.
 
 ## What the planner does while the run is live
 
-It is not idle, and this is the part fixed briefs never allowed:
+It is not idle, and this is the part fixed briefs never allowed. **In one chat, the default**
+([`ONECHAT.md`](ONECHAT.md)), there are no worker chats to wait on: where this section says offer a chip or
+wait for a worker, the coordinator spawns a subagent for the task and reads its short report. Separate
+worker chats are opt-in.
 
 - Answers questions from `ask/`.
 - Adds tasks to `ready/` when a finding suggests somewhere else worth looking. A worker reporting a shared

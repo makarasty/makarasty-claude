@@ -6,7 +6,7 @@ than restating it, so changing the shape is a one file edit.
 ## Vocabulary
 
 **Mission** is the whole job the operator wants done. **Brief** is one worker's slice of it, written as a
-file. **Worker** is a session that runs one brief. **Wave** is a batch of workers started together.
+file. **Worker** is a session that runs one brief (opt-in separate chats; in one chat it is a background subagent on a slot running one task, `ONECHAT.md`). **Wave** is a batch of workers started together.
 **Blind** describes a worker whose browser pane is not compositing, so everything it observes is false.
 
 Workers are fire and forget. They read a brief, write findings, and exit. **Nothing a run produces travels
@@ -190,8 +190,9 @@ as health: `fleet-wait` now emits a stall line on a quiet interval for exactly t
                        and `relaunch`; a second `retire` reads it and offers nothing again
   coordinator          the session id of whoever arms the watch; `fleet.sh ctx` reads its context size
   STATE.md             the coordinator's ledger, and what a fresh coordinator re-arms from: plan path, run dir,
-                       worker count, chips offered by lane, integration checkout path and URL, extra watched
-                       URLs, queue-open yes/no, merges in order, reviews in flight, fix tasks and why,
+                       worker count, chips offered by lane (one chat: slot ranges per lane and the pace line),
+                       extra watched URLs, queue-open yes/no, reviews in flight, fix tasks and why, and with
+                       opt-in worktrees the integration checkout path and URL and the merges in order,
                        operator decisions, pane check tasks filed and their state
   worktrees/<NN>       the worktree chip NN registered, for `fleet.sh clean`
 ```
@@ -229,7 +230,7 @@ it has blocked a given claim once.
 
 `<run-id>` is the date plus a short slug: `2026-08-26-checkout-flow`.
 
-Add `.fleet/` to the project's ignore file. Runs are scratch, not history.
+Ignore `.fleet/*` and re-include `!.fleet/contract-surface.txt` in the project's ignore file, two lines (`.fleet/` alone hides the negation). Runs are scratch, not history.
 
 ## Pause, retire, relaunch
 
@@ -315,7 +316,7 @@ model: sonnet          # the model the work wants; a wish: the chip decides what
                        # delegates the task to one Agent at that tier (see MODELS.md)
 verdict-model: opus    # the model that decides what counts as a finding
 owns: [routes, files, or areas this worker may touch]
-isolation: none        # none | worktree, see below
+isolation: none        # none | worktree, see below. The default is the main checkout (ONECHAT.md)
 ---
 
 ## Route in
@@ -349,9 +350,22 @@ kind: fix              # the same set as a brief's
 needs: repo            # pane | verify | repo. Absent, `next` treats the task as `repo`
 budget: 25             # minutes. `next` prints twice this as the abort deadline, and `sweep` calls a
                        # claim quiet for longer than one budget abandoned. Absent, `sweep` assumes 25
-after: task-02-primitives   # optional, one id or several: `next` holds this task until those are done. Done is
-                       # the done marker, not the coordinator's merge: see `base` below
-base: integration      # optional, code tasks. The branch the task's branch is cut from: the integration branch the
+owns: [src/routes/vendor.ts, src/lib/egress/]   # required on every code task in one chat, optional with separate chats;
+                       # written by the planner: the files and directories the task
+                       # may touch, relative to the folder that holds `.fleet`. The worker honours it and a reviewer reads the diff of
+                       # these paths. `fleet-gate check` counts only changes under it as a fix or root task's proof,
+                       # so an `owns:` that misses the fixed file fails every such task. Two tasks whose `owns:` overlap are ordered with `after:`
+test: npm test -- vendor   # optional, code tasks. The scoped test command the coder runs (`ONECHAT.md`, step 3,
+                       # `Test:`), never the full suite. Written by the planner; no script reads it
+repro: npm test -- egress-timeout   # fix and root tasks. One shell command that fails while the defect is there and
+                       # passes once it is gone: the rest of the line, word for word, is what `prove before` and
+                       # `prove after` run. No script reads it. `fixqueue` writes it when the finding's `repro`
+                       # is a one-line command, and leaves it empty for steps or prose (they stay in the body);
+                       # `cluster` writes a root's from its members' (below). Empty: the coordinator fills it in
+after: task-02-primitives   # optional, one id or several: `after: t01, t02` or `after: [t01, t02]`. `next` holds
+                       # this task until those are done. Done is the done marker, not the coordinator's merge: see `base` below
+base: integration      # optional, code tasks, opt-in worktrees only (one chat edits the shared checkout: use `owns:`
+                       # and `after:`). The branch the task's branch is cut from: the integration branch the
                        # coordinator merges into. The worker's `worktree --create` uses the first task's; before editing
                        # it merges the `branch <name>` line of each `after:` predecessor's done marker that is not
                        # yet in `base` (git merge-base --is-ancestor). No script reads it. A `needs: pane` check
@@ -360,11 +374,11 @@ continue-from: fleet/03/task-07   # optional, written by `relaunch` only when th
                        # kinds). The branch it left: a worker cuts its task branch from it instead of `base`,
                        # reads that worker's notes (its last line says "stopped at ...") and continues
 continued-from-chip: 03   # optional, with the above: the chip whose notes to read, for the original id (without `-r<n>`)
-handback-of: task-07   # optional, written by `relaunch`: the original id. For a fix or root task `fleet-gate` reads
-                       # `<handback-of>.released-*/proof` as the before, so the proof carries over
+handback-of: task-07   # optional, written by `relaunch` and `handback`: the original id. For a fix or root task `next`
+                       # copies the old claim's recorded `before` into the new claim's proof, so the proof carries over
 fanout: 3              # optional, repo lane only. No script reads it; a worker honours it, see LANES.md
-verdict-model: opus    # optional. The tier that reviews a code task before it is finished; absent, the
-                       # worker reviews at its own tier. A wish, like `model:`: no script reads it
+verdict-model: opus    # optional. The tier that reviews a code task before it is finished; absent, one chat uses the
+                       # pace line's tier (`ONECHAT.md`, step 4), separate chats the worker's own tier. A wish, like `model:`: no script reads it
 origin: http://localhost:5199   # optional, pane tasks. Where the worker opens the app instead of FLEET.md's
                        # origin: the integration checkout's dev server, or the worker's own tree's. No script reads it
 operator: grant the read-only role   # optional. What the operator must do first. Asked at launch; `next` holds the
@@ -375,7 +389,13 @@ operator: grant the read-only role   # optional. What the operator must do first
 `fleet.sh fixqueue` writes a second-generation queue from a merged backlog and adds three fields to that
 frontmatter, so a fix worker can see where its task came from without opening the backlog: `finding-id`,
 the id `merge` stamped on the finding; `severity`, carried over from it; and `twins`, the ids of the other
-findings whose evidence named the same file, which are one seam and belong to one worker.
+findings whose evidence named the same file, which are one seam and belong to one worker. It also writes
+`repro:` (above): the finding's `repro` when that is one line opening like a command (lower case, a path,
+`[`, or `VAR=x`) and naming no pane action, and empty otherwise; a line with a ` #` comment or one opening
+like a JS member call (`performance.getEntriesByType(...)`) is left empty too. `prove` runs the line in
+`sh` off Windows; on Windows in `$SHELL` when that names a file, else Git for Windows' `bash.exe`, and in
+`cmd.exe` only when neither is there. So a `repro:` uses forward slashes (`node sub/x.mjs`, which bash on
+Windows takes): a line with a backslash, where bash would read `sub\x` as `subx`, is left empty too.
 
 `fixqueue` also derives the fields above rather than asking: `kind` is `design` when the finding carried
 `rects` or a probe and `fix` otherwise, and `needs` is `pane` when the reproduction names a click, a
@@ -383,22 +403,27 @@ keystroke, a hover, a scroll, a drag, a screenshot, an overlap or a zoom, and `r
 
 `fleet-gate.mjs cluster` then writes one more shape into the same queue, `kind: root`, and adds `after:` to
 the tasks it gates. A root task carries `shared`, the file or identifier its members all reach, and
-`gates`, the task ids held behind it. It is the one task in a fix queue that may edit files another task
+`gates`, the task ids held behind it, and `repro:` set to the members' commands, each in parentheses, joined
+with ` || `, or empty when any member's `repro:` is. A root's proof is of the seam fix, not of each member:
+its `before` fails only while every member reproduces, and its `after` passes once the seam fix resolves at
+least one; a member still needing its own change is proved by its own task. It is the one task in a fix queue that may edit files another task
 names, which is the point of it: everything that reaches its seam is held while it runs.
 [`GATE.md`](GATE.md) is the whole stage.
 
 `fleet.sh finish` refuses a `fix` or `root` task whose reproduction has not been run through
 `fleet-gate.mjs prove` before the change and after it, over a tree that moved between the two.
 
-`fleet.sh finish <run> <chip> <task-id> [branch]` takes the task's branch for a code task and records it as
+`fleet.sh finish <run> <chip> <task-id> [branch]` takes, with opt-in worktrees, the task's branch for a code task and records it as
 a line `branch <name>` in `tasks/done/<task-id>`; the coordinator reads that line to find what to review and
-merge. `finish` creates the marker only when it is absent and writes the branch line only when a branch is
+merge (in one chat `finish` gets no branch and the coordinator reviews `git diff -- <owns paths>`). `finish` creates the marker only when it is absent and writes the branch line only when a branch is
 given, so a second `finish` without one keeps the line the first recorded; it warns, and still records the
 branch, when the name does not resolve in the worker's registered worktree. Every `fleet.sh` subcommand also accepts a relative run directory from a cwd where it does not
 exist (a worktree): it resolves it against the main checkout before failing.
 
-`isolation: worktree` gives the worker its own checkout. Any brief that writes code uses it. Two sessions
-editing one tree produce a merge nobody asked for. Creating and removing those trees safely is
+`isolation: worktree` gives the worker its own checkout, and is opt-in since 2026-10-19. The default is the
+main checkout with `owns:` kept disjoint, or ordered with `after:` where they overlap
+([`ONECHAT.md`](ONECHAT.md)). Two sessions editing one file produce a merge nobody asked for, which
+`owns:` and `after:` are there to prevent. Creating and removing worktrees safely is
 [`WORKTREES.md`](WORKTREES.md): a junction left inside a worktree is a hole a recursive delete follows into
 the main checkout [M32], and `fleet.sh clean` is the only path here that removes one.
 

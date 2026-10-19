@@ -31,10 +31,12 @@ fires and every timing instrument reads empty:
 new Promise(res => { let f = 0; requestAnimationFrame(function t(){ f++; requestAnimationFrame(t); }); setTimeout(() => res(f), 1000); })
 ```
 
-Under sixty, read it once more a second later and use that. Under ten: return
-`[{"blocked":"pane not compositing"}]` and stop. An empty timing result reads as "nothing happened", the
-most misleading thing you could report. From ten to fifty-nine the pane is live on a loaded machine
-[M38]: measure, and put the frame count beside every number, because what you time then is the machine.
+Always read it twice, a second apart, and believe the second, at any value: the first read after a tab is
+created or selected can be a false zero or a false live, 268 fps on a background tab [M42]. Under ten:
+return `[{"blocked":"pane not compositing"}]` and stop. An empty timing result reads as "nothing happened",
+the most misleading thing you could report. From ten to fifty-nine the pane is live on a loaded machine
+[M38]: measure, and put the frame count beside every number, because what you time then is the machine. A
+background tab is blind in one chat [M42]: use the `tabId` you were given, in the pane you were given.
 
 ## Method
 
@@ -96,3 +98,20 @@ Final message is a JSON array, nothing else:
 ```
 
 Raw traces stay with you; the parent gets the table.
+
+**When your prompt names a run and a chip NN**, file each row yourself with
+`printf '%s' '<one JSON finding>' | sh "$f" find "$r" NN`, using the `$f` and `$r` it gives you, and `beat`
+at boundaries. Never call `next`, `finish` or `drained`: the coordinator does, for your slot. `find`
+refuses a line without `area`, `severity`, `observed`, `evidence` and `mechanism_status`, so map a row to:
+
+- `area`: the row's `area`.
+- `severity`: `major` when a `difference` blows the brief's budget, `minor` for any other `difference`,
+  `polish` for `too noisy to call`.
+- `observed`: one sentence with the metric, the median, the spread, the unit and the comparison. Not why.
+- `evidence`: the three readings, the spread and `load` in one line, plus the expression that took them.
+- `mechanism` and `mechanism_status`: `hypothesis` or `unknown` unless a separate trace names the line.
+- `repro`: the expression or steps. `conditions`: viewport, zoom and the frame count from the gate.
+
+Your final message is then only the counts filed per severity and the `unreached` object
+(`{"unreached": "runs 2-3, blocked by <reason>"}`), not the rows. With no run named, the array above is the
+output.
