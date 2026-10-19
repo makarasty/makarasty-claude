@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "target": "es2023",
+    "lib": ["es2023", "dom", "dom.iterable"],
+    "moduleDetection": "legacy",
+    "erasableSyntaxOnly": true,
+    "types": [],
+    "rootDir": ".",
+    "outDir": "../../scripts",
+    "newLine": "lf"
+  },
+  "include": ["*.ts"]
+}

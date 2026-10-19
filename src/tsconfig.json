@@ -6,11 +6,12 @@
     "module": "nodenext",
     "moduleResolution": "nodenext",
     "erasableSyntaxOnly": true,
+    "rewriteRelativeImportExtensions": true,
     "types": ["node"],
     "rootDir": ".",
     "outDir": "..",
     "newLine": "lf"
   },
-  "include": ["hooks/*.mts", "scripts/*.mts", "scripts/fleet/*.mts"],
+  "include": ["hooks/*.mts", "scripts/*.mts", "scripts/fleet/*.mts", "scripts/selftest/*.mts"],
   "exclude": ["node_modules"]
 }

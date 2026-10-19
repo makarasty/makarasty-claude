@@ -165,6 +165,65 @@ mkdirSync(empty, { recursive: true });
 const res4 = spawnSync(process.execPath, [script, empty], { encoding: 'utf8', env });
 check('empty run exit', res4.status, 1);
 check('empty run message', res4.stderr.includes('nothing to analyze'), true);
+// ---- a 600-minute pause is paused, not an outage. Run p1, chip 05: task t1 12:00:00-22:00:20 waits in its
+// wake loop from 12:00:10 to 22:00:10, which prints `resumed`; task t2 22:00:30-22:01:00 has one turn.
+const P = 'eeeeeeee-0000-4000-8000-000000000005';
+const prun = join(root, '.fleet', 'p1');
+mkdirSync(join(prun, 'chips'), { recursive: true });
+writeFileSync(join(prun, 'chips', P), '05\n');
+for (const [id, from, to] of [['t1', '12:00:00', '22:00:20'], ['t2', '22:00:30', '22:01:00']]) {
+    mkdirSync(join(prun, 'tasks', 'claimed', id), { recursive: true });
+    mkdirSync(join(prun, 'tasks', 'done'), { recursive: true });
+    writeFileSync(join(prun, 'tasks', 'claimed', id, 'owner'), `chip 05\nclaimed ${at(from)}\n`);
+    writeFileSync(join(prun, 'tasks', 'done', id), '');
+    utimesSync(join(prun, 'tasks', 'done', id), sec(to), sec(to));
+}
+mkdirSync(join(projects, P, 'subagents'), { recursive: true });
+writeFileSync(join(projects, `${P}.jsonl`), jsonl([
+    user('12:00:00', 'work task t1'),
+    asst('12:00:10', 'p1', OPUS, { cache_read_input_tokens: 10000 }, tool('tw', 'Bash', { command: 'until [ ! -e PAUSED ]; do sleep 30; done; echo resumed' })),
+    result('22:00:10', 'tw', 'resumed\n'), // the wake loop's last line: resume evidence for the notes fallback
+    asst('22:00:20', 'p2', OPUS, { cache_read_input_tokens: 10000 }, { type: 'text', text: 'done' }, 'end_turn'),
+    // t2's first turn reads 30k, 20k more than t1's first: carry-over 20k x 1 turn of 50k cache read = 40%
+    asst('22:00:40', 'p3', OPUS, { cache_read_input_tokens: 30000 }, { type: 'text', text: 't2' }, 'end_turn'),
+]));
+// One fleet coder whose first prompt is 40k.
+writeFileSync(join(projects, P, 'subagents', 'agent-c.jsonl'), jsonl([
+    user('22:00:31', 'fix t2'),
+    asst('22:00:35', 'c1', SONNET, { input_tokens: 5, cache_read_input_tokens: 30000, cache_creation_input_tokens: 9995 }, { type: 'text', text: 'ok' }, 'end_turn'),
+]));
+writeFileSync(join(projects, P, 'subagents', 'agent-c.meta.json'), JSON.stringify({ agentType: 'makarasty:fleet-coder' }));
+const runP = () => {
+    const x = spawnSync(process.execPath, [script, prun, '--json'], { encoding: 'utf8', env, maxBuffer: 64e6 });
+    try {
+        return JSON.parse(x.stdout);
+    }
+    catch {
+        console.log(`FAIL pause run: ${x.stderr}`);
+        failed++;
+        return null;
+    }
+};
+writeFileSync(join(prun, 'pauses.log'), `paused ${at('12:00:10')} operator asked\nresumed ${at('22:00:10')}\n`);
+let rp = runP();
+if (rp) {
+    check('pauses.log: outage', rp.time.buckets_min['outages >45m'], 0);
+    check('pauses.log: paused 600 min', rp.time.buckets_min['paused'], 600);
+    check('pauses.log: source', rp.pauses.source, 'pauses.log');
+    check('carry-over share', [rp.context.carry_over.tokens, rp.context.carry_over.share], [20000, 0.4]);
+    check('fleet coder first-turn context', rp.context.subagent_start.by_type['makarasty:fleet-coder'], { n: 1, median: 40000 });
+}
+// No log: the chip's ack in its notes, paired with the wake loop's `resumed`, gives the same window.
+rmSync(join(prun, 'pauses.log'));
+writeFileSync(join(prun, '05.notes.md'), `stopped (paused ${at('12:00:10')}): before t1 step 2\n`);
+rp = runP();
+if (rp)
+    check('notes fallback: outage 0, paused 600', [rp.time.buckets_min['outages >45m'], rp.time.buckets_min['paused'], rp.pauses.source], [0, 600, 'notes']);
+// Two acks before one resume cannot be paired without a guess: no window, the stretch stays an outage.
+writeFileSync(join(prun, '05.notes.md'), `stopped (paused ${at('12:00:10')}): a\nstopped (paused ${at('13:00:00')}): b\n`);
+rp = runP();
+if (rp)
+    check('ambiguous notes: no pause, an outage', [rp.time.buckets_min['paused'], rp.time.buckets_min['outages >45m'] > 590], [0, true]);
 rmSync(tmp, { recursive: true, force: true });
 console.log(`${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

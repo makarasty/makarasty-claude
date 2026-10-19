@@ -15,16 +15,19 @@ import { resolve } from 'node:path';
 
 const ROOT = resolve(import.meta.dirname, '..').split('\\').join('/');
 const MANIFEST = `${ROOT}/src/build.sha256`;
-// Each source tree and where tsc writes its output (the tsconfig's outDir).
-const TREES: Array<[string, string]> = [['src', ''], ['tools/src', 'tools']];
+// Each source tree, where tsc writes its output (the tsconfig's outDir), and the source and output
+// extensions. The browser probes are plain scripts pasted into a page, so they are .ts compiled to .js.
+const TREES: Array<[string, string, string, string]> = [
+  ['src', '', '.mts', '.mjs'], ['tools/src', 'tools', '.mts', '.mjs'], ['src/probes', 'scripts', '.ts', '.js'],
+];
 
-function walk(dir: string, rel = ''): string[] {
+function walk(dir: string, ext: string, rel = ''): string[] {
   const out: string[] = [];
   for (const e of readdirSync(`${dir}/${rel}`, { withFileTypes: true })) {
     if (e.name === 'node_modules' || e.name.startsWith('.')) continue;
     const r = rel ? `${rel}/${e.name}` : e.name;
-    if (e.isDirectory()) out.push(...walk(dir, r));
-    else if (e.name.endsWith('.mts')) out.push(r);
+    if (e.isDirectory()) out.push(...walk(dir, ext, r));
+    else if (e.name.endsWith(ext)) out.push(r);
   }
   return out;
 }
@@ -32,9 +35,9 @@ function walk(dir: string, rel = ''): string[] {
 // Every source and the output it compiles to, as repo-relative paths, sorted.
 function files(): string[] {
   const all: string[] = [];
-  for (const [src, outDir] of TREES) {
-    for (const r of walk(`${ROOT}/${src}`)) {
-      all.push(`${src}/${r}`, `${outDir ? `${outDir}/` : ''}${r.slice(0, -4)}.mjs`);
+  for (const [src, outDir, ext, outExt] of TREES) {
+    for (const r of walk(`${ROOT}/${src}`, ext)) {
+      all.push(`${src}/${r}`, `${outDir ? `${outDir}/` : ''}${r.slice(0, -ext.length)}${outExt}`);
     }
   }
   return all.sort();
@@ -45,12 +48,12 @@ function files(): string[] {
 const sha = (p: string): string => existsSync(`${ROOT}/${p}`)
   ? createHash('sha256').update(readFileSync(`${ROOT}/${p}`, 'utf8').split('\r\n').join('\n')).digest('hex') : 'missing';
 
-// The directories tsc writes into, and every .mjs there: one with no source left behind is stale too.
-const OUTPUT_DIRS = ['scripts', 'scripts/fleet', 'hooks', 'tools/hooks'];
+// The directories tsc writes into, and every .mjs and .js there: one with no source left behind is stale too.
+const OUTPUT_DIRS = ['scripts', 'scripts/fleet', 'scripts/selftest', 'hooks', 'tools/hooks'];
 function outputs(): string[] {
   const out: string[] = [];
   for (const d of OUTPUT_DIRS) {
-    try { for (const n of readdirSync(`${ROOT}/${d}`)) if (n.endsWith('.mjs')) out.push(`${d}/${n}`); } catch { /* none */ }
+    try { for (const n of readdirSync(`${ROOT}/${d}`)) if (n.endsWith('.mjs') || n.endsWith('.js')) out.push(`${d}/${n}`); } catch { /* none */ }
   }
   return out;
 }
