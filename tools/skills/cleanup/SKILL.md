@@ -1,5 +1,5 @@
 ---
-description: Finds what this computer is carrying for nobody - processes ended chats left running (wake loops, servers, test runs, finds), runaway logs and scratch folders of ended sessions, stale git worktrees, package caches - sizes each, has a red team challenge every pick, and ends with a short plain report. Ends processes only on a yes; files it never deletes itself, it gives the commands. "Почисти за собой" stops only what this chat started. Use on "почисти за собой", "убери за собой", "почисти комп", "найди утечки", "что жрёт память", "что жрёт диск", "убери хвосты", "почему тормозит комп", "clean up after yourself", "clean up the machine", "find leaks".
+description: Finds what this computer is carrying for nobody - leftover processes, logs and scratch folders of ended chats, stale git worktrees, package caches. "Почисти за собой" stops only what this chat started. Use on "почисти за собой", "убери за собой", "почисти комп", "найди утечки", "что жрёт память", "что жрёт диск", "убери хвосты", "почему тормозит комп", "clean up after yourself", "clean up the machine", "find leaks".
 argument-hint: "[processes | disk | all]"
 allowed-tools: Bash, PowerShell, Read, Grep, Glob, Agent, ToolSearch, SendMessage, TaskStop, mcp__Claude_Browser__preview_stop, mcp__Claude_Browser__tabs_close
 ---
@@ -38,6 +38,14 @@ parents of the live sessions' `cwd`s and the git repos one level below them.
   not know chat shells), also list by hand: only bash, sh, cmd, powershell, node or python processes at least ten
   minutes old, whose parent is gone or younger than them, whose command line carries `.claude/shell-snapshots`
   or `Temp/claude/<project>/<uuid>/` of a session that is not live, and that point into no live fleet run.
+- Families the census may not name, found by command line, each older than ten minutes: headless Chrome or
+  Chromium whose command line carries a playwright or puppeteer profile dir (`ms-playwright`,
+  `playwright_chromiumdev_profile`, `puppeteer_dev_chrome_profile`; headed Chrome is out of scope); `npx ...
+  mcp-*` and other MCP servers started by ended chats; `claude ... --output-format stream-json`, listed only
+  when no live session matches it (SDK, IDE and live sessions run that way too). Keep-list: a process whose
+  ancestor chain reaches a live `claude` or `Claude.exe`, an interactive shell or terminal, or an IDE
+  (Cursor, VS Code) is its owner's, not a leak. A parent counts only if it was created before the child
+  (PIDs get reused). No `PPID=1` orphan test: Git Bash breaks parent links on Windows.
 - Top ten: `Get-CimInstance Win32_Process | Sort WorkingSetSize -Desc | Select -First 10
   ProcessId,ParentProcessId,Name,WorkingSetSize,CommandLine`, each with its parent chain, so a server the
   operator started from their terminal reads as theirs.
@@ -77,7 +85,7 @@ remove --force` stops on "Filename too long", `rm -rf` the folder, then `git wor
 One `Agent` (`subagent_type: general-purpose`, `model: opus`, in the foreground), given the picks as a file
 path, told: read only - end nothing, delete nothing, write nothing; defend each item against removal - a live
 chat still uses it (Git Bash breaks parent links, so a live chat's `cmd &` can look orphaned), the operator's
-own server or emulator, a live fleet's worktree, unpushed commits, a cache a running build fills, a temp file
+own server or emulator, an MCP server or browser a live `claude`, terminal or IDE owns, a live fleet's worktree, unpushed commits, a cache a running build fills, a temp file
 being written now; return `remove`, `keep` or `ask` per item with its evidence. Where it is wrong, answer
 once with `SendMessage`.
 

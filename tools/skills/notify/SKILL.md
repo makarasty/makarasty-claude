@@ -1,5 +1,5 @@
 ---
-description: Send one message to the person's phone when this chat, another chat, or a fleet run finishes, through Telegram, Discord, ntfy or a webhook. Use when asked to notify, ping, message or write when something is done, in any language ("напиши когда закончишь", "уведоми в телеграм", "скинь в телеграм когда закончишь", "скинь в дискорд когда будет готово", "пингани"), to set up or test the channels, to ask whether a notification is armed, or to switch it off ("выключи уведомления").
+description: Sends one message to the person's phone when this chat, another chat, or a fleet run finishes, through Telegram, Discord, ntfy or a webhook. Use when asked to notify, ping, message or write when something is done, in any language ("напиши когда закончишь", "уведоми в телеграм", "скинь в телеграм когда закончишь", "скинь в дискорд когда будет готово", "пингани"), to set up or test the channels, to ask whether a notification is armed, or to switch it off ("выключи уведомления").
 argument-hint: [what the person is waiting for] | setup | test | status | off | --session <id>
 ---
 
@@ -87,6 +87,10 @@ One message, once, in the form `<project>: <label> finished`, with the last 500 
 final message under it, so the lock screen shows the verdict and not just "task done". The public ntfy.sh
 server gets no excerpt unless `notify.json` holds `"excerpt": true`; `"excerpt": false` turns it off on
 every channel. Say so when the work handles data that should not leave the machine.
+
+When the work ran a minute or more, the finish, error and needs-you lines say how long (`finished after 12
+min`). ntfy also gets a priority and an emoji tag per kind: finished is `default` with a check mark, needs
+you and errors are `high` with a warning sign or a cross.
 
 A last message that ends in a question is sent as `finished, with a question for you`, the question at the
 end of the excerpt, and the marker goes like any other: one arming, one message. If the person answers and

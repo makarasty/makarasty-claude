@@ -1,13 +1,13 @@
 ---
-description: Ships the working tree - splits all changes into separate commits under the user's own name, merges the named branches in and resolves conflicts, pushes, optionally tags with patch notes. Use for "commit everything as separate commits and push", "pull all branches into mine and fix conflicts", "tag a release with patch notes", or in Russian закоммить от моего имени отдельными коммитами и запушь, стяни все ветки, смержи, подтяни, слей, влей все ветки в мою, учти параллельную работу, закоммить только своё, запушь, залей. A single commit with no push is the commit command.
+description: Ships the working tree - separate commits under the user's own name, merges the named branches in and resolves conflicts, pushes, optionally tags a release. Use for "commit everything as separate commits and push", "pull all branches into mine and fix conflicts", "tag a release with patch notes", or in Russian закоммить от моего имени отдельными коммитами и запушь, стяни все ветки, смержи, подтяни, слей, влей все ветки в мою, учти параллельную работу, закоммить только своё, запушь, залей. A single commit with no push is the commit command.
 argument-hint: [branch ... | all] [mine] [tag [<name>]] [notes]
 allowed-tools: Bash(git:*), Bash(gh:*), Read, Grep, Glob, Edit, Agent, ToolSearch, mcp__ccd_session_mgmt__list_sessions, mcp__ccd_session_mgmt__list_events
 ---
 
 Ship does three things: commits the user's work as separate commits under their own name, merges the
 requested branches in, and pushes everything. Before the first commit, Read `${CLAUDE_PLUGIN_ROOT}/skills/commit/SKILL.md`
-and apply all of it to every commit: the state check, committing by path in the shared index, the
-message, identity and hook rules, and the check and amend rule for the commit just made.
+and apply all of it to every commit: the state check, committing by path in the shared index, the secret
+scan, the message, identity and hook rules, and the check and amend rule for the commit just made.
 
 **Arguments.** `all`, `mine`, `tag`, `tag <name>` and `notes` are keywords only as separate words; every
 other word is a branch, with a remote prefix (`origin/x`, any name `git remote` lists) stripped. A word
@@ -15,7 +15,7 @@ that is both a keyword and an existing branch: ask which. Nothing given: commit 
 only says to push ("запушь", "залей") skips step 1 unless the uncommitted files are this chat's own.
 
 **Guardrails.** Pushes are fast-forward only (never `--force`, `--force-with-lease` or `+refspec`) and every
-hook runs (never `--no-verify`). Other chats' uncommitted work lives in this checkout, so never
+hook runs (never `--no-verify`, `-n` or `-c core.hooksPath=`). Other chats' uncommitted work lives in this checkout, so never
 `git stash`, `git reset --hard`, `git clean`, `git checkout -- .`/`git restore .`, `git tag -f` or
 `git tag -d` here, and never `git worktree remove`: it once followed a `node_modules` junction and
 emptied the main checkout. A step that seems to need one of them stops and asks.
@@ -142,7 +142,10 @@ first push to the default branch (commit.md says how to find it). Then `git push
   most; a third rejection: stop and report.
 - `! [remote rejected]`, `pre-receive hook declined`, `GH006` or "protected branch": the server will not
   take this branch, and pulling changes nothing. Stop and offer to push a branch and open a PR
-  (`gh pr create`).
+  (`gh pr create`). When `command -v gh` finds nothing, say gh is missing and give the link
+  instead: the `remote:` lines of the push often print it. Else build it from `git remote get-url origin`:
+  ssh `git@host:o/r.git` becomes `https://host/o/r`, drop `.git` and any `user:token@`, then GitHub
+  `/compare/<branch>?expand=1`, GitLab `/-/merge_requests/new?merge_request[source_branch]=<branch>`.
 - `fatal: No configured push destination` (`git remote` prints nothing): everything stays committed and
   merged locally; the reply says "not pushed: no remote", and that is done.
 - Anything else: stop and quote the line.

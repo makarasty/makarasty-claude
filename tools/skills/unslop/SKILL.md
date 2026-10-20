@@ -1,11 +1,11 @@
 ---
-description: Strip assistant tics out of writing so it reads as a person wrote it. Use for /unslop on or off (the humanised reply mode), or when asked to unslop, de-AI or humanise a given text, file or the last reply. Also on "очеловечь", "перепиши без воды", "убери нейростиль", "сделай живее", "без ИИ-стиля".
+description: Strips assistant tics out of writing so it reads as a person wrote it. Use for /unslop on or off (the humanised reply mode), or when asked to unslop, de-AI or humanise a given text, file or the last reply. Also on "очеловечь", "перепиши без воды", "убери нейростиль", "сделай живее", "без ИИ-стиля".
 argument-hint: on | off | status | <text, file path, or nothing to rewrite the last reply>
 allowed-tools: Bash(node:*), Bash(cat:*)
 ---
 
-The rules live in one file, `${CLAUDE_PLUGIN_ROOT}/hooks/unslop.txt`. The mode's hook and this command
-both read it.
+The core rules live in `${CLAUDE_PLUGIN_ROOT}/hooks/unslop.txt`. The mode's hook and this command both
+read it. The long tell list is `${CLAUDE_PLUGIN_ROOT}/hooks/unslop-catalog.md`, read only by the rewrite.
 
 ## `on`, `off`, `status`: only when the argument is exactly that one word
 
@@ -28,15 +28,33 @@ a compaction), never per prompt.
 A file path, pasted text, or nothing, which means your previous reply. `/unslop on the README` is a rewrite
 of the README, not the toggle.
 
-1. `cat "${CLAUDE_PLUGIN_ROOT}/hooks/unslop.txt"` and work in three passes: mark every tell it lists;
-   rewrite, keeping every claim; reread the result for tells that survived.
-2. Keep every number, unit, identifier, path, error string, code span and negation exactly as written.
-   This is a style pass, never a fact pass: a rewrite that loses a "not" or rounds a measurement has failed.
-3. Keep length where the content earns it. A dense technical explanation is not slop because it is long.
-4. Keep the writer's own voice when the text is someone else's. Remove tics; do not impose a personality.
-   When the person gives a sample of their own writing, match its sentence length, punctuation and register.
-5. Return the rewritten text only, with no note about what changed. For a file, write it back and say
-   which file in one line.
+1. Read `${CLAUDE_PLUGIN_ROOT}/hooks/unslop.txt` (the core rules) and
+   `${CLAUDE_PLUGIN_ROOT}/hooks/unslop-catalog.md` (the full tell list, the guard, the technical carve-out).
+   Only this rewrite reads the catalog.
+2. Pasted text or the last reply: save the original first, so the scanner can read it. Run
+   `cat > "${TMPDIR:-/tmp}/unslop-orig.md" <<'UNSLOP_EOF'`, the text, then `UNSLOP_EOF` on its own line. Save the
+   rewrite to `unslop-new.md` the same way.
+3. Run `node "${CLAUDE_PLUGIN_ROOT}/hooks/unslop-scan.mjs" <file>` to mark the tells. If node says it cannot
+   find that script, the scanner is absent: mark the tells by hand from the catalog, skip the scanner steps,
+   and say in one line that it did not run.
+4. Rewrite, keeping every claim. Then scan the result again and reread it by hand.
+5. Fact-lock: run `node "${CLAUDE_PLUGIN_ROOT}/hooks/unslop-scan.mjs" --before <original> <rewritten>`. It
+   lists lost numbers, URLs, code spans and negations. Restore every lost item. A rewrite with a lost item
+   has failed. A negation that belonged to a removed "not X but Y" frame is not a loss when Y alone states
+   the claim.
+6. Stop rule: if the scan finds no tells and the reread finds none, return the text unchanged and say so in
+   one line. Run at most two rewrite passes. Scans and rereads are not passes.
+7. Keep every number, unit, identifier, path, error string, code span and negation exactly as written
+   (the "not X but Y" frame above is the one exception). This is a style pass, never a fact pass: a rewrite
+   that loses any other "not" or rounds a measurement has failed.
+8. Remove tics and add nothing: no personality, joke, reaction, fragment, rhetorical question or invented
+   specific. Never delete a hedge that carries real uncertainty, or a caveat. Inside code, commands, logs,
+   quoted errors and technical terms, nothing is a tic.
+9. Keep length where the content earns it. A dense technical explanation is not slop because it is long.
+10. Keep the writer's own voice when the text is someone else's. When the person gives a sample of their
+    own writing, match its sentence length, punctuation and register.
+11. Return the rewritten text only, with no note about what changed, except the one-line notes above. For a
+    file, write it back and say which file in one line.
 
 Lines someone will say aloud to a vendor or their support are a different register: use
 `/makarasty-tools:say`.

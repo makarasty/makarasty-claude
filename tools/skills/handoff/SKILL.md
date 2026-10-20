@@ -1,5 +1,5 @@
 ---
-description: Hand this chat's unfinished work to a fresh chat, offered as a chip, with everything it needs and a way back to ask this one - or, with `from "<chat title>"` or `from <session id>`, take over another chat's work by reading its history. Use on "сделай хенд-офф", "передай другому чату", "предложи чипом", "продолжи в новом чате", "почитай историю того чата и продолжи", handoff, hand off.
+description: Hands this chat's unfinished work to a fresh chat as a chip, or with `from "<chat title>"` or `from <session id>` takes over another chat's work. Use on "сделай хенд-офф", "передай другому чату", "предложи чипом", "продолжи в новом чате", "почитай историю того чата и продолжи", handoff, hand off.
 argument-hint: [what the next chat should focus on] | from "<chat title>" | from <session id> [what to do there]
 ---
 

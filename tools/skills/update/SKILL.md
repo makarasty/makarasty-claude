@@ -1,5 +1,5 @@
 ---
-description: Finds what on this computer is out of date and worth updating - apps, runtimes, CLIs, Claude Code and its plugins, other agents like Codex, drivers, and anything an earlier `game` run installed - ranks it by what the update fixes and how much the item is used, has a red team challenge each pick, and ends with a short plain report. Updates nothing without a yes per item. Use on "обнови всё", "обнови всё что устарело", "что можно обновить", "что устарело", "проверь обновления", "старая версия", "update everything", "what is outdated", "check for updates".
+description: Finds what on this computer is out of date and worth updating - apps, runtimes, CLIs, Claude Code and its plugins, other agents like Codex, drivers, and anything an earlier `game` run installed. Use on "обнови всё", "обнови всё что устарело", "что можно обновить", "что устарело", "проверь обновления", "старая версия", "update everything", "what is outdated", "check for updates".
 argument-hint: "[apps | dev | claude | drivers | all]"
 allowed-tools: Bash, PowerShell, Read, Grep, Glob, Agent, ToolSearch, WebSearch, WebFetch, SendMessage, Write
 ---

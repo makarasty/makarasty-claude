@@ -1,5 +1,5 @@
 ---
-description: Explains plainly, in the person's language, where this chat's work stands - what happened, why, what was done, what is left, whether it can ship, and what was not checked. Use on "объясни простым языком", "простым языком на русском", "в чём суть", "объясни что случилось", "можно деплоить? объясни", explain plainly, explain in simple words. Not for token usage, and not while a /makarasty-tools:hold list is being collected.
+description: Explains plainly, in the person's language, where this chat's work stands. Use on "объясни простым языком", "простым языком на русском", "в чём суть", "объясни что случилось", "можно деплоить? объясни", explain plainly, explain in simple words. Not for token usage, and not while a /makarasty-tools:hold list is being collected.
 argument-hint: [topic, or nothing for this chat's work]
 ---
 

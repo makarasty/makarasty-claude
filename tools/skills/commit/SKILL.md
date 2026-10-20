@@ -1,5 +1,5 @@
 ---
-description: Makes a git commit of this chat's own work under the author's own identity, with a short human message and no AI trailer or tool signature. Use for "commit this", "commit as me", "commit under my name", or in Russian закоммить, сделай коммит, закоммить от меня, закоммить от моего имени, коммит от меня. One commit or a few, no push, no merge; when the request also says to push or to pull in branches ("отдельными коммитами … запушь", "стяни все ветки"), ship is the command. Unlike caveman:caveman-commit, which only writes a message, this makes the commit.
+description: Makes a git commit of this chat's own work under the author's own identity, with a short human message and no AI trailer or tool signature. Use for "commit this", "commit as me", "commit under my name", or in Russian закоммить, сделай коммит, закоммить от меня, закоммить от моего имени, коммит от меня. No push, no merge; when the request also says to push or to pull in branches ("отдельными коммитами … запушь", "стяни все ветки"), ship is the command. Unlike a message-writing helper, this makes the commit.
 argument-hint: [optional paths, scope or message hint]
 allowed-tools: Bash(git:*), Read, Grep, Glob
 ---
@@ -52,6 +52,19 @@ question is not asked: ship's push rule settles the default branch once for the 
 - Short and slightly blunt, in the words a developer would say out loud.
 - **Nothing else**: no `Co-Authored-By`, no generated-with line, no tool or model name, no emoji, no link.
 
+## Secrets
+
+After `git add -- <paths>`, before `git commit`, scan what is staged:
+
+```bash
+git diff --cached --name-only -- <paths> | grep -E '(^|/)[.]env' | grep -vE '\.env\.(example|sample|template|dist)$'
+git diff --cached -U0 -- <paths> | awk 'BEGIN{re="[0-9]{8,10}:[A-Za-z0-9_-]{35}|discord(app)?[.]com/api/webhooks/[0-9]+/[A-Za-z0-9_-]{20,}|(^|[^A-Za-z0-9])sk-(ant-)?[A-Za-z0-9_-]{20,}|sk_(live|test)_[A-Za-z0-9]{16,}|gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{22,}|(AKIA|ASIA)[0-9A-Z]{16}|xox[abposr]-[A-Za-z0-9-]{10,}|AIza[0-9A-Za-z_-]{35}|eyJ[A-Za-z0-9_-]{10,}[.]eyJ|ntfy[.]sh/[A-Za-z0-9_-]{8,}|-----BEGIN [A-Z ]*PRIVATE KEY-----"} /^\+\+\+ /{f=substr($0,7);next} /^@@/{match($0,/[+][0-9]+/);n=substr($0,RSTART+1,RLENGTH-1)+0;next} /^[+]/{s=substr($0,2);if(match(s,re))print f":"n": "substr(s,RSTART,4)"...";n++}'
+```
+
+A hit: do not commit. The first line lists `.env*` files; the second prints `file:line: <first four
+characters>` of each added line that holds a token shape, never the value. Name those to the user, `git restore
+--staged` the file, and ask. Never print the full line or repeat the value.
+
 ## Commit
 
 ```bash
@@ -69,7 +82,8 @@ MSG
 - The sha printed last, in the same call and only when the commit succeeded, is the commit this turn
   made. Keep it: `HEAD` may be another chat's commit a moment later, and everything below applies to this
   sha only.
-- Never `--no-verify`, never `-c commit.gpgsign=false`, never `--no-gpg-sign`. Signing asks for a
+- Never `--no-verify` or `-n`, never `-c core.hooksPath=`, never `-c commit.gpgsign=false`, never
+  `--no-gpg-sign`. Signing asks for a
   passphrase or pinentry hangs: stop and tell the user to run the commit themselves.
 
 ## Hooks

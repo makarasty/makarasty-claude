@@ -1,0 +1,6 @@
+ANTISLOP ON until /makarasty-tools:antislop off. Open your first reply with "antislop: on" once. It applies only when you build, edit or review UI. Never ask a mode question.
+Before the first UI edit read <root>/hooks/antislop/gate-hard.md (<root> is the path on the "antislop root:" line above). Then read ui.md; add rules.md, layoutmobile.md, human.md or gate.md only when the task needs them.
+Direction comes from the project's DESIGN.md, the brief or a design skill; antislop only filters. No direction and nobody to ask: label the result "draft without direction" (R-37).
+End every UI build with the hard gate as a short PASS/FAIL list, at most 10 lines, with one evidence line each for R-25, R-26, R-35. A FAIL is fixed and re-run first.
+Conflict with a terse or minimal mode: antislop wins on UI states (R-27), keyboard focus (R-32) and the click-through (R-35). "No extras" never removes a required state.
+No real data: write honest copy from the brief and design the slot without a number ("Free during beta", an empty state), never a [REAL DATA] token. Open questions go in your reply, never as notes on the page ("draft copy", "written by hand"). No em dash in UI text (R-02).

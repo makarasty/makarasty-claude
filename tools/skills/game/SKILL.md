@@ -1,5 +1,5 @@
 ---
-description: Tunes this computer for one game - reads the hardware, disks, drivers and the game's install, proposes changes with evidence (runtime version, launch flags, disk placement, in-game and driver settings), has a red team try to disprove each one, and ends with a short plain report of what survived. Applies nothing without a yes per item. Use on "оптимизируй под игру", "оптимизируй майнкрафт", "game Minecraft", "ускорь игру", "лагает игра", "мало фпс", "долго грузит карту", "настрой комп под <игру>", "tune my PC for <game>", "boost fps".
+description: Tunes this computer for one game. Use on "оптимизируй под игру", "оптимизируй майнкрафт", "game Minecraft", "ускорь игру", "лагает игра", "мало фпс", "долго грузит карту", "настрой комп под <игру>", "tune my PC for <game>", "boost fps".
 argument-hint: "<game name> [fps | loading | stutter | RAM]"
 allowed-tools: Bash, PowerShell, Read, Grep, Glob, Agent, ToolSearch, WebSearch, WebFetch, SendMessage, Write
 ---
@@ -56,6 +56,21 @@ their own programs).
 
 A claim with no source and no measurement is not a proposal. Forum lore is not a source.
 
+**Measure.** For fps and stutter, a change is kept only if a measurement shows it. When
+`Get-Command PresentMon*` finds the console app (flags below are PresentMon 2.x; 1.x used single-dash
+names), the operator plays the same scene while you run, three times after the yes in step 4 and before any change, then once after each change:
+
+```
+PresentMon --process_name <game.exe> --timed 60 --terminate_after_timed --output_file <csv>
+```
+
+Average FPS is 1000 divided by the mean of the CSV's `MsBetweenPresents`; the 1% low is 1000 divided by its
+99th percentile. A change counts only if it beats the spread of the three baseline runs; otherwise it falls.
+It needs the "Performance Log Users" group or admin. Not installed: say so, and ask the operator to capture
+the same 60 s with PresentMon from github.com/GameTechDev/PresentMon/releases or the game's own fps counter,
+and paste the numbers. PresentMon cannot time loading: for that, a stopwatch or the game's own log, three
+runs before and after.
+
 ## 3. Red team
 
 One `Agent` (`subagent_type: general-purpose`, `model: opus`, in the foreground), the proposals inline in its
@@ -87,4 +102,5 @@ Ask once which numbers to apply. Then, for `agent` items only:
   write) as `{"items":[{"item","manager","id","old","new","path","date","by":"game","undo"}]}`.
 
 `operator` items get exact steps; the operator's programs are never closed or ended by you. Done when the
-operator has the report and every applied item is recorded with its undo.
+operator has the report and every applied item is recorded with its undo and its before and after numbers,
+or the line saying none could be taken.

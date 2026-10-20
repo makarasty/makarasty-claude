@@ -1,5 +1,5 @@
 ---
-description: Quiet collecting mode - takes a stream of small bug reports or tasks without acting on any until the person says the codeword, then fixes them all in one pass, at the shared component and everywhere it is used. Use on "молчи, пока не скажу абрикос", "накидаю баги, потом скажу кодовое слово", "собирай задачи", "collect until I say". Pass the person's own codeword as the argument: "молчи пока не скажу апельсин" -> `апельсин`.
+description: Quiet collecting mode for a stream of small bug reports or tasks, fixed together once the person says the codeword. Use on "молчи, пока не скажу абрикос", "накидаю баги, потом скажу кодовое слово", "собирай задачи", "collect until I say". Pass the person's own codeword as the argument ("молчи пока не скажу апельсин" -> `апельсин`).
 argument-hint: [codeword, default абрикос]
 ---
 

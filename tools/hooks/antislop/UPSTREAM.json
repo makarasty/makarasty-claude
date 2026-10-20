@@ -1,0 +1,52 @@
+{
+  "source": "https://github.com/miqdadbadjuber/anti-slop",
+  "tag": "v3.2.21",
+  "commit": "77e1920ad5e540816ccec3b2142128d95ef12bcb",
+  "fetched": "2026-10-20",
+  "rules": {
+    "count": 38,
+    "ids": "R-01,R-02,R-03,R-04,R-05,R-06,R-07,R-08,R-09,R-10,R-11,R-12,R-13,R-14,R-15,R-16,R-17,R-18,R-19,R-20,R-21,R-22,R-23,R-24,R-25,R-26,R-27,R-28,R-29,R-30,R-31,R-32,R-33,R-34,R-35,R-36,R-37,R-38"
+  },
+  "files": {
+    "gate-hard.md": {
+      "sha256": "d7d170ba0e6338d59cbdaf280674e81236ed2d1d08fbbf3a094a184366ad4055",
+      "bytes": 3238,
+      "from": "skills/antislop/SKILL.md (Design Read, Delivery Gate Block 1)"
+    },
+    "rules.md": {
+      "sha256": "1dd935c0b1bb31c8450dfdad7e7220b782f3b8229d7c9c5ee2264d2e6bee5722",
+      "bytes": 19325,
+      "from": "skills/antislop/SKILL.md (Part 2)"
+    },
+    "gate.md": {
+      "sha256": "a45b8c61be6eff6241e88d31133f8010c08163ff2565f2a305839950936d2a33",
+      "bytes": 13316,
+      "from": "skills/antislop/SKILL.md (Core Principle to Craftsmanship Standard, Part 3 to the end)"
+    },
+    "ui.md": {
+      "sha256": "648e85875f65883d31adf1d1da1e8af52151338e5d6fef48d21a674b3b231788",
+      "bytes": 26731,
+      "from": "skills/antislop-ui/SKILL.md"
+    },
+    "layoutmobile.md": {
+      "sha256": "75c59b9da482be2c222d9c4f19a65601395055eb31787711e5706289250b7993",
+      "bytes": 16237,
+      "from": "skills/antislop-layoutmobile/SKILL.md"
+    },
+    "human.md": {
+      "sha256": "162d7e638ae584e19ff8be93f30d128d18a2c9d80cdb52e506f083316ac02cca",
+      "bytes": 10382,
+      "from": "skills/antislop-human/SKILL.md"
+    },
+    "rule-index.md": {
+      "sha256": "202cb0ba3c2bad2106940adcb306b3501d25ce01e3cb4acbafac5d9d9b8365e1",
+      "bytes": 4624,
+      "from": "skills/antislop/SKILL.md (Part 2 headings)"
+    },
+    "LICENSE-antislop": {
+      "sha256": "9fd83fb1fda52ca0094b96e2ed5a3d6c42a81b95a6c6326553f5bbe570f443de",
+      "bytes": 1083,
+      "from": "LICENSE"
+    }
+  }
+}
