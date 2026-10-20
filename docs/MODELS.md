@@ -131,7 +131,7 @@ wave's default budget is replaced by the run's measured median once three tasks 
 | Speed against quality | Rounds |
 |---|---|
 | Fastest finish | one review; only blockers become fix tasks; one scoped verify at the end |
-| Balanced (recommended) | one review and one fix round |
+| Balanced (recommended) | one review, one fix round and one scoped re-review |
 | Best quality | review until a round finds nothing, bounded by the 2x-budget clock |
 
 **Economy flow.** The coordinator's top model decides and nothing else; every mechanical step goes to a

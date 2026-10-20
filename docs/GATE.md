@@ -133,6 +133,34 @@ excluded from that digest, since recording the `before` proof would otherwise mo
 A `before` that passes is a refutation and says so. That is the cheapest good news a fix run gets: the
 finding was wrong, nothing needs changing, and it cost one command.
 
+## test — a pass of the task's own test, for implement and design
+
+An `implement` or `design` task whose frontmatter has a `test:` line is finished on a recorded pass of it,
+not on the coder's "N passed". There is no `before`: a new feature has nothing to fail on yet.
+
+```bash
+node "$g" prove .fleet/<run-id> <task-id> after -- '<the test: line>'   # the scoped run the coder makes anyway
+node "$g" check .fleet/<run-id> <task-id> --test                       # what `finish` runs
+```
+
+It costs no extra test run: the coder runs its scoped test through `prove` instead of bare. `check --test`
+refuses unless the last `after` exited 0, ran a command that is the `test:` line (alone, or after a
+`timeout 590`, a `cd X &&` or a `VAR=x` in front; `true` and `echo <test>` are not), and no path the task owns has changed since that run. A review
+fix round therefore runs the test again, and the same record is overwritten. With no `owns:` the tree
+check is skipped, since another task's edit cannot be told from this one's. A task without `test:`
+finishes on prose and review as before.
+
+A second `finish` of an already-done task (to record its branch) skips the check. A test that cannot run (a `BLOCKED` coder, a clock that fired twice, a browser that is not there) closes
+with `FLEET_UNTESTED=1` and a line `untested <id>: <why>` in the chip's notes, the way a root closes as a
+coincidence. It takes exactly `FLEET_UNTESTED=1` and is refused when the recorded run failed, since a failing
+test is not one that could not run. The reason is kept where the operator reads it.
+
+**Only runs stamped `RUN_FORMAT` 2 or later are asked.** A run in flight when this shipped was stamped 1,
+and its coders were never told to record a pass: asking would leave every implement task with a `test:`
+line refused with nobody able to satisfy it. Gating by the stamp leaves those runs exactly as they were;
+new runs are stamped 2 at their first `next`. The cost is that a `fleet.sh` from before the bump refuses
+a new run ("update the plugin"), which is what the stamp is for: it would not enforce the test.
+
 ## asks — the open questions as one round
 
 ```bash
@@ -149,7 +177,8 @@ chat they are not sitting in is a context switch each time, and eight answered i
 - **It does not rank, and it does not decide what is worth fixing.** That is still the backlog's severity
   and the operator's call.
 - **It does not verify the fix is good**, only that the reproduction moved. A reproduction that tests the
-  wrong thing passes this gate. The project's own tests are still the project's own tests.
+  wrong thing passes this gate. The project's own tests are still the project's own tests. The same holds for `check --test`: it shows the
+  test ran and passed, not that the test is a good one.
 - **The surface is a heuristic over text.** What the "surface" section says it misses is a real limit.
 - **`cluster` proves nothing.** It generates candidates a person or a model then rules on, and the ruling
   is the root task's whole job.

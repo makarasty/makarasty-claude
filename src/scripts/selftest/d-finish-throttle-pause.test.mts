@@ -89,6 +89,94 @@ if (has('git')) {
   r = fleet(['finish', 'r', '07', 't4'], refuted);
   code('FLEET_REFUTED on a fix with a reason but no before is still refused', 1, r.code);
   check('for the missing before', 'no `before` run was recorded', r.out);
+
+  // An implement or design task with a `test:` line is finished on a recorded pass of that test (no before).
+  const gate = (id: string, cmd: string): void => { node([`${SCRIPTS}/fleet-gate.mjs`, 'prove', 'r', id, 'after', '--', cmd], { cwd: fg }); };
+  const impl = (id: string, extra: string, kind = 'implement', chip = '08'): void => {
+    write(`${fg}/r/tasks/ready/${id}.md`, `---\ntask-id: ${id}\nkind: ${kind}\nneeds: repo\nbudget: 5\n${extra}\n---\n\n# build it\n`);
+    fleet(['next', 'r', chip, 'repo'], { cwd: fg });
+  };
+  truthy('a run stamped by this fleet is format 2, the one that asks for the test', read(`${fg}/r/RUN_FORMAT`).trim() === '2', read(`${fg}/r/RUN_FORMAT`));
+  impl('i1', 'test: grep -q two f.txt\nowns: g.txt');
+  r = fleet(['finish', 'r', '08', 'i1'], { cwd: fg });
+  code('an implement task with a test: line and no recorded run does not get its done marker', 1, r.code);
+  check('and the worker is told the command that records it', "prove", r.out);
+  check('with the test line quoted', "after -- 'grep -q two f.txt'", r.out);
+  truthy('and no done marker was written', !exists(`${fg}/r/tasks/done/i1`), 'marker exists');
+  gate('i1', 'true');
+  r = fleet(['finish', 'r', '08', 'i1'], { cwd: fg });
+  code('a recorded run of some other command is not the test', 1, r.code);
+  check('and it says so', "which is not the task's test: line", r.out);
+  gate('i1', 'grep -q three f.txt');
+  r = fleet(['finish', 'r', '08', 'i1'], { cwd: fg });
+  code('a recorded run of the test that failed does not count', 1, r.code);
+  gate('i1', 'cd . && grep -q two f.txt');
+  write(`${fg}/g.txt`, 'edited after the pass\n');
+  r = fleet(['finish', 'r', '08', 'i1'], { cwd: fg });
+  code('a change to what the task owns after the passing run sends it back', 1, r.code);
+  check('naming the file', 'g.txt changed after the passing run', r.out);
+  gate('i1', 'cd . && grep -q two f.txt');
+  write(`${fg}/other.txt`, 'a neighbour task\n');
+  r = fleet(['finish', 'r', '08', 'i1'], { cwd: fg });
+  code('the test passed over the final tree finishes the task, a neighbour edit outside owns: aside', 0, r.code);
+  check('and says so', 'DONE i1', r.out);
+
+  write(`${fg}/g.txt`, 'a later task edited what i1 owns\n');
+  r = fleet(['finish', 'r', '08', 'i1'], { cwd: fg });
+  code('finish again on a task already done is not asked for the test a second time', 0, r.code);
+
+  impl('i6', 'test: grep -q two f.txt\nowns: g.txt');
+  gate('i6', 'echo grep -q two f.txt');
+  r = fleet(['finish', 'r', '08', 'i6'], { cwd: fg });
+  code('a command that only mentions the test line is not the test', 1, r.code);
+  gate('i6', 'grep -q two f.txt && echo ok');
+  r = fleet(['finish', 'r', '08', 'i6'], { cwd: fg });
+  code('nor is the test line followed by more', 1, r.code);
+  gate('i6', 'CI=1 cd . && grep -q two f.txt');
+  r = fleet(['finish', 'r', '08', 'i6'], { cwd: fg });
+  code('a VAR=x or cd prefix is still the test', 0, r.code);
+
+  write(`${fg}/r/tasks/ready/i7.md`, '---\ntask-id: i7\nkind: implement\nneeds: repo\nbudget: 5\ntest: grep -q three f.txt\n---\n\n# build it\n');
+  fleet(['next', 'r', '09', 'repo'], { cwd: fg });
+  gate('i7', 'grep -q three f.txt');
+  write(`${fg}/r/09.notes.md`, 'untested i7: could not run\n');
+  r = fleet(['finish', 'r', '09', 'i7'], { cwd: fg, env: { FLEET_UNTESTED: '1' } });
+  code('FLEET_UNTESTED does not close a task whose recorded run failed', 1, r.code);
+  absent('and the refusal does not advertise it', 'closes with FLEET_UNTESTED=1', r.out);
+  check('but says the run failed', 'The recorded run failed (exit 1)', r.out);
+  impl('i8', 'test: grep -q two f.txt');
+  write(`${fg}/r/08.notes.md`, 'untested i8: could not run\n');
+  r = fleet(['finish', 'r', '08', 'i8'], { cwd: fg, env: { FLEET_UNTESTED: 'yes' } });
+  code('FLEET_UNTESTED takes exactly 1', 1, r.code);
+  check('and a refusal with no run recorded advertises it', 'closes with FLEET_UNTESTED=1', r.out);
+  r = fleet(['finish', 'r', '08', 'i8'], { cwd: fg, env: { FLEET_UNTESTED: '1' } });
+  code('FLEET_UNTESTED=1 closes it', 0, r.code);
+
+  if (process.platform === 'win32' || process.platform === 'darwin') {
+    impl('i9', 'test: grep -q two f.txt\nowns: G.TXT', 'implement', '10');
+    gate('i9', 'grep -q two f.txt');
+    write(`${fg}/g.txt`, 'edited again\n');
+    r = fleet(['finish', 'r', '10', 'i9'], { cwd: fg });
+    code('owns: in another case than git names the file still sees the change', 1, r.code);
+  }
+
+  impl('i2', 'test: grep -q two f.txt', 'design');
+  r = fleet(['finish', 'r', '08', 'i2'], { cwd: fg });
+  code('a design task with a test: line is asked for it too', 1, r.code);
+  write(`${fg}/r/08.notes.md`, 'untested i2:\n');
+  r = fleet(['finish', 'r', '08', 'i2'], { cwd: fg, env: { FLEET_UNTESTED: '1' } });
+  code('FLEET_UNTESTED with an empty reason does not close it', 1, r.code);
+  write(`${fg}/r/08.notes.md`, 'untested i2: the browser it needs is not here\n');
+  r = fleet(['finish', 'r', '08', 'i2'], { cwd: fg, env: { FLEET_UNTESTED: '1' } });
+  code('FLEET_UNTESTED with a written reason closes it', 0, r.code);
+
+  impl('i3', 'owns: g.txt');
+  r = fleet(['finish', 'r', '08', 'i3'], { cwd: fg });
+  code('an implement task with no test: line is finished as before', 0, r.code);
+  impl('i4', 'test: grep -q two f.txt');
+  write(`${fg}/r/RUN_FORMAT`, '1\n');
+  r = fleet(['finish', 'r', '08', 'i4'], { cwd: fg });
+  code('a run stamped format 1, in flight before the demand, is not asked for the test', 0, r.code);
 } else {
   skip('finish-gate cases', 'node or git missing');
 }

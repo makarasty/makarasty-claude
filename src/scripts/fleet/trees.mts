@@ -74,7 +74,7 @@ function unsafePath(path: string, needSeg: string, keeps: boolean, min: string):
   }
   // Deleting the directory this process stands in, or one above it, is how a script removes its own
   // footing and then keeps going. fleet.sh reads it in git's spelling (`pwd -W`), which is node's cwd.
-  // ponytail: PWD too when it names this directory: a POSIX shell in a symlinked path spells `pwd` logically.
+  // shortcut: PWD too when it names this directory: a POSIX shell in a symlinked path spells `pwd` logically.
   if (!keeps) {
     const lp = lowerAscii(p), heres = [slashes(process.cwd())], pwd = process.env.PWD || '';
     try { if (pwd && realpathSync(pwd) === realpathSync(process.cwd())) heres.push(slashes(pwd)); } catch { /* a stale PWD names nothing here */ }

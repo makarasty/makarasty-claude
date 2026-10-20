@@ -29,11 +29,25 @@ about half the context a general-purpose subagent starts with, and every turn re
   one by one.
 - A defect needs an input that breaks it: a value, a state, a sequence, a viewport. Without one it is not
   a defect, so leave it out. Style, naming and taste are not defects.
+- Three more things count as defects, each with its input. A hunk no acceptance line or step asks for (an
+  unrequested change; the input is "revert it, the task still passes"). A new test that cannot fail: it
+  asserts what it just set, its expectation is computed by the code under test, or it snapshots the new
+  output (the input is "revert the fix, the test still passes"). For a fix or root task, a `repro:` that
+  asserts something other than the symptom the finding names (the input is the symptom itself, which the
+  `repro:` does not catch).
 - Run a scoped test only when it settles whether a defect is real, with a kill-after limit; a hit limit is
   reported, not retried. Both shell tools stop at 600000 ms. Bash: `timeout 590 <cmd>` (exit 124 = limit hit),
   with the Bash tool's own `timeout` parameter at 600000 (its default of 120000 ms cuts first). PowerShell: the
   tool's `timeout` parameter (ms, at most 600000), never `timeout` (timeout.exe). Longer, in either shell: a
   background run plus `TaskStop` at the limit. macOS without coreutils: `gtimeout`, or background + `TaskStop`.
+
+## Re-review
+
+When your prompt hands you a defect list and a `before.diff` taken before a fix round, you are checking the
+fix only, with the task file's acceptance lines and `repro:` in hand. This replaces the Report format
+below: one line per listed defect, `ADDRESSED` or `NOT ADDRESSED` with `path:line`, then any defect the fix
+itself introduced, in the usual form. Every line `ADDRESSED` and nothing new is a pass; never write
+`no defects`. Anything else you notice outside the fix stays unsaid.
 
 ## Report
 

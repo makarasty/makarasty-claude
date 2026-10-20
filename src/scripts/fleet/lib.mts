@@ -6,7 +6,9 @@ import { spawnSync } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
 import { homedir, uptime } from 'node:os';
 
-export const RUN_FORMAT = 1;
+// 2: `finish` asks an implement or design task with a `test:` line for a recorded run of it. A run stamped 1
+// was handed out before coders were told to record one, and is not asked.
+export const RUN_FORMAT = 2;
 // scripts/, where this module's parent fleet.mjs sits beside fleet.sh and fleet-load.mjs.
 export const HERE = resolve(import.meta.dirname, '..');
 
@@ -92,7 +94,7 @@ export function takeLock(p: string, staleMs: number, who = ''): boolean {
   if (!takeable(p, staleMs, who)) return false;
   // Two takers of one dead lock both removed it and both made it again. Only the holder of `<lock>.take`
   // removes it, after reading it again.
-  // ponytail: a taker killed inside these few lines leaves `.take` for 10 s; a pid in it if that is ever seen.
+  // shortcut: a taker killed inside these few lines leaves `.take` for 10 s; a pid in it if that is ever seen.
   const t = `${p}.take`, gone = LOCK_RM;
   try { mkdirSync(t); } catch {
     const tm = mtimeMs(t);
@@ -322,7 +324,7 @@ export interface Ctx {
 
 // calibration.json beside the plugin, read the way fleet.sh's sed reads it: a bare key holding a bare
 // number, anchored at both ends, so a provenance sentence never becomes a constant.
-// ponytail: only the copy beside this script, which is where the plugin ships it; a fleet.sh copied away
+// shortcut: only the copy beside this script, which is where the plugin ships it; a fleet.sh copied away
 // from its plugin refuses to run at all.
 export function readCalibration(): Map<string, string> {
   const m = new Map<string, string>();

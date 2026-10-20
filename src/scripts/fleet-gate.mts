@@ -21,6 +21,7 @@
 //   node fleet-gate.mjs cluster  <run-dir> [--queue <fix-dir>]       candidate roots, and the tasks to gate them
 //   node fleet-gate.mjs prove    <run-dir> <task> before|after -- cmd run it, record the exit and the tree
 //   node fleet-gate.mjs check    <run-dir> <task>                    exit 1 unless the proof is complete
+//   node fleet-gate.mjs check    <run-dir> <task> --test             exit 1 unless the task's test: line passed (implement, design)
 //   node fleet-gate.mjs asks     <run-dir>                           every open question as one round
 //   node fleet-gate.mjs decide   <run-dir> <chip>  <json on stdin>   record a contract call nobody was asked
 //
@@ -32,7 +33,7 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import { execSync, spawnSync } from 'node:child_process';
 import { cal, FILE_RE } from '../hooks/run-dir.mjs';
-import { frontmatter, idList, yamlValue } from './fleet/lib.mjs';
+import { fmValues, frontmatter, idList, yamlValue } from './fleet/lib.mjs';
 
 // A line of backlog.jsonl, as far as this file reads it.
 interface Finding { id: string; area: string; severity: string; mechanism?: string; observed?: string; evidence?: string }
@@ -51,7 +52,7 @@ const usage: () => never = () => die(`usage:
   fleet-gate.mjs surface <project-root>
   fleet-gate.mjs cluster <run-dir> [--queue <fix-dir>]
   fleet-gate.mjs prove   <run-dir> <task-id> before|after -- <command>
-  fleet-gate.mjs check   <run-dir> <task-id>
+  fleet-gate.mjs check   <run-dir> <task-id> [--test]
   fleet-gate.mjs asks    <run-dir>
   fleet-gate.mjs decide  <run-dir> <chip>   with {"token":"...","why":"..."} on stdin`);
 
@@ -77,7 +78,7 @@ const now = () => new Date().toISOString();
 // file is meant to be edited by hand - a token nobody depends on costs one line of noise, and a missing
 // token costs the outage this whole file exists to prevent.
 //
-// ponytail: regex over tracked files, not a parse. It will miss a route built by concatenation and a key
+// shortcut: regex over tracked files, not a parse. It will miss a route built by concatenation and a key
 // read through a variable. Replace the patterns per project in FLEET.md when that starts to matter.
 const SURFACE_PATTERNS: [RegExp, string][] = [
   // A route or path literal: "/api/server/status", '/v1/users/:id'
@@ -405,7 +406,7 @@ function treeState(from: string, runDir: string): { head: string; tree: string }
     // A file another process holds open (a dev db, .vs/) is skipped and named, not the whole add lost: a
     // failed add left the index copy as it was and every fix read as no change. safecrlf would refuse a
     // file over its line endings, which say nothing about a fix.
-    // ponytail: changed untracked files land in .git/objects as loose objects until gc prunes them.
+    // shortcut: changed untracked files land in .git/objects as loose objects until gc prunes them.
     const add = spawnSync(`git -c core.safecrlf=false add -A --ignore-errors ${scope}`, { cwd: top, env, shell: true, encoding: 'utf8' });
     if (add.status !== 0) console.error(`prove: git could not read some files, which are left out of the tree:\n${(add.stderr || '').trim()}`);
     const tree = run('git write-tree', top, env);
@@ -452,7 +453,7 @@ function prove(runDir: string, taskId: string, phase: string, command: string[])
     try { pid = Number(fs.readFileSync(path.join(lock, 'pid'), 'utf8')); } catch { /* being written, or none */ }
     try { age = Date.now() - fs.statSync(lock).mtimeMs; } catch { /* gone meanwhile */ }
     // No pid yet: a prove in its first instant, or one killed in it (taken over after a minute).
-    // ponytail: a pid Windows reused for another live process holds the lock until it is an hour old, and a
+    // shortcut: a pid Windows reused for another live process holds the lock until it is an hour old, and a
     // reproduction running longer than an hour loses its lock to a second prove.
     if (pid ? alive(pid) && age < 3600_000 : age < 60_000) die(`another prove is running on ${taskId} (${lock}): wait for it, one run at a time`);
   }
@@ -557,6 +558,39 @@ function check(runDir: string, taskId: string) {
   console.log(`PROVEN ${taskId}: ${before.cmd} exit ${before.exit} -> ${after.exit}, tree ${before.digest} -> ${after.digest}${why.length ? `, changed between runs: ${why.slice(0, 10).join(', ')}${why.length > 10 ? `, and ${why.length - 10} more` : ''}` : ''}`);
 }
 
+// An implement or design task with a `test:` line needs no `before`, only a pass of that command recorded by
+// `prove ... after` (the coder's own scoped run, routed through here), over the tree the task now has: a
+// change to what it owns after the pass is a change nobody tested. A task without `test:` has nothing to check.
+function checkTest(runDir: string, taskId: string) {
+  const fail: (why: string) => never = (why) => { console.error(`NOT TESTED ${taskId}: ${why}`); process.exit(1); };
+  let text = '';
+  try { text = fs.readFileSync(path.join(runDir, 'tasks', 'ready', `${taskId}.md`), 'utf8'); } catch { fail('the task file cannot be read, so its test: line is unknown'); }
+  const test = fmValues(frontmatter(text) ?? [], 'test')[0] ?? '';
+  if (!test) { console.log(`${taskId} has no test: line, nothing to check`); return; }
+  const after = [...readJsonl<Proof>(path.join(runDir, 'tasks', 'claimed', taskId, 'proof'))].reverse().find((p) => p.phase === 'after');
+  const norm = (s: string) => s.replace(/\s+/g, ' ').trim();
+  if (!after) fail('no run of the test was recorded');
+  if (after.exit !== 0) fail(`the recorded run of the test failed (exit ${after.exit})`);
+  // The test line itself, alone or after a `timeout N`, a `cd X &&` or a `VAR=x` in front: `echo <test>` and
+  // `<test>x` are other commands.
+  const pre = '(?:timeout\\s+(?:-\\S+\\s+)*\\d+[smhd]?\\s+|cd\\s+(?:"[^"]*"|\'[^\']*\'|\\S+)\\s*&&\\s*|[A-Za-z_]\\w*=\\S*\\s+)*';
+  if (!new RegExp(`^${pre}${norm(test).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`).test(norm(after.cmd))) fail(`the recorded run was \`${after.cmd}\`, which is not the task's test: line`);
+  // shortcut: no `owns:` (separate chats) skips the tree check, since a change cannot be told from another task's.
+  const owned = ownsOf(runDir, taskId);
+  if (owned.length && typeof after.post === 'string') {
+    let moved: string[] = [];
+    try {
+      moved = execSync(`git diff-tree -r -z --name-only ${after.post} ${treeState(process.cwd(), runDir).tree}`, { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] }).split('\0').filter(Boolean);
+    } catch { fail("the recorded tree is not in this checkout's git: run the test again here"); }
+    // Git names paths in their on-disk case, the `owns:` line in the planner's: one file on a case-insensitive disk.
+    const ci = process.platform === 'win32' || process.platform === 'darwin';
+    const fold = (s: string) => (ci ? s.toLowerCase() : s);
+    moved = moved.filter((p) => owned.some((o) => o.glob ? fold(p).startsWith(fold(o.path)) : o.path === '' || fold(p) === fold(o.path) || fold(p).startsWith(`${fold(o.path)}/`)));
+    if (moved.length) fail(`${moved.slice(0, 5).join(', ')}${moved.length > 5 ? `, and ${moved.length - 5} more` : ''} changed after the passing run: run the test again`);
+  }
+  console.log(`TESTED ${taskId}: ${after.cmd} exit 0, tree ${after.digest}`);
+}
+
 // ---------------------------------------------------------------------------------------------------
 // asks - every open question as one round.
 //
@@ -629,7 +663,7 @@ switch (cmd) {
     prove(runDirOf(args[1]), args[2], args[3], args.slice(sep + 1));
     break;
   }
-  case 'check': check(runDirOf(args[1]), args[2] || usage()); break;
+  case 'check': (args[3] === '--test' ? checkTest : check)(runDirOf(args[1]), args[2] || usage()); break;
   case 'asks': asks(runDirOf(args[1])); break;
   case 'decide': decide(runDirOf(args[1]), args[2] || usage()); break;
   default: usage();

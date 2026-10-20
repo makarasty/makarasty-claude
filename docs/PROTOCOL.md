@@ -356,7 +356,8 @@ owns: [src/routes/vendor.ts, src/lib/egress/]   # required on every code task in
                        # these paths. `fleet-gate check` counts only changes under it as a fix or root task's proof,
                        # so an `owns:` that misses the fixed file fails every such task. Two tasks whose `owns:` overlap are ordered with `after:`
 test: npm test -- vendor   # optional, code tasks. The scoped test command the coder runs (`ONECHAT.md`, step 3,
-                       # `Test:`), never the full suite. Written by the planner; no script reads it
+                       # `Test:`), never the full suite. Written by the planner. For `implement` and `design`, `finish` asks a run stamped
+                       # `RUN_FORMAT` 2 for a recorded pass of it (`GATE.md`, "test")
 repro: npm test -- egress-timeout   # fix and root tasks. One shell command that fails while the defect is there and
                        # passes once it is gone: the rest of the line, word for word, is what `prove before` and
                        # `prove after` run. No script reads it. `fixqueue` writes it when the finding's `repro`

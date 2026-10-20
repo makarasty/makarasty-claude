@@ -179,6 +179,51 @@ check('and says it is a cycle', 'a cycle', o.out);
 o = fleet(['file', r, 'd'], { input: '---\nNeeds: repo\n---\n' });
 check('a miscased Needs: is named as miscased, not missing', "write the key as 'needs:'", o.out);
 code('a quoted task-id is the id', 0, fleet(['file', r, 'e'], { input: '---\ntask-id: "e"\nneeds: repo\n---\n' }).code);
+// file notes, never refuses, two tasks on the same files with no after: between them (one checkout), and a code task with no owns:.
+const own = (v, extra = '') => `---\nneeds: repo\n${extra}owns: ${v}\n---\n`;
+const note = (id, text) => fleet(['file', r, id], { input: text }).out;
+mkq();
+fleet(['file', r, 'o1'], { input: own('[src/lib/, docs/a.md]') });
+check('file notes an owns: that overlaps an open task with no after: between them', 'NOTE: owns: overlaps o1 (src/lib/) with no after: between them', note('o2', own('./src\\lib\\a.ts')));
+absent('and none when after: names it', 'overlaps', note('o3', own('src/lib/', 'after: o1, o2\n')));
+absent('nor when the chain runs through another task (o4 after o3 after o1)', 'overlaps', note('o4', own('src/lib/b.ts', 'after: o3\n')));
+absent('nor for a disjoint owns:', 'overlaps', note('o5', own('tests/')));
+absent('nor for src/li against src/lib/a.ts', 'overlaps', note('o6', own('src/li')));
+absent('and a done task is not an overlap', 'overlaps', (write(`${r}/tasks/done/o2`, ''), note('o8', own('src/lib/a.ts', 'after: o3\n'))));
+check('a fix with no owns: gets a NOTE', 'NOTE: a fix task has no owns:', note('o9', '---\nneeds: repo\nkind: fix\n---\n'));
+absent('a research task with no owns: gets none', 'no owns:', note('o10', '---\nneeds: repo\nkind: research\n---\n'));
+fleet(['file', r, 'o11'], { input: own('zz/', 'after: o12\n') });
+absent('nor when the earlier task names the new one in its after:', 'overlaps', note('o12', own('zz/a')));
+// The same check reads globs, ../ and ./ spellings, absolute paths under the project root, quoted paths, and only a top-level owns:.
+const clash = (first, second, id = 'p2') => { mkq(); fleet(['file', r, 'p1'], { input: own(first) }); return note(id, own(second)); };
+check('a glob holds the directory before its first wildcard (src/**/*.ts vs src/lib/a.ts)', 'overlaps p1 (src/**/*.ts)', clash('src/**/*.ts', 'src/lib/a.ts'));
+absent('and a glob does not reach a sibling directory (src/a*.ts vs tests/)', 'overlaps', clash('src/a*.ts', 'tests/'));
+check('a bare *.md is the whole tree', 'overlaps p1 (*.md)', clash('*.md', 'docs/x.txt'));
+check('src/x/../lib/a.ts is src/lib/a.ts', 'overlaps p1', clash('src/lib/', 'src/x/../lib/a.ts'));
+check('./s2/./lib holds s2/lib/a', 'overlaps p1', clash('./s2/./lib', 's2/lib/a'));
+absent('and src/x/../lib/a.ts is not src/x/', 'overlaps', clash('src/x/', 'src/x/../lib/a.ts'));
+const proj = `${q}/proj`, r2 = `${proj}/.fleet/r2`;
+mk(`${r2}/tasks/ready`);
+write(`${r2}/tasks/ready/p1.md`, own('src/lib/'));
+check('an absolute path under the project root (the folder holding .fleet) is relative to it', 'overlaps p1 (src/lib/)', fleet(['file', r2, 'p2'], { input: own(`${proj}/src/lib/a.ts`) }).out);
+absent('and one outside it is left as it is', 'overlaps', fleet(['file', r2, 'p3'], { input: own('/elsewhere/src/lib/a.ts') }).out);
+absent('an indented owns: inside another key\'s block is no owns:', 'overlaps', (mkq(), fleet(['file', r, 'p1'], { input: '---\nneeds: repo\nnotes: |\n  owns: tests/\nowns: docs/\n---\n' }), note('p2', own('tests/'))));
+check('a quoted owns: path may hold a blank', 'overlaps p1 (q1/a b.ts)', clash('["q1/a b.ts", q2/x]', '"q1/a b.ts"'));
+absent('and is not split at it (q1/a is another file)', 'overlaps', clash('["q1/a b.ts", q2/x]', 'q1/a'));
+// More than five clashes are five NOTE lines and a count; a code kind spelled with a vowel reads "an".
+mkq();
+for (let i = 1; i <= 7; i++)
+    fleet(['file', r, `p${i}`], { input: own('big/') });
+o = fleet(['file', r, 'p8'], { input: own('big/a') });
+truthy('seven clashes are five NOTE lines and "and 2 more"', (o.out.match(/NOTE: owns: overlaps/g) ?? []).length === 5 && o.out.includes('NOTE: owns: and 2 more tasks overlap'), o.out);
+check('an implement task with no owns: reads "an implement"', 'NOTE: an implement task has no owns:', note('p9', '---\nneeds: repo\nkind: implement\n---\n'));
+// 300 chained tasks: each filing reads each ready file once.
+mkq();
+for (let i = 1; i <= 300; i++)
+    ready(`c${i}`, `---\nneeds: repo\nowns: dir${i}/\n${i > 1 ? `after: c${i - 1}\n` : ''}---\n`);
+const t0 = Date.now();
+note('c301', own('dir1/', 'after: c300\n'));
+truthy('filing at the end of a 300-task chain takes under 3 s', Date.now() - t0 < 3000, `${Date.now() - t0} ms`);
 // A cycle written past file is named where status lists what waits for ever.
 ready('x', '---\ntask-id: x\nneeds: repo\nafter: y\n---\n');
 ready('y', '---\ntask-id: y\nneeds: repo\nafter: x\n---\n');

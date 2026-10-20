@@ -357,6 +357,16 @@ ranges, all in this turn, and start claiming. No chip is offered: each claim bec
 subagent, typed by task kind, with the model and effort from the `pace:` line and a prompt of paths only.
 Read `docs/ONECHAT.md` in full now, before the first claim.
 
+**Cold read, between writing `RULES.md` and registering the slots; skip it for a queue of two tasks or
+fewer.** Nobody tests that a task file can be started by someone who was not in the interview, and a
+worker cannot ask. Spawn one fresh `Agent`, `subagent_type: general-purpose` (it reads files; the
+reviewer is diff-only and the coder edits), with `model` named (Haiku under Maximum economy, Sonnet
+otherwise), given the paths of `RULES.md` and two or three task files (the longest, the first wave's) and
+nothing else. It returns the questions it would still need answered to start, one line each, where a wrong
+guess changes the result. Answer each in the files, not in chat: a fact goes into `RULES.md`, a task-specific
+one into that task's file in `tasks/ready/`. A question only the operator can answer goes into the launch
+turn's one `AskUserQuestion` (section 3b), never into `RULES.md` as a guess. The cost is one small spawn.
+
 ### Opt-in: separate chats
 
 When Round 0 chose "Separate chats for browser workers, one commit at the end", or more than one live visual check must run at once

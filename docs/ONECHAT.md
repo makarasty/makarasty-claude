@@ -113,7 +113,8 @@ For each free slot `NN` in lane `<lane>`:
    and is information only. On it: `TaskStop` that agent and re-spawn once on the same claim,
    told the edits in its `owns:` are its predecessor's to continue, with a fresh clock. On a second firing,
    `TaskStop` the agent. A task with no proof to give (no `kind: fix` or `kind: root`) then finishes with
-   the remainder written as unreached in `NN.notes.md`. A fix or root task never does: `finish` refuses it
+   the remainder written as unreached in `NN.notes.md` (with a `test:` line and no recorded pass, also
+   `untested <id>: <why>` there and `FLEET_UNTESTED=1` on `finish`). A fix or root task never does: `finish` refuses it
    unproven, the claim stays held, and everything `after:` it (a root's `gates:` members) and `landed`
    wait for ever. It goes the way of "A fix or root that cannot be proven", below.
 3. **Spawn the subagent**: `Agent`, `run_in_background: true`, `model` and `effort` from the pace line
@@ -138,9 +139,13 @@ For each free slot `NN` in lane `<lane>`:
    Test: timeout 590 <the task's test: line, the scoped test command>   (a hit limit is reported, never retried)
    Tab: <tabId>                      (browser agents only)
    Proof, after your change: node "<g>" prove "<r>" <id> after -- '<the repro: line, word for word>'   (fix, root)
+   Test proof, after your change: node "<g>" prove "<r>" <id> after -- 'timeout 590 <the test: line, a `'` in it written `'''`>'   (instead of running Test bare; no before)
+   Include the Test proof line only for `kind: implement` or `design` with a `test:` line when `<r>/RUN_FORMAT`
+   holds 2 or more (the run's format stamp, written at its first `next`); a run stamped 1 has no such gate.
    Findings: sh "<f>" find "<r>" NN, one JSON finding on stdin; it files, it is no probe. Heartbeat: sh "<f>" beat "<r>" NN <id>.
    Never next, finish, drained, commit, git add -A, stash, checkout --, switch.
    Report in at most 15 lines: files changed, test result, what is left.
+   Last line (fleet-coder only): DONE, DONE_WITH_CONCERNS: <one line> or BLOCKED: <one line>.
    ```
 
    `timeout 590` is the Bash form (exit 124 = limit hit), kept under the 600000 ms both shell tools stop
@@ -148,16 +153,47 @@ For each free slot `NN` in lane `<lane>`:
    In PowerShell `timeout` is timeout.exe, a sleep: use the PowerShell tool's own `timeout` parameter (ms,
    at most 600000). Longer, in either shell: a background run plus `TaskStop` at the limit. macOS without coreutils: `gtimeout`, or background plus `TaskStop`.
 
-4. **On its notification**, read the report. For a code task spawn `makarasty:fleet-reviewer` at the
+4. **On its notification**, read the report. A `fleet-coder` report ends in `DONE`,
+   `DONE_WITH_CONCERNS: <line>` or `BLOCKED: <line>` (`agents/fleet-coder.md`); read that line first. Other
+   agents' reports have no such line. Concerns go to `NN.notes.md`. On `BLOCKED`:
+   - `repro invalid: <why>`: the `repro:` fails for a reason outside the defect. Ask the operator with one
+     `AskUserQuestion`; no handback, since the next coder meets the same command.
+   - Any other fix or root goes by "A fix or root that cannot be proven", below.
+   - Any other kind: write the remainder as unreached in `NN.notes.md` (and `FLEET_UNTESTED=1` as step 2
+     says, when its `test:` never passed), then review it as below, telling the reviewer the task is
+     BLOCKED and partial: it rules on what is there, not on what is missing. Its edits sit in the tree and
+     in the `files` list of step 5 either way, so the end commit would carry them unreviewed otherwise.
+
+   Every ruling you make in this step (a defect filed, a handback, a BLOCKED route, a re-review skipped) is
+   one line, `ruling: <what> - <why>`, in your next `STATE.md` update; `fleet-collect` lists them.
+
+   Otherwise, for a code task spawn `makarasty:fleet-reviewer` at the
    task's `verdict-model` (the pace line's when it names none) on `git diff -- <owns paths>` and
    `git status --porcelain -uall -- <owns paths>`, told to read every `??` file whole (a new file is in no
    diff; never `git add -N`, the index is shared), with the task file, the claim's `before.diff` (so it
    rules on this task's change only; an empty one means the whole `owns:` diff is this task's) and
    `$r/answers/00-broadcast.md` if it exists. The verdict is short:
    pass, or defects each with the input that breaks it. Rounds by the pace line:
-   - Fastest finish: one review; blockers become fix tasks; one scoped verify at the end of the run.
-   - Balanced: one review, then one fix round (a fresh `fleet-coder` on the same claim with the defects).
-   - Best quality: review and fix until a round finds nothing, bounded by the task's clock.
+   - Fastest finish: one review, no re-review; blockers become fix tasks; one scoped verify at the end of the run.
+   - Balanced: one review, then one fix round (a fresh `fleet-coder` on the same claim with the defects),
+     then one re-review.
+   - Best quality: fix and re-review until a round finds nothing, bounded by the task's clock; a review that
+     found no defects needs no re-review.
+
+   A fix round is that fresh `fleet-coder`. When a cheaper tier did the task and the reviewer rejected it
+   (Economy, below), the same spawn goes one tier up: the bump is the fix round, not a second one.
+
+   **Re-review**, after every fix round: an unreviewed fix is where regressions land. Before the fix coder
+   starts, save the paths as step 1 does, into `tasks/claimed/<id>/pre-fix.diff`. Spawn `fleet-reviewer` at
+   the model of the first review, with the defect list, the task file, that file as its `before.diff` and the
+   same `??` rule. It answers `ADDRESSED` or `NOT ADDRESSED` per defect, then any defect the fix itself
+   introduced; nothing else. All `ADDRESSED` and nothing new: go to step 5. Otherwise:
+   - A defect with a runnable check becomes a fix task, filed while `tasks/queue-open` is held. Write the
+     task file (`task-id: <id>-fix`, `kind: fix`, `owns:`, `repro:` the check, the defect as the body) and
+     run `sh "$f" file "$r" <id>-fix < <that file>`. It runs as any fix task, proof and review included.
+   - A defect with none (an unrequested hunk, a test that cannot fail) goes to the operator with one
+     `AskUserQuestion` naming the task and the defect; the claim stays held. A second reject by the Economy
+     rule below goes the same way.
 5. Write the task's file list, then finish, no branch (one checkout), then claim again on that slot:
 
    ```bash
@@ -170,6 +206,9 @@ For each free slot `NN` in lane `<lane>`:
    or root task the gate did not prove, and its `NOT PROVEN` line says why. No `after` recorded, or the
    reproduction still failing after, goes back to a fresh `fleet-coder` on the same claim with that line,
    inside the task's clock; once the clock has fired twice, "A fix or root that cannot be proven" applies.
+   An implement or design task with a `test:` line gets the same refusal, `NOT TESTED`, in a run stamped format 2:
+   it goes back to a fresh `fleet-coder` the same way, told to record the pass (`docs/GATE.md`, "test"). A fix round
+   after a review runs the test through `prove` again, since a change to `owns:` after the pass is refused.
    `FLEET_REFUTED` closes a `kind: fix` task only when the last `before` recorded passed (exit 0); with no
    `before`, or one that failed, `finish` refuses it as without the flag and says why. A `kind: root` task
    closes with it plus a non-empty `refuted <id>: <reason>` line in `NN.notes.md` whatever `before` did, since
@@ -186,7 +225,8 @@ count>`, which refuses a run with no `backlog.jsonl`. By hand: `sh "$f" merge "$
 Never `finish` an unproven fix or root task, and never `FLEET_REFUTED` one whose `before` failed. Give the
 claim back instead, so the run moves on:
 
-1. Write what was tried and why it failed into `$r/NN.notes.md`, one short paragraph.
+1. Write what was tried and why it failed into `$r/NN.notes.md`, one short paragraph. A coder that stops
+   with `BLOCKED` after three failed attempts (`agents/fleet-coder.md`) gives you the attempts in its report.
 2. `sh "$f" handback "$r" NN`. It renames the claim to `<id>.released-<ts>` and files the task again as
    `<id>-r<k>`, with `handback-of: <id>` (`next` copies the old claim's recorded `before` into the new claim's proof) and
    `continued-from-chip: NN`. Every task whose `after:` named `<id>`, a root's `gates:` members too, now
@@ -227,7 +267,8 @@ The full table and the router that honours `[mech]` and `[exec]`: `docs/MODELS.m
 router". You, the coordinator, keep the plan, the verdicts and the decisions, and nothing else.
 
 A task the reviewer rejects after a cheaper tier did it is re-spawned once, one tier up (Haiku, Sonnet,
-Opus), on the same claim, and you note it in `STATE.md`. A second reject goes to the operator as one `AskUserQuestion` (fleet-plan 8b: file what does not depend on it first).
+Opus), on the same claim, and you note it in `STATE.md`; that re-spawn is the fix round of step 4, and its
+re-review follows. A second reject, or a re-review that still finds a defect with no runnable check, goes to the operator as one `AskUserQuestion` (fleet-plan 8b: file what does not depend on it first).
 
 Why this is cheaper, and the estimate behind it: `docs/MODELS.md`, "Pace".
 

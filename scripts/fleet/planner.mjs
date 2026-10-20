@@ -1,9 +1,9 @@
 // planner.mts - the planner's queue work: file, cleared, answer, broadcast, stranded, width, chips. Part of fleet.mjs; see src/scripts/fleet.mts.
 import { appendFileSync, constants, copyFileSync, existsSync, linkSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { basename, dirname, resolve } from 'node:path';
+import { basename, dirname, posix, resolve } from 'node:path';
 import { isatty } from 'node:tty';
-import { need, out, err, isDir, isFile, read, names, field, NEEDS, operatorOwed, now, slashes, configDir, cal, calint, loadScript, laneGaps, recordFleetSession, mtimeMs, nativePath, sub, HERE, afterIds, frontmatter, yamlValue } from './lib.mjs';
+import { need, out, err, isDir, isFile, read, names, field, NEEDS, operatorOwed, now, slashes, configDir, cal, calint, loadScript, laneGaps, recordFleetSession, mtimeMs, nativePath, sub, HERE, afterIds, frontmatter, yamlValue, taskKind } from './lib.mjs';
 // ---- shared pieces ---------------------------------------------------------------------------------------
 // sed's `.` takes a \r, JS's does not, so lib's AFTER misses `after:` on a CRLF line; this one does not.
 // `$(...)`: trailing newlines cut, and Git Bash's bash takes the CR before each of them too.
@@ -69,6 +69,87 @@ function beside(c, rel, pkg, inPkg) {
 // and `a..b`, `c.` or `x.lock` filed a task whose branch git refuses to make.
 function badTaskId(id) {
     return /[^A-Za-z0-9._-]/.test(id) || id.startsWith('.') || id.endsWith('.') || id.includes('..') || id.endsWith('.lock');
+}
+// The paths of a task's `owns:` as written: inline (`a, b` or `[a, b]`) or a YAML list under the key. Only an
+// unindented `owns:` counts: an indented one sits inside some other key's block (`notes: |`). A quoted path
+// may hold blanks (`["q1/a b.ts", q2/x]`); an unquoted one ends at a blank or comma.
+function ownsOf(text) {
+    const ps = [];
+    const words = (v) => {
+        for (const m of v.trim().replace(/^\[(.*)\]$/, '$1').matchAll(/"([^"]*)"|'([^']*)'|([^\s,"']+)/g)) {
+            if (m[3]?.startsWith('#'))
+                return; // a trailing comment
+            ps.push(m[1] ?? m[2] ?? m[3] ?? '');
+        }
+    };
+    let inList = false;
+    for (const l of frontmatter(text) ?? []) {
+        const k = /^([A-Za-z_-]+)[ \t]*:[ \t]*(.*?)[ \t\r]*$/.exec(l);
+        const item = /^[ \t]*-[ \t]+(.*?)[ \t\r]*$/.exec(l);
+        if (k) {
+            inList = (k[1] ?? '').toLowerCase() === 'owns';
+            if (inList)
+                words(k[2] ?? '');
+        }
+        else if (item) {
+            if (inList)
+                words(item[1] ?? '');
+        }
+        else if (l.trim())
+            inList = false;
+    }
+    return ps.filter(Boolean);
+}
+// An owns path as the directory it reaches: backslashes swapped, the project root (the folder holding .fleet)
+// cut off an absolute one, a glob cut back to the directory before its first `*?[{`, then normalised
+// (`./`, `//`, `x/../`). '' is the whole tree. Lower case on Windows, where the filesystem is.
+function ownsDir(p, root) {
+    let q = p.split('\\').join('/');
+    const win = process.platform === 'win32', lc = (s) => (win ? s.toLowerCase() : s);
+    if (root && lc(q).startsWith(`${lc(root)}/`))
+        q = q.slice(root.length + 1);
+    const g = q.search(/[*?[{]/);
+    if (g >= 0)
+        q = q.slice(0, q.slice(0, g).lastIndexOf('/') + 1);
+    q = posix.normalize(q || '.').replace(/\/$/, '');
+    return lc(q === '.' ? '' : q);
+}
+// Two owns directories overlap when they are the same or one holds the other: `src/lib` holds `src/lib/a.ts`, not `src/lib2`.
+const holds = (x, y) => !x || !y || x === y || y.startsWith(`${x}/`) || x.startsWith(`${y}/`);
+// The open tasks (filed, not done) whose owns: overlaps the new task's with no after: chain either way,
+// each with the first path of theirs that does. Every ready file is read once.
+function ownsClashes(run, id, text, root) {
+    const key = (d) => (process.platform === 'win32' ? d.toLowerCase() : d);
+    const info = new Map();
+    for (const n of names(`${run}/tasks/ready`)) {
+        if (!n.endsWith('.md'))
+            continue;
+        const o = n.slice(0, -3), t = read(`${run}/tasks/ready/${n}`);
+        info.set(key(o), { id: o, open: !existsSync(`${run}/tasks/done/${o}`), owns: ownsOf(t), after: afterIds(t) });
+    }
+    const reaches = (from, to) => {
+        const seen = new Set(), todo = [...from];
+        while (todo.length) {
+            const d = key(todo.pop() ?? '');
+            if (d === key(to))
+                return true;
+            if (!seen.has(d)) {
+                seen.add(d);
+                todo.push(...(info.get(d)?.after ?? []));
+            }
+        }
+        return false;
+    };
+    const mine = ownsOf(text).map((m) => ownsDir(m, root)), myAfter = afterIds(text);
+    const hits = [];
+    for (const [k, o] of info) {
+        if (k === key(id) || !o.open)
+            continue;
+        const p = o.owns.find((q) => mine.some((m) => holds(m, ownsDir(q, root))));
+        if (p !== undefined && !reaches(myAfter, o.id) && !reaches(o.after, id))
+            hits.push([o.id, p]);
+    }
+    return hits;
 }
 function file(c, args) {
     const run = c.run;
@@ -237,6 +318,18 @@ function file(c, args) {
     // this task for ever.
     if (miss.length)
         out(`  NOTE: after: names a task not filed yet:${miss.map((d) => ` ${d}`).join('')} - file it, or this task waits for ever\n`);
+    // Not refused either: tasks are filed one by one, and the after: may come with the next one. In one checkout
+    // two tasks on the same files at once overwrite each other.
+    // The project root is the folder holding .fleet: owns: paths are relative to it, and an absolute one under it is cut back.
+    const root = /^(.*?)\/\.fleet(\/|$)/i.exec(c.absrun)?.[1] ?? '';
+    const clash = ownsClashes(run, id, filed, root);
+    for (const [o, p] of clash.slice(0, 5))
+        out(`  NOTE: owns: overlaps ${o} (${p}) with no after: between them - add after: ${o}, or the two run at once on the same files\n`);
+    if (clash.length > 5)
+        out(`  NOTE: owns: and ${clash.length - 5} more tasks overlap with no after: between them - order them with after: too\n`);
+    const kind = taskKind(filed);
+    if (['fix', 'root', 'implement', 'design'].includes(kind) && !ownsOf(filed).length)
+        out(`  NOTE: ${/^[aeiou]/.test(kind) ? 'an' : 'a'} ${kind} task has no owns: - its edit is missing from the end commit and from review; add owns: with the files or directories it may touch\n`);
     if (operatorOwed(filed))
         out(`  waits on the operator: ask them now; next holds it until: fleet.sh cleared ${c.absrun} ${id}\n`);
     return 0;
@@ -400,7 +493,7 @@ function stranded(c, args) {
                 tip = v;
         }
         // A marker with no branch line (a worker older than the branch line, or a task with no code) is looked
-        // up by its id among the branches: `rm/<id>`, `fleet/<chip>/<id>`. ponytail: an id reused by an older
+        // up by its id among the branches: `rm/<id>`, `fleet/<chip>/<id>`. shortcut: an id reused by an older
         // run's branch matches too; branch names carry no run id to tell them apart.
         if (!bs) {
             for (const h of headList)

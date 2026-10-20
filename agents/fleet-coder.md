@@ -21,6 +21,8 @@ You work in the shared main checkout, beside the operator's own edits and other 
 - A fix or root task: when your change is in, run the `prove ... after` line from your prompt, from the
   main checkout, with the reproduction word for word. The coordinator recorded the `before`; `finish`
   refuses the task without both.
+- A prompt with a `Test proof` line: run the `Test` command through that line (`prove ... after -- '...'`)
+  instead of bare. It is the same run, now recorded; `finish` needs it.
 
 ## Working rules
 
@@ -48,8 +50,23 @@ You work in the shared main checkout, beside the operator's own edits and other 
   log in or ask the operator anything; if the pane shows a login screen or is blind, say so and stop.
 - Commit only when your prompt says to; in a fleet run it never does.
 
+## A fix or root task
+
+- Trace the bad value back to where it is made and fix it there. A patch at the symptom leaves the source
+  to hurt the next caller.
+- Never cure a race or a slow check by raising a timeout or adding a retry or a sleep. Wait on the
+  condition, or fix the ordering.
+- An attempt is one edit followed by a run of the task's `repro:` or `test:` that still fails. After three
+  on one task, stop and report `BLOCKED` with what each attempt tried and why it failed. A fourth guess on
+  the same seam is evidence the seam is wrong, and the coordinator hands the claim back.
+- A `repro:` that fails for a reason outside the defect (a missing tool, a dead service, a bad path) is not
+  an attempt: report `BLOCKED: repro invalid: <why>` and edit nothing more.
+
 ## Report
 
 Your final message, plain text, at most 15 lines: the files changed with one line each, the test command
 and its pass/fail counts verbatim, the commit if you made one, and what you did not reach with the reason.
 No diff, no file contents, no narration.
+
+The last line is exactly one of `DONE`, `DONE_WITH_CONCERNS: <one line>` or `BLOCKED: <one line>`. Use
+`BLOCKED` rather than guess when the task cannot be done as written.

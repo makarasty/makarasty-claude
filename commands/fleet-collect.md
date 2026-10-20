@@ -252,9 +252,11 @@ set aside section, and `backlog.md` exists.
 ## Report
 
 The banner from `fleet.sh summary`, then the set aside counts and the top three findings by severity under
-it. Nothing else: this is the last message of the run, and a wall of prose gets the one table that
-matters scrolled past. Fixing is a separate session's job, and in most projects a fix ships with a
-reproduction that failed before it.
+it, then **Rulings I made**: the judgement calls made without asking (a refuted claim, a handback, a tier
+bump, a defect filed as a fix task), each as what and why, so the operator can overturn one. They are the
+`ruling:` lines in `STATE.md` (`docs/ONECHAT.md`, loop step 4); none made, none listed. Nothing else: this
+is the last message of the run, and a wall of prose gets the one table that matters scrolled past. Fixing
+is a separate session's job, and in most projects a fix ships with a reproduction that failed before it.
 
 ## A thin review is a signal
 

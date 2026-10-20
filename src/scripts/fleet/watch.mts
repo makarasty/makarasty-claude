@@ -120,7 +120,7 @@ export function ctx(c: Ctx): number {
 // A background command's output that has grown past runaway_log_gb, named once per file. 2026-10-08:
 // interactive python loops in closed chats had written 5 GB of tasks/*.output, which nothing reported.
 // Claude Code keeps a session's background output under <tmp>/claude/<project>/<session>/tasks/.
-// ponytail: that layout is the Windows host's as observed; elsewhere the folder is not found and nothing prints.
+// shortcut: that layout is the Windows host's as observed; elsewhere the folder is not found and nothing prints.
 function runawayLogs(c: Ctx): void {
   const gb = Number(cal(c, 'runaway_log_gb', '1')) || 1;
   const root = `${slashes(tmpdir())}/claude`;

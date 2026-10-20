@@ -4,7 +4,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync
 import { spawnSync } from 'node:child_process';
 import { basename } from 'node:path';
 import type { Command, Ctx } from './lib.mjs';
-import { HERE, RUN_FORMAT, lf, need, out, err, isDir, isFile, read, firstLine, names, field, NEEDS, BUDGET, HANDBACK_OF, operatorOwed, now, cal, calint, pluginVersion, loadScript, claimsOf, verifyHeld, laneGaps, registerChip, chatGone, wakeLoop, indent, cat, STOP_WHAT_YOU_STARTED, nativePath, takeLock, dropLock, closing, CLOSING_STALE_MS, afterIds, taskKind, asText, noCr, chipFinished, budgetOf, refiledAs, writeWhole, walksOf } from './lib.mjs';
+import { HERE, RUN_FORMAT, lf, need, out, err, isDir, isFile, read, firstLine, names, field, NEEDS, BUDGET, HANDBACK_OF, operatorOwed, now, cal, calint, pluginVersion, loadScript, claimsOf, verifyHeld, laneGaps, registerChip, chatGone, wakeLoop, indent, cat, STOP_WHAT_YOU_STARTED, nativePath, takeLock, dropLock, closing, CLOSING_STALE_MS, afterIds, taskKind, fmValues, frontmatter, asText, noCr, chipFinished, budgetOf, refiledAs, writeWhole, walksOf } from './lib.mjs';
 
 // ---- next ------------------------------------------------------------------------------------------------
 
@@ -335,6 +335,47 @@ function finishHeld(c: Ctx, chip: string, id: string, branch: string): number {
         }
         err(`FLEET_REFUTED set: closing ${id} as a refutation rather than as a fix.\n`);
       }
+    }
+  }
+
+  // An implement or design task with a `test:` line needs a recorded pass of it: the coder's own scoped run,
+  // routed through `prove ... after`. Only a run stamped format 2 or later: one already in flight was handed
+  // out under format 1, whose coders were never told to record it, and would stick for ever.
+  const test = kind === 'implement' || kind === 'design' ? (fmValues(frontmatter(task) ?? [], 'test')[0] ?? '') : '';
+  // Not on a second `finish` of a task already done (it re-records the branch and tip): later tasks may have
+  // edited what it owns since, and that says nothing about this one's test.
+  if (test && !existsSync(`${run}/tasks/done/${id}`) && Number(firstLine(`${run}/RUN_FORMAT`).replace(/[^0-9]/g, '')) >= 2) {
+    const g = `${HERE}/fleet-gate.mjs`;
+    if (!existsSync(g)) {
+      err(`done marker NOT written for ${id}: it has a test: line and node or fleet-gate.mjs is missing,\n`);
+      err('  so no test run can be read. Install node, or leave the task open for the planner.\n');
+      return 1;
+    }
+    if (spawnSync(process.execPath, [g, 'check', c.absrun, id, '--test'], { stdio: 'inherit' }).status !== 0) {
+      err(`done marker NOT written for ${id}\n`);
+      err('  Run its test through the gate (the run you make anyway, nothing extra), then finish again:\n');
+      err(`    node "${g}" prove "${c.absrun}" ${id} after -- '${test.replace(/'/g, "'\\''")}'\n`);
+      // The last recorded `after`: a run that failed is a failing test, and the escape is not for that.
+      let ran: number | null = null;
+      for (const l of read(`${d}/proof`).split('\n')) {
+        try { const p = JSON.parse(l) as { phase?: string; exit?: number }; if (p.phase === 'after') ran = p.exit ?? 1; } catch { /* a blank or torn line */ }
+      }
+      if (ran !== null && ran !== 0) {
+        err(`  The recorded run failed (exit ${ran}): fix the code or the test and run it again. FLEET_UNTESTED is for a test that could not run.\n`);
+        return 1;
+      }
+      if (ran === null) {
+        err('  A test that cannot run here (a BLOCKED task, a clock that fired twice) closes with FLEET_UNTESTED=1\n');
+        err(`  set and a line \`untested ${id}: <why>\` in ${chip}.notes.md.\n`);
+      }
+      if (process.env.FLEET_UNTESTED !== '1') return 1;
+      const notes = `${run}/${chip}.notes.md`, tag = `untested ${id}:`;
+      if (!lines(read(notes)).some((l) => l.startsWith(tag) && l.slice(tag.length).trim() !== '')) {
+        err(`FLEET_UNTESTED refused for ${id}: it closes without a recorded test only on a written reason, and\n`);
+        err(`  ${notes} has no line \`${tag} <why the test could not run>\`. Add it, then finish again.\n`);
+        return 1;
+      }
+      err(`FLEET_UNTESTED set: closing ${id} with its test unrecorded.\n`);
     }
   }
 
