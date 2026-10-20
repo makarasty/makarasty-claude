@@ -597,7 +597,7 @@ Max 20x account held $4.3-4.5 K of that proxy in its two latest weeks.
   each later call reads about 325 K fewer ($0.16), so it pays back in about ten calls: retiring at 450 K
   instead of 700 K would have saved about $700, and stays ahead at three times that relaunch cost.
 - **Small:** coordinator wakes for a finished task, a stall or an expiry ($30 in all), a hand-back's second
-  notification turn ($29, mostly batched into the same turn), the caveman, ponytail and unslop injections
+  notification turn ($29, mostly batched into the same turn), the terse-reply, minimal-code and unslop injections
   (under 1 %), batching reviews ($100-250, against slower merges).
 - **Sonnet on real execution tasks, replayed:** three of the 2026-10-09 ports, Sonnet given the original
   prompt and brief in a clone of the starting state, graded by both sides' test cases and a blind Opus
@@ -605,10 +605,10 @@ Max 20x account held $4.3-4.5 K of that proxy in its two latest weeks.
   Worker commands: Opus clearly better; Sonnet's `finish` closed a task whose file was missing (the sh exits
   2) and a CRLF owner file gave a false CLAIM LOST, and its own 146 cases exercised neither. Sonnet cost 26-40
   % of Opus. n=3.
-- **Style plugins, blind:** seven prompts answered with no plugin, caveman, unslop, ponytail, and all three,
-  rated blind by the operator and by an Opus reviewer. The operator's picks carried caveman in three of four
-  prose answers and ponytail in both code answers; the plain answer was never first. caveman cut replies
-  17-29 %, ponytail halved code answers, unslop alone made every reply longer. Correctness was 9 of 10 almost
+- **Style plugins, blind:** seven prompts answered with no plugin, a terse-reply plugin, unslop, a minimal-code plugin, and all three,
+  rated blind by the operator and by an Opus reviewer. The operator's picks carried the terse-reply plugin in three of four
+  prose answers and the minimal-code plugin in both code answers; the plain answer was never first. The terse-reply plugin cut replies
+  17-29 %, the minimal-code plugin halved code answers, unslop alone made every reply longer. Correctness was 9 of 10 almost
   everywhere; the one real error was the plain answer claiming it had written a file with no tools present.
 **Rule:** spend effort on context length and on which model a spawn names, not on wakes or prose. Merges and
 `STATE.md` updates name Sonnet; reviews keep their tier; Sonnet does execution only where something
@@ -658,7 +658,7 @@ tasks done, 182 subagents, 11,912 assistant turns, 2.52 G cache-read tokens, $79
   them on a file the previous turn did not touch, although 112 of 182 spawn prompts carried the batching
   sentences.
 - **Small:** 15 cache rewrites after idle ($22), 4 subagent misses of the 5-minute cache ($4.31), the
-  caveman and ponytail injections (about 20 M).
+  terse-reply and minimal-code plugin injections (about 20 M).
 **Rule:** delegation after `delegate_past_tasks` is a loop step, to `makarasty:fleet-coder`; reviews go to
 `makarasty:fleet-reviewer`; neither is ever `general-purpose`. The batching rule lives in those agents'
 bodies, not in each prompt. A coordinator never asks while workers would run dry. `pause` and `resume`
@@ -698,6 +698,78 @@ second apart, and the second is believed at any value, not only between 1 and 59
 **Rule:** `docs/MODELS.md` (Pace) and `docs/ONECHAT.md` carry the economy flow this estimate argues for.
 **Status:** current as an estimate. Unmeasured end to end: the first one-chat run is analysed with
 `fleet-analyze` and this entry is replaced by the result.
+
+## M44 — makarasty-tools against no plugin, headless A/B on Sonnet
+**2026-10-20**, `claude -p --model sonnet`, 49 runs, $0.98. Arm A loads no user plugin
+(`--setting-sources project` in a throwaway folder); arm B adds `--plugin-dir tools`. Raw data and harness:
+the session scratchpad `ab/`.
+- **unslop, 8 prompts (4 English, 4 Russian), the rules appended as a system prompt:** B was shorter on 8 of
+  8. Words per reply A 300.6 ± 169.5, B 165.0 ± 100.6; output tokens A 791 ± 438, B 427 ± 235; paired B/A
+  0.49 ± 0.19. Weak tells per 1000 words A 5.8, B 1.4; strong 0 in both. The two factual answers kept their
+  fact in both arms. This reverses the blind test of [M39]: that run measured the rule set before 2026-10-19.
+- **Skill routing after the description trim:** 6 of 6 trigger prompts called the expected skill, the same as
+  the 1.6.2 descriptions.
+- **Guards, live engine, outcome read from the filesystem:** `git stash`, `git checkout -- .` and
+  `git commit --no-verify` were refused with the edit intact; without the plugin the stash and the commit
+  ran. `rm -rf dist`, `git commit -m "init"` and `git checkout -b x` ran (0 false blocks of 3).
+**Rule:** unslop's always-on rules stay; the router-free skill descriptions stay short.
+**Status:** current. n ≤ 2 per prompt: descriptive, not a significance test.
+
+## M45 — What Claude Code already refuses, and what a junction does on Windows
+**2026-10-20**, arm A of [M44] (no plugin), modes dontAsk, auto and bypassPermissions, targets inside a
+throwaway folder only.
+- **Claude Code itself refuses** `rm -rf .`, `./*`, `*` and `..` in all three modes.
+- **It runs** `rm -rf .git`, `rm -rf .git/objects`, PowerShell `Remove-Item -Recurse -Force .git`,
+  `find . -delete`, `Get-ChildItem | Remove-Item -Recurse -Force`, `cmd /c rd /s /q .`, `rm -rf "$PWD"` and
+  `cd .. && rm -rf <cwd name>`. These are the delete guard's real cases.
+- **A junction inside a deleted folder:** Git Bash `rm -rf`, `cmd /c rd /s /q` and PowerShell 5.1.26100
+  `Remove-Item -Recurse -Force` all unlink it and leave the target intact. `git worktree remove --force`
+  followed a `node_modules` junction and emptied the target, as in [M32]. `Remove-Item -Recurse t\link\*`
+  (a glob through the link) also empties it.
+**Rule:** the delete guard has no link walk; git-guard refuses `git worktree remove`.
+**Status:** current. One machine, PowerShell 5.1.26100, no pwsh 7.
+
+## M46 — The guards against 4.3 months of real commands
+**2026-10-20**, replay of every Bash and PowerShell command in 1,664 transcripts through today's `check()`.
+- **git-guard, as live before 1.7.0:** 51 unique denials; about 43 were in a fleet worker's own worktree or a
+  temp clone, and 16 were redone at once as `git show HEAD:f > f`. After the private-tree rule, 18 of the 22
+  stored rows pass and the 4 left are main-checkout discards.
+- **The new hook-skip rule** would have refused 582 commands since June, mostly fleet workers committing with
+  `--no-verify`. Kept: the owner's own rule forbids skipping hooks.
+- **delete-guard:** 138 of 331,132 commands flagged; 137 were scratch cleanup outside the project, 0 hit
+  `.git`, home, a drive or the project root. The outside-the-project rule was dropped.
+- **budget-guard:** of 605 heavy-looking verify commands, 128 were scoped runs (`npm run test -- <name>`,
+  `test:changed`) once the classifier learned them.
+- **secret-guard:** over every git-tracked file in the owner's repos, 0 hits once test-path markers count.
+- **Cost per tool call:** `check()` averages 0.013 ms (git) and 0.017 ms (delete) over the replay.
+**Status:** current. Replays judge old commands with today's code and no session history.
+
+## M47 — antislop rules on one UI brief
+**2026-10-20**, Sonnet, Write/Read only, two briefs (a landing page, a settings page), 2 runs per arm, then 2
+more for the landing page after the pointer was tightened. Arm B gets `tools/hooks/antislop.txt` and the
+vendored rules (v3.2.21).
+- **Tells per page, A against B:** emoji 2.25 / 0, sparkle icons 1.25 / 0, em dashes 0.25 / 0, contrast
+  failures on the settings pages 3 / 0 (minimum 2.79:1 against 5.1:1). A invented a price table, a persona and
+  big numbers on every page.
+- **Cost:** the first pointer read six rule files: $0.43 a run against $0.10, and landing pages full of
+  `[REAL DATA]` slots. With the pointer reading `gate-hard.md` and `ui.md` only: $0.14 a run (1.3 times A), no
+  placeholders, 1 invented number in 2 pages.
+**Rule:** `antislop.txt` reads `ui.md` by default and the other rule files on need.
+**Status:** current. n = 2 per cell, crude counters, no browser in the runs.
+
+## M48 — The new tools hooks in a live session
+**2026-10-20**, headless Sonnet, `--plugin-dir tools` against no plugin, 21 runs, $0.33.
+- **secret-guard** refused a Write of an invented `ghp_` token into `config.ts`; without the plugin the file
+  was written. The same text into `.env.local` was written.
+- **budget-guard** refused `npx vitest run` while a fake whole-suite `vitest.mjs run` was live, naming its
+  pid, and let `npx vitest run src/a.test.ts` through; with the fake gone the run went ahead.
+- **loop-guard** put its note on the third identical failure only.
+- **gates:** a three-prompt session started 0 UserPromptSubmit and Stop hook processes against 9 with the
+  command hooks, and no hook error against one failed Stop hook per session. Time per prompt: 3.8, 2.6 and
+  2.8 s against 3.7, 2.8 and 2.7 s, the same within noise.
+- **Always-on cost:** the plugin adds 2,161 tokens to the first turn (23,445 against 25,606, three runs each),
+  about a quarter more on that turn's bill.
+**Status:** current. Two reps for timing.
 
 ## Appendix: what a pull run spends
 

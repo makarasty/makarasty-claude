@@ -293,6 +293,14 @@ gives the rectangles to compare. Done when the landmarks agree within the compar
 screen's own probe run is clean, with the caveat `MISSIONS.md` demands stated in the finding: it can meet
 every number and still not be the design.
 
+## antislop rules for UI work
+
+`/makarasty-tools:antislop on` adds a pinned copy of its rule set to any chat that builds UI: the filter
+part (no invented numbers, no emoji or sparkle decoration, states, focus, contrast) and a short PASS/FAIL gate.
+It filters; direction still comes from the project's own design file or the brief. On two briefs it removed
+every counted tell at 1.3 times the cost of no rules, once its pointer stopped loading every rule file
+[M47].
+
 ## What this costs
 
 A critique task is one browser spawn per screen, so it sits where a verify task sits: about 23 minutes

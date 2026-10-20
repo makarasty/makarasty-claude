@@ -8,7 +8,7 @@ Two Claude Code plugins from one marketplace.
   queue and spawns a fresh subagent per task, which reports by writing files ([`docs/ONECHAT.md`](docs/ONECHAT.md)).
   Separate worker chats, one chip each, are opt-in. Between what a run finds and what it changes there is a gate: no fix without a reproduction that
   failed first.
-- **`makarasty-tools`** is twelve everyday commands that have nothing to do with fleets: commit under your
+- **`makarasty-tools`** is thirteen everyday commands that have nothing to do with fleets: commit under your
   own name, ship a branch, review a diff with evidence, hand a chat off before its context runs out, get a
   phone message when a chat finishes, tune the machine for a game, find what is worth updating, clean up after chats, and a few more.
 
@@ -160,14 +160,15 @@ the flag would stop every worker the moment it tried to begin.
 | `/makarasty-tools:handoff [focus] \| from <chat>` | Writes a handoff file and offers the next chat as a chip that can read or ask this one; `from` takes over another chat's work after checking its claims |
 | `/makarasty-tools:hold [codeword]` | Collects dictated bugs one line each without acting, then on the codeword fixes them grouped by shared cause |
 | `/makarasty-tools:explain [topic]` | What happened, why, what was done, what is left, whether it can ship and what was not checked, in plain words |
-| `/makarasty-tools:unslop [on\|off\|text]` | Turns humanised replies on or off, or rewrites a given text without assistant tics |
+| `/makarasty-tools:unslop [on\|off\|text]` | Turns humanised replies on or off, or rewrites a given text without assistant tics; a scanner marks the tells before and after, and a fact lock refuses a rewrite that lost a number, path or negation |
 | `/makarasty-tools:say <what to say>` | Turns what you mean into simple English to say on a call or send to a vendor, with a gist in your language beside each line |
 | `/makarasty-tools:notify [what you are waiting for]` | Sends one message to your phone when this chat, another chat or a fleet run finishes: Telegram, Discord, ntfy or a webhook |
 | `/makarasty-tools:game <game>` | Reads the hardware, disks and the game's install, proposes changes with sources, has a red team try to disprove each, and reports what survived. Applies nothing without a yes per item |
 | `/makarasty-tools:cleanup [area]` | Finds processes ended chats left running, runaway logs, stale worktrees and caches, has a red team defend each, ends processes on a yes and gives the commands for files. "почисти за собой" stops what this chat started |
+| `/makarasty-tools:antislop [on\|off\|status\|audit <path>]` | Turns on an anti-AI-slop filter for UI work from a pinned rule set: no invented numbers, emoji or sparkle decoration, contrast and states checked, a short PASS/FAIL gate at the end of each UI build. Off by default; `audit` lists findings on existing UI [M47] |
 | `/makarasty-tools:update [area]` | Finds what is out of date (apps, runtimes, Claude Code and plugins, other agents, drivers), ranks it, has a red team challenge each pick, and updates only on a yes |
 
-All twelve can be started by you or by Claude, and most trigger on plain phrasing in any language: "commit
+All thirteen can be started by you or by Claude, and most trigger on plain phrasing in any language: "commit
 as me", "закоммить от меня", "ping me when the tests are done".
 
 **Context hook.** Once a chat's context passes 700k tokens, and again every 150k above that, the chat is
@@ -182,9 +183,36 @@ work keeps the parent's model, and a named model is never changed. `/router` sho
 
 **Git guard.** A shell call that would throw away uncommitted work (`git stash`, `reset --hard`, `clean -f`,
 `checkout -- <path>`, `restore` without `--staged`, a forced switch) is refused with the reason and a safe
-way round it, because several chats often share one working tree. Commits, plain switches, `stash list` and
-`clean -n` run. It is a function hook, so no shell call pays a process for it; `MAKARASTY_GIT_GUARD=off`
-turns it off.
+way round it, because several chats often share one working tree; in a chat's own `.claude/worktrees/`
+worktree or a temp clone those discards run, since no one else's work is there [M46]. Commits, plain switches, `stash list` and
+`clean -n` run. It also refuses skipping hooks or signing (`--no-verify`, `commit -n`, `-c core.hooksPath=`,
+`--no-gpg-sign`), deleting remote refs (`push --delete`, `push origin :x`, `--mirror`), `--autostash`, and
+quoted or abbreviated spellings of all of these [M44]. It is a function hook, so no shell call pays a process for
+it; `MAKARASTY_GIT_GUARD=off` turns it off.
+
+**Delete guard.** A recursive delete of the project folder, your home, a drive root, the temp folder itself,
+the project's own `.git` or any folder that holds the project is refused, in Bash, cmd and PowerShell, through
+wrappers and `bash -c`. Claude Code itself already refuses `rm -rf .` and `..`; this covers `.git`,
+`find . -delete`, `cmd /c rd /s /q .`, `rm -rf "$PWD"` and `cd .. && rm -rf <project>`, which it runs [M45]. It refuses only what the command line itself shows: a path it cannot read before
+the command runs (a variable, a pipeline into `xargs` or `Remove-Item`) runs. `rm -rf dist`,
+`node_modules`, other folders, scratch folders under temp and package-manager caches in your home run. A
+guard error lets the command through. `MAKARASTY_DELETE_GUARD=off` turns it off.
+
+**Budget guard.** A whole-suite test run or a whole-project typecheck is refused while another one is already
+running on the machine, with the running one's pid, because each costs gigabytes and several chats share the
+box; a scoped run (a file, a name after `--`, `test:changed`, one package) always runs. A heavy run started in
+the background without `timeout N` is refused too. The process list is read only for a heavy command
+(about 0.3 s); a run older than an hour is named as hung and not counted [M46]. `MAKARASTY_BUDGET_GUARD=off`.
+
+**Loop guard.** When the same command fails three times in a row with the same output, or two failing
+commands alternate three times, the third result carries one note telling the chat to stop retrying and
+change the approach. It never refuses anything. `MAKARASTY_LOOP_GUARD=off`.
+
+**Secret guard.** A Write or Edit that puts a live-looking token (Anthropic, OpenAI, GitHub, AWS, Slack,
+Stripe, Telegram, Discord webhook, npm, GitLab, SendGrid, a private key) into a file inside the project is
+refused with the value masked to four characters. `.env`, `.env.local` and files outside the project (the
+config dir, where notify keeps its tokens) are allowed, and so are values marked fake and tokens the file
+already held [M46]. `MAKARASTY_SECRET_GUARD=off`.
 
 **Reads through tools.** One line in the system prompt sends file reads and searches to Read, Grep and Glob
 instead of `cat`, `grep` or `sed` through the shell: 0.02-0.07 s a call against 0.1-1 s [M40].

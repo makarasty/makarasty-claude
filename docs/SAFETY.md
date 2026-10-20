@@ -71,6 +71,21 @@ machine goes through it.
 - **The measurement is one machine.** [M32] is Git 2.53.0 on Windows 11, one filesystem. The unlink-first
   rule should hold anywhere a recursive delete follows links, and has not been run anywhere else.
 
+## The tools plugin's guards, and what they were measured against
+
+`makarasty-tools` carries the same idea into every chat, fleet or not, as function hooks. Each refuses only
+what the command line itself shows and lets the command through when the guard itself fails.
+
+- **git-guard** refuses discards in a shared checkout and lets them run in a chat's own worktree or a temp
+  clone, where 43 of 51 historical refusals had landed for nothing [M46].
+- **delete-guard** covers the deletes Claude Code runs without asking: `.git`, `find . -delete`,
+  `cmd /c rd /s /q .`, `rm -rf "$PWD"`, `cd .. && rm -rf <project>`. Claude Code already refuses `rm -rf .`
+  and `..` [M45]. It walks no links: rm, rd and Windows PowerShell 5.1 unlink a junction and leave its target;
+  `git worktree remove` is the one that follows it [M45] [M32].
+- **budget-guard, secret-guard** were tuned on 605 real verify commands and every git-tracked file of the
+  owner's repos until neither refused anything legitimate there [M46], and each refused its real case in a
+  live session [M48].
+
 ## A gate beats a rule written in prose
 
 Three rules in this repository were measured against the behaviour they asked for, and all three failed:

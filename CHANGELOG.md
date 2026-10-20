@@ -1,5 +1,85 @@
 # Changelog
 
+## makarasty 1.8.0, makarasty-tools 1.7.0 — 2026-10-20
+
+Ideas from outside, each written in our own words and code, then attacked by red-team rounds until the
+false blocks stopped.
+
+makarasty:
+
+- **An implement or design task with a `test:` line needs a recorded passing run** before `finish` writes
+  its done marker: `prove <run> <id> after -- '<test line>'`. The recorded command must be the test line
+  (a `timeout N`, `cd X &&` or `VAR=x` prefix is fine), and a path under `owns:` that changed after the
+  pass sends the coder back. `FLEET_UNTESTED=1` plus an `untested <id>: <why>` note closes a task whose test
+  could not run, never one whose test failed. Gated on runs of `RUN_FORMAT` 2; a run already in flight
+  (format 1) is not. `docs/GATE.md`, "test".
+- **`file` warns about overlapping `owns:`** with no `after:` path between the two tasks (globs cut to their
+  directory, `..` and absolute paths normalised, case-folded on Windows), and about a fix, root, implement or
+  design task with no `owns:`. A note, never a refusal; at most five lines.
+- **A scoped re-review after a fix round:** the reviewer gets the defect list, the fix diff and the task
+  file, and answers ADDRESSED or NOT ADDRESSED per defect. Balanced pace is now one review, one fix round,
+  one re-review; Fastest finish skips it.
+- **The reviewer also looks for** an unrequested change, a test that cannot fail, and a `repro:` that does
+  not assert the finding's symptom.
+- **A fleet-coder ends with `DONE`, `DONE_WITH_CONCERNS: …` or `BLOCKED: …`.** After three failed attempts
+  on a fix (an edit followed by a failing run) it stops; `BLOCKED: repro invalid` goes to the operator.
+- **A cold read before launch:** one small agent reads only `RULES.md` and two or three tasks and returns
+  the questions it would still need answered; they are answered in the files, not in chat.
+- **Rulings I made:** each judgement call the coordinator makes is a `ruling:` line in `STATE.md`, and the
+  collect summary lists them for the operator to overturn.
+
+makarasty-tools:
+
+- **Delete guard (new).** Refuses recursive deletes of the project, any folder that holds it, home and its
+  non-cache folders, a drive root, the temp folder itself and the project's own `.git` (and `.git/objects`,
+  `refs`, `HEAD`), in Bash, cmd and PowerShell, through wrappers, `bash -c`, `find -exec` and `npx rimraf`.
+  It refuses only what the line shows: an unresolved variable or a pipeline into `xargs` or `Remove-Item`
+  runs, and so does any other folder. Claude Code already refuses `rm -rf .` and `..`; the guard's real cases
+  are `.git`, `find . -delete`, `cmd /c rd /s /q .`, `rm -rf "$PWD"` and `cd .. && rm -rf <project>`, which
+  Claude Code runs [M45]. No link walk: rm, rd and PowerShell 5.1 unlink a junction and leave its target. A
+  guard error lets the command through. `MAKARASTY_DELETE_GUARD=off`.
+- **Budget guard (new).** Refuses a whole-suite test run or whole-project typecheck while another is live on
+  the machine, and a heavy background run without `timeout N`. Scoped runs always pass; a run older than an
+  hour counts as hung and is named, not counted. `MAKARASTY_BUDGET_GUARD=off`.
+- **Loop guard (new).** After three identical failures, or a failing A,B,A,B, the result carries one note to
+  stop retrying. Never refuses. `MAKARASTY_LOOP_GUARD=off`.
+- **Secret guard (new).** Refuses a Write or Edit that puts a live-looking token into a project file; `.env`,
+  `.env.local`, files outside the project, fake-marked values and tokens the file already held pass. Zero
+  hits on the git-tracked files of the owner's repos [M46]. `MAKARASTY_SECRET_GUARD=off`.
+- **antislop (new command).** `/makarasty-tools:antislop on|off|status|audit` runs a pinned copy of
+  the antislop rules v3.2.21 (MIT) for UI work only: a six-line pointer at session start when on,
+  `gate-hard.md` and `ui.md` read before the first UI edit, a short PASS/FAIL gate at the end.
+  `scripts/sync-antislop.mjs --check | --apply <tag>` pulls a new release, checks its SHA and R-ID count, and
+  writes nothing on a mismatch. On two briefs it removed emoji, sparkle icons, invented numbers and contrast
+  failures at 1.3 times the cost of no rules [M47]. Its own MCP server, mode question and always-loaded core
+  are not used.
+- **Git guard:** quoted and abbreviated flags (`"--hard"`, `--har`), path checkouts (`src/`, `:/`,
+  `--ours`), remote ref deletes, `--mirror`, `--prune`, `branch -f`/`-C`, `--autostash`, `reflog delete`,
+  `gc --prune=now`, `-c alias.*`, `--attr-source`, and hook or signing skips (`--no-verify`, `commit -n`,
+  `-c core.hooksPath=`, `GIT_CONFIG_*`, `--no-gpg-sign`) are refused. False blocks found by two red-team
+  rounds of about 1,400 commands are fixed: glued messages (`-m"init"`), `branch -M main`,
+  `checkout -qb`, `$DOTNET restore`, `$MAKE clean -f`, relative `core.hooksPath .husky`.
+  In a chat's own `.claude/worktrees/` worktree or a temp clone, discards run: 43 of 51 historical denials
+  were there [M46]. The denial no longer suggests `git show HEAD:f > f`, which discarded the same way.
+- **unslop:** measured against no rules on Sonnet, replies were half as long (0.49 ± 0.19) with fewer tells
+  and the facts kept [M44]; a rule set that stays under the old size and asks for shorter replies, a separate catalog for
+  rewrites ("not X but Y", chat residue, bold-label bullets, English dash rationing, Russian hard bans), and
+  `hooks/unslop-scan.mjs`: tells with line and column, density, and `--before <a> <b>` as a fact lock that
+  lists lost numbers, versions, URLs, paths, code and negations.
+- **commit / ship scan the staged diff for secrets** and print only `file:line` and four characters.
+- **review** fetches a PR without `gh` (`git fetch <remote> pull/<n>/head`), diffs against the PR's real
+  base, reads the history of a deleted guard before judging it, and hunts silent failures.
+- **notify:** ntfy priority and tags per event, and "finished after 12 min", counted from a resume.
+- **cleanup** knows headless browsers, MCP servers and stream-json `claude` left by ended chats, and keeps
+  what a live chat, terminal or IDE owns. **game** measures FPS and 1% lows with PresentMon before and after.
+- **Skill descriptions are shorter:** always-on cost ~2,242 to ~1,905 tokens, every trigger phrase kept;
+  6 of 6 trigger prompts still route [M44].
+- **No process on an ordinary prompt:** the notify check and the context reminder are function hooks
+  (`hooks/gates.ts`) that read a folder and the session's token count in about 1 ms. A three-prompt session
+  started 0 hook processes where it started 9 (one Stop hook exited 1 every session); time per prompt was the
+  same within noise [M48]. node starts only when a notification is armed, or once per session before the
+  first token count exists.
+
 ## makarasty 1.7.0, makarasty-tools 1.6.2 — 2026-10-19
 
 A fleet runs in one chat by default. The coordinator claims each task and spawns one fresh background
@@ -49,7 +129,7 @@ subagent for it; separate worker chats and worktrees are opt-ins. `docs/ONECHAT.
   quiet about an ignored run directory; every self-test part has a kill-after limit
   (`FLEET_SELFTEST_TIMEOUT_MS`, 10 minutes), reported as a failure; `width` says the pane lane is 1 in one
   chat.
-- **`git-guard` takes the dcg rules it lacked** (`filter-branch`, `reflog expire`, `update-ref -d`,
+- **`git-guard` takes the rules it lacked** (`filter-branch`, `reflog expire`, `update-ref -d`,
   `read-tree --reset`, `rm -f`, `gc --prune=now`), sees a quoted or full-path git binary, and refuses a
   subcommand held in a variable rather than guessing.
 - **A fix or root that cannot be proven is handed back, never finished:** `fleet.sh handback` on a slot
@@ -694,7 +774,7 @@ being worked in.
   "read the other chat's history" in 97. The command writes a handoff file outside the repository, offers
   the next chat as a chip whose prompt carries this chat's id, so the next chat can read this one with
   `list_events` or ask it with `SendMessage`, and stops. `from <chat>` is the receiving half: read the
-  other chat, check its "done" against the repository, continue. A `mattpocock-skills:handoff` was
+  other chat, check its "done" against the repository, continue. A handoff skill from a skill pack was
   invoked 9 times; it saved a document and stopped there.
 - **A context hook.** `tools/hooks/context.mjs` reads the last main-chain usage from the transcript tail on
   each prompt and, at 400k and every 150k above, tells the chat to offer a handoff in one line. A
@@ -1189,10 +1269,10 @@ a blind pane.
   that claims a measurement it never made.
 - **Not done, written down:** no fleet has captured a real application yet; the compare tolerance is a
   starting number; the probe was verified in one browser; publishing is the planner's manual step.
-- **Docs stop selling `caveman` as a saving.** `fleet-run`, `docs/MODELS.md` and `docs/PULL.md` told a
+- **Docs stop selling a terse-reply plugin as a saving.** `fleet-run`, `docs/MODELS.md` and `docs/PULL.md` told a
   worker to switch it on from the first message; M24, measured in the same release, puts chat prose at 5%
   of what a worker emits and output at 0.3% of what moves. The three paragraphs now say what the plugin
-  is worth, and name `ponytail` as the plugin that works on the layer a writing kind actually spends on.
+  is worth, and name a minimal-code plugin as the one that works on the layer a writing kind actually spends on.
 - **Two ledger entries from the 2026-09-04 fix run, added 2026-09-05, and the rule each produced.** [M30]
   Every one of four paneless workers grew its context by 20-30 k per task, stood at 970-992 k around its
   thirtieth claim and was compacted by the harness: 2,414 M cached reads, 471 k per turn, the dearest run
