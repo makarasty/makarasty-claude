@@ -80,14 +80,13 @@ const section = (title) => console.log(`\n${title}`);
 const plugin = JSON.parse(readFileSync(`${here}/../.claude-plugin/plugin.json`, 'utf8'));
 const cmdOf = (ev, has) => {
     const c = (plugin.hooks[ev] ?? []).flatMap((g) => g.hooks.map((h) => h.command)).find((c) => c.includes(has));
-    return c === undefined ? '' : c.split('${CLAUDE_PLUGIN_ROOT}').join(`${here}/..`);
+    if (c === undefined)
+        return /^(notify|context)\.mjs$/.test(has) ? `node "${here}/${has}"` : '';
+    return c.split('${CLAUDE_PLUGIN_ROOT}').join(`${here}/..`);
 };
 const notifyCmd = cmdOf('Stop', 'notify.mjs');
 const unslopCmd = cmdOf('SessionStart', 'unslop.txt');
 const guard = (payload) => sh(notifyCmd, { input: payload });
-// The guard with node swapped for an echo, to see whether it would start node.
-const probeCmd = notifyCmd.replace(/exec node "[^"]*"/, 'echo NODE_STARTED');
-const probe = (env) => sh(probeCmd, { input: '{}', env });
 // A local http server in its own process (one here would sleep through every blocking spawnSync below);
 // returns it and the port it wrote.
 function server(script, portFile) {
@@ -196,6 +195,48 @@ check('and how long it was gone', '90 minutes', out);
 count('and sends nothing itself', 8);
 hook('{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"The migration had already run; nothing left to do."}');
 check('the finish after a reopen says so', 'reopened after an interruption', last());
+section('elapsed time, and the ntfy priority and tags per kind');
+const armedAgo = (min) => { const o = JSON.parse(read(marker)); o.armed = new Date(Date.now() - min * 60e3).toISOString(); writeFileSync(marker, JSON.stringify(o)); };
+node([n, '--arm', 'long', 'job']);
+armedAgo(12);
+hook('{"hook_event_name":"Notification","session_id":"s1","notification_type":"permission_prompt","message":"ok?"}');
+check('a needs-you ping says how long the work has run', 'long job needs you after 12 min: ok?', last());
+hook('{"hook_event_name":"StopFailure","session_id":"s1","error":"overloaded"}');
+check('so does an error', 'stopped on an error after 12 min: overloaded', last());
+armedAgo(75);
+hook('{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"done"}');
+check('and a finish, in hours past 59 minutes', 'long job finished after 1 h 15 min', last());
+node([n, '--arm', '--next', 'late']);
+armedAgo(30);
+hook('{"hook_event_name":"UserPromptSubmit","session_id":"s1","prompt":"go"}');
+hook('{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"done"}');
+if (last().includes(' after '))
+    bad('a --next marker counts from the prompt, not from the arming', last());
+else
+    ok('a --next marker counts from the prompt, not from the arming');
+node([n, '--arm', 'weekend']);
+armedAgo(70 * 60 + 12);
+hook('{"hook_event_name":"SessionStart","session_id":"s1","source":"resume"}');
+hook('{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"done"}');
+check('a reopened chat counts from the resume, not the closed time', 'weekend finished', last());
+if (/finished after \d/.test(last()))
+    bad('and not from the arming', last());
+else
+    ok('and not from the arming');
+// A local server records the headers ntfy would get; the sink skips the network, so it cannot show them.
+const hs = server('require("http").createServer((q, r) => { q.resume(); require("fs").appendFileSync(process.argv[1] + ".h", `${q.headers.priority}/${q.headers.tags}\n`); r.end("ok"); }).listen(0, "127.0.0.1", function () { require("fs").writeFileSync(process.argv[1], String(this.address().port)); })', `${tmp}/porth`);
+writeFileSync(conf, `{"ntfy":"http://127.0.0.1:${hs.port}/t"}\n`);
+node([n, '--arm', 'hdr']);
+const live = { NOTIFY_DRY_RUN: '' };
+hook('{"hook_event_name":"Notification","session_id":"s1","notification_type":"permission_prompt","message":"ok?"}', live);
+hook('{"hook_event_name":"StopFailure","session_id":"s1","error":"overloaded"}', live);
+hook('{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"done"}', live);
+hs.srv.kill();
+check('needs you goes out as high + warning', 'high/warning', read(`${tmp}/porth.h`));
+check('an error as high + x', 'high/x', read(`${tmp}/porth.h`));
+check('a finish as default + white_check_mark', 'default/white_check_mark', read(`${tmp}/porth.h`));
+writeFileSync(conf, '{"ntfy":"https://ntfy.sh/selftest","excerpt":true}\n');
+node([n, '--disarm']);
 section('direct sends');
 node([n, 'send', 'fleet 2026-09-08-x FINISHED: 3 findings']);
 check('send posts the text as given', 'fleet 2026-09-08-x FINISHED: 3 findings', last());
@@ -388,25 +429,11 @@ else
     bad('and the undelivered finish stays on disk');
 node([n, '--disarm']);
 writeFileSync(conf, '{"ntfy":"https://ntfy.sh/selftest","excerpt":true}\n');
-section('the guard in plugin.json');
+// Whether node starts at all is the arming test in gates.ts (tests in gates.test.ts: no marker, a marker, another config
+// dir, ~/.claude when CLAUDE_CONFIG_DIR is unset). What is left here is what notify.mjs itself does.
+section('markers: pruning and /clear');
 rmSync(`${tmp}/makarasty/notify`, { recursive: true, force: true });
-out = probe({ HOME: `${tmp}/nohome` }).out;
-if (out === '')
-    ok('with no marker anywhere, node is not started');
-else
-    bad('with no marker anywhere, node is not started', out);
-node([n, '--arm']);
-check('with a marker, it is', 'NODE_STARTED', probe({ HOME: `${tmp}/nohome` }).out);
-out = probe({ CLAUDE_CONFIG_DIR: `${tmp}/other`, HOME: `${tmp}/nohome` }).out;
-if (out === '')
-    ok('a marker in another config dir does not start node here');
-else
-    bad('a marker in another config dir does not start node here', out);
-mkdirSync(`${tmp}/h/.claude/makarasty/notify`, { recursive: true });
-writeFileSync(`${tmp}/h/.claude/makarasty/notify/x.json`, '');
-out = sh(probeCmd, { env: { CLAUDE_CONFIG_DIR: undefined, HOME: `${tmp}/h` } }).out;
-check('with CLAUDE_CONFIG_DIR unset it looks in ~/.claude', 'NODE_STARTED', out);
-node([n, '--disarm']);
+mkdirSync(`${tmp}/makarasty/notify`, { recursive: true });
 const old = `${tmp}/makarasty/notify/dead.json`;
 writeFileSync(old, '{"armed":"2026-01-01T00:00:00Z"}');
 ago(old, 8 * 86400);
@@ -422,18 +449,13 @@ if (exists(old))
     bad('and so does any hook run');
 else
     ok('and so does any hook run');
-const endCmd = cmdOf('SessionEnd', 'notify.mjs');
-if (endCmd !== '' && endCmd === notifyCmd)
-    ok('SessionEnd runs the same guarded command');
-else
-    bad('SessionEnd runs the same guarded command', endCmd);
 node([n, '--arm']);
-sh(endCmd, { input: '{"hook_event_name":"SessionEnd","session_id":"s1","reason":"prompt_input_exit"}' });
+hook('{"hook_event_name":"SessionEnd","session_id":"s1","reason":"prompt_input_exit"}');
 if (exists(marker))
     ok('closing an armed chat keeps its marker for the resume');
 else
     bad('closing an armed chat keeps its marker for the resume');
-sh(endCmd, { input: '{"hook_event_name":"SessionEnd","session_id":"s1","reason":"clear"}' });
+hook('{"hook_event_name":"SessionEnd","session_id":"s1","reason":"clear"}');
 if (exists(marker))
     bad('/clear drops it');
 else

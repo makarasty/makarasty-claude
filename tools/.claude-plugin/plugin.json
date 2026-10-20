@@ -1,7 +1,7 @@
 {
   "name": "makarasty-tools",
-  "description": "Twelve everyday commands: commit and ship under your own name, review a diff with evidence, hand a chat off before its context runs out, collect bugs until a codeword, explain plainly, strip assistant tics from text, phrase a vendor call in simple English, get a phone message when a chat finishes, tune the machine for a game, find what is worth updating and clean up what nobody uses. A hook suggests a handoff once a chat passes 700k tokens of context, a router runs plain-execution subagents on Sonnet, a git guard refuses commands that throw away uncommitted work, and one prompt line sends file reads to the Read and Grep tools.",
-  "version": "1.6.2",
+  "description": "Thirteen everyday commands: commit and ship under your own name, review a diff with evidence, hand a chat off before its context runs out, collect bugs until a codeword, explain plainly, strip assistant tics from text, an antislop filter for UI work, phrase a vendor call in simple English, get a phone message when a chat finishes, tune the machine for a game, find what is worth updating and clean up what nobody uses. In-engine hooks suggest a handoff past 700k tokens of context, run plain-execution subagents on Sonnet, refuse git commands that throw away uncommitted work or skip hooks, recursive deletes of the project, home, a drive or .git, a second whole-suite test run while one is live, and live-looking secrets written into project files, note a command failing the same way three times, and send file reads to the Read and Grep tools.",
+  "version": "1.7.0",
   "author": {
     "name": "makarasty",
     "url": "https://github.com/makarasty"
@@ -18,70 +18,7 @@
     "writing"
   ],
   "hooks": {
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "for f in \"${CLAUDE_CONFIG_DIR:-$HOME/.claude}\"/makarasty/notify/*.json; do [ -e \"$f\" ] && exec node \"${CLAUDE_PLUGIN_ROOT}/hooks/notify.mjs\"; break; done; true",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/context.mjs\"",
-            "timeout": 5
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "for f in \"${CLAUDE_CONFIG_DIR:-$HOME/.claude}\"/makarasty/notify/*.json; do [ -e \"$f\" ] && exec node \"${CLAUDE_PLUGIN_ROOT}/hooks/notify.mjs\"; break; done; true",
-            "timeout": 20,
-            "async": true
-          }
-        ]
-      }
-    ],
-    "StopFailure": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "for f in \"${CLAUDE_CONFIG_DIR:-$HOME/.claude}\"/makarasty/notify/*.json; do [ -e \"$f\" ] && exec node \"${CLAUDE_PLUGIN_ROOT}/hooks/notify.mjs\"; break; done; true",
-            "timeout": 20,
-            "async": true
-          }
-        ]
-      }
-    ],
-    "Notification": [
-      {
-        "matcher": "permission_prompt|agent_needs_input|elicitation_dialog|elicitation_url_dialog",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "for f in \"${CLAUDE_CONFIG_DIR:-$HOME/.claude}\"/makarasty/notify/*.json; do [ -e \"$f\" ] && exec node \"${CLAUDE_PLUGIN_ROOT}/hooks/notify.mjs\"; break; done; true",
-            "timeout": 20,
-            "async": true
-          }
-        ]
-      }
-    ],
     "SessionStart": [
-      {
-        "matcher": "compact",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/context.mjs\"",
-            "timeout": 5
-          }
-        ]
-      },
       {
         "matcher": "startup|resume|clear|compact",
         "hooks": [
@@ -93,24 +30,11 @@
         ]
       },
       {
-        "matcher": "resume",
+        "matcher": "startup|resume|clear|compact",
         "hooks": [
           {
             "type": "command",
-            "command": "for f in \"${CLAUDE_CONFIG_DIR:-$HOME/.claude}\"/makarasty/notify/*.json; do [ -e \"$f\" ] && exec node \"${CLAUDE_PLUGIN_ROOT}/hooks/notify.mjs\"; break; done; true",
-            "timeout": 10,
-            "statusMessage": "Checking for an armed notification"
-          }
-        ]
-      }
-    ],
-    "SessionEnd": [
-      {
-        "matcher": "clear",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "for f in \"${CLAUDE_CONFIG_DIR:-$HOME/.claude}\"/makarasty/notify/*.json; do [ -e \"$f\" ] && exec node \"${CLAUDE_PLUGIN_ROOT}/hooks/notify.mjs\"; break; done; true",
+            "command": "[ -e \"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/makarasty/antislop.on\" ] && { echo \"antislop root: ${CLAUDE_PLUGIN_ROOT}\"; cat \"${CLAUDE_PLUGIN_ROOT}/hooks/antislop.txt\"; } || true",
             "timeout": 5
           }
         ]

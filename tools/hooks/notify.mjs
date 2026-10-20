@@ -56,6 +56,10 @@
 //                 five minutes, like Notification, so a chat failing in a retry loop does not spam.
 //   Notification  permission_prompt and the other "needs a person" kinds: one ping per five minutes,
 //                 marker kept, because the work is not done.
+//   Finished, error and needs-you texts say how long the work has run ("finished after 12 min"; under a
+//                 minute, nothing).
+//                 ntfy also gets a Priority and Tags header per kind: finished default + white_check_mark,
+//                 needs you high + warning, error high + x. Telegram and Discord have the words only.
 //   A --next marker ignores Stop, StopFailure and Notification until the next prompt makes it live.
 //   SessionStart  source resume only. A message that was written but never delivered is sent now, and
 //                 a chat reopened before it finished is told, in context, to check whether the work is
@@ -244,7 +248,7 @@ async function telegramChat(token) {
 // Returns { sent: [names], failed: [{ name, error }] }. Partial delivery counts as delivered. A Telegram
 // chat_id learnt on the way is written into cfg, and into the file when cfg came from it. The excerpt goes
 // under the text on the channels withExcerpt allows.
-async function sendWith(cfg, text, persist, excerpt = '') {
+async function sendWith(cfg, text, persist, excerpt = '', kind) {
     const full = (name) => (excerpt && withExcerpt(cfg, name) ? `${text}\n${excerpt}` : text);
     const dry = process.env.NOTIFY_DRY_RUN;
     if (dry) {
@@ -275,7 +279,7 @@ async function sendWith(cfg, text, persist, excerpt = '') {
             content: (cfg.discord.everyone ? '@everyone ' : '') + full('discord').slice(0, 1900),
             allowed_mentions: { parse: cfg.discord.everyone ? ['everyone'] : [] },
         }), json),
-        ntfy: () => post(cfg.ntfy, full('ntfy').slice(0, 4000), { Title: 'Claude Code', 'content-type': 'text/plain; charset=utf-8' }),
+        ntfy: () => post(cfg.ntfy, full('ntfy').slice(0, 4000), { Title: 'Claude Code', ...(kind && NTFY_KIND[kind]), 'content-type': 'text/plain; charset=utf-8' }),
         webhook: () => post(cfg.webhook, JSON.stringify({ text: full('webhook').slice(0, 4000) }), json),
     };
     const names = channels(cfg);
@@ -286,7 +290,7 @@ async function sendWith(cfg, text, persist, excerpt = '') {
         out.failed.push({ name: 'config', error: `no channel yet: run "notify.mjs setup" in a terminal (${configFile})` });
     return out;
 }
-const send = (text, excerpt) => sendWith(config(), text, true, excerpt);
+const send = (text, excerpt, kind) => sendWith(config(), text, true, excerpt, kind);
 // Finishes that were written but never delivered, sent now. The wizard saving a channel and a reopened
 // chat both call this. A marker whose send is still running (done written, no unsent yet) is another
 // hook's job: it is skipped for a minute, after which its hook is past its 20 s timeout and dead. own is
@@ -307,7 +311,7 @@ async function flushUnsent(cfg, own) {
             continue;
         if (file !== own && !m.unsent && Date.now() - Date.parse(m.done) < 60e3)
             continue;
-        const r = await sendWith(cfg, `${m.text}\n(finished at ${m.done}; this could not be delivered at the time)`, false, m.excerpt);
+        const r = await sendWith(cfg, `${m.text}\n(finished at ${m.done}; this could not be delivered at the time)`, false, m.excerpt, 'done');
         if (!r.sent.length)
             continue;
         n++;
@@ -319,6 +323,17 @@ async function flushUnsent(cfg, own) {
 // The marker as it is on disk now, if it is still the arming this process read. A send can take seconds,
 // and a re-arm or a disarm made meanwhile is newer than what this process holds, so it must win.
 const still = (file, m) => { const cur = readJSON(file); return cur && cur.armed === m.armed ? cur : null; };
+const NTFY_KIND = {
+    done: { Priority: 'default', Tags: 'white_check_mark' },
+    wait: { Priority: 'high', Tags: 'warning' },
+    fail: { Priority: 'high', Tags: 'x' },
+};
+// " after 12 min" since the work began: the resume of a reopened chat (the closed time is not work), else the
+// prompt that made a --next marker live, else the arming. Under a minute it says nothing.
+function elapsed(m) {
+    const min = Math.round((Date.now() - Date.parse(m.resumed || m.started || m.armed)) / 60e3);
+    return min < 1 ? '' : ` after ${min >= 60 ? `${Math.floor(min / 60)} h ${min % 60} min` : `${min} min`}`;
+}
 const recent = (ts) => !!ts && Date.now() - Date.parse(ts) < 5 * 60 * 1000;
 // A marker older than seven days belongs to a chat that died unreopened. Left alone it keeps the shell guard
 // in plugin.json open, and node starting, on every hook of every session.
@@ -376,7 +391,7 @@ function lastFromTranscript(file) {
 // does show it is the transcript: Claude Code writes the block as a user line "Stop hook feedback: ..."
 // and the turn goes on. So the caller waits a moment, and this reads back from the end: a feedback line
 // reached before this turn's own last message means the turn was blocked, and its real end is a later Stop.
-// A real prompt from the person, or the start of the file, ends the search. ponytail: finds this turn's
+// A real prompt from the person, or the start of the file, ends the search. shortcut: finds this turn's
 // message by its text and trusts the transcript to be written within the wait; if it ever lags past that
 // after an earlier block in the same turn, the finish reads as blocked and is not sent.
 function blockedBy(file, last) {
@@ -435,6 +450,7 @@ async function hook() {
         case 'UserPromptSubmit':
             if (m.pending && /^(user|sdk)?$/.test(p.source || '')) {
                 delete m.pending;
+                m.started = now();
                 writeJSON(file, m);
             }
             return;
@@ -471,11 +487,11 @@ async function hook() {
             // question mark does not hide it.
             const question = /[?？][^\p{L}\p{N}]*$/u.test(last);
             const note = m.resumed ? ' (the chat had been reopened after an interruption)' : '';
-            m.text = `${who} finished${question ? ', with a question for you' : ''}${note}`;
+            m.text = `${who} finished${elapsed(m)}${question ? ', with a question for you' : ''}${note}`;
             m.excerpt = tail(last);
             m.done = now();
             writeJSON(file, m); // durable before the network: a message that never arrives loses nothing
-            const r = await send(m.text, m.excerpt);
+            const r = await send(m.text, m.excerpt, 'done');
             const cur = still(file, m);
             if (!r.sent.length) {
                 if (cur) {
@@ -494,7 +510,7 @@ async function hook() {
                 return;
             m.failed = now();
             writeJSON(file, m);
-            report(await send(`${who} stopped on an error: ${p.error || 'unknown'}. Reopen the chat to continue.`), true);
+            report(await send(`${who} stopped on an error${elapsed(m)}: ${p.error || 'unknown'}. Reopen the chat to continue.`, undefined, 'fail'), true);
             return;
         case 'Notification': {
             if (m.pending)
@@ -505,7 +521,7 @@ async function hook() {
                 return;
             m.waited = now();
             writeJSON(file, m);
-            report(await send(`${who} needs you: ${p.message || p.notification_type}`), true);
+            report(await send(`${who} needs you${elapsed(m)}: ${p.message || p.notification_type}`, undefined, 'wait'), true);
             return;
         }
         case 'SessionStart': {
