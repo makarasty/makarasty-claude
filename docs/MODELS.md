@@ -163,7 +163,7 @@ as a workflow of subagents at the current effort; the coordinator asks for it, s
 Effort is settable per subagent, in the definition file's frontmatter. The `effort` field is documented at
 `code.claude.com/docs/en/sub-agents` as "Effort level when this subagent is active. Overrides the session
 effort level. Default: inherits from session. Options: `low`, `medium`, `high`, `xhigh`, `max`; available
-levels depend on the model." Four of the six agents in `agents/` carry one, with its reason in the file; `fleet-coder` and `fleet-reviewer` carry neither `model:` nor `effort:`, because the caller sets both. In one chat every `Agent` call passes `effort` and `model` explicitly from the `pace:` line.
+levels depend on the model." Five of the seven agents in `agents/` carry one, with its reason in the file; `fleet-coder` and `fleet-reviewer` carry neither `model:` nor `effort:`, because the caller sets both. In one chat every `Agent` call passes `effort` and `model` explicitly from the `pace:` line.
 
 From Claude Code 2.1.292 the `Agent` call also takes a per-invocation `effort`, which outranks the
 frontmatter; `CLAUDE_CODE_EFFORT_LEVEL` outranks both. With neither, a subagent runs at the session's
