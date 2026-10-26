@@ -1,7 +1,7 @@
 {
   "name": "makarasty",
   "description": "Run one job from one Claude Code chat, workers as background subagents (separate chats on opt-in): a shared task queue, reports written to files, a frame-count check before every browser observation, and a gate that refuses a fix without a reproduction that failed first. Ten mission kinds, from test sweeps and fixes to refactors, research and design.",
-  "version": "1.8.0",
+  "version": "1.9.0",
   "author": {
     "name": "makarasty",
     "url": "https://github.com/makarasty"

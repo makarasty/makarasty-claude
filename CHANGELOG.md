@@ -1,5 +1,72 @@
 # Changelog
 
+## makarasty 1.9.0, makarasty-tools 1.8.0 — 2026-10-26
+
+Read from 6,017 prompts typed by hand across 1,485 chats on three accounts (2026-06-10 to 2026-10-26),
+cloned chats merged. The commands below own instructions that were being retyped every task; each was
+attacked by its own red team before release.
+
+makarasty-tools:
+
+- **`redteam` (new).** "Подними красную команду, поспорь с ней, исправь" appeared in 41 chats, all in
+  October, with no command behind it. Three to five read-only Sonnet attackers, each with an angle picked
+  for the target (a plan, an export, a tool, a change), every finding with its evidence; effort and time
+  are not findings. An Opus judge confirms, refutes or marks each unclear. `--fix` edits only this chat's
+  files, re-checks each fix with the attacker that found it, and stops after three rounds.
+- **`finish` (new).** The sentence that ended most tasks, "ревью, красная команда, по кругу, закоммить от
+  меня, запушь только своё": review `--loop`, redteam `--fix` and a review of its fixes, the narrow tests
+  once, then `ship mine`. It works on the list of files this chat changed, asks before pushing commits it
+  did not make, and commits nothing after a failing test.
+- **`blindtest` (new), with the makarasty agent `fleet-naive-user`.** "Проверь тупым агентом" in 9+ chats.
+  First-time-user agents with no access to the code or the page source try plain-language tasks on the
+  live screen. Only a place users on two different models both hit counts; quotes are checked against the
+  page. Fixes rename and move before they remove or add; `--fix` applies only renames and moves. The
+  touched tasks re-run with fresh users plus one control task; a task that got worse, or a screen that
+  grew with no gain, is reverted.
+- **`forge` (new).** How to build a skill, command, hook, agent or plugin for a strong model: find the
+  failure first, pick the lightest mechanism, the description as trigger, calm wording with the reason
+  beside the rule, near-zero running cost, then prove it. `ab.mjs` runs prompts with and without the tool
+  (or without one line) in empty folders with no user plugins, CLAUDE.md or memory, and scores the replies.
+- **`craft` (new).** Refactor, DRY and test rules where a strong model still slips: pin behaviour with a
+  characterization test, extract on the third copy, inline a wrong abstraction back, and keep only tests
+  seen failing once.
+- **`hold`** keeps its list in `makarasty/hold/<session>.md`, so a compaction, a handoff or a cloned chat
+  loses nothing; items go in through a quoted heredoc (a pasted selector holding `$(...)` ran in the
+  red-team probe). On the codeword it asks once: unclear items, the route (fix here or a fleet), cheap
+  improvements. The handoff reminder now really waits while the file reads `collecting` (a PowerShell BOM
+  included); before, that was only a promise in the skill text.
+
+- **`unfinished` (new).** "Прочитай историю других чатов, что не закрыто" in 84 chats. A script reads this
+  project's recent transcripts on every Desktop account (about a second for a week of the main project),
+  merges cloned chats, masks pasted secrets, and prints a card per chat: last asks, last reply with its
+  closing question, files edited and which are still uncommitted (worktrees included), open todos. The
+  model then checks each "done" against the repository and groups the chats: open, done but uncommitted,
+  waiting on the person, live.
+- **`proof` (new).** Before and after shots of UI changes for an HTML report of numbered blocks, so the
+  answer can be "блок 3 переделай". The pane renders the page to PNG (html-to-image, pinned by checksum) and
+  posts it to a local receiver that needs a per-run token; the images reach the disk and never the model's
+  context.
+- **`prune` (new).** Merged local branches and clean stale worktrees go to an undoable trash inside the
+  repo's own git dir: a trash ref first, then the branch ref; a worktree is renamed, never copied, and
+  locked so git keeps its metadata. `restore` brings either back, `empty` deletes only after 30 days and
+  after unlinking every junction inside. Remotes are never touched. It refuses a worktree with untracked,
+  assume-unchanged or nested work, and a gone folder whose commit exists nowhere else.
+- **`selfreview` (new).** This period against the one before, from the owner's own transcripts in about
+  12 seconds: strict corrections, chats over 700k, cloned chats, skills never called, repeated instructions.
+- **The handoff reminder** keeps 700k and every 150k [M49], and now says a handoff is for a change of phase:
+  the first prompts of a continuation chat drew more corrections than chats that kept going past 700k.
+- **Polish from an audit of every skill:** cleanup no longer suggests `git worktree remove` (the git guard
+  refuses it) and hands stale worktrees to prune on a yes; `ship mine` skips reading the other chats;
+  finish does not stop on review's leftover questions; commit does not ask about the default branch inside
+  finish; unslop drops two rules its session text already carries; cleanup, update and game call their
+  one-agent check "Challenge", so "красная команда" means one thing; shorter descriptions for blindtest,
+  redteam, review, cleanup and hold.
+
+makarasty:
+
+- **`fleet-naive-user` (new agent)** for `blindtest`: screenshots and clicks only, no script, no page text.
+- **The ledger check** counts citations in `tools/` too, where the tools' rules live.
+
 ## makarasty 1.8.0, makarasty-tools 1.7.0 — 2026-10-20
 
 Ideas from outside, each written in our own words and code, then attacked by red-team rounds until the
