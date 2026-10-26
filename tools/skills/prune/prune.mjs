@@ -6,7 +6,7 @@
 //   node prune.mjs trash <id ...> | --safe       --safe = every `trash` verdict; ids come from scan (b:<branch>, w:<worktree>)
 //   node prune.mjs list [--all]                  what is in the trash (--all: every repo with trash on this machine)
 //   node prune.mjs restore <trash id> [--as <new branch name>]
-//   node prune.mjs empty [--older 30d] [<trash id> ...]
+//   node prune.mjs empty <trash id> ... | --older 30d | --all   (never automatic; the person picks what goes)
 //   node prune.mjs --selftest
 // Every command takes --repo <dir> (default: cwd) and --json.
 //
@@ -537,13 +537,15 @@ function emptyOne(c, r, notes) {
     if (r.kind === 'branch' && run(['rev-parse', '-q', '--verify', 'refs/heads/' + r.name], c.cwd).code) run(['config', '--remove-section', 'branch.' + r.name], c.cwd);
 }
 
-export function cmdEmpty(repo, ids, olderMs) {
+export function cmdEmpty(repo, ids, olderMs, all = false) {
+    // Nothing is ever emptied on its own: the trash keeps everything until the person names what goes.
+    if (!ids.length && olderMs === undefined && !all) throw new Refusal('empty needs a choice: trash ids, --older <age> (like 30d), or --all; see list');
     const c = context(repo);
     if (!existsSync(c.index)) return { gone: [], failed: [], notes: [] };
     return withLock(c, () => {
-        const cut = Date.now() - (olderMs ?? 30 * DAY), gone = [], failed = [], notes = [];
-        // Named ids go whatever their age unless --older is given too; without ids only entries older than 30 days.
-        const pick = readIdx(c.index).filter(r => (!ids.length || ids.includes(r.id)) && (ids.length && olderMs === undefined || Date.parse(r.at) <= cut));
+        const cut = olderMs === undefined ? Infinity : Date.now() - olderMs, gone = [], failed = [], notes = [];
+        // Named ids go whatever their age unless --older is given too; --older alone takes entries past that age; --all takes everything.
+        const pick = readIdx(c.index).filter(r => (!ids.length || ids.includes(r.id)) && Date.parse(r.at) <= cut);
         for (const r of pick) { try { emptyOne(c, r, notes); gone.push(r.id); } catch (e) { failed.push({ id: r.id, why: e.message }); } }
         for (const id of ids) if (!pick.some(r => r.id === id)) failed.push({ id, why: 'no such trash entry, or younger than --older' });
         writeIdx(c.index, readIdx(c.index).filter(r => !gone.includes(r.id)));
@@ -669,7 +671,9 @@ function selftest() {
         const t3 = cmdTrash(repo, [], true);
         assert.deepEqual(t3.done.map(r => r.name).sort(), ['wt-clean', 'wtclean']);
         assert.equal(cmdList(repo).length, 4);
-        assert.deepEqual(cmdEmpty(repo, [], undefined).gone, [], 'default empty keeps entries younger than 30 days');
+        assert.throws(() => cmdEmpty(repo, [], undefined), /empty needs a choice/, 'a bare empty deletes nothing');
+        assert.equal(cmdList(repo).length, 4, 'and the trash is untouched');
+        assert.deepEqual(cmdEmpty(repo, [], 30 * DAY).gone, [], '--older 30d keeps younger entries');
         const e = cmdEmpty(repo, [], 0);
         assert.deepEqual(e.failed, []);
         assert.equal(e.gone.length, 4);
@@ -771,7 +775,7 @@ function main(argv) {
             t.done.length ? 'moved to the trash (local only; nothing on any remote was touched):' : 'nothing moved',
             ...t.done.map(r => `  ${r.id}  ${r.kind} ${r.kind === 'branch' ? r.name : r.from}  @${(r.sha ?? '').slice(0, 9)}`),
             ...(t.failed.length ? ['left in place:', ...t.failed.map(f => `  ${f.id}  ${f.why}`)] : []),
-            ...(t.done.length ? [`undo: ${hint} restore <id>   see: ${hint} list   free the disk later: ${hint} empty (entries over 30 days)`] : []),
+            ...(t.done.length ? [`undo: ${hint} restore <id>   see: ${hint} list   the trash stays until you empty it: ${hint} empty --all | --older 30d | <id>`] : []),
         ]);
     }
     if (cmd === 'list') {
@@ -784,7 +788,7 @@ function main(argv) {
         return say(r, () => ['restored: ' + r.notes.join('; ')]);
     }
     if (cmd === 'empty') {
-        const e = cmdEmpty(repo, args, olderArg === undefined ? undefined : parseAge(olderArg));
+        const e = cmdEmpty(repo, args, olderArg === undefined ? undefined : parseAge(olderArg), Boolean(all));
         process.exitCode = e.failed.length ? 1 : 0;
         return say(e, () => [`deleted for good: ${e.gone.length ? e.gone.join(' ') : 'nothing'}`, ...e.notes, ...e.failed.map(f => `kept ${f.id}: ${f.why}`)]);
     }

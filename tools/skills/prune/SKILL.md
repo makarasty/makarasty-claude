@@ -1,6 +1,6 @@
 ---
 description: Moves local branches and worktrees left over after merges into an undoable local trash, and never touches GitHub or any remote. Use on "удали лишние ветки и worktree", "почисти ветки", "убери бесполезные деревья", "удали ветки после мержа", "prune merged branches". Not for machine-wide leftovers (processes, caches, scratch folders): that is /makarasty-tools:cleanup.
-argument-hint: "[scan | list | restore <id> | empty]"
+argument-hint: "[scan | list | restore <id> | empty <id> | --older 30d | --all]"
 allowed-tools: Bash(node:*), Bash(git:*), Read
 ---
 
@@ -36,8 +36,8 @@ Each entry comes back with `restore <id>`, a week or a month later.
    `node "$P" trash <id> <id> ...` for the chosen ones. Nothing chosen: nothing more.
 4. Report in a few lines: what went to the trash (branch name or worktree path, and its trash id), each
    `left in place` line with its reason, and the exact restore command with the real script path,
-   `node "<path>/prune.mjs" restore <id>`. Say that nothing on the remote was touched, and that the trash is
-   emptied only when the person asks, and then only entries older than 30 days.
+   `node "<path>/prune.mjs" restore <id>`. Say that nothing on the remote was touched, and that the trash
+   stays until the person empties it; nothing empties it on its own.
 
 A `left in place` worktree whose rename failed (`EBUSY`/`EPERM` on Windows) is held open by a process, a
 shell, an editor or a dev server: name it; after it is closed, the same `trash` call moves it. Linux and
@@ -50,8 +50,8 @@ directory is inside (`/proc`, else `lsof` when installed) and leaves the worktre
 - `list` (this repo) or `list --all` (every repo on this machine that has trash).
 - `restore <id>`: a branch whose name is taken now is refused; `--as <new name>` restores it beside. A
   worktree goes back to its old path, refused when that path exists, and brings its branch back with it.
-- `empty [--older 30d] [<id> ...]`: deletes for good, only on the person's request. Without ids it takes
-  entries older than 30 days; named ids go at any age.
+- `empty <id> ... | --older 30d | --all`: deletes for good, only when the person asks, and only what they
+  chose. A bare `empty` deletes nothing and names the three choices.
 - `restore` and `empty` act only on an index line whose ref is its own `refs/makarasty-trash/<id>/...`
   and whose paths are its own trash folder (and, for `from`, a folder outside the git dir). Any other line
   is refused with its line number in `index.jsonl` and left as it is.

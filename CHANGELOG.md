@@ -48,8 +48,8 @@ makarasty-tools:
   context.
 - **`prune` (new).** Merged local branches and clean stale worktrees go to an undoable trash inside the
   repo's own git dir: a trash ref first, then the branch ref; a worktree is renamed, never copied, and
-  locked so git keeps its metadata. `restore` brings either back, `empty` deletes only after 30 days and
-  after unlinking every junction inside. Remotes are never touched. It refuses a worktree with untracked,
+  locked so git keeps its metadata. `restore` brings either back. Nothing empties the trash on its own: `empty`
+  takes ids, `--older <age>` or `--all`, and unlinks every junction inside before it deletes. Remotes are never touched. It refuses a worktree with untracked,
   assume-unchanged or nested work, and a gone folder whose commit exists nowhere else.
 - **`selfreview` (new).** This period against the one before, from the owner's own transcripts in about
   12 seconds: strict corrections, chats over 700k, cloned chats, skills never called, repeated instructions.
