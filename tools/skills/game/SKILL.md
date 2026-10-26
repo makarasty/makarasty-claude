@@ -71,7 +71,7 @@ the same 60 s with PresentMon from github.com/GameTechDev/PresentMon/releases or
 and paste the numbers. PresentMon cannot time loading: for that, a stopwatch or the game's own log, three
 runs before and after.
 
-## 3. Red team
+## 3. Challenge
 
 One `Agent` (`subagent_type: general-purpose`, `model: opus`, in the foreground), the proposals inline in its
 prompt, told: read only, no installs, no settings, do not launch the game or end processes; disprove each

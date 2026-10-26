@@ -1,5 +1,5 @@
 ---
-description: Finds what this computer is carrying for nobody - leftover processes, logs and scratch folders of ended chats, stale git worktrees, package caches. "Почисти за собой" stops only what this chat started. Use on "почисти за собой", "убери за собой", "почисти комп", "найди утечки", "что жрёт память", "что жрёт диск", "убери хвосты", "почему тормозит комп", "clean up after yourself", "clean up the machine", "find leaks".
+description: Finds what this computer is carrying for nobody - leftover processes, logs and scratch folders of ended chats, stale git worktrees, package caches. Use on "почисти за собой", "убери за собой", "почисти комп", "найди утечки", "что жрёт память", "что жрёт диск", "убери хвосты", "почему тормозит комп", "clean up after yourself", "clean up the machine", "find leaks".
 argument-hint: "[processes | disk | all]"
 allowed-tools: Bash, PowerShell, Read, Grep, Glob, Agent, ToolSearch, SendMessage, TaskStop, mcp__Claude_Browser__preview_stop, mcp__Claude_Browser__tabs_close
 ---
@@ -75,12 +75,11 @@ Per item: what it is, size or memory, age, why it is nobody's, the command, and 
 wrong. Rank by what it frees. Hundreds of folders of one kind are one pick with one generated command.
 Commands that remove folders are `rm -rf` in Git Bash or `cmd /c rmdir /s /q`, never `Remove-Item -Recurse`,
 which follows a junction into its target. Caches are cleaned by their own tool (`npm cache clean --force`,
-`pip cache purge`, `uv cache clean`, `bun pm cache rm`). A worktree is removed through its run's `fleet.sh
-clean`, or after its `node_modules` junctions are unlinked: `git worktree remove` with a junction in place
-followed it and emptied the main checkout's `node_modules` seven times out of seven. When `git worktree
-remove --force` stops on "Filename too long", `rm -rf` the folder, then `git worktree prune`.
+`pip cache purge`, `uv cache clean`, `bun pm cache rm`). A stale worktree or merged branch of a repo is one pick whose command is `/makarasty-tools:prune`, run
+only on the yes: it moves them to an undoable local trash and never follows a junction. A fleet run's own
+worktree is removed through its run's `fleet.sh clean`.
 
-## 3. Red team
+## 3. Challenge
 
 One `Agent` (`subagent_type: general-purpose`, `model: opus`, in the foreground), given the picks as a file
 path, told: read only - end nothing, delete nothing, write nothing; defend each item against removal - a live

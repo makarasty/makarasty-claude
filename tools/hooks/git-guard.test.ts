@@ -39,7 +39,7 @@ test('every redirection, subshell, nested shell and wrapper bypass is refused', 
 test('worktree remove, plain force push and branch -D are refused, with the reason', () => {
   expect(NEW_BLOCK.filter((c) => !check(c))).toEqual([])
   expect(check('git worktree remove x')).toContain('fleet.sh clean')
-  expect(check('git worktree remove x')).toContain('unlink reparse points')
+  expect(check('git worktree remove x')).toContain('/makarasty-tools:prune')
   expect(check('git push -f')).toContain('--force-with-lease')
   expect(check('git branch -D x')).toContain('unmerged')
 })

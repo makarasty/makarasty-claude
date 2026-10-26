@@ -40,17 +40,11 @@ of the README, not the toggle.
 4. Rewrite, keeping every claim. Then scan the result again and reread it by hand.
 5. Fact-lock: run `node "${CLAUDE_PLUGIN_ROOT}/hooks/unslop-scan.mjs" --before <original> <rewritten>`. It
    lists lost numbers, URLs, code spans and negations. Restore every lost item. A rewrite with a lost item
-   has failed. A negation that belonged to a removed "not X but Y" frame is not a loss when Y alone states
-   the claim.
+   has failed, and so has one that rounds a measurement. A negation that belonged to a removed "not X but Y"
+   frame is not a loss when Y alone states the claim.
 6. Stop rule: if the scan finds no tells and the reread finds none, return the text unchanged and say so in
    one line. Run at most two rewrite passes. Scans and rereads are not passes.
-7. Keep every number, unit, identifier, path, error string, code span and negation exactly as written
-   (the "not X but Y" frame above is the one exception). This is a style pass, never a fact pass: a rewrite
-   that loses any other "not" or rounds a measurement has failed.
-8. Remove tics and add nothing: no personality, joke, reaction, fragment, rhetorical question or invented
-   specific. Never delete a hedge that carries real uncertainty, or a caveat. Inside code, commands, logs,
-   quoted errors and technical terms, nothing is a tic.
-9. Keep length where the content earns it. A dense technical explanation is not slop because it is long.
+7. Keep length where the content earns it. A dense technical explanation is not slop because it is long.
 10. Keep the writer's own voice when the text is someone else's. When the person gives a sample of their
     own writing, match its sentence length, punctuation and register.
 11. Return the rewritten text only, with no note about what changed, except the one-line notes above. For a

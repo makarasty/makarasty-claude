@@ -59,7 +59,7 @@ daily tools first.
   rollback is "back up <folder> first".
 - An install outside its vendor's or launcher's default, or on a full or slow disk, gets a `Move` line.
 
-## 3. Red team
+## 3. Challenge
 
 One `Agent` (`subagent_type: general-purpose`, `model: opus`, in the foreground), the picks inline in its
 prompt, told: read only - install, download and write nothing, keep commands light while other sessions run;

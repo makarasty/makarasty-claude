@@ -1,5 +1,5 @@
 ---
-description: Reviews a diff, branch, PR number, file or directory for bugs. Evidence only - each finding names its breaking input, disproof-tested; --loop fixes and re-reviews until a round finds nothing. Use on "ревью", "проведи ревью", "проверь ветку", "найди баги", "проведи ревью и исправь все находки", "по кругу, пока находок не станет ноль", or when asked to review changes, a branch or a PR for bugs. Not for style, standards-vs-spec review, over-engineering or security audits.
+description: Reviews a diff, branch, PR number, file or directory for bugs. --loop fixes and re-reviews until a round finds nothing. Use on "ревью", "проведи ревью", "проверь ветку", "найди баги", "проведи ревью и исправь все находки", "по кругу, пока находок не станет ноль", or when asked to review changes, a branch or a PR for bugs. Not for style, standards-vs-spec review, over-engineering or security audits.
 argument-hint: [nothing | <branch> | <PR number> | <file or directory>] [--quick] [--fix | --loop]
 allowed-tools: Bash(git diff:*), Bash(git log:*), Bash(git show:*), Bash(git status:*), Bash(git merge-base:*), Bash(git rev-parse:*), Bash(git ls-files:*), Bash(git symbolic-ref:*), Bash(git fetch:*), Bash(gh pr diff:*), Bash(gh pr view:*), Bash(wc:*), Read, Grep, Glob, Agent, Edit
 ---

@@ -39,8 +39,8 @@ name it, or ask about all such files in one question. Never `git add -A`, `git a
 
 The default branch is `git symbolic-ref -q --short refs/remotes/origin/HEAD` without its `origin/`, or
 `main`/`master` when that prints nothing. On it, ask whether to branch first. A request that already said
-to commit here, or to push, is the answer, and so is an earlier answer in this chat. Run from ship, this
-question is not asked: ship's push rule settles the default branch once for the whole run.
+to commit here, or to push, is the answer, and so is an earlier answer in this chat. Run from ship or
+finish, this question is not asked: their push rule settles the default branch once for the whole run.
 
 ## The message
 
@@ -50,7 +50,7 @@ question is not asked: ship's push rule settles the default branch once for the 
 - **Body** only when the reason is not visible in the diff: a couple of lines. No bullet list of files,
   no "this commit", no summary of the approach, no restating the subject.
 - Short and slightly blunt, in the words a developer would say out loud.
-- **Nothing else**: no `Co-Authored-By`, no generated-with line, no tool or model name, no emoji, no link.
+- No emoji, no link.
 
 ## Secrets
 

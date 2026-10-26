@@ -1,5 +1,5 @@
 ---
-description: Hands this chat's unfinished work to a fresh chat as a chip, or with `from "<chat title>"` or `from <session id>` takes over another chat's work. Use on "сделай хенд-офф", "передай другому чату", "предложи чипом", "продолжи в новом чате", "почитай историю того чата и продолжи", handoff, hand off.
+description: Hands this chat's unfinished work to a fresh chat as a chip, or with `from "<chat title>"` or `from <session id>` takes over another chat's work. Use on "сделай хенд-офф", "передай другому чату", "предложи чипом", "продолжи в новом чате", "почитай историю того чата и продолжи" (not when other chats are read only to know what to commit: that is commit or ship; all recent chats at once: /makarasty-tools:unfinished), handoff, hand off.
 argument-hint: [what the next chat should focus on] | from "<chat title>" | from <session id> [what to do there]
 ---
 
@@ -157,7 +157,7 @@ briefly, from what this chat knows.
 
 ### 1. Find the chat
 
-Load the session tools as in Sending, step 2. A session id is used as given. A title: match it in
+Load the session tools as in Sending, step 2. No chat named ("продолжи то, что не закрыто"): run `/makarasty-tools:unfinished` first and let the person pick from its list. A session id is used as given. A title: match it in
 `mcp__ccd_session_mgmt__list_sessions` with `limit: 50` (`include_archived` when nothing matches), and
 also run `mcp__ccd_session_mgmt__search_session_transcripts` with a distinctive phrase from it. More than
 one candidate: ask, listing them. `get_session` on the match gives its working directory and branch; every

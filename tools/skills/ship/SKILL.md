@@ -17,8 +17,8 @@ only says to push ("запушь", "залей") skips step 1 unless the uncommi
 **Guardrails.** Pushes are fast-forward only (never `--force`, `--force-with-lease` or `+refspec`) and every
 hook runs (never `--no-verify`, `-n` or `-c core.hooksPath=`). Other chats' uncommitted work lives in this checkout, so never
 `git stash`, `git reset --hard`, `git clean`, `git checkout -- .`/`git restore .`, `git tag -f` or
-`git tag -d` here, and never `git worktree remove`: it once followed a `node_modules` junction and
-emptied the main checkout. A step that seems to need one of them stops and asks.
+`git tag -d` here, and never `git worktree remove` (the git guard refuses it; `/makarasty-tools:prune` does that
+cleanup). A step that seems to need one of them stops and asks.
 
 The state as this command was invoked, so the first look costs no tool calls:
 
@@ -32,6 +32,8 @@ The state as this command was invoked, so the first look costs no tool calls:
 
 ## 0. Other chats in this checkout
 
+With `mine`, skip this step: commit only the files this chat changed and name the rest.
+
 A file another chat is halfway through does not belong in this commit. The session tools are often
 deferred: load them with ToolSearch `select:mcp__ccd_session_mgmt__list_sessions,mcp__ccd_session_mgmt__list_events`,
 and use the fallback below only when that finds nothing. `list_sessions` with `limit: 50`, kept to the
@@ -43,7 +45,6 @@ the files it edited, and whether its last turn reported the work complete.
   on a question or mid-task is in progress.
 - A file a chat in progress is editing stays out of every commit; name it and the chat in the reply.
 - A finished chat's files are committed, and its history is the best source for their commit messages.
-- With `mine`, commit only the files this chat changed; everything else is named and left.
 
 Without the session tools, a changed file this chat cannot explain is asked about once, all such files
 in one question.
@@ -156,6 +157,8 @@ Done when `git status -sb` shows neither `ahead` nor `behind`.
 
 Only with `tag`, after the push: `git tag -a <name> -F -` with the notes as the message, then
 `git push origin <name>`.
+
+After a merge of branches, one line offers `/makarasty-tools:prune` for the local branches and worktrees that are now merged; it never touches the remote.
 
 ## Done when
 
