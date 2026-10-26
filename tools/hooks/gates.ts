@@ -13,7 +13,8 @@ import type { EngineInterface, Register } from 'claude-code'
 //    the last response's input + cache read + cache write, the figure context.mjs summed from the transcript tail), so a
 //    prompt under the threshold costs one call. Same rules as context.mjs: the first reminder at MAKARASTY_HANDOFF_AT
 //    (700000; 0 = off), again every MAKARASTY_HANDOFF_STEP (150000), once per level; a /compact that drops the size
-//    re-arms it; a prompt that already asks for the handoff gets none; a live fleet session gets none. State is the same
+//    re-arms it; a prompt that already asks for the handoff gets none; a live fleet session or a collecting hold gets
+//    none. State is the same
 //    file, makarasty/context/<session>.
 //
 // One file because the engine refuses two hooks on the same event without a matcher, and UserPromptSubmit is both:
@@ -72,7 +73,7 @@ export const reminder = (tokens: number): string => {
     `session is a fleet worker or the task ends within this turn, add one line offering to hand the rest ` +
     `to a fresh chat with /makarasty-tools:handoff, in the person's language; a fleet coordinator ignores this ` +
     `line; its marks come from the watch (COORDINATOR CONTEXT), and its relaunch is in fleet-plan 8b. Offer it at a natural break, ` +
-    `not mid-edit: if this turn ends with work half-done, offer it at the next break. Do not run it unasked.`
+    `not mid-edit: if this turn ends with work half-done, offer it at the next break. A handoff costs answer quality in the next chat's first prompts [M49], so offer it only where the work changes phase, not to shorten a chat that is going well. Do not run it unasked.`
 }
 
 export const afterCompact = (transcript: string): string =>
@@ -99,6 +100,16 @@ async function fleetLive($: Dollar, dir: string, sid: string): Promise<boolean> 
   } catch { return false }
 }
 
+// The hold command is collecting (its list file, makarasty/hold/<session>.md, starts with `collecting`): the person is
+// dictating one item per message and the reminder waits for the codeword. A list untouched for a day no longer counts.
+async function holding($: Dollar, dir: string, sid: string): Promise<boolean> {
+  const f = `${dir}/hold/${sid}.md`
+  try {
+    // PowerShell 5.1 writes a BOM
+    return (await $.fs.read(f)).replace(/^\uFEFF/, '').startsWith('collecting') && (await $.clock.now()) - (await $.fs.stat(f)).mtimeMs < 86400000
+  } catch { return false }
+}
+
 async function remind($: Dollar, e: { prompt: string; session_id: string; transcript_path: string }): Promise<string | undefined> {
   const at = Number((await $.env.get('MAKARASTY_HANDOFF_AT')) ?? 700000)
   const step = Number((await $.env.get('MAKARASTY_HANDOFF_STEP')) ?? 150000) || 150000
@@ -119,6 +130,7 @@ async function remind($: Dollar, e: { prompt: string; session_id: string; transc
   if (tokens < at && lastIn === 0) return undefined // the common prompt: nothing to do
 
   if (await fleetLive($, dir, sid)) return undefined
+  if (tokens >= at && (await holding($, dir, sid))) return undefined // the level stays unwritten: it reminds after the codeword
   if (tokens < at) { await $.fs.write(file, '0'); return undefined } // back under after a /compact: the next crossing reminds again
   const level = levelFor(tokens, at, step, lastIn)
   if (!level) return undefined

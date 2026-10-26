@@ -100,8 +100,8 @@ truthy('every link between the documents resolves', broken.length === 0, broken.
 const led = `${ROOT}/docs/MEASUREMENTS.md`;
 if (exists(led)) {
   const ledger = read(led);
-  // grep -r over docs/ and commands/: every file, not only the markdown.
-  const ruleText = [`${ROOT}/docs`, `${ROOT}/commands`].filter(exists).flatMap(walk).map(read).join('\n');
+  // grep -r over docs/, commands/ and tools/: every file, not only the markdown.
+  const ruleText = [`${ROOT}/docs`, `${ROOT}/commands`, `${ROOT}/tools`].filter(exists).flatMap(walk).map(read).join('\n');
   const cited = [...new Set([...ruleText.matchAll(/\[(M\d\d)\]/g)].map((m) => m[1] ?? ''))].sort();
   const missing = cited.filter((id) => !new RegExp(`^## ${id} `, 'm').test(ledger));
   truthy('every measurement a rule cites exists in the ledger', missing.length === 0, `missing: ${missing.join(' ')}`);

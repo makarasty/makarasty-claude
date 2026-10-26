@@ -771,6 +771,36 @@ vendored rules (v3.2.21).
   about a quarter more on that turn's bill.
 **Status:** current. Two reps for timing.
 
+## M49 — Correction rate against context size, and what a handoff costs
+**2026-10-26**, every main-chain transcript of the owner's machine (1,704 files, 4.83 GB), 6,076 human
+prompts in 1,547 chats after cloned chats were merged. For each prompt: the context of the answer before
+it, and whether the prompt corrects the model (a broad regex, and a strict one that only matches "the
+model failed": перепроверь, ты уверен, не работает, сломал, галлюцинация...). In JS `\b` never matches after a
+Cyrillic letter, even with the `u` flag; earlier counts using `не так\b` missed those phrases.
+- **By context, strict corrections:** 4.5 % (0-100k), 5.8, 3.7, 5.0, 4.3, 5.6 (500-600k), 5.0 (600-700k), 2.3 %
+  (700-800k, n = 131). The broad regex rises about 3 points at 600-800k on long prompts only, mostly design
+  feedback ("тут не так понятно"); short prompts and the strict regex show nothing.
+- **Within the 137 chats that crossed 600k:** corrections fall from 19.8 % under 300k to 12.8 % at 600k and
+  above (strict 7.5 % to 3.9 %).
+- **Handoffs, 58 continuation chats:** strict corrections in their prompts 2-11 were 8.0 % [5.1-12.2] against
+  3.4 % in the last ten prompts of their source chats and 1.2 % [0.3-4.3] in chats that kept going past 700k.
+  The source chats were handed off at a median 637k.
+**Rule:** the handoff reminder stays at 700k and every 150k after; its text says a handoff is for a change
+of phase, not for shortening a chat that is going well.
+**Status:** current. One main project (75 % of prompts), mostly October; the correction rate is a proxy for
+quality, and chats that reach 700k may be the ones going well.
+
+## M50 — Routing of the 1.8.0 commands
+**2026-10-26**, `forge/ab.mjs`, Sonnet, 65 prompts (48 real from the transcripts, 17 written), one run each:
+"which skill or command would you invoke first", with the two repo plugins (arm B) and with caveman,
+ponytail, mattpocock-skills and sunup added (arm C). About $5.8.
+- **Right first call:** B 58 of 65, C 58 of 63. redteam 5/6, finish 7/8, ship 5/5, blindtest 6/6, hold 7/8,
+  forge 6/7, craft 10/11. Plain review, commit and push prompts never went to finish.
+- **Misses fixed in the descriptions:** a bare "fix the tests and push" taken by finish; regression tests
+  taken by mattpocock `tdd`; "перепиши скиллы" missed by forge; the codeword alone starting hold; "read the
+  other chats, commit" taken by handoff.
+**Status:** current. One run per prompt: single misses are noise; not re-run after the description fixes.
+
 ## Appendix: what a pull run spends
 
 Moved here from `PULL.md`, which workers read in full; none of it changes what a worker does.

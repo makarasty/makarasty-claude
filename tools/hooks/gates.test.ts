@@ -15,6 +15,8 @@ type World = {
   level?: string
   fleet?: string
   fleetAge?: number
+  hold?: string
+  holdAge?: number
   env?: Record<string, string>
   run?: 'hang' | 'fail'
 }
@@ -36,9 +38,11 @@ function world(on: On, o: World = {}) {
   on('fs.read', async (_$, e) => {
     if (plain(e.path) === '/cfg/makarasty/context/s1' && o.level !== undefined) return { value: o.level }
     if (plain(e.path) === '/cfg/makarasty/fleet-sessions/s1' && o.fleet !== undefined) return { value: `${o.fleet}\nmore` }
+    if (plain(e.path) === '/cfg/makarasty/hold/s1.md' && o.hold !== undefined) return { value: o.hold }
     return { deny: 'ENOENT' }
   })
   on('fs.stat', async (_$, e) => {
+    if (plain(e.path) === '/cfg/makarasty/hold/s1.md' && o.hold !== undefined) return { value: { ...entry, mtimeMs: 10 * DAY - (o.holdAge ?? 1000) } }
     if (plain(e.path) === '/cfg/makarasty/fleet-sessions/s1') return { value: { ...entry, mtimeMs: 10 * DAY - (o.fleetAge ?? 1000) } }
     if (plain(e.path) === o.fleet) return { value: { ...entry, kind: 'dir' as const } }
     return { deny: 'ENOENT' }
@@ -232,6 +236,30 @@ test('a live fleet session gets none', async ($, on) => {
 
 test('a fleet record not rewritten for two days does not exempt', async ($, on) => {
   const w = world(on, { tokens: 800000, fleet: '/runs/r1', fleetAge: 3 * DAY })
+  expect((await $.classic.UserPromptSubmit(prompt())).additionalContext).toEqual([reminder(800000)])
+  expect(w.writes['/cfg/makarasty/context/s1']).toBe('700000')
+})
+
+test('a collecting hold gets none and leaves the level, so the reminder comes after the codeword', async ($, on) => {
+  const w = world(on, { tokens: 800000, hold: 'collecting абрикос\n1. отступ\n' })
+  expect((await $.classic.UserPromptSubmit(prompt())).additionalContext).toBeUndefined()
+  expect(w.writes).toEqual({})
+})
+
+test('a hold list PowerShell wrote, with a BOM, still counts as collecting', async ($, on) => {
+  const w = world(on, { tokens: 800000, hold: '\uFEFFcollecting абрикос\n' })
+  expect((await $.classic.UserPromptSubmit(prompt())).additionalContext).toBeUndefined()
+  expect(w.writes).toEqual({})
+})
+
+test('a released hold list does not exempt', async ($, on) => {
+  const w = world(on, { tokens: 800000, hold: 'released абрикос\n1. отступ\n' })
+  expect((await $.classic.UserPromptSubmit(prompt())).additionalContext).toEqual([reminder(800000)])
+  expect(w.writes['/cfg/makarasty/context/s1']).toBe('700000')
+})
+
+test('a hold list untouched for a day does not exempt', async ($, on) => {
+  const w = world(on, { tokens: 800000, hold: 'collecting абрикос\n', holdAge: 2 * DAY })
   expect((await $.classic.UserPromptSubmit(prompt())).additionalContext).toEqual([reminder(800000)])
   expect(w.writes['/cfg/makarasty/context/s1']).toBe('700000')
 })

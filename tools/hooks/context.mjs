@@ -130,6 +130,15 @@ try {
     const tokens = lastContext(ev.transcript_path);
     if (tokens === null)
         process.exit(0);
+    // The hold command is collecting (gates.ts, holding): the reminder waits for the codeword, the level stays unwritten.
+    if (tokens >= at) {
+        const hold = join(base, 'hold', `${sid}.md`);
+        try {
+            if (readFileSync(hold, 'utf8').replace(/^\uFEFF/, '').startsWith('collecting') && Date.now() - statSync(hold).mtimeMs < 86400000)
+                process.exit(0);
+        }
+        catch { }
+    }
     const dir = join(base, 'context');
     const file = join(dir, String(ev.session_id).replace(/[^\w.-]/g, '_'));
     if (tokens < at) {
@@ -153,7 +162,7 @@ try {
         `session is a fleet worker or the task ends within this turn, add one line offering to hand the rest ` +
         `to a fresh chat with /makarasty-tools:handoff, in the person's language; a fleet coordinator ignores this ` +
         `line; its marks come from the watch (COORDINATOR CONTEXT), and its relaunch is in fleet-plan 8b. Offer it at a natural break, ` +
-        `not mid-edit: if this turn ends with work half-done, offer it at the next break. Do not run it unasked.`);
+        `not mid-edit: if this turn ends with work half-done, offer it at the next break. A handoff costs answer quality in the next chat's first prompts [M49], so offer it only where the work changes phase, not to shorten a chat that is going well. Do not run it unasked.`);
 }
 catch {
     // A hook that fails must not cost the person their prompt.
