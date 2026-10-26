@@ -8,7 +8,7 @@ Two Claude Code plugins from one marketplace.
   queue and spawns a fresh subagent per task, which reports by writing files ([`docs/ONECHAT.md`](docs/ONECHAT.md)).
   Separate worker chats, one chip each, are opt-in. Between what a run finds and what it changes there is a gate: no fix without a reproduction that
   failed first.
-- **`makarasty-tools`** is twenty-two everyday commands that have nothing to do with fleets: commit under your
+- **`makarasty-tools`** is twenty-three everyday commands that have nothing to do with fleets: commit under your
   own name, ship a branch, review a diff with evidence, hand a chat off before its context runs out, get a
   phone message when a chat finishes, tune the machine for a game, find what is worth updating, clean up after chats, and a few more.
 
@@ -166,6 +166,7 @@ the flag would stop every worker the moment it tried to begin.
 | `/makarasty-tools:unfinished [days]` | Reads this project's recent chats on every account and lists what each left open: unfinished work, done but uncommitted files, questions waiting for you, live chats; checks each "done" against the repo |
 | `/makarasty-tools:proof` | Before and after shots of each UI change, rendered in the pane and saved to disk (they never enter the model's context), in an HTML report of numbered blocks you can answer with "блок 3 переделай" |
 | `/makarasty-tools:prune` | Moves merged local branches and clean stale worktrees to an undoable local trash inside the repo's git dir; restore any time; it stays until you empty it yourself; never touches the remote, never follows a junction |
+| `/makarasty-tools:scrub [--apply]` | Censors secrets pasted into Claude transcripts on this machine (keys, tokens, passwords, private keys) with same-length asterisks; dry run first, a live chat's file is skipped, every changed line must still parse; scrubbing does not revoke a key |
 | `/makarasty-tools:selfreview [--since date]` | This period against the one before, from your own chats: strict corrections, chats over 700k, cloned chats, skills never called, instructions you keep retyping |
 | `/makarasty-tools:craft` | Refactor, DRY and test rules where a strong model still slips: pin behaviour first, extract on the third copy, inline a wrong abstraction back, and keep only tests seen failing once |
 | `/makarasty-tools:explain [topic]` | What happened, why, what was done, what is left, whether it can ship and what was not checked, in plain words |
@@ -177,7 +178,7 @@ the flag would stop every worker the moment it tried to begin.
 | `/makarasty-tools:antislop [on\|off\|status\|audit <path>]` | Turns on an anti-AI-slop filter for UI work from a pinned rule set: no invented numbers, emoji or sparkle decoration, contrast and states checked, a short PASS/FAIL gate at the end of each UI build. Off by default; `audit` lists findings on existing UI [M47] |
 | `/makarasty-tools:update [area]` | Finds what is out of date (apps, runtimes, Claude Code and plugins, other agents, drivers), ranks it, has a red team challenge each pick, and updates only on a yes |
 
-All twenty-two can be started by you or by Claude, and most trigger on plain phrasing in any language: "commit
+All twenty-three can be started by you or by Claude, and most trigger on plain phrasing in any language: "commit
 as me", "закоммить от меня", "ping me when the tests are done".
 
 **Context hook.** Once a chat's context passes 700k tokens, and again every 150k above that, the chat is

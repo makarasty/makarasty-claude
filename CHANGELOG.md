@@ -51,6 +51,11 @@ makarasty-tools:
   locked so git keeps its metadata. `restore` brings either back. Nothing empties the trash on its own: `empty`
   takes ids, `--older <age>` or `--all`, and unlinks every junction inside before it deletes. Remotes are never touched. It refuses a worktree with untracked,
   assume-unchanged or nested work, and a gone folder whose commit exists nowhere else.
+- **`scrub` (new).** Secrets pasted into chats stay in the transcripts as plain text. A dry run counts them
+  by kind and place without printing a value; `--apply` replaces each with asterisks of the same length,
+  skips files a live chat may be writing, checks that every changed JSON line still parses, swaps the file
+  in by rename and keeps its date. A key that reached a transcript was also sent to the model provider, so
+  it still needs revoking.
 - **`selfreview` (new).** This period against the one before, from the owner's own transcripts in about
   12 seconds: strict corrections, chats over 700k, cloned chats, skills never called, repeated instructions.
 - **The handoff reminder** keeps 700k and every 150k [M49], and now says a handoff is for a change of phase:
