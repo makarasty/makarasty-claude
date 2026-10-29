@@ -1,5 +1,22 @@
 # Changelog
 
+## makarasty-tools 1.9.0 — 2026-10-28
+
+- **`cleanup` scans the whole disk.** A by-hand cleanup of the owner's PC took nine Haiku scouts and an Opus
+  judge, freed about 33 GB, and the judge overruled the scouts on 13 of 14 disputed calls (a 1.3 MB cache
+  reported as 1.26 GB, a pinned browser build, a deliberate fallback runtime). The places it found are now a
+  catalog, `rules.json`, read by a script, `machine.mjs`: a read-only `scan` in about a minute, then `apply`
+  on the ids picked, which looks again first. Four tiers: safe (caches, scratch of ended chats, old app
+  versions beside the one in use), close-app (held while the app runs), admin (a `.bat` the owner runs
+  elevated, each step explained) and owner (games, programs, big files, never a default pick). Old versions
+  are kept by what runs or what a pointer names, not by name sort. A live chat holds its folder and its
+  scratch, checked per path at the moment of acting. Personal files go to the Recycle Bin only when they fit
+  its free room, and count as recycled only when the bin grew by them; games open their own uninstaller.
+  Every outcome is measured after the act and logged in `~/.claude/makarasty/cleanup-log.jsonl`. A
+  machine's own places go in `~/.claude/makarasty/cleanup-rules.json`; `deep` runs the scouts and a judge
+  for new ones. Windows only for now: the Windows rules carry `os`, and the few without it (build output,
+  loose files, transcripts) are only listed or deleted elsewhere.
+
 ## makarasty 1.9.0, makarasty-tools 1.8.0 — 2026-10-26
 
 Read from 6,017 prompts typed by hand across 1,485 chats on three accounts (2026-06-10 to 2026-10-26),

@@ -1,0 +1,811 @@
+{
+ "about": "Places where junk collects, read by machine.mjs. Order matters: a path claimed by an earlier rule is skipped by later ones. Fields: id, title, tier (safe | close-app | admin | owner), method (delete | vendor | recycle | uninstall | none), os (process.platform), type (paths | versions | scratch | builds | gradle | steam | uninstall | loose | bins | command), paths (%VAR%, ~, * within one segment), children + exclude + each, parents + match + keep | keepIn, names, running (regex on the process name, or cmd:<regex> on its command line), minAgeHours (newest touch inside, modified or created, must be older), ageBy (\"modified\" ignores creation times, for files a tool rewrites in place), requires (versions: a file that must sit in the parent), within (paths: kept only inside this folder), heldByApp (each: held while the app the folder is named after runs), minMB, vendor, lose, explain, bat. A machine's own rules go in ~/.claude/makarasty/cleanup-rules.json with the same shape.",
+ "rules": [
+  {
+   "id": "claude-scratch",
+   "title": "Scratch folders of ended Claude chats",
+   "tier": "safe",
+   "method": "delete",
+   "os": "win32",
+   "type": "scratch",
+   "paths": [
+    "%TEMP%\\claude\\C--*\\*"
+   ],
+   "minAgeHours": 24,
+   "lose": "the task outputs and pasted screenshots of chats that have ended; if you resume one later, they are gone (folders a handoff or hold note names are kept)"
+  },
+  {
+   "id": "npm-cache",
+   "title": "npm download cache",
+   "tier": "safe",
+   "method": "vendor",
+   "vendor": "npm cache clean --force",
+   "os": "win32",
+   "paths": [
+    "%LOCALAPPDATA%\\npm-cache\\_cacache"
+   ],
+   "running": [
+    "cmd:npm-cli\\.js|npx-cli\\.js|node-gyp|pnpm|yarn\\.js"
+   ],
+   "minAgeHours": 1,
+   "lose": "the next npm install downloads again"
+  },
+  {
+   "id": "npx-cache",
+   "title": "npx package cache",
+   "tier": "safe",
+   "method": "delete",
+   "os": "win32",
+   "paths": [
+    "%LOCALAPPDATA%\\npm-cache\\_npx"
+   ],
+   "running": [
+    "cmd:npm-cli\\.js|npx-cli\\.js"
+   ],
+   "minAgeHours": 1,
+   "lose": "the next npx run downloads its package again"
+  },
+  {
+   "id": "bun-cache",
+   "title": "bun package cache",
+   "tier": "safe",
+   "method": "vendor",
+   "vendor": "bun pm cache rm",
+   "os": "win32",
+   "paths": [
+    "~\\.bun\\install\\cache"
+   ],
+   "running": [
+    "cmd:\\bbun(\\.exe)?\"?\\s+(install|i|add|update)\\b"
+   ],
+   "minAgeHours": 1,
+   "lose": "the next bun install downloads again; node_modules stay (hard links)"
+  },
+  {
+   "id": "yarn-cache",
+   "title": "Yarn cache",
+   "tier": "safe",
+   "method": "delete",
+   "os": "win32",
+   "paths": [
+    "%LOCALAPPDATA%\\Yarn\\Cache"
+   ],
+   "running": [
+    "cmd:yarn\\.js|yarn\\.cmd"
+   ],
+   "minAgeHours": 1,
+   "lose": "the next yarn install downloads again"
+  },
+  {
+   "id": "pip-cache",
+   "title": "pip cache",
+   "tier": "safe",
+   "method": "delete",
+   "os": "win32",
+   "paths": [
+    "%LOCALAPPDATA%\\pip\\cache"
+   ],
+   "running": [
+    "cmd:\\bpip3?(\\.exe)?\"?\\s+install|-m\\s+pip\\b"
+   ],
+   "minAgeHours": 1,
+   "lose": "the next pip install downloads again"
+  },
+  {
+   "id": "uv-cache",
+   "title": "uv cache",
+   "tier": "safe",
+   "method": "vendor",
+   "vendor": "uv cache clean",
+   "os": "win32",
+   "paths": [
+    "%LOCALAPPDATA%\\uv\\cache"
+   ],
+   "running": [
+    "^uv\\.exe$"
+   ],
+   "minAgeHours": 1,
+   "lose": "the next uv sync downloads again"
+  },
+  {
+   "id": "go-build-cache",
+   "title": "Go build cache",
+   "tier": "safe",
+   "method": "delete",
+   "os": "win32",
+   "paths": [
+    "%LOCALAPPDATA%\\go-build",
+    "%LOCALAPPDATA%\\Packages\\Claude_*\\LocalCache\\Local\\go-build"
+   ],
+   "running": [
+    "^go\\.exe$"
+   ],
+   "minAgeHours": 1,
+   "lose": "the next Go build is slower once"
+  },
+  {
+   "id": "nuget-cache",
+   "title": "NuGet package cache",
+   "tier": "safe",
+   "method": "vendor",
+   "vendor": "dotnet nuget locals all --clear",
+   "os": "win32",
+   "paths": [
+    "~\\.nuget\\packages",
+    "%LOCALAPPDATA%\\NuGet\\v3-cache"
+   ],
+   "running": [
+    "cmd:dotnet(\\.exe)?\"?\\s+(restore|build|run|test)|MSBuild"
+   ],
+   "minAgeHours": 1,
+   "lose": "the next .NET restore downloads again; on a machine without its package feed (offline, expired login) the next restore fails"
+  },
+  {
+   "id": "cargo-cache",
+   "title": "Cargo registry cache",
+   "tier": "safe",
+   "method": "delete",
+   "os": "win32",
+   "paths": [
+    "~\\.cargo\\registry\\cache",
+    "~\\.cargo\\registry\\src"
+   ],
+   "running": [
+    "^cargo\\.exe$",
+    "^rustc\\.exe$"
+   ],
+   "minAgeHours": 1,
+   "lose": "the next cargo build downloads crates again; on a machine without its package feed (offline, expired login) the next restore fails"
+  },
+  {
+   "id": "pnpm-store",
+   "title": "pnpm store (unused packages)",
+   "tier": "safe",
+   "method": "vendor",
+   "vendor": "pnpm store prune",
+   "os": "win32",
+   "paths": [
+    "%LOCALAPPDATA%\\pnpm\\store"
+   ],
+   "running": [
+    "cmd:\\bpnpm(\\.\\w+)?\"?\\s"
+   ],
+   "minAgeHours": 1,
+   "lose": "nothing a project links to: pnpm store prune keeps those; without pnpm installed nothing is done"
+  },
+  {
+   "id": "gradle-unused",
+   "title": "Gradle version no project uses",
+   "tier": "safe",
+   "method": "delete",
+   "os": "win32",
+   "type": "gradle",
+   "minAgeHours": 24,
+   "lose": "a project outside the scanned folders that pins this version downloads it again (about 150 MB)"
+  },
+  {
+   "id": "gradle-jdk-zips",
+   "title": "Downloaded JDK archives Gradle already unpacked",
+   "tier": "safe",
+   "method": "delete",
+   "os": "win32",
+   "each": true,
+   "paths": [
+    "~\\.gradle\\jdks\\*.zip"
+   ],
+   "minAgeHours": 24,
+   "lose": "nothing: the unpacked JDK beside it stays"
+  },
+  {
+   "id": "shader-cache",
+   "title": "GPU shader cache",
+   "tier": "safe",
+   "method": "delete",
+   "os": "win32",
+   "paths": [
+    "%LOCALAPPDATA%\\NVIDIA\\DXCache",
+    "%LOCALAPPDATA%\\NVIDIA\\GLCache",
+    "%LOCALAPPDATA%\\D3DSCache",
+    "%LOCALAPPDATA%\\AMD\\DxCache",
+    "%LOCALAPPDATA%\\AMD\\DxcCache"
+   ],
+   "lose": "close your games first: each game stutters once at its next start while it rebuilds shaders; files in use stay"
+  },
+  {
+   "id": "driver-unpack",
+   "title": "Driver installer unpack folders",
+   "tier": "owner",
+   "method": "delete",
+   "os": "win32",
+   "paths": [
+    "C:\\AMD",
+    "C:\\NVIDIA",
+    "%ProgramData%\\NVIDIA Corporation\\Downloader"
+   ],
+   "minAgeHours": 168,
+   "lose": "unpacked driver installers, and a driver the NVIDIA app downloaded but you never installed"
+  },
+  {
+   "id": "app-updaters",
+   "title": "Downloaded app update",
+   "tier": "safe",
+   "method": "delete",
+   "os": "win32",
+   "each": true,
+   "paths": [
+    "%LOCALAPPDATA%\\*-updater"
+   ],
+   "minAgeHours": 24,
+   "lose": "a staged update downloads again; held while its app runs",
+   "heldByApp": true
+  },
+  {
+   "id": "crash-dumps",
+   "title": "Crash dumps",
+   "tier": "safe",
+   "method": "delete",
+   "os": "win32",
+   "paths": [
+    "%LOCALAPPDATA%\\CrashDumps",
+    "%APPDATA%\\*\\Crashpad\\reports",
+    "%LOCALAPPDATA%\\*\\Crashpad\\reports",
+    "%LOCALAPPDATA%\\*\\*\\User Data\\Crashpad\\reports",
+    "%APPDATA%\\discord\\module_data\\crashlogs"
+   ],
+   "minAgeHours": 168,
+   "lose": "crash dumps and unsent crash reports; a developer chasing a crash may want the newest"
+  },
+  {
+   "id": "node-compile-cache",
+   "title": "Node compile cache",
+   "tier": "safe",
+   "method": "delete",
+   "os": "win32",
+   "paths": [
+    "%TEMP%\\node-compile-cache"
+   ],
+   "lose": "the next node start is slower once; files in use stay",
+   "within": "%LOCALAPPDATA%"
+  },
+  {
+   "id": "temp-old",
+   "title": "Temp entries untouched for 2 days",
+   "tier": "safe",
+   "method": "delete",
+   "os": "win32",
+   "paths": [
+    "%TEMP%"
+   ],
+   "children": true,
+   "exclude": [
+    "claude",
+    "node-compile-cache"
+   ],
+   "minAgeHours": 48,
+   "lose": "nothing a running program uses; files in use stay",
+   "within": "%LOCALAPPDATA%"
+  },
+  {
+   "id": "squirrel-old",
+   "title": "Old app version beside the current one",
+   "tier": "safe",
+   "method": "delete",
+   "os": "win32",
+   "type": "versions",
+   "parents": [
+    "%LOCALAPPDATA%\\*"
+   ],
+   "match": "^app-(\\d[\\d.]*)$",
+   "lose": "rolling back to that version",
+   "requires": "Update.exe"
+  },
+  {
+   "id": "claude-cli-old",
+   "title": "Old Claude Code CLI builds",
+   "tier": "safe",
+   "method": "delete",
+   "os": "win32",
+   "type": "versions",
+   "parents": [
+    "~\\.local\\share\\claude\\versions"
+   ],
+   "match": "^(\\d+\\.\\d+\\.\\d+)$",
+   "lose": "nothing: the two newest builds stay, and a chat that runs an older one holds it",
+   "keep": 2
+  },
+  {
+   "id": "claude-desktop-cc-old",
+   "title": "Old Claude Code builds of the desktop app",
+   "tier": "safe",
+   "method": "delete",
+   "os": "win32",
+   "type": "versions",
+   "parents": [
+    "%LOCALAPPDATA%\\Claude-Profiles\\*\\claude-code",
+    "%APPDATA%\\Claude\\claude-code",
+    "%LOCALAPPDATA%\\Packages\\Claude_*\\LocalCache\\Roaming\\Claude\\claude-code"
+   ],
+   "match": "^(\\d+\\.\\d+\\.\\d+)$",
+   "lose": "nothing: a chat that runs one holds it"
+  },
+  {
+   "id": "vscode-old",
+   "title": "Old VS Code build",
+   "tier": "close-app",
+   "method": "delete",
+   "os": "win32",
+   "type": "versions",
+   "parents": [
+    "%LOCALAPPDATA%\\Programs\\Microsoft VS Code"
+   ],
+   "match": "^([0-9a-f]{10})$",
+   "keepIn": "bin\\code",
+   "running": [
+    "^Code\\.exe$"
+   ],
+   "lose": "nothing: bin\\code names the current build"
+  },
+  {
+   "id": "vscode-old-exe",
+   "title": "VS Code's previous exe",
+   "tier": "close-app",
+   "method": "delete",
+   "os": "win32",
+   "paths": [
+    "%LOCALAPPDATA%\\Programs\\Microsoft VS Code\\old_Code.exe"
+   ],
+   "running": [
+    "^Code\\.exe$"
+   ],
+   "minMB": 1,
+   "lose": "nothing"
+  },
+  {
+   "id": "battlenet-old",
+   "title": "Old Battle.net client",
+   "tier": "close-app",
+   "method": "delete",
+   "os": "win32",
+   "type": "versions",
+   "parents": [
+    "%ProgramFiles(x86)%\\Battle.net"
+   ],
+   "match": "^Battle\\.net\\.(\\d+)$",
+   "running": [
+    "^Battle\\.net\\.exe$"
+   ],
+   "lose": "nothing: the newest client stays"
+  },
+  {
+   "id": "gitkraken-cli-old",
+   "title": "Old GitKraken CLI builds",
+   "tier": "safe",
+   "method": "delete",
+   "os": "win32",
+   "type": "versions",
+   "parents": [
+    "%LOCALAPPDATA%\\GitKrakenCLI\\versions"
+   ],
+   "match": "^gk_([\\d_]+)\\.exe$",
+   "minMB": 1,
+   "lose": "nothing"
+  },
+  {
+   "id": "codex-runtime-old",
+   "title": "Previous Codex runtimes",
+   "tier": "safe",
+   "method": "delete",
+   "os": "win32",
+   "paths": [
+    "~\\.cache\\codex-runtimes\\codex-primary-runtime.previous-*"
+   ],
+   "lose": "the rollback copy Codex keeps after an update"
+  },
+  {
+   "id": "epic-staged-update",
+   "title": "Epic launcher's staged update",
+   "tier": "close-app",
+   "method": "delete",
+   "os": "win32",
+   "paths": [
+    "%ProgramData%\\Epic\\EpicGamesLauncher\\Data\\Update"
+   ],
+   "running": [
+    "^EpicGamesLauncher\\.exe$"
+   ],
+   "lose": "the launcher downloads its update again"
+  },
+  {
+   "id": "brave-cache",
+   "title": "Brave cache (not site data)",
+   "tier": "close-app",
+   "method": "delete",
+   "os": "win32",
+   "paths": [
+    "%LOCALAPPDATA%\\BraveSoftware\\Brave-Browser\\User Data\\*\\Cache",
+    "%LOCALAPPDATA%\\BraveSoftware\\Brave-Browser\\User Data\\*\\Code Cache",
+    "%LOCALAPPDATA%\\BraveSoftware\\Brave-Browser\\User Data\\*\\GPUCache"
+   ],
+   "running": [
+    "^brave\\.exe$"
+   ],
+   "lose": "pages load slower once; logins, history and site data stay"
+  },
+  {
+   "id": "chrome-cache",
+   "title": "Chrome cache (not site data)",
+   "tier": "close-app",
+   "method": "delete",
+   "os": "win32",
+   "paths": [
+    "%LOCALAPPDATA%\\Google\\Chrome\\User Data\\*\\Cache",
+    "%LOCALAPPDATA%\\Google\\Chrome\\User Data\\*\\Code Cache",
+    "%LOCALAPPDATA%\\Google\\Chrome\\User Data\\*\\GPUCache"
+   ],
+   "running": [
+    "^chrome\\.exe$"
+   ],
+   "lose": "pages load slower once; logins, history and site data stay"
+  },
+  {
+   "id": "edge-cache",
+   "title": "Edge cache (not site data)",
+   "tier": "close-app",
+   "method": "delete",
+   "os": "win32",
+   "paths": [
+    "%LOCALAPPDATA%\\Microsoft\\Edge\\User Data\\*\\Cache",
+    "%LOCALAPPDATA%\\Microsoft\\Edge\\User Data\\*\\Code Cache",
+    "%LOCALAPPDATA%\\Microsoft\\Edge\\User Data\\*\\GPUCache"
+   ],
+   "running": [
+    "^msedge\\.exe$"
+   ],
+   "lose": "pages load slower once; logins, history and site data stay"
+  },
+  {
+   "id": "discord-cache",
+   "title": "Discord cache",
+   "tier": "close-app",
+   "method": "delete",
+   "os": "win32",
+   "paths": [
+    "%APPDATA%\\discord\\Cache",
+    "%APPDATA%\\discord\\Code Cache",
+    "%APPDATA%\\discord\\GPUCache"
+   ],
+   "running": [
+    "^Discord\\.exe$"
+   ],
+   "lose": "images load again"
+  },
+  {
+   "id": "vscode-cache",
+   "title": "VS Code caches",
+   "tier": "close-app",
+   "method": "delete",
+   "os": "win32",
+   "paths": [
+    "%APPDATA%\\Code\\Cache",
+    "%APPDATA%\\Code\\Code Cache",
+    "%APPDATA%\\Code\\GPUCache",
+    "%APPDATA%\\Code\\CachedExtensionVSIXs"
+   ],
+   "running": [
+    "^Code\\.exe$"
+   ],
+   "lose": "extension installers download again on update"
+  },
+  {
+   "id": "notion-cache",
+   "title": "Notion cache",
+   "tier": "close-app",
+   "method": "delete",
+   "os": "win32",
+   "paths": [
+    "%APPDATA%\\Notion\\Partitions\\notion\\Cache",
+    "%APPDATA%\\Notion\\Partitions\\notion\\Code Cache",
+    "%APPDATA%\\Notion\\Partitions\\notion\\Shared Dictionary"
+   ],
+   "running": [
+    "^Notion\\.exe$"
+   ],
+   "lose": "pages load slower once; offline pages stay"
+  },
+  {
+   "id": "figma-cache",
+   "title": "Figma cache",
+   "tier": "close-app",
+   "method": "delete",
+   "os": "win32",
+   "paths": [
+    "%APPDATA%\\Figma\\DesktopProfile\\*\\Cache",
+    "%APPDATA%\\Figma\\DesktopProfile\\*\\Code Cache",
+    "%APPDATA%\\Figma\\DesktopProfile\\*\\GPUCache",
+    "%APPDATA%\\Figma\\Cache",
+    "%APPDATA%\\Figma\\Code Cache",
+    "%APPDATA%\\Figma\\GPUCache"
+   ],
+   "running": [
+    "^Figma\\.exe$"
+   ],
+   "lose": "files open slower once"
+  },
+  {
+   "id": "openwhispr-cache",
+   "title": "OpenWhispr cache",
+   "tier": "close-app",
+   "method": "delete",
+   "os": "win32",
+   "paths": [
+    "%APPDATA%\\open-whispr\\Cache",
+    "%APPDATA%\\open-whispr\\Code Cache",
+    "%APPDATA%\\open-whispr\\GPUCache"
+   ],
+   "running": [
+    "^OpenWhispr\\.exe$"
+   ],
+   "lose": "nothing you made"
+  },
+  {
+   "id": "faceit-cache",
+   "title": "FACEIT cache",
+   "tier": "close-app",
+   "method": "delete",
+   "os": "win32",
+   "paths": [
+    "%APPDATA%\\FACEIT\\Cache",
+    "%APPDATA%\\FACEIT\\Code Cache",
+    "%APPDATA%\\FACEIT\\GPUCache"
+   ],
+   "running": [
+    "^FACEIT\\.exe$"
+   ],
+   "lose": "nothing you made"
+  },
+  {
+   "id": "steam-htmlcache",
+   "title": "Steam's browser cache",
+   "tier": "close-app",
+   "method": "delete",
+   "os": "win32",
+   "paths": [
+    "%LOCALAPPDATA%\\Steam\\htmlcache"
+   ],
+   "running": [
+    "^steam\\.exe$",
+    "^steamwebhelper\\.exe$"
+   ],
+   "lose": "store pages load slower once"
+  },
+  {
+   "id": "overwolf-cache",
+   "title": "Overwolf browser cache",
+   "tier": "close-app",
+   "method": "delete",
+   "os": "win32",
+   "paths": [
+    "%LOCALAPPDATA%\\Overwolf\\CefBrowserCache"
+   ],
+   "running": [
+    "^Overwolf\\.exe$"
+   ],
+   "lose": "nothing you made"
+  },
+  {
+   "id": "battlenet-cache",
+   "title": "Battle.net browser cache",
+   "tier": "close-app",
+   "method": "delete",
+   "os": "win32",
+   "paths": [
+    "%LOCALAPPDATA%\\Battle.net\\BrowserCaches"
+   ],
+   "running": [
+    "^Battle\\.net\\.exe$"
+   ],
+   "lose": "the launcher loads slower once"
+  },
+  {
+   "id": "build-outputs",
+   "title": "Build output of a project idle for 30 days",
+   "tier": "owner",
+   "method": "delete",
+   "type": "builds",
+   "names": [
+    "build",
+    "bin",
+    "obj",
+    "dist",
+    "target",
+    ".gradle",
+    ".next",
+    ".turbo",
+    ".parcel-cache",
+    "coverage",
+    "node_modules"
+   ],
+   "minAgeHours": 720,
+   "lose": "the next build or install of that project takes longer; its .env and other files outside these folders are not touched; a worktree whose node_modules links here breaks until it installs again"
+  },
+  {
+   "id": "edgecore-old",
+   "title": "Old Edge WebView copy",
+   "tier": "admin",
+   "method": "delete",
+   "os": "win32",
+   "type": "versions",
+   "parents": [
+    "%ProgramFiles(x86)%\\Microsoft\\EdgeCore"
+   ],
+   "match": "^(\\d+\\.\\d+\\.\\d+\\.\\d+)$",
+   "explain": "Removes an Edge WebView version no running program used at scan time. Close your apps before you run this. Windows asks nothing here."
+  },
+  {
+   "id": "windows-dumps",
+   "title": "Windows crash dumps and error reports",
+   "tier": "admin",
+   "method": "delete",
+   "os": "win32",
+   "paths": [
+    "%SystemRoot%\\MEMORY.DMP",
+    "%SystemRoot%\\Minidump",
+    "%SystemRoot%\\LiveKernelReports",
+    "%ProgramData%\\Microsoft\\Windows\\WER\\ReportArchive",
+    "%ProgramData%\\Microsoft\\Windows\\WER\\ReportQueue"
+   ],
+   "minMB": 0,
+   "explain": "Diagnostics of past crashes. Nothing you made; a support case about an old crash would want them."
+  },
+  {
+   "id": "windows-update-cache",
+   "title": "Windows Update downloads",
+   "tier": "admin",
+   "method": "delete",
+   "os": "win32",
+   "paths": [
+    "%SystemRoot%\\SoftwareDistribution\\Download"
+   ],
+   "minMB": 0,
+   "explain": "Stops the update service, deletes updates that are already downloaded, starts it again. An update in progress downloads again.",
+   "bat": [
+    "net stop wuauserv",
+    "net stop bits",
+    "rd /s /q \"%SystemRoot%\\SoftwareDistribution\\Download\"",
+    "mkdir \"%SystemRoot%\\SoftwareDistribution\\Download\"",
+    "net start bits",
+    "net start wuauserv"
+   ]
+  },
+  {
+   "id": "windows-temp",
+   "title": "Windows Temp entries older than 2 days",
+   "tier": "admin",
+   "method": "delete",
+   "os": "win32",
+   "paths": [
+    "%SystemRoot%\\Temp"
+   ],
+   "minMB": 0,
+   "explain": "Folders are judged by their own date here, not the newest file inside; files in use stay. ERROR: No files found only means nothing was old enough.",
+   "bat": [
+    "forfiles /p \"%SystemRoot%\\Temp\" /d -2 /c \"cmd /c if @isdir==TRUE (rd /s /q @path) else (del /f /q @path)\""
+   ]
+  },
+  {
+   "id": "component-store",
+   "title": "Windows component store cleanup (DISM)",
+   "tier": "admin",
+   "method": "delete",
+   "os": "win32",
+   "type": "command",
+   "explain": "DISM runs 5 to 15 minutes with a progress bar. It removes superseded component versions; installed updates stay uninstallable.",
+   "bat": [
+    "Dism.exe /Online /Cleanup-Image /StartComponentCleanup"
+   ]
+  },
+  {
+   "id": "delivery-optimization",
+   "title": "Delivery Optimization cache",
+   "tier": "admin",
+   "method": "delete",
+   "os": "win32",
+   "type": "command",
+   "explain": "Update pieces Windows keeps to share with other PCs. Nothing you made.",
+   "bat": [
+    "powershell -NoProfile -Command \"Delete-DeliveryOptimizationCache -Force\""
+   ]
+  },
+  {
+   "id": "steam-games",
+   "title": "Steam game",
+   "tier": "owner",
+   "method": "uninstall",
+   "os": "win32",
+   "type": "steam",
+   "minMB": 1024,
+   "lose": "the game until you install it again; saves in the Steam cloud stay"
+  },
+  {
+   "id": "epic-games",
+   "title": "Epic game",
+   "tier": "owner",
+   "method": "none",
+   "os": "win32",
+   "type": "epic",
+   "minMB": 1024,
+   "lose": "uninstall it in the Epic launcher: Library, the game's ... menu, Uninstall"
+  },
+  {
+   "id": "programs",
+   "title": "Large installed program",
+   "tier": "owner",
+   "method": "uninstall",
+   "os": "win32",
+   "type": "uninstall",
+   "minMB": 1024,
+   "lose": "the program; its uninstaller says what it keeps"
+  },
+  {
+   "id": "downloads-big",
+   "title": "Large item in Downloads",
+   "tier": "owner",
+   "method": "recycle",
+   "os": "win32",
+   "each": true,
+   "children": true,
+   "paths": [
+    "%USERPROFILE%\\Downloads"
+   ],
+   "minMB": 200,
+   "minAgeHours": 168,
+   "lose": "it goes to the Recycle Bin while it fits; a portable app or game keeps its settings and saves inside"
+  },
+  {
+   "id": "videos-big",
+   "title": "Large item in Videos",
+   "tier": "owner",
+   "method": "recycle",
+   "os": "win32",
+   "each": true,
+   "children": true,
+   "paths": [
+    "%USERPROFILE%\\Videos"
+   ],
+   "minMB": 1024,
+   "minAgeHours": 168,
+   "lose": "it goes to the Recycle Bin and can be restored from there"
+  },
+  {
+   "id": "loose-files",
+   "title": "Loose files beside the repos",
+   "tier": "owner",
+   "method": "recycle",
+   "type": "loose",
+   "minAgeHours": 168,
+   "minMB": 1,
+   "lose": "logs, drafts and bundles chats left; they go to the Recycle Bin"
+  },
+  {
+   "id": "recycle-bin",
+   "title": "Recycle Bin",
+   "tier": "owner",
+   "method": "none",
+   "os": "win32",
+   "type": "bins",
+   "minMB": 100,
+   "lose": "empty it in Explorer when you are sure: nothing in it can be restored after"
+  },
+  {
+   "id": "claude-transcripts",
+   "title": "Claude chat transcripts",
+   "tier": "owner",
+   "method": "none",
+   "paths": [
+    "~\\.claude\\projects"
+   ],
+   "minMB": 500,
+   "lose": "old chats cannot be resumed and /makarasty-tools:selfreview loses its history; delete old ones by hand if at all"
+  }
+ ]
+}
