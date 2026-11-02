@@ -606,7 +606,7 @@ every command reads it when present:
 - Naming: user facing names come from mainNav labels and router meta.title
 - Actions reserved for the operator: anything that dials, charges, ships, or messages a real person
 - Verification cost: full test suite 63s, full typecheck 30s, both memory heavy
-- Accelerators present: rg, sg, bun. Absent: fd, jq. Project query tool: graphify query "..."
+- Accelerators present: rg, sg, bun. Absent: fd, jq.
 - Concurrency: pane lane max 10 (display), repo lane max 10 (16 GB / 16 cores), verify lane 1
 - Subscription: max tier, rate limits are not the binding constraint on this machine
 - Canvas: design/canvas (optional; where a canvas run writes its artboards, this is the default)
