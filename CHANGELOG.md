@@ -1,5 +1,14 @@
 # Changelog
 
+## makarasty-tools 1.9.1 — 2026-11-02
+
+- **`git-guard` closes five bypasses.** A heredoc took the rest of its opening line with its body, so
+  `git commit -F - <<'EOF' && git push --force` ran unchecked; now only the body goes. A heredoc piped into a
+  shell (`cat <<EOF | bash`) and a here-string to a shell (`bash <<< "git stash"`) are read as code. A
+  substitution as the subcommand (`git $(echo stash)`, backticks, `git st$(echo ash)`, `$(echo git) stash`) is
+  refused like a variable, and `git -C $(pwd) stash` no longer drops the subcommand. The PowerShell here-string
+  strip no longer runs for Bash, where `echo a@' '; git stash; echo '@'` hid the stash.
+
 ## makarasty-tools 1.9.0 — 2026-10-28
 
 - **`cleanup` scans the whole disk.** A by-hand cleanup of the owner's PC took nine Haiku scouts and an Opus

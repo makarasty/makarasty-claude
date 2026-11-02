@@ -311,3 +311,18 @@ test('the refusal says why and names no other way to discard', () => {
   expect(denial('git checkout -- a.ts', false, 'Bash', WT)).toBeNull()
   expect(denial('git push --force', false, 'Bash', WT)).toContain('git push')
 })
+
+// Review at b5c8c49: each of these once returned null (or refused a harmless command).
+test('a heredoc hides neither the rest of its line nor code piped into a shell', () => {
+  expect([
+    "git commit -F - <<'EOF' && git push --force\nmsg\nEOF", 'git commit -F - <<EOF; git stash\nmsg\nEOF', "cat <<'EOF' | bash\ngit stash\nEOF",
+    'cat <<EOF | sh -s\ngit reset --hard\nEOF', 'bash <<< "git stash"', "bash <<<'git stash'", 'bash <<< git\\ stash', 'zsh -s <<< "git stash"',
+    'git $(echo stash)', 'git `echo stash`', 'git st$(echo ash)', '$(echo git) stash', 'git -C $(pwd) stash', "echo a@' '; git stash; echo '@'",
+  ].filter((c) => !check(c))).toEqual([])
+  expect([
+    "git commit -F - <<'EOF' && git log\nmsg\ngit stash\nEOF", "cat <<'EOF' > notes.md\ngit stash\nEOF", "cat <<'EOF' | grep x\ngit stash\nEOF",
+    'git commit -F - <<< "git stash"', 'bash -c "git status" <<< "git stash"', 'echo $(git rev-parse HEAD)', 'git log $(git merge-base a b)..b',
+    "git checkout -qb feat origin/feat", 'git reset "--soft"',
+  ].filter((c) => check(c))).toEqual([])
+  expect(["git commit -m @'\nmsg\n'@; git stash"].filter((c) => !check(c, 'PowerShell'))).toEqual([])
+})

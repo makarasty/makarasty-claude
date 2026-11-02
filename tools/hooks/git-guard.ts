@@ -222,8 +222,9 @@ function lex(src: string, lits: string[], nested: string[], ps: boolean): string
       const body = src.slice(i + 1, end)
       substs(body, nested, ps)
       out += `\u0001${lits.push(ps ? body.replace(/`(.)/g, '$1') : body.replace(/\\(["\\$`])/g, '$1')) - 1}\u0001`; i = end
-    } else if (c === '$' && src[i + 1] === '(') { const e = closing(src, i + 2, esc); nested.push(src.slice(i + 2, e)); out += ' ; '; i = e }
-    else if (!ps && c === '`') { const e = src.indexOf('`', i + 1), end = e < 0 ? src.length : e; nested.push(src.slice(i + 1, end)); out += ' ; '; i = end }
+    // A substitution runs on its own, and in its place stays a word that cannot be read: `git $(echo stash)`.
+    } else if (c === '$' && src[i + 1] === '(') { const e = closing(src, i + 2, esc); nested.push(src.slice(i + 2, e)); out += '$(...)'; i = e }
+    else if (!ps && c === '`') { const e = src.indexOf('`', i + 1), end = e < 0 ? src.length : e; nested.push(src.slice(i + 1, end)); out += '$(...)'; i = end }
     else out += c === '(' || c === ')' ? ';' : c
   }
   return out
@@ -239,13 +240,20 @@ function subcommands(cmd: string, ps: boolean, depth = 0, cwd = ''): Sub[] {
   cmd = cmd.replace(ps ? /`\r?\n/g : /\\\r?\n/g, ' ')
   const lits: string[] = [], nested: string[] = [], nestedDir: string[] = []
   let cur = cwd = cwd.replace(/\\/g, '/') // the session directory in Windows spelling too
-  // A heredoc on a shell's own stdin (`bash <<EOF`, flags only) is code; one fed to a script (`sh x.sh <<EOF`)
-  // or any other command (commit messages) is that command's text.
-  for (const m of cmd.matchAll(/(?:^|[\s;&|(/\\])(?:ba|z|da|k)?sh(?:\.exe)?(?:[ \t]+-[\w-]+)*[ \t]*<<-?\s*['"]?(\w+)['"]?\n([\s\S]*?)\n\s*\1\b/g)) nested.push(m[2]!)
-  const cleaned = lex(cmd
-    .replace(/<<-?\s*['"]?(\w+)['"]?[\s\S]*?\n\s*\1\b/g, ' ') // heredoc bodies (commit messages)
-    .replace(/@'[\s\S]*?'@|@"[\s\S]*?"@/g, ' '), lits, nested, ps) // PowerShell here-strings
-    .replace(REDIR, ' ')
+  // A heredoc on a shell's own stdin (`bash <<EOF`, flags only, or `cat <<EOF | bash`) is code; one fed to a script
+  // (`sh x.sh <<EOF`) or any other command (commit messages) is that command's text. Only the body goes: the rest
+  // of the opening line (`<<EOF && git push`) is still a command line.
+  // shortcut: a pipe into a wrapper (`| sudo bash`, `| xargs`) is not read as a shell; upgrade if that bites.
+  const SH = '(?:ba|z|da|k)?sh(?:\\.exe)?'
+  let text = cmd.replace(/(?<!<)<<-?\s*['"]?(\w+)['"]?([^\n]*)(?:\n([\s\S]*?))?\n\s*\1\b/g, (_, tag, rest: string, body = '', at: number, all: string) => {
+    if (new RegExp(`(?:^|[\\s;&|(/\\\\])${SH}(?:[ \\t]+-[\\w-]+)*[ \\t]*$`).test(all.slice(0, at))
+      || new RegExp(`^[^;&|]*\\|\\s*(?:\\S*[\\\\/])?${SH}(?:\\s+-[\\w-]+)*\\s*(?:$|[;&|])`).test(rest)) nested.push(body)
+    return ' ' + rest
+  })
+  if (ps) text = text.replace(/@'[\s\S]*?'@|@"[\s\S]*?"@/g, ' ') // PowerShell here-strings; in Bash `@'` is a quote after @
+  // A here-string (`bash <<< "git stash"`) becomes one \u0004-led word, read below as a shell's stdin or dropped.
+  const cleaned = lex(text, lits, nested, ps)
+    .replace(/<<<\s*((?:\\.|[^\s;&|()<>\\])+)/g, (_, w: string) => ` \u0004${w.replace(/\\(\s)/g, '\u0005')} `).replace(REDIR, ' ')
   const out: Sub[] = []
   // A quoted word as the shell hands it on: `"git"`, `& "C:\Program Files\Git\cmd\git.exe"`.
   // Spliced quotes (`st''ash`, `"st"ash`) are one word to the shell.
@@ -287,6 +295,13 @@ function subcommands(cmd: string, ps: boolean, depth = 0, cwd = ''): Sub[] {
       else break
     }
     const head = unq(words[at] ?? '')
+    // A here-string is a shell's script when the shell has only flags and no -c; any other command's data.
+    const hs = words.filter((w) => w[0] === '\u0004')
+    if (hs.length) {
+      words.splice(0, words.length, ...words.filter((w) => w[0] !== '\u0004'))
+      if (SHELL.test(head) && words.slice(at + 1).every((w) => w.startsWith('-') && !SHELL_CMD.test(w)))
+        for (const w of hs) nestedDir[nested.push(unq(w.slice(1).replace(/\\(.)/g, '$1')).replace(/\u0005/g, ' ')) - 1] = cur
+    }
     // cd / pushd / Set-Location moves the tree the git commands after it act on.
     if (/^(cd|pushd|chdir|set-location|sl|push-location)$/i.test(head)) {
       let a = at + 1
@@ -304,7 +319,7 @@ function subcommands(cmd: string, ps: boolean, depth = 0, cwd = ''): Sub[] {
     // A bare variable head (`$g`, `"$DOCKER"`) may stand for git: only the very next word is read, as a subcommand,
     // so `$_ -match 'x'` or `"$d" rm -f web` pass. A path to a tool (`$env:X\dotnet.exe`) is that tool, not git.
     const via = head.startsWith('$') && !GIT.test(head) ? head : undefined
-    if (via ? !/^\$\{?[\w:]+\}?$/.test(via) : !GIT.test(head)) continue
+    if (via ? !/^\$(\{?[\w:]+\}?|\(\.\.\.\))$/.test(via) : !GIT.test(head)) continue
     // GIT_CONFIG_* in front of git sets config out of sight: hooksPath, gpgsign, aliases.
     let dir = cur
     if (words.slice(0, at).some((w) => /^GIT_(DIR|WORK_TREE)=/.test(w))) dir = '?'
@@ -347,7 +362,7 @@ export function check(cmd: string, tool = 'Bash', where: Where = {}): string | n
   for (const { sub, via, dir } of subcommands(cmd, tool === 'PowerShell', 0, where.cwd ?? '')) {
     const name = sub.split(' ')[0]!
     const own = isPrivate(dir, where.tmp)
-    if (!via && name.startsWith('$')) return `git ${name}: ${VARIABLE}`
+    if (!via && name.includes('$')) return `git ${name}: ${VARIABLE}`
     // shortcut: a bare `$var` before a guarded subcommand word is read as git, so `$pkg restore` is refused too.
     for (const [rule, why, discard] of RULES) if (!(own && discard) && (typeof rule === 'function' ? rule(sub) : rule.test(sub))) return via ? `${via} ${name}: ${VARIABLE}` : `git ${name}: ${why}`
   }
