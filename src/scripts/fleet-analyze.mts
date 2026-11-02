@@ -105,7 +105,7 @@ interface Price { in: number; out: number; cr: number; w5m: number; w1h: number 
 // a JSON object of the same shape keyed by model-id prefix.
 const PRICES: Record<string, Price> = {
   'claude-opus-5-5': { in: 4, out: 20, cr: 0.2, w5m: 5, w1h: 8 },
-  'claude-sonnet-5-5': { in: 2, out: 10, cr: 0.2, w5m: 2.5, w1h: 4 },
+  'claude-sonnet-5-5': { in: 2, out: 10, cr: 0.1, w5m: 2.5, w1h: 4 }, // cache read 0.05x base on 5.5
   'claude-haiku-4-5': { in: 1, out: 5, cr: 0.1, w5m: 1.25, w1h: 2 },
   'claude-fable-5-1': { in: 10, out: 50, cr: 0.25, w5m: 12.5, w1h: 20 },
   // older and smaller models that earlier runs used; same table, cache read at 0.1x where none is listed

@@ -130,7 +130,7 @@ if (r) {
     const s = r.tokens.workers_subagents;
     check('subagent tokens', [s.out, s.cr, s.c5, s.c1h], [s1Out + 50, 9000, 30000, 0]);
     const parentUsd = (10 * 4 + 370 * 20 + 10500 * 0.2 + 50000 * 8) / 1e6;
-    const subUsd = ((s1Out + 50) * 10 + 9000 * 0.2 + 30000 * 2.5) / 1e6;
+    const subUsd = ((s1Out + 50) * 10 + 9000 * 0.1 + 30000 * 2.5) / 1e6;
     const coordUsd = (100 * 4 + 1000 * 20) / 1e6;
     check('parent $', p.cost, parentUsd, 1e-9);
     check('subagent $ at Sonnet prices', s.cost, subUsd, 1e-9);
@@ -148,7 +148,7 @@ writeFileSync(pf, JSON.stringify({ 'claude-sonnet-5-5': { out: 0 } }));
 const res2 = spawnSync(process.execPath, [script, run, '--json', '--prices', pf], { encoding: 'utf8', env, maxBuffer: 64e6 });
 try {
     const r2 = JSON.parse(res2.stdout);
-    check('--prices override', r2.tokens.workers_subagents.cost, (9000 * 0.2 + 30000 * 2.5) / 1e6, 1e-9);
+    check('--prices override', r2.tokens.workers_subagents.cost, (9000 * 0.1 + 30000 * 2.5) / 1e6, 1e-9);
 }
 catch {
     console.log(`FAIL --prices run: ${res2.stderr}`);
