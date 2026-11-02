@@ -23,11 +23,11 @@ test('untagged work keeps the parent model, whatever it says', () => {
     expect(route(spawn(d)).to).toBeUndefined()
 })
 
-test('a leading tag routes, a tag elsewhere does not; a locator goes to haiku', () => {
+test('a leading tag routes, a tag elsewhere does not; Explore is never moved', () => {
   expect(route(spawn('[exec] Merge wave 2')).to).toBe('sonnet')
   expect(route(spawn('[mech] Collect open items')).to).toBe('haiku')
   expect(route(spawn('Fix the [exec] parser')).to).toBeUndefined()
-  expect(route(spawn('Map RHS integration', { subagentType: 'Explore' })).to).toBe('haiku')
+  expect(route(spawn('Map RHS integration', { subagentType: 'Explore' })).to).toBeUndefined()
 })
 
 test("a user's own agent keeps its frontmatter model even when tagged", () => {

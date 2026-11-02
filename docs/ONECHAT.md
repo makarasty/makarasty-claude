@@ -20,7 +20,7 @@ r=<absolute run dir>
    Every line here runs from the folder that holds `.fleet`, and `owns:` is relative to it. Porcelain prints
    paths relative to the git top instead, so `dirty-at-start` and every `files` list below hold top-relative
    paths. In a project below the git top the two differ by `$(git rev-parse --show-prefix)` (`app/`, say).
-3. Write `$r/RULES.md`, the one file every spawn prompt names. At least: the project rules the work must
+3. Write `$r/RULES.md`, the one file whose content every spawn prompt carries once. At least: the project rules the work must
    keep (from `CLAUDE.md` and `FLEET.md`, quoted, not summarised), the evidence contract in one line (a
    `file:line`, a reproducing expression, or three readings with spread and machine load), the finding
    shape (`docs/PROTOCOL.md`, "Finding schema"), and the shared-checkout rules from "One checkout" below.
@@ -131,10 +131,14 @@ For each free slot `NN` in lane `<lane>`:
    | `kind: redesign`: directions, propose | `makarasty:fleet-coder` at the design tier, the top one; assemble at sonnet |
    | speed, stability, `kind: perf` | `makarasty:fleet-profiler` |
 
-   The prompt is paths, never content:
+   The prompt is paths, plus the content of `RULES.md` pasted once (it is short, and a worker that is only
+   pointed at it re-reads it: one run read it 59 times, a review prompt file 101 times [M51]); the task file,
+   diffs and logs stay paths:
 
    ```
-   Task <r>/tasks/ready/<id>.md. Run <r>. Rules <r>/RULES.md. Chip NN.
+   Task <r>/tasks/ready/<id>.md. Run <r>. Chip NN.
+   Rules (pasted once, do not read RULES.md again): <the content of <r>/RULES.md>
+   Brief (pasted once, do not read it again): <the content of the review or red-team brief file; only for a spawn that has one>
    owns: <the task's owns: line>
    Test: timeout 590 <the task's test: line, the scoped test command>   (a hit limit is reported, never retried)
    Tab: <tabId>                      (browser agents only)
@@ -168,7 +172,7 @@ For each free slot `NN` in lane `<lane>`:
    one line, `ruling: <what> - <why>`, in your next `STATE.md` update; `fleet-collect` lists them.
 
    Otherwise, for a code task spawn `makarasty:fleet-reviewer` at the
-   task's `verdict-model` (the pace line's when it names none) on `git diff -- <owns paths>` and
+   task's `verdict-model` (the pace line's when it names none), `effort` by the Economy table below on `git diff -- <owns paths>` and
    `git status --porcelain -uall -- <owns paths>`, told to read every `??` file whole (a new file is in no
    diff; never `git add -N`, the index is shared), with the task file, the claim's `before.diff` (so it
    rules on this task's change only; an empty one means the whole `owns:` diff is this task's) and
@@ -181,7 +185,7 @@ For each free slot `NN` in lane `<lane>`:
      found no defects needs no re-review.
 
    A fix round is that fresh `fleet-coder`. When a cheaper tier did the task and the reviewer rejected it
-   (Economy, below), the same spawn goes one tier up: the bump is the fix round, not a second one.
+   (Economy, below), the same spawn goes to Opus: the bump is the fix round, not a second one.
 
    **Re-review**, after every fix round: an unreviewed fix is where regressions land. Before the fix coder
    starts, save the paths as step 1 does, into `tasks/claimed/<id>/pre-fix.diff`. Spawn `fleet-reviewer` at
@@ -257,8 +261,8 @@ wave; with opt-in worktrees each task commits on its own branch. Reviews read th
 
 | Step | Maximum economy (default) | Balanced | Spend for speed |
 |---|---|---|---|
-| Coder | Sonnet, effort `high`, never `max` | Sonnet `high` | Opus `high` |
-| Reviewer, the verdict | Sonnet, on every code task | Sonnet; Opus on implement, root, design | Opus `xhigh` |
+| Coder | Sonnet, effort `high`, never `max` or `medium`; diagnosis, judgement, design: Opus | Sonnet `high`; Opus on root, design | Opus `high` |
+| Reviewer, the verdict | Opus `medium` on every code task; `high` when the diff is over about 400 changed lines or touches security, auth or permissions, money or data deletion [M51] | Opus `high` | Opus `xhigh` |
 | Commit, `STATE.md` update, reading a log or a large file | Haiku `[mech]` | Haiku `[mech]` | Haiku `[mech]` |
 | Merge (worktrees, opt-in only) | Sonnet `[exec]` | Sonnet `[exec]` | Sonnet `[exec]` |
 | Design | top tier, always | top tier | top tier |
@@ -266,8 +270,7 @@ wave; with opt-in worktrees each task commits on its own branch. Reviews read th
 The full table and the router that honours `[mech]` and `[exec]`: `docs/MODELS.md`, "Pace" and "The
 router". You, the coordinator, keep the plan, the verdicts and the decisions, and nothing else.
 
-A task the reviewer rejects after a cheaper tier did it is re-spawned once, one tier up (Haiku, Sonnet,
-Opus), on the same claim, and you note it in `STATE.md`; that re-spawn is the fix round of step 4, and its
+A task the reviewer rejects after a cheaper tier did it is re-spawned once on Opus, on the same claim, and you note it in `STATE.md`; that re-spawn is the fix round of step 4, and its
 re-review follows. A second reject, or a re-review that still finds a defect with no runnable check, goes to the operator as one `AskUserQuestion` (fleet-plan 8b: file what does not depend on it first).
 
 Why this is cheaper, and the estimate behind it: `docs/MODELS.md`, "Pace".
@@ -277,7 +280,7 @@ Why this is cheaper, and the estimate behind it: `docs/MODELS.md`, "Pace".
 Your context is the run's ceiling: about 3-4 k per task, so 150-200 tasks per 700 K [M43]. Keep it there.
 
 - Claim with the header and frontmatter only (`awk '/^---$/&&++n==3{exit}1'`). Never print a task body.
-- Spawn prompts carry paths, never pasted content.
+- Spawn prompts carry paths, never pasted content, except `RULES.md` (and a review or red-team brief file), pasted once and marked "do not read it again" [M51].
 - Reports at most 15 lines; reviewer verdicts short.
 - Never read a diff, a log or a findings file yourself: `fleet.sh status`, the verdicts and `ask/` only.
   Anything larger goes to a Haiku `[mech]` agent that returns a line.

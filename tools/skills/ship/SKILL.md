@@ -1,5 +1,5 @@
 ---
-description: Ships the working tree - separate commits under the user's own name, merges the named branches in and resolves conflicts, pushes, optionally tags a release. Use for "commit everything as separate commits and push", "pull all branches into mine and fix conflicts", "tag a release with patch notes", or in Russian закоммить от моего имени отдельными коммитами и запушь, стяни все ветки, смержи, подтяни, слей, влей все ветки в мою, учти параллельную работу, закоммить только своё, запушь, залей. A single commit with no push is the commit command.
+description: Ships the working tree: separate commits under the user's name, merges named branches and resolves conflicts, pushes, optionally tags a release. Use for "commit everything as separate commits and push", "pull all branches into mine and fix conflicts", "tag a release with patch notes", or закоммить от моего имени отдельными коммитами и запушь, стяни все ветки, смержи, подтяни, слей, влей все ветки в мою, учти параллельную работу, закоммить только своё, запушь, залей. A single commit with no push is the commit command.
 argument-hint: [branch ... | all] [mine] [tag [<name>]] [notes]
 allowed-tools: Bash(git:*), Bash(gh:*), Read, Grep, Glob, Edit, Agent, ToolSearch, mcp__ccd_session_mgmt__list_sessions, mcp__ccd_session_mgmt__list_events
 ---

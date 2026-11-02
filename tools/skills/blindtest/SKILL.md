@@ -1,5 +1,5 @@
 ---
-description: Usability check by first-time users who never saw the app - agents with no access to the code try plain-language tasks on the live screen, and fixes are re-run to prove the screen got easier. Use on "проверь тупым агентом", "слепой агент", "как тупой пользователь", "пусть новичок разберётся", "blind test the UI", "is this screen understandable".
+description: First-time-user usability check: agents with no code access try plain tasks on the live screen; fixes are re-run to prove it got easier. Use on "проверь тупым агентом", "слепой агент", "как тупой пользователь", "пусть новичок разберётся", "blind test the UI", "is this screen understandable".
 argument-hint: [screen or route] [tasks in plain words] [--fix]
 ---
 

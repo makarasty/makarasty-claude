@@ -379,7 +379,7 @@ handback-of: task-07   # optional, written by `relaunch` and `handback`: the ori
                        # copies the old claim's recorded `before` into the new claim's proof, so the proof carries over
 fanout: 3              # optional, repo lane only. No script reads it; a worker honours it, see LANES.md
 verdict-model: opus    # optional. The tier that reviews a code task before it is finished; absent, one chat uses the
-                       # pace line's tier (`ONECHAT.md`, step 4), separate chats the worker's own tier. A wish, like `model:`: no script reads it
+                       # pace line's tier (`ONECHAT.md`, step 4), separate chats Opus (never the worker's own tier). A wish, like `model:`: no script reads it
 origin: http://localhost:5199   # optional, pane tasks. Where the worker opens the app instead of FLEET.md's
                        # origin: the integration checkout's dev server, or the worker's own tree's. No script reads it
 operator: grant the read-only role   # optional. What the operator must do first. Asked at launch; `next` holds the

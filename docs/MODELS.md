@@ -89,11 +89,11 @@ Guidance:
 ## The router
 
 `makarasty-tools` carries a function hook on `agent.spawn` (`tools/hooks/router.ts`) that moves a spawn to
-a cheaper model only where the caller says that is safe. It touches only the built-in `general-purpose` and `Explore` agents, and the fleet's own `fleet-coder` (routed like `general-purpose`) and `fleet-reviewer` (never moved: a tag on it is ignored, because it is the check that makes a tag safe) [M41], spawned without
+a cheaper model only where the caller says that is safe. It touches only the built-in `general-purpose` agent, and the fleet's own `fleet-coder` (routed like `general-purpose`) and `fleet-reviewer` (never moved: a tag on it is ignored, because it is the check that makes a tag safe) [M41], spawned without
 `model` from an Opus or Fable parent; a named model, any other agent (your own `Explore.md` included: the `agent.offer` event says where each type came from), a workflow agent and a fork go through
 as written.
 
-- `Explore` goes to `haiku`: it locates, it does not judge.
+- `Explore` is never moved: an explicit `model` wins over the router, and it fired on 4 of 70 `Explore` spawns [M51].
 - A description that starts with `[exec]` goes to `sonnet`, one that starts with `[mech]` to `haiku`.
 - Anything else keeps the parent's model.
 
@@ -124,8 +124,8 @@ wave's default budget is replaced by the run's measured median once three tasks 
 
 | Economy | Coder | Reviewer, the verdict |
 |---|---|---|
-| Maximum (recommended) | Sonnet, effort `high`, never `max` | Sonnet, spawned on every code task |
-| Balanced | Sonnet, effort `high` | Sonnet, effort `high`; Opus on implement, root, design |
+| Maximum (recommended) | Sonnet, effort `high`, never `max`, never `medium`; diagnosis, judgement and design go straight to Opus | Opus, effort `medium`, spawned on every code task; `high` when the diff is over about 400 changed lines or touches security, auth or permissions, money or data deletion |
+| Balanced | Sonnet, effort `high`; Opus on root and design | Opus, effort `high` |
 | Spend for speed | Opus, `high` | Opus, `xhigh` |
 
 | Speed against quality | Rounds |
@@ -139,7 +139,7 @@ cheaper model. Commits, `STATE.md` updates and log reading go to Haiku, the desc
 (the router above sends it to `haiku`), except `STATE.md` while the run is paused: the hooks hold every
 subagent then, so the coordinator writes it. Merges, which exist only with the opt-in worktrees, go to Sonnet
 tagged `[exec]`. Design is the exception to all of it and stays on the top tier. A task the reviewer rejects
-after a cheaper tier did it is re-spawned once, one tier up (Haiku, Sonnet, Opus); a second reject goes to
+after a cheaper tier did it is re-spawned once on Opus (the fix round); a second reject goes to
 the operator as one `AskUserQuestion` (`ONECHAT.md`, "Economy").
 
 **Why it is cheaper.** A chat worker starts a task at about 92 to 107 k of context and re-reads its earlier
@@ -148,6 +148,13 @@ with nothing carried over, and idle gaps over five minutes, which rewrote the ca
 do not occur. Estimated 14 to 20 % cheaper than the hybrid of the 2026-10-14 run ($735) and two to three
 times cheaper than inline chat workers [M43]. **That is an estimate; no one-chat run has been measured end
 to end.** The first one is analysed with `fleet-analyze`.
+
+**Why Opus reviews and Sonnet codes** [M51]. Paired on 10 real diffs, Opus `medium` found what Opus `high` found (23 findings
+against 23, weighted 33 against 33) at $0.30 against $0.50 a review; on the hardest diff, 550 lines of permissions, only `high` found
+the 3 bugs, hence the `high` cases above. Sonnet as the only reviewer gave 4 false findings against 1 and missed known bugs. On 148
+historical fleet tasks a Sonnet `high` coder matched an Opus coder on review findings (5.0 against 5.3) at $1.66 against $7.04 a
+task; a lone Sonnet `medium` coder scored 5.5 of 10 against 8.75 for Opus `high` on 4 fresh tasks. So never Sonnet `medium`, and
+never a Sonnet coder without the Opus review.
 
 ## Reasoning effort
 

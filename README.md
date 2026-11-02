@@ -8,7 +8,7 @@ Two Claude Code plugins from one marketplace.
   queue and spawns a fresh subagent per task, which reports by writing files ([`docs/ONECHAT.md`](docs/ONECHAT.md)).
   Separate worker chats, one chip each, are opt-in. Between what a run finds and what it changes there is a gate: no fix without a reproduction that
   failed first.
-- **`makarasty-tools`** is twenty-three everyday commands that have nothing to do with fleets: commit under your
+- **`makarasty-tools`** is twenty-four everyday commands that have nothing to do with fleets: commit under your
   own name, ship a branch, review a diff with evidence, hand a chat off before its context runs out, get a
   phone message when a chat finishes, tune the machine for a game, find what is worth updating, clean up after chats, and a few more.
 
@@ -173,12 +173,13 @@ the flag would stop every worker the moment it tried to begin.
 | `/makarasty-tools:unslop [on\|off\|text]` | Turns humanised replies on or off, or rewrites a given text without assistant tics; a scanner marks the tells before and after, and a fact lock refuses a rewrite that lost a number, path or negation |
 | `/makarasty-tools:say <what to say>` | Turns what you mean into simple English to say on a call or send to a vendor, with a gist in your language beside each line |
 | `/makarasty-tools:notify [what you are waiting for]` | Sends one message to your phone when this chat, another chat or a fleet run finishes: Telegram, Discord, ntfy or a webhook |
+| `/makarasty-tools:tune [usage\|quality\|bench]` | Re-checks which model and effort each role should use: where the tokens and money went and how each coder model fared in review, from your own transcripts and git, then on consent a blind paired review on real diffs picked by sealed markers; a dated role table compared with the last run |
 | `/makarasty-tools:game <game>` | Reads the hardware, disks and the game's install, proposes changes with sources, has a red team try to disprove each, and reports what survived. Applies nothing without a yes per item |
 | `/makarasty-tools:cleanup [processes \| disk \| all \| deep]` | Finds processes ended chats left running and stale worktrees, and scans the disk from a catalog of places (caches, old app versions, scratch of ended chats, games, big files, Windows leftovers) with sizes and what each costs to lose; on a yes it deletes caches, sends personal files to the Recycle Bin only when they fit, opens a game's own uninstaller, and writes a `.bat` for the admin items. Your own places go in `~/.claude/makarasty/cleanup-rules.json`; `deep` finds new ones. "почисти за собой" stops what this chat started |
 | `/makarasty-tools:antislop [on\|off\|status\|audit <path>]` | Turns on an anti-AI-slop filter for UI work from a pinned rule set: no invented numbers, emoji or sparkle decoration, contrast and states checked, a short PASS/FAIL gate at the end of each UI build. Off by default; `audit` lists findings on existing UI [M47] |
 | `/makarasty-tools:update [area]` | Finds what is out of date (apps, runtimes, Claude Code and plugins, other agents, drivers), ranks it, has a red team challenge each pick, and updates only on a yes |
 
-All twenty-three can be started by you or by Claude, and most trigger on plain phrasing in any language: "commit
+All twenty-four can be started by you or by Claude, and most trigger on plain phrasing in any language: "commit
 as me", "закоммить от меня", "ping me when the tests are done".
 
 **Context hook.** Once a chat's context passes 700k tokens, and again every 150k above that, the chat is
@@ -186,7 +187,7 @@ told to offer a handoff in one line (a chat that coordinates or works a fleet ru
 `MAKARASTY_HANDOFF_AT=0` turns it off.
 
 **Model router.** A subagent that Opus or Fable spawns without naming a model runs on Sonnet when its
-description starts with `[exec]` and on Haiku with `[mech]`; an `Explore` agent runs on Haiku. `fleet-coder`
+description starts with `[exec]` and on Haiku with `[mech]`. `Explore` is never moved. `fleet-coder`
 is routed by tag like `general-purpose`; `fleet-reviewer` never is (a tag on it is ignored), because it is the check that makes a tag safe. Untagged
 work keeps the parent's model, and a named model is never changed. `/router` shows what it changed;
 `MAKARASTY_ROUTER=off` turns it off. Why it waits for a tag: `docs/MODELS.md`, "The router".

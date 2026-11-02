@@ -1,5 +1,5 @@
 ---
-description: How to refactor, remove duplication and write tests so the code gets simpler and stays protected - behaviour pinned before a change, an abstraction only where knowledge repeats, tests seen failing before they are trusted. Use on "отрефактори", "сделай dry", "без костылей", "покрой тестами", "закрой тестом, чтобы не повторилось", "тупые тесты", "refactor", "DRY this", "add unit tests for X", or when judging whether tests are worth keeping. Tests for existing code and regression tests are craft; a new feature built red-green is tdd.
+description: How to refactor, dedupe and test so code gets simpler and stays protected: behaviour pinned first, tests seen failing. Use on "отрефактори", "сделай dry", "без костылей", "покрой тестами", "закрой тестом, чтобы не повторилось", "тупые тесты", "refactor", "DRY this", "add unit tests for X", or when judging whether tests are worth keeping. Tests for existing code and regression tests are craft; a new feature built red-green is tdd.
 ---
 
 These are the points where a capable model still slips on this kind of work. Everything else, use your

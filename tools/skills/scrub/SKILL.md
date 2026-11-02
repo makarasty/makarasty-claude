@@ -1,5 +1,5 @@
 ---
-description: Censors API keys, tokens, passwords and private keys pasted into the Claude chat transcripts on this machine, in place with asterisks; a dry run first, and no value is ever printed. Use on "зацензурь ключи в переписках", "убери секреты из чатов", "почисти токены в истории", "scrub secrets from transcripts".
+description: Censors API keys, tokens, passwords and private keys pasted into this machine's chat transcripts, in place; dry run first, no value printed. Use on "зацензурь ключи в переписках", "убери секреты из чатов", "почисти токены в истории", "scrub secrets from transcripts".
 argument-hint: "[--apply] [--min-age 10m]"
 allowed-tools: Bash(node:*), Read
 ---

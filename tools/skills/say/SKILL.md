@@ -1,5 +1,5 @@
 ---
-description: Turns what you mean into simple English a person can say on a call with, or send to, a vendor, a partner or their support. Use to prepare a call script or meeting questions, to phrase one reply on a live call, or to write a support ticket or email to a vendor. Also on "подготовь вопросы для звонка", "напиши им простым языком", "как сказать это на звонке", "что ответить вендору", "напиши в саппорт", "составь тикет". Not for plain translation or for rewriting prose (that is /makarasty-tools:unslop).
+description: Turns what you mean into simple English to say on a call with, or send to, a vendor, partner or support: call script, meeting questions, one live reply, a ticket or email. Use on "подготовь вопросы для звонка", "напиши им простым языком", "как сказать это на звонке", "что ответить вендору", "напиши в саппорт", "составь тикет". Not for translation or prose rewriting (unslop).
 argument-hint: <what you want to say, in any language, what the vendor just said, or a file with the points>
 ---
 

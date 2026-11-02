@@ -354,13 +354,13 @@ Schedule those workers in their own wave. They are measuring a machine the other
 **Default: run the queue from this chat by the loop in `docs/ONECHAT.md`.** Record `dirty-at-start`,
 register one slot per lane width with `chips <run> <NN-MM> <lane> --agents`, one call per lane, disjoint
 ranges, all in this turn, and start claiming. No chip is offered: each claim becomes one background
-subagent, typed by task kind, with the model and effort from the `pace:` line and a prompt of paths only.
+subagent, typed by task kind, with the model and effort from the `pace:` line and a prompt of paths and the pasted content of `RULES.md`, once.
 Read `docs/ONECHAT.md` in full now, before the first claim.
 
 **Cold read, between writing `RULES.md` and registering the slots; skip it for a queue of two tasks or
 fewer.** Nobody tests that a task file can be started by someone who was not in the interview, and a
-worker cannot ask. Spawn one fresh `Agent`, `subagent_type: general-purpose` (it reads files; the
-reviewer is diff-only and the coder edits), with `model` named (Haiku under Maximum economy, Sonnet
+worker cannot ask. Spawn one fresh `Agent`, `subagent_type: Explore` (it only reads files, and starts at 40k
+tokens where `general-purpose` starts at 79k [M51]), with `model` named (Haiku under Maximum economy, Sonnet
 otherwise), given the paths of `RULES.md` and two or three task files (the longest, the first wave's) and
 nothing else. It returns the questions it would still need answered to start, one line each, where a wrong
 guess changes the result. Answer each in the files, not in chat: a fact goes into `RULES.md`, a task-specific

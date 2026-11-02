@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
-import { afterCompact, asksForHandoff, isMarker, levelFor, register, reminder } from './gates.ts'
+import { afterCompact, asksForHandoff, economy, isMarker, levelFor, register, reminder } from './gates.ts'
 
 const entry = { kind: 'file' as const, size: 1, mtimeMs: 0, isLink: false }
 const DAY = 86400000
@@ -151,12 +151,12 @@ test("SessionStart resume hands notify.mjs's note to the chat; other sources and
   const w = world(on, { markers: ['s1.json'] })
   w.say('A phone notification is armed for this chat.\n')
   const r = await $.classic.SessionStart({ source: 'resume' })
-  expect(r.additionalContext).toEqual(['A phone notification is armed for this chat.'])
+  expect(r.additionalContext).toEqual(['A phone notification is armed for this chat.', economy])
   const n = w.runs.length
-  expect((await $.classic.SessionStart({ source: 'startup' })).additionalContext).toBeUndefined()
+  expect((await $.classic.SessionStart({ source: 'startup' })).additionalContext).toEqual([economy])
   expect(w.runs.length).toBe(n)
   w.say('')
-  expect((await $.classic.SessionStart({ source: 'resume' })).additionalContext).toBeUndefined()
+  expect((await $.classic.SessionStart({ source: 'resume' })).additionalContext).toEqual([economy])
 })
 
 test('SessionEnd runs it for /clear only', async ($, on) => {
@@ -286,8 +286,24 @@ test('missing ids or transcript: silent, like context.mjs', async ($, on) => {
 
 test('SessionStart compact names the transcript; other sources do not', async ($, on) => {
   world(on, {})
+  expect((await $.classic.SessionStart({ source: 'compact', transcript_path: '/x/t.jsonl' })).additionalContext).toEqual([afterCompact('/x/t.jsonl'), economy])
+  expect((await $.classic.SessionStart({ source: 'startup', transcript_path: '/x/t.jsonl' })).additionalContext).toEqual([economy])
+})
+
+test('token economy: once on startup, clear, resume and compact; MAKARASTY_ECONOMY=off says nothing', async ($, on) => {
+  world(on, {})
+  for (const source of ['startup', 'clear', 'resume', 'compact'] as const) {
+    const ctx = (await $.classic.SessionStart({ source, transcript_path: '/x/t.jsonl' })).additionalContext ?? []
+    expect(ctx.filter(c => c === economy)).toHaveLength(1)
+  }
+  expect(economy.length).toBeLessThan(700)
+})
+
+test('MAKARASTY_ECONOMY=off drops the token economy text and leaves the compact note', async ($, on) => {
+  world(on, { env: { MAKARASTY_ECONOMY: 'off' } })
+  expect((await $.classic.SessionStart({ source: 'startup' })).additionalContext).toBeUndefined()
+  expect((await $.classic.SessionStart({ source: 'resume' })).additionalContext).toBeUndefined()
   expect((await $.classic.SessionStart({ source: 'compact', transcript_path: '/x/t.jsonl' })).additionalContext).toEqual([afterCompact('/x/t.jsonl')])
-  expect((await $.classic.SessionStart({ source: 'startup', transcript_path: '/x/t.jsonl' })).additionalContext).toBeUndefined()
 })
 
 test('an armed chat past the threshold gets both: notify runs and the reminder is returned', async ($, on) => {

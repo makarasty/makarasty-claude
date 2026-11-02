@@ -27,7 +27,6 @@ export function route(f: SpawnFacts): Route {
   const fleet = /^makarasty(@|$)/.test(f.plugin) && FLEET.test(f.subagentType)
   if ((!f.builtIn && !fleet) || f.workflow || f.fork) return { why: 'not a plain built-in spawn' }
   if (!TOP.test(f.parentModel)) return { why: 'parent below the top tier' }
-  if (f.subagentType === 'Explore') return { to: 'haiku', why: 'locator' }
   if (f.subagentType !== 'general-purpose' && !fleet) return { why: 'other agent' }
   // The reviewer is the independent check that makes a tag safe, so it keeps the parent's model [M41].
   if (fleet && /fleet-reviewer$/.test(f.subagentType)) return { why: 'reviewer is the check' }
@@ -41,7 +40,7 @@ type Stats = { routed: Record<string, number>; kept: Record<string, number>; las
 export const register: Register = on => {
   // Parallel spawns would each read the old stats and overwrite each other: one writer at a time.
   let writes = Promise.resolve()
-  // A user's own Explore.md or general-purpose.md also reports provider "engine"; only the offer says where it came from.
+  // A user's own general-purpose.md also reports provider "engine"; only the offer says where it came from.
   const ownNames = new Set<string>()
   on('agent.offer', ($, e, next) => {
     if (e.source !== 'built-in') ownNames.add(e.agent)

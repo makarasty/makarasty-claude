@@ -3,7 +3,7 @@ name: fleet-reviewer
 description: >
   Reviews one task's diff, uncommitted or committed, and returns the defects it can
   show an input for. Read-only. Use for the review step of every code task a fleet worker finishes,
-  instead of general-purpose. The caller sets the model from the task's verdict-model.
+  instead of general-purpose. The caller sets the model from the task's verdict-model and the effort (medium; high for a diff over about 400 changed lines or one touching security, auth, permissions, money or data deletion).
 tools: [Bash, PowerShell, Read, Grep, Glob]
 ---
 

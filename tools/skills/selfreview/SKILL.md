@@ -1,5 +1,5 @@
 ---
-description: Monthly review of how the person works with Claude, from all their chat transcripts - corrections, context size, clones, skill use, instructions typed again and again - against the month before. Use on "проанализируй мои чаты", "разбор моих чатов", "как я работаю с клодом", "ежемесячный разбор", "analyze my chats". Not for a fleet run's speed or cost (/makarasty:fleet-analyze).
+description: Monthly review of how the person works with Claude, from all their chat transcripts, against the month before. Use on "проанализируй мои чаты", "разбор моих чатов", "как я работаю с клодом", "ежемесячный разбор", "analyze my chats". Not for a fleet run's speed or cost (/makarasty:fleet-analyze).
 argument-hint: [--since YYYY-MM-DD] [--until YYYY-MM-DD]
 ---
 

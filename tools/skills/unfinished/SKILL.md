@@ -1,5 +1,5 @@
 ---
-description: Reads this project's recent chats and reports what each left open: unfinished work, done but uncommitted files, questions waiting for the person. Use on "прочитай историю других чатов", "что не закрыто", "какие таски не закрыты", "что осталось в других чатах", "open tasks across chats". Not for one named chat (handoff from).
+description: Reads this project's recent chats and reports what each left open: unfinished work, uncommitted files, questions waiting. Use on "прочитай историю других чатов", "что не закрыто", "какие таски не закрыты", "что осталось в других чатах", "open tasks across chats". Not for one named chat (handoff from).
 argument-hint: [days, default 7] [project path, default this one]
 ---
 

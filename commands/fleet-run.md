@@ -174,7 +174,7 @@ step 1. Any other wake, a restart message included, runs `whoami` without it.
    task's own branch, `fleet/<chip>/<task-id>` unless the task or the run names another, in your worktree,
    cut from the task's `base:` with its predecessors merged in (section 1). Nothing downstream can review
    or merge uncommitted work, and `worktrees/<chip>` records only the branch you are on. Then spawn one
-   `makarasty:fleet-reviewer` at the task's `verdict-model` (your own tier when the task has none) on the committed branch's
+   `makarasty:fleet-reviewer` at the task's `verdict-model` (Opus when the task has none, never your own tier; `effort` `medium`, `high` for a diff over about 400 changed lines or one touching security, auth, permissions, money or data deletion) on the committed branch's
    diff against the branch you started from, with the task file and `answers/00-broadcast.md` if it exists, whose
    recurring misses it checks one by one: it returns the defects it can show an input for. Fix those. What
    you cannot fix in the budget, or dispute, goes in `<chip>.notes.md` as unreached with the reason, and you
@@ -262,8 +262,8 @@ last result into one turn: several tool calls in one message, or one Bash call p
 needs the previous answer. Read with the `Read` tool (offset and limit for a slice) and search with `Grep`
 when they are offered: a `Read` returned in 0.02 s where a Bash read cost 0.5-0.9 s of harness time, and a
 file `Read` read can be changed with `Edit`. A repo subagent is `makarasty:fleet-coder` for work and
-verify and `makarasty:fleet-reviewer` for review, never `general-purpose`: those two start at about 40k
-tokens where general-purpose starts at 77-78k, and every one of their turns re-reads the start. Their
+verify, `makarasty:fleet-reviewer` for review and `Explore` for read-only search, never `general-purpose`: those start at 40-46k
+tokens where general-purpose starts at about 79k (the extra MCP schemas and the skill listing) [M51], and every one of their turns re-reads the start. Their
 bodies already carry the batching rule; every repo `Agent` prompt you write carries the map of what you already found: the files and line ranges, the scoped
 test command, the worktree and the branch. A delegated subagent made its first edit after a median 4.5
 minutes, and 18% of what it read its parent had already read [M36].

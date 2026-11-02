@@ -82,6 +82,19 @@ export const afterCompact = (transcript: string): string =>
   `request, an error string, a decision - search that file for it (grep, or a short node script over ` +
   `the user and assistant lines) rather than guessing or asking again. Never read it whole.`
 
+// Token economy rules, once per main session (SessionStart does not fire in subagents). MAKARASTY_ECONOMY=off drops it.
+export const economy =
+  'Token economy: spawn the narrowest agent (Explore for read-only search; fleet-coder for edits and fleet-reviewer for review if installed, ' +
+  'else general-purpose) and set model and effort on every spawn: coder Sonnet high, reviewer Opus medium (high for diffs over ~400 lines or ' +
+  'security), judgement and design Opus. Keep noisy work (test runs, screenshots, wide searches, logs) in subagents. Read big files with ' +
+  'grep and a line range; `git diff --stat` before a full diff; scope checks to the files you touched.'
+
+const withEconomy = async ($: Dollar, out: { additionalContext?: string[] }, more: string[] = []) => {
+  const rules = (await $.env.get('MAKARASTY_ECONOMY')) === 'off' ? [] : [economy]
+  const all = [...(out.additionalContext ?? []), ...more, ...rules]
+  return all.length ? { ...out, additionalContext: all } : out
+}
+
 async function base($: Dollar): Promise<string> {
   const cfg = await $.env.get('CLAUDE_CONFIG_DIR')
   if (cfg) return `${cfg}/makarasty`
@@ -163,17 +176,19 @@ export const register: Register = on => {
   // Resume: stdout of a SessionStart command hook is context for the chat, so notify.mjs's note is returned as such.
   on('classic.SessionStart', { source: 'resume' }, async ($, e, next) => {
     const out = await next(e)
-    if (!(await armed($))) return out
-    const note = (await notify($, e, 10000).catch(() => undefined))?.stdout.trim()
-    return note ? { ...out, additionalContext: [...(out.additionalContext ?? []), note] } : out
+    const note = (await armed($)) ? (await notify($, e, 10000).catch(() => undefined))?.stdout.trim() : ''
+    return withEconomy($, out, note ? [note] : [])
   })
 
   // After a compaction the summary drops detail; the conversation is still on disk.
   on('classic.SessionStart', { source: 'compact' }, async ($, e, next) => {
     const out = await next(e)
-    if (!e.transcript_path) return out
-    return { ...out, additionalContext: [...(out.additionalContext ?? []), afterCompact(e.transcript_path)] }
+    return withEconomy($, out, e.transcript_path ? [afterCompact(e.transcript_path)] : [])
   })
+
+  for (const source of ['startup', 'clear'] as const) {
+    on('classic.SessionStart', { source }, async ($, e, next) => withEconomy($, await next(e)))
+  }
 
   on('classic.SessionEnd', { reason: 'clear' }, async ($, e, next) => {
     if (await armed($)) await notify($, e, 5000).catch(() => {})

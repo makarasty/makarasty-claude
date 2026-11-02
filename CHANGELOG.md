@@ -1,5 +1,30 @@
 # Changelog
 
+## makarasty 1.10.0, makarasty-tools 1.10.0 — 2026-11-02
+
+- **Reviewer on Opus, coder on Sonnet, by measurement [M51].** Default reviewer: Opus `medium`, `high` for a diff over
+  about 400 changed lines or one touching security, auth, money or data deletion (Opus medium matched high on 10 real diffs, $0.30
+  against $0.50; only high found the 3 bugs in a 550-line permissions diff; Sonnet alone gave 4 false findings against 1).
+  Coder: Sonnet `high`, never `medium`, always followed by the Opus review; a rejected task gets its fix round on Opus;
+  diagnosis, judgement and design go straight to Opus. Tables in `docs/MODELS.md` and `docs/ONECHAT.md`, spawn lines in
+  `fleet-run`, `fleet-plan`.
+- **The router no longer sends `Explore` to Haiku.** It fired on 4 of 70 spawns (an explicit `model` wins). Removed from
+  `router.ts`, its test, `MODELS.md` and `README.md`.
+- **Brief once.** A worker prompt carries the content of `RULES.md` once and says not to read it again (it was read 59 times in
+  one run, a review prompt file 101).
+- **Narrow agent types.** Commands name `fleet-coder`, `fleet-reviewer` and `Explore` instead of `general-purpose` (79k
+  tokens at start against 46k and 40k); the `fleet-plan` cold read is now an `Explore`.
+- **Shorter skill descriptions** for blindtest, craft, explain, scrub, selfreview, unfinished, update (no use in 30 days) and
+  ship, commit, say, cleanup (longest); triggers kept.
+- **Token economy rules in every session.** `gates.ts` hands a short rule set (narrowest agent, model and effort on every spawn, noisy work in subagents, grep and line ranges, scoped checks) to the main chat as SessionStart context on startup, clear, resume and compact; subagents get none. `MAKARASTY_ECONOMY=off` turns it off.
+- **New skill `tune`: re-check which model and effort each role uses** when a new model ships. Three steps, the
+  first two free scripts over this machine's transcripts and git (`tune.mjs usage`: tokens and $ by model, role,
+  effort, project, context size; `quality`: per coder model, review findings, fix-needed share, rounds, $ per task,
+  owner corrections per main-chat model), the third a blind paired review on real diffs picked by sealed markers
+  (later-fixed, multi-round, controls), run only after the printed cost estimate is accepted. Models come from the
+  transcripts, prices from the one `fleet-analyze` table, arms that mix model and effort are flagged. The result is a
+  dated role table in `~/.claude/makarasty/tune/`, diffed against the previous run.
+
 ## makarasty-tools 1.9.1 — 2026-11-02
 
 - **`git-guard` closes five bypasses.** A heredoc took the rest of its opening line with its body, so

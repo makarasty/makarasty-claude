@@ -801,6 +801,19 @@ ponytail, mattpocock-skills and sunup added (arm C). About $5.8.
   other chats, commit" taken by handoff.
 **Status:** current. One run per prompt: single misses are noise; not re-run after the description fixes.
 
+## M51 — Model routing: reviewer, coder, router, brief once, agent type
+**2026-11-02**, owner-approved.
+- **Reviewer:** paired benchmark, 10 real diffs. Opus medium = Opus high on real findings (23 vs 23, weighted 33 vs 33), $0.30 vs
+  $0.50 a review. On the hardest diff (550 lines, permissions) only high found the 3 bugs. Sonnet alone: 4 false findings vs 1,
+  known bugs missed.
+- **Coder:** 148 historical fleet tasks, Sonnet high = Opus on review findings (5.0 vs 5.3), $1.66 vs $7.04 a task. 4 fresh
+  tasks: Sonnet medium 5.5/10, Opus high 8.75/10.
+- **Router, Explore to haiku:** fired 4 of 70 times, because an explicit `model` wins. Removed.
+- **Brief once:** in one run RULES.md was read 59 times, REVIEW-PROMPT.md 101, redteam-brief.md 76.
+- **Agent type:** a general-purpose subagent starts at about 79k tokens (extra MCP schemas about 25k, skill listing 7.5k), fleet-coder
+  46k, Explore 40k; 466 general-purpose spawns a week in one project.
+**Status:** current; the benchmark numbers are the owner's, not re-run here.
+
 ## Appendix: what a pull run spends
 
 Moved here from `PULL.md`, which workers read in full; none of it changes what a worker does.
