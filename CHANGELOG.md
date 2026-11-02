@@ -1,5 +1,9 @@
 # Changelog
 
+## makarasty-tools 1.10.1 — 2026-11-02
+
+- **Screenshots in the economy rules.** Routine ones at scale 0.5 in a subagent; one the person wants to see is shown. A soft rule.
+
 ## makarasty 1.10.0, makarasty-tools 1.10.0 — 2026-11-02
 
 - **Reviewer on Opus, coder on Sonnet, by measurement [M51].** Default reviewer: Opus `medium`, `high` for a diff over

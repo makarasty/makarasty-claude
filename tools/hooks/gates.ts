@@ -86,7 +86,8 @@ export const afterCompact = (transcript: string): string =>
 export const economy =
   'Token economy: spawn the narrowest agent (Explore for read-only search; fleet-coder for edits and fleet-reviewer for review if installed, ' +
   'else general-purpose) and set model and effort on every spawn: coder Sonnet high, reviewer Opus medium (high for diffs over ~400 lines or ' +
-  'security), judgement and design Opus. Keep noisy work (test runs, screenshots, wide searches, logs) in subagents. Read big files with ' +
+  'security), judgement and design Opus. Keep noisy work (test runs, screenshots, wide searches, logs) in subagents, routine screenshots at ' +
+  'scale 0.5; show one whenever the person wants to see it. Read big files with ' +
   'grep and a line range; `git diff --stat` before a full diff; scope checks to the files you touched.'
 
 const withEconomy = async ($: Dollar, out: { additionalContext?: string[] }, more: string[] = []) => {
