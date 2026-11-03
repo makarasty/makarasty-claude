@@ -12,7 +12,7 @@ Two Claude Code plugins from one marketplace.
   own name, ship a branch, review a diff with evidence, hand a chat off before its context runs out, get a
   phone message when a chat finishes, tune the machine for a game, find what is worth updating, clean up after chats, and a few more.
 
-Install one or both. They are versioned separately.
+Install one or both. They are versioned separately. A few tools reach into the fleet plugin when it is there: blindtest and the visual check in hold use its browser agents, tune reads its price table, handoff of a coordinator uses its relaunch.
 
 ## Why it exists
 

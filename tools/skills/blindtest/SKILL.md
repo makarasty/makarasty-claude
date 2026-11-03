@@ -11,7 +11,7 @@ are usability observations, not design findings: the design gate in the fleet's 
 
 ## 1. Set it up
 
-Needs the makarasty plugin (its `fleet-naive-user` agent) and a browser pane.
+Needs the makarasty plugin (its `fleet-naive-user` agent) and a browser pane. Without either, say so in one line and stop: nothing was tested.
 
 - **Tasks**: three by default, at most five: goals a real user of this screen has, in their words, with no
   label from the UI ("find the phone number of a patient", not "open the Contacts tab"), each with one

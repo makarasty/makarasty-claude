@@ -49,6 +49,12 @@ is a question for the planner, answered at the worker's next task boundary.
 
 **Only the planner may ask the operator**, because the operator is watching the planner.
 
+**The planner asks only what is the operator's to decide [M52].** That is an action that cannot be undone,
+production, money or data loss, or a real fork the operator must choose (scale, pace, what the mission
+means). For anything else take the recommended option, say in one line what you assumed (in the reply and
+under open questions in `STATE.md`), and keep working; the operator corrects it when they next look. When
+you do ask, put everything that does not depend on the answer in motion first.
+
 **A question about a reserved action is not asked at all.** Sending a message to a real person, a vendor
 call that costs money, a production write, deleting stored data: none of those become permitted by an
 answer, so there is nothing to wait for. Record the step as unreached with the reason and take the next
@@ -89,6 +95,15 @@ after turn, by their own backgrounded subagents finishing.
 That wake is also the only timeout a fleet has. A subagent that never returns, an answer that never
 arrives, a pane nobody displays: in every one of those the session is waiting on an event that may not
 come, and the armed wake is what turns a permanent stall into a decision made two minutes later.
+
+**Wait for the event, not for a clock [M52].** A background command or an `Agent` with `run_in_background`
+sends a notification when it ends: end the turn and let that wake you. Never wait on it with a `sleep`
+loop or by repeating the same check, since every poll is a model turn; the wake above is the safety net,
+not the plan, and is re-armed only when it fired and the thing it guards is still pending. A `Monitor` is
+for a stream of lines you act on, not for waiting out a command that will notify when it exits. Size every
+kill-after limit to about twice that command's normal time (`timeout 240` for a two-minute test), not
+`timeout 590` for all of them: 590 is only the most the shell allows. No time known yet: run it once at
+590, then size the next from what it took.
 
 Exactly two boundaries are safe to end a turn on, because after each of them the session has no further
 job: after writing `<chip-id>.done`, and after writing `<chip-id>.blocked`. Everywhere else, arm the wake

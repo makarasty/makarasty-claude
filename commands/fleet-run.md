@@ -229,7 +229,8 @@ sleep 120; echo wake
 ```
 
 Every test run, typecheck, build or server start gets a kill-after limit of about twice its normal time
-(both shell tools stop at 600000 ms, so the wrapper stays under it. Bash: `timeout 590 <cmd>`, exit 124 =
+(both shell tools stop at 600000 ms, so the wrapper stays under it. Bash: `timeout <S> <cmd>` with S about
+twice its normal time in seconds and 590 at most, exit 124 =
 limit hit, with the Bash tool's own `timeout` parameter at 600000, since its default of 120000 ms cuts
 first; PowerShell: the tool's own `timeout` parameter in ms, never `timeout`, which is timeout.exe; macOS
 without coreutils: `gtimeout`; longer than 600000 ms in any shell: a background run plus `TaskStop` at

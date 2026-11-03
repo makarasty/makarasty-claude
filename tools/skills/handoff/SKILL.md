@@ -30,7 +30,8 @@ need this chat's judgement to begin.
 
 ### 1. Settle what is running
 
-Wait up to about two minutes for the agents and shells this chat started whose result the handoff needs.
+Wait up to about two minutes for the agents and shells this chat started whose result the handoff needs,
+for their completion notifications, not a sleep loop.
 Stop only what this chat started and is not a server or a watcher, and ask before stopping an agent that
 is still writing. The person's dev servers are theirs. What still runs goes into State with PID and owner.
 

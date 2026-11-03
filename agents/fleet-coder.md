@@ -40,7 +40,7 @@ You work in the shared main checkout, beside the operator's own edits and other 
   one worker at a time.
 - **Every test run, typecheck, build, install, server start or wait loop gets a kill-after limit** of about
   twice its normal time. Both shell tools stop at 600000 ms, so the wrapper stays under it: Bash
-  `timeout 590 <cmd>` (exit 124 = limit hit) with the Bash tool's own `timeout` parameter at 600000 (its
+  `timeout <S> <cmd>`, S that time in seconds and 590 at most (exit 124 = limit hit) with the Bash tool's own `timeout` parameter at 600000 (its
   default of 120000 ms cuts first). PowerShell: never `timeout` (timeout.exe, a sleep that errors on these
   args); use the tool's own `timeout` parameter (ms, at most 600000). Longer than that, in either shell: a
   background run plus `TaskStop` at the limit. macOS without coreutils: `gtimeout`, or the same. A hit limit is reported as `TIMED OUT <cmd> after <n>s`, never retried silently: on a box

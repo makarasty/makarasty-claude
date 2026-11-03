@@ -77,7 +77,7 @@ that come with the codeword ("абрикос, флитом, без worktree") de
    accepting it. Groups that share a file run in one agent, or here.
 7. **Look**: before and after for each group, in every theme the app has. Screenshots are heavy, so the
    look goes to a `makarasty:fleet-scenario` agent with `model: "sonnet"` after `/makarasty:fleet-login`,
-   and only its findings come back. Without a pane, a visual fix nobody looked at is reported as not checked.
+   and only its findings come back. Without a pane or the makarasty plugin, a visual fix nobody looked at is reported as not checked.
    When the person wants to see it ("покажи скриншотами", "как было, как стало"), record each group with
    `/makarasty-tools:proof`: the before shot goes before the edit, and the report numbers the blocks.
 

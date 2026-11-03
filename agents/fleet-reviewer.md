@@ -36,7 +36,7 @@ about half the context a general-purpose subagent starts with, and every turn re
   asserts something other than the symptom the finding names (the input is the symptom itself, which the
   `repro:` does not catch).
 - Run a scoped test only when it settles whether a defect is real, with a kill-after limit; a hit limit is
-  reported, not retried. Both shell tools stop at 600000 ms. Bash: `timeout 590 <cmd>` (exit 124 = limit hit),
+  reported, not retried. Both shell tools stop at 600000 ms. Bash: `timeout <S> <cmd>`, S about twice its normal time in seconds and 590 at most (exit 124 = limit hit),
   with the Bash tool's own `timeout` parameter at 600000 (its default of 120000 ms cuts first). PowerShell: the
   tool's `timeout` parameter (ms, at most 600000), never `timeout` (timeout.exe). Longer, in either shell: a
   background run plus `TaskStop` at the limit. macOS without coreutils: `gtimeout`, or background + `TaskStop`.

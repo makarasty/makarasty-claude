@@ -51,6 +51,11 @@ more, and check it against the other installed descriptions for collisions.
   that needs a date goes into the project's measurement log, cited from the rule.
 - Most important rules first: after a compaction only the head of a loaded skill survives. Under 500
   lines; long reference goes to files.
+- A tool that waits waits for a background task's completion notification, never a `sleep` loop or the same
+  check repeated (each poll is a model turn), and sizes a kill-after limit to about twice the command's
+  measured time, not a blanket 600 s. A tool that asks the person asks only what is theirs to decide
+  (irreversible, production, money or data loss, a real fork); otherwise it takes the recommended option,
+  says so in one line and keeps working [M52].
 
 ## 5. Keep the running cost near zero
 

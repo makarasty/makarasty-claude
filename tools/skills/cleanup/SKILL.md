@@ -122,7 +122,7 @@ skipped by the script with their reason. An `owner` item is a pick only when the
 
 ## 3. Challenge
 
-One `Agent` (`subagent_type: general-purpose`, `model: opus`, in the foreground), given the picks as a file
+One `Agent` (`subagent_type: Explore`, `model: opus`, in the foreground: read-only by its tools), given the picks as a file
 path, told: read only - end nothing, delete nothing, write nothing; defend each item against removal - a live
 chat still uses it (Git Bash breaks parent links, so a live chat's `cmd &` can look orphaned), the operator's
 own server or emulator, an MCP server or browser a live `claude`, terminal or IDE owns, a live fleet's worktree, unpushed commits, a cache a running build fills, a temp file

@@ -298,7 +298,7 @@ operator`, and under `== bottlenecks` any open task, free to start, that holds t
 2026-10-06: every remaining plan task sat behind one permissions task for about two hours, closing 8 and
 then 4 tasks an hour, before the operator was asked.
 
-And: **`touch .fleet/<run-id>/tasks/queue-open` before the first claim or chip** when you will file
+And: **`echo "<what is still to come>" > .fleet/<run-id>/tasks/queue-open` before the first claim or chip** when you will file
 more than you have planned - fix tasks from your reviews, remainders - holding one line saying what. While it exists a worker whose lane runs dry polls instead of
 finishing, which is what lets the repo lane start at full width without losing a chat every time the queue
 runs momentarily dry. **Delete it the moment you will file nothing more** - that deletion is what ends the
@@ -444,7 +444,7 @@ worker wants its pane opened and kept on screen.
 
 ## 8b. Coordinate without becoming the bottleneck
 
-You are the one session the whole run depends on, and the one nothing restarts. Ten rules keep you light.
+You are the one session the whole run depends on, and the one nothing restarts. These rules keep you light.
 
 - **Review through a subagent, never in your own context.** In one chat that is `makarasty:fleet-reviewer`
   on `git diff -- <owns paths>`, the loop's step 4 (`docs/ONECHAT.md`). With separate chats: when a task

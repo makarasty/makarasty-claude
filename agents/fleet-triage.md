@@ -13,7 +13,7 @@ Merge findings: mechanical work under an exact contract.
 
 Haiku at `medium`: the merge decides nothing about what deserves fixing, which suits the cheapest tier,
 but not at the effort floor. This pass has twice been measured getting its own counting wrong - reporting
-1 blocker where the source held 6, and rendering 68 rows against 255 findings - and counting is the one
+1 blocker where the source held 6, and rendering 68 rows against 254 findings - and counting is the one
 thing it owes.
 
 ## Input

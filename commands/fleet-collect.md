@@ -190,7 +190,7 @@ on disk before one is sent.
    checkout [M32], and it deletes a branch only with `git branch -d`. Never clean before the run has
    landed: a worktree removed early takes findings that were never filed with it.
 
-Exactly two other things are worth waking someone for, and both belong to the planner rather than here: a
+One other thing is worth waking someone for, and it belongs to the planner rather than here: a
 fleet still stalled after a revive attempt failed, and nothing else. A worker asking for its pane must
 never page at night, because a sleeping operator cannot open a pane; the paneless lane and the
 panes-open-before-bed rule in `fleet-plan` exist for that.

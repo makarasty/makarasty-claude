@@ -140,10 +140,10 @@ For each free slot `NN` in lane `<lane>`:
    Rules (pasted once, do not read RULES.md again): <the content of <r>/RULES.md>
    Brief (pasted once, do not read it again): <the content of the review or red-team brief file; only for a spawn that has one>
    owns: <the task's owns: line>
-   Test: timeout 590 <the task's test: line, the scoped test command>   (a hit limit is reported, never retried)
+   Test: timeout <S> <the task's test: line, the scoped test command>   (a hit limit is reported, never retried)
    Tab: <tabId>                      (browser agents only)
    Proof, after your change: node "<g>" prove "<r>" <id> after -- '<the repro: line, word for word>'   (fix, root)
-   Test proof, after your change: node "<g>" prove "<r>" <id> after -- 'timeout 590 <the test: line, a `'` in it written `'''`>'   (instead of running Test bare; no before)
+   Test proof, after your change: node "<g>" prove "<r>" <id> after -- 'timeout <S> <the test: line, a `'` in it written `'''`>'   (instead of running Test bare; no before)
    Include the Test proof line only for `kind: implement` or `design` with a `test:` line when `<r>/RUN_FORMAT`
    holds 2 or more (the run's format stamp, written at its first `next`); a run stamped 1 has no such gate.
    Findings: sh "<f>" find "<r>" NN, one JSON finding on stdin; it files, it is no probe. Heartbeat: sh "<f>" beat "<r>" NN <id>.
@@ -152,7 +152,8 @@ For each free slot `NN` in lane `<lane>`:
    Last line (fleet-coder only): DONE, DONE_WITH_CONCERNS: <one line> or BLOCKED: <one line>.
    ```
 
-   `timeout 590` is the Bash form (exit 124 = limit hit), kept under the 600000 ms both shell tools stop
+   `timeout <S>` is the Bash form (exit 124 = limit hit). `<S>` is about twice the test's normal time in
+   seconds, never above 590 (`PROTOCOL.md`, "Wait for the event"), under the 600000 ms both shell tools stop
    at; the Bash tool's own `timeout` parameter is set to 600000, since its default of 120000 ms cuts first.
    In PowerShell `timeout` is timeout.exe, a sleep: use the PowerShell tool's own `timeout` parameter (ms,
    at most 600000). Longer, in either shell: a background run plus `TaskStop` at the limit. macOS without coreutils: `gtimeout`, or background plus `TaskStop`.
@@ -293,7 +294,7 @@ Your context is the run's ceiling: about 3-4 k per task, so 150-200 tasks per 70
   carries a kill-after limit of about twice its normal time; a hit limit is reported, never retried. The
   task clock stops a hung subagent, not necessarily the test run it started; `fleet.sh procs <run>` lists
   orphaned runs (unverified for a subagent's child in one chat), so the limit is what you rely on.
-  Bash: `timeout 590 <cmd>`; PowerShell: the tool's `timeout` parameter, never `timeout` the command;
+  Bash: `timeout <S> <cmd>` (S in seconds, 590 at most); PowerShell: the tool's `timeout` parameter, never `timeout` the command;
   macOS without coreutils: `gtimeout`, or a background run plus `TaskStop`.
 - Subagents run the task's scoped test command only. A full suite or typecheck is a `verify` task, one at a
   time, filed `after:` every code task of its wave, so `next` holds it while a coder of that wave runs.

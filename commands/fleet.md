@@ -30,7 +30,7 @@ opt-in, chosen in the plan's first question round.
 
 `fleet`, `fleet-design`, `fleet-redesign` and `fleet-call` carry `disable-model-invocation: true`: they
 spawn paid work and depend on your clicks, so no agent starts them. `fleet-pause` does not: it spends nothing,
-and a coordinator that is asked to pause has to be able to run it. `fleet-plan` does not, since 1.5.7: a
+and a coordinator that is asked to pause has to be able to run it. `fleet-plan` does not either: a
 chat that became a coordinator by handoff, or was told "launch the fleet", could not load it and launched
 without its chip rules. Nothing it does costs money until you click a chip. The others are reachable by an
 agent that needs them, and `fleet-run` has to be: you start a worker by

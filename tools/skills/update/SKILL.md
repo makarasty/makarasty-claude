@@ -61,7 +61,7 @@ daily tools first.
 
 ## 3. Challenge
 
-One `Agent` (`subagent_type: general-purpose`, `model: opus`, in the foreground), the picks inline in its
+One `Agent` (`subagent_type: Explore`, `model: opus`, in the foreground: read-only by its tools), the picks inline in its
 prompt, told: read only - install, download and write nothing, keep commands light while other sessions run;
 challenge each pick - it breaks a pin, the changelog holds nothing worth the risk, the item is unused, a
 running process holds it, the move would break a launcher or an IDE; return `update`, `wait` or `skip` with a

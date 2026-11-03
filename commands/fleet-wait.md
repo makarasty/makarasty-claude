@@ -284,7 +284,7 @@ the operator asked what the six hour task in the task list was.
 
 The loop above breaks on its own when the expected count lands. It is still yours to stop when the run ends
 some other way, when you re-arm a replacement, or when the operator cancels the run: call `TaskStop` with
-the watch's task id. `fleet-collect` stops it as its last act.
+the watch's task id. `fleet-collect` stops it (its step 3).
 
 ## While waiting
 

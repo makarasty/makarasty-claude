@@ -81,7 +81,7 @@ from `docs/MODELS.md`:
   three `fleet-canvas.mjs` calls with the title and the output path, and the instruction to file an
   `ask/` if `seed` cannot find the design skill's helper.
 
-Order the files longest budget first within a stage. Touch `tasks/queue-open` before the first slot or chip and
+Order the files longest budget first within a stage. Write one line saying what is still to come to `tasks/queue-open` before the first slot or chip and
 delete it once every task is filed - here that is immediately, because a canvas run's queue is known in
 full from the screen list. Use the `after:` gates, not the order, for the stages: `fleet.sh next` holds a
 gated task and tells the worker `QUEUE WAITING`, so a repo worker that starts before recon lands polls

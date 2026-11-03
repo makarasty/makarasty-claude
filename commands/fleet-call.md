@@ -89,7 +89,7 @@ The script task rewrites it with what the facts changed.
   the task that every question carries `data-facts`, that every number in a spoken line is a word, and
   that the traps section is written from the guesses and from the findings the facts tasks filed.
 
-Order the files longest budget first. Touch `tasks/queue-open` before offering a chip and delete it once
+Order the files longest budget first. Write one line saying what is still to come to `tasks/queue-open` before offering a chip and delete it once
 every task is filed - here that is immediately, because the queue is known in full from the source list.
 Use the `after:` gate, not the order, for the script task: `fleet.sh next` holds it and tells its worker
 `QUEUE WAITING` until the last facts file lands.

@@ -145,7 +145,7 @@ node "$g" check .fleet/<run-id> <task-id> --test                       # what `f
 
 It costs no extra test run: the coder runs its scoped test through `prove` instead of bare. `check --test`
 refuses unless the last `after` exited 0, ran a command that is the `test:` line (alone, or after a
-`timeout 590`, a `cd X &&` or a `VAR=x` in front; `true` and `echo <test>` are not), and no path the task owns has changed since that run. A review
+a `timeout N`, a `cd X &&` or a `VAR=x` in front; `true` and `echo <test>` are not), and no path the task owns has changed since that run. A review
 fix round therefore runs the test again, and the same record is overwritten. With no `owns:` the tree
 check is skipped, since another task's edit cannot be told from this one's. A task without `test:`
 finishes on prose and review as before.

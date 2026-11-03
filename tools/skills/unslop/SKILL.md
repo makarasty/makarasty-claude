@@ -32,8 +32,8 @@ of the README, not the toggle.
    `${CLAUDE_PLUGIN_ROOT}/hooks/unslop-catalog.md` (the full tell list, the guard, the technical carve-out).
    Only this rewrite reads the catalog.
 2. Pasted text or the last reply: save the original first, so the scanner can read it. Run
-   `cat > "${TMPDIR:-/tmp}/unslop-orig.md" <<'UNSLOP_EOF'`, the text, then `UNSLOP_EOF` on its own line. Save the
-   rewrite to `unslop-new.md` the same way.
+   `cat > "${TMPDIR:-/tmp}/unslop-${CLAUDE_CODE_SESSION_ID:-x}-orig.md" <<'UNSLOP_EOF'`, the text, then `UNSLOP_EOF` on its own line (the session id keeps two chats apart). Save the
+   rewrite to `unslop-<id>-new.md` the same way.
 3. Run `node "${CLAUDE_PLUGIN_ROOT}/hooks/unslop-scan.mjs" <file>` to mark the tells. If node says it cannot
    find that script, the scanner is absent: mark the tells by hand from the catalog, skip the scanner steps,
    and say in one line that it did not run.

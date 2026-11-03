@@ -814,6 +814,18 @@ ponytail, mattpocock-skills and sunup added (arm C). About $5.8.
   46k, Explore 40k; 466 general-purpose spawns a week in one project.
 **Status:** current; the benchmark numbers are the owner's, not re-run here.
 
+## M52 — Waiting and asking in LifeLines sessions
+**2026-11-03**, owner decision from 14 days of measured LifeLines sessions.
+- **Waiting:** `sleep` and `until` loops took 5.8 h. The same command was polled 443 times (2.3 h), one of them 39
+  times; each poll is a model turn. `Monitor` waits had p50 1787 s: most ran into the 30-minute limit instead of
+  catching the event. Some test runs ended at `timeout 600` exactly.
+- **Asking:** `AskUserQuestion` blocked sessions for 17.9 h (p50 183 s, p90 1145 s). Owner: "if it's not an
+  important question, why wait?"
+- **Rules produced:** wait for the completion notification; size a limit to about twice the measured time; ask
+  only what is the operator's to decide, otherwise assume the recommended option, say so in one line, and
+  keep working (`PROTOCOL.md`).
+**Status:** current; the owner's numbers, not re-run here.
+
 ## Appendix: what a pull run spends
 
 Moved here from `PULL.md`, which workers read in full; none of it changes what a worker does.
