@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
-import { afterCompact, asksForHandoff, economy, isMarker, levelFor, register, reminder } from './gates.ts'
+import { afterCompact, asksForHandoff, economy, findings, habits, isMarker, levelFor, register, reminder } from './gates.ts'
 
 const entry = { kind: 'file' as const, size: 1, mtimeMs: 0, isLink: false }
 const DAY = 86400000
@@ -26,7 +26,7 @@ function world(on: On, o: World = {}) {
   const runs: { argv: readonly string[]; stdin?: string; timeoutMs?: number }[] = []
   let says = ''
   // The engine's own end of each classic chain: no settings hook, nothing to say.
-  for (const ev of ['Stop', 'StopFailure', 'Notification', 'UserPromptSubmit', 'SessionStart', 'SessionEnd'] as const) on(`classic.${ev}`, async () => ({}))
+  for (const ev of ['Stop', 'StopFailure', 'Notification', 'UserPromptSubmit', 'SessionStart', 'SessionEnd', 'SubagentStart'] as const) on(`classic.${ev}`, async () => ({}))
   mock.env(on, { CLAUDE_CONFIG_DIR: '/cfg', ...o.env })
   mock.clock(on, { now: 10 * DAY })
   on('fs.list', async (_$, e) => {
@@ -151,12 +151,12 @@ test("SessionStart resume hands notify.mjs's note to the chat; other sources and
   const w = world(on, { markers: ['s1.json'] })
   w.say('A phone notification is armed for this chat.\n')
   const r = await $.classic.SessionStart({ source: 'resume' })
-  expect(r.additionalContext).toEqual(['A phone notification is armed for this chat.', economy])
+  expect(r.additionalContext).toEqual(['A phone notification is armed for this chat.', economy, habits, findings])
   const n = w.runs.length
-  expect((await $.classic.SessionStart({ source: 'startup' })).additionalContext).toEqual([economy])
+  expect((await $.classic.SessionStart({ source: 'startup' })).additionalContext).toEqual([economy, habits, findings])
   expect(w.runs.length).toBe(n)
   w.say('')
-  expect((await $.classic.SessionStart({ source: 'resume' })).additionalContext).toEqual([economy])
+  expect((await $.classic.SessionStart({ source: 'resume' })).additionalContext).toEqual([economy, habits, findings])
 })
 
 test('SessionEnd runs it for /clear only', async ($, on) => {
@@ -286,8 +286,8 @@ test('missing ids or transcript: silent, like context.mjs', async ($, on) => {
 
 test('SessionStart compact names the transcript; other sources do not', async ($, on) => {
   world(on, {})
-  expect((await $.classic.SessionStart({ source: 'compact', transcript_path: '/x/t.jsonl' })).additionalContext).toEqual([afterCompact('/x/t.jsonl'), economy])
-  expect((await $.classic.SessionStart({ source: 'startup', transcript_path: '/x/t.jsonl' })).additionalContext).toEqual([economy])
+  expect((await $.classic.SessionStart({ source: 'compact', transcript_path: '/x/t.jsonl' })).additionalContext).toEqual([afterCompact('/x/t.jsonl'), economy, habits, findings])
+  expect((await $.classic.SessionStart({ source: 'startup', transcript_path: '/x/t.jsonl' })).additionalContext).toEqual([economy, habits, findings])
 })
 
 test('token economy: once on startup, clear, resume and compact; MAKARASTY_ECONOMY=off says nothing', async ($, on) => {
@@ -297,13 +297,26 @@ test('token economy: once on startup, clear, resume and compact; MAKARASTY_ECONO
     expect(ctx.filter(c => c === economy)).toHaveLength(1)
   }
   expect(economy.length).toBeLessThan(700)
+  expect(habits.length).toBeLessThan(450)
 })
 
-test('MAKARASTY_ECONOMY=off drops the token economy text and leaves the compact note', async ($, on) => {
-  world(on, { env: { MAKARASTY_ECONOMY: 'off' } })
+test('MAKARASTY_ECONOMY=off and MAKARASTY_FINDINGS=off drop their texts and leave the compact note', async ($, on) => {
+  world(on, { env: { MAKARASTY_ECONOMY: 'off', MAKARASTY_FINDINGS: 'off' } })
   expect((await $.classic.SessionStart({ source: 'startup' })).additionalContext).toBeUndefined()
   expect((await $.classic.SessionStart({ source: 'resume' })).additionalContext).toBeUndefined()
   expect((await $.classic.SessionStart({ source: 'compact', transcript_path: '/x/t.jsonl' })).additionalContext).toEqual([afterCompact('/x/t.jsonl')])
+})
+
+test('findings: every subagent gets the line', async ($, on) => {
+  world(on, {})
+  expect((await $.classic.SubagentStart({ agent_id: 'a1', agent_type: 'Explore' })).additionalContext).toEqual([findings])
+  expect(findings.length).toBeLessThan(300)
+})
+
+test('MAKARASTY_FINDINGS=off: no line in subagents, economy alone in a main session', async ($, on) => {
+  world(on, { env: { MAKARASTY_FINDINGS: 'off' } })
+  expect((await $.classic.SubagentStart({ agent_id: 'a1', agent_type: 'Explore' })).additionalContext).toBeUndefined()
+  expect((await $.classic.SessionStart({ source: 'startup' })).additionalContext).toEqual([economy, habits])
 })
 
 test('an armed chat past the threshold gets both: notify runs and the reminder is returned', async ($, on) => {

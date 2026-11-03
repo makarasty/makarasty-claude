@@ -90,8 +90,23 @@ export const economy =
   'scale 0.5; show one whenever the person wants to see it. Read big files with ' +
   'grep and a line range; `git diff --stat` before a full diff; scope checks to the files you touched.'
 
+// Named, not fixed: a terse-reply rule from another plugin made cheap subagents drop defects they had seen, and this line
+// brought the report back without unasked fixes [M53]. Main sessions and subagents; MAKARASTY_FINDINGS=off drops it.
+export const findings =
+  'Findings: a defect you notice beyond the task goes in your reply (where, what is wrong); ask before fixing it. ' +
+  'Never drop one to keep a reply short. Why: the person trusts your report and does not re-check it.'
+
+const findingsOn = async ($: Dollar) => (await $.env.get('MAKARASTY_FINDINGS')) !== 'off'
+
+// Habits that each cost hours in measured runs (Edit failures [M25] [M31], polling and waiting on questions [M52],
+// "fixed" with no proof [M23]) and lived only in fleet docs. Rides with the economy text and its switch.
+export const habits =
+  'Working rules, each from a measured failure: Edit a file only after reading it with the Read tool. Wait for a ' +
+  "task's completion notice; never poll with sleep loops. Ask the person only what is theirs to decide; otherwise take " +
+  'the recommended option and say so in one line. Call a fix done only after a check you ran shows it.'
+
 const withEconomy = async ($: Dollar, out: { additionalContext?: string[] }, more: string[] = []) => {
-  const rules = (await $.env.get('MAKARASTY_ECONOMY')) === 'off' ? [] : [economy]
+  const rules = [...((await $.env.get('MAKARASTY_ECONOMY')) === 'off' ? [] : [economy, habits]), ...((await findingsOn($)) ? [findings] : [])]
   const all = [...(out.additionalContext ?? []), ...more, ...rules]
   return all.length ? { ...out, additionalContext: all } : out
 }
@@ -190,6 +205,12 @@ export const register: Register = on => {
   for (const source of ['startup', 'clear'] as const) {
     on('classic.SessionStart', { source }, async ($, e, next) => withEconomy($, await next(e)))
   }
+
+  // SessionStart does not fire in subagents, and cheap subagents are where the dropped defects showed.
+  on('classic.SubagentStart', async ($, e, next) => {
+    const out = await next(e)
+    return (await findingsOn($)) ? { ...out, additionalContext: [...(out.additionalContext ?? []), findings] } : out
+  })
 
   on('classic.SessionEnd', { reason: 'clear' }, async ($, e, next) => {
     if (await armed($)) await notify($, e, 5000).catch(() => {})

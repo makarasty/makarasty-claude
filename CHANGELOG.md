@@ -1,5 +1,27 @@
 # Changelog
 
+## makarasty 1.10.2, makarasty-tools 1.12.0 — 2026-11-03
+
+- **Findings are named, not dropped** [M53]. A new line goes to every main session (startup, clear, resume,
+  compact) and, through SubagentStart, to every subagent: a defect noticed beyond the task goes in the reply, and the
+  model asks before fixing it. In an A/B, a terse-reply rule from another plugin made Haiku name the extra bug in
+  2/10 runs (bare 10/10). This line brought it back to 8/10, with no unasked fixes. `MAKARASTY_FINDINGS=off` drops it.
+- **Working rules beside the economy text.** Four habits that cost hours in measured runs, until now only in fleet
+  docs: Edit only after the Read tool [M25] [M31]; wait for the completion notice, never poll [M52]; ask only what is
+  the person's to decide [M52]; call a fix done only after a check ran [M23]. `MAKARASTY_ECONOMY=off` drops them too.
+- **git-guard lets `git worktree remove -h` and `--help` through** [M53]. A plugin-combination run found it refusing
+  the help text in 34 of 37 runs that asked for it.
+- **Kill-after limits are sized to the command** (`timeout <S>`, about twice its measured time) instead of a fixed
+  `timeout 590`, in fleet-coder, fleet-reviewer, fleet-run, ONECHAT and GATE.
+- **Wait for the event, not for a clock; ask only what is the operator's** [M52] (PROTOCOL, forge). handoff waits
+  for completion notifications.
+- **`tasks/queue-open` gets one line of content** in fleet-call, fleet-design and fleet-plan; `next` prints it.
+- Challenge agents in cleanup, game and update are `Explore`. unslop's temp files are keyed by session id.
+  The commit and ship triggers catch the typos "закомить" and "закомить и запуш". blindtest stops, and hold
+  reports the visual check as not checked, without the makarasty plugin; README lists the tools that need it.
+- Wording: fleet-triage 254 findings, fleet-collect "one other thing", fleet-plan "These rules", fleet-wait
+  "(its step 3)", fleet.md drops "since 1.5.7".
+
 ## makarasty 1.10.1, makarasty-tools 1.11.0 — 2026-11-03
 
 - **Handoff keeps what receivers kept losing** (from 10 real handoffs and their receiving chats). The chip prompt

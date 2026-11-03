@@ -40,6 +40,7 @@ test('worktree remove, plain force push and branch -D are refused, with the reas
   expect(NEW_BLOCK.filter((c) => !check(c))).toEqual([])
   expect(check('git worktree remove x')).toContain('fleet.sh clean')
   expect(check('git worktree remove x')).toContain('/makarasty-tools:prune')
+  expect(['git worktree remove -h', 'git worktree remove --help', 'git worktree remove -h 2>&1 | head -20'].map((c) => check(c))).toEqual([null, null, null])
   expect(check('git push -f')).toContain('--force-with-lease')
   expect(check('git branch -D x')).toContain('unmerged')
 })

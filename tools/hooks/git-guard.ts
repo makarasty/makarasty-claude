@@ -127,7 +127,8 @@ const RULES: Rule[] = [
   [(s) => /^apply\b/.test(s) && new RegExp(`\\s(-[a-zA-Z0-9]*R[a-zA-Z0-9]*(\\s|$)|${opt('reverse')})`).test(s) && !/\s--cached(\s|$)/.test(s)
     && (!/\s--(check|stat|numstat|summary)(\s|$)/.test(s) || /\s--apply(\s|$)/.test(s)),
     'git apply -R reverses uncommitted changes in the tree (git apply -R --cached, --check or --stat is allowed)', true],
-  [/^worktree\s+remove\b/, 'git worktree remove follows a node_modules junction and empties the main checkout: use /makarasty-tools:prune, or fleet.sh clean for the worktree of a fleet run'],
+  // `-h`/`--help` only prints usage: a plugin-combo run found the guard blocking `git worktree remove -h` [M53].
+  [(s) => /^worktree\s+remove\b/.test(s) && !/\s(-h|--help)(\s|$)/.test(s), 'git worktree remove follows a node_modules junction and empties the main checkout: use /makarasty-tools:prune, or fleet.sh clean for the worktree of a fleet run'],
   [(s) => /^push\b/.test(s) && (/\s--force(\s|$)/.test(s) || /\s-[a-zA-Z]*f[a-zA-Z]*(\s|$)/.test(s) || /\s\+\S/.test(s)), 'git push --force overwrites commits on the remote (--force-with-lease is allowed)'],
   // A remote ref deleted (`--delete`, `-d`, `:ref`) or every ref overwritten (`--mirror`, `--prune`) is gone for everyone.
   [(s) => /^push\b/.test(s) && (new RegExp(`\\s${opt('delete', 'mirror', 'prune')}`).test(s) || /\s-[a-zA-Z]*d[a-zA-Z]*(\s|$)/.test(s) || /\s:\S/.test(s)),

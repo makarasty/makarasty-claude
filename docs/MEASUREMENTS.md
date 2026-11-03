@@ -826,6 +826,27 @@ ponytail, mattpocock-skills and sunup added (arm C). About $5.8.
   keep working (`PROTOCOL.md`).
 **Status:** current; the owner's numbers, not re-run here.
 
+## M53 — Prompt words and plugin combinations, A/B
+**2026-11-03**, 369 headless runs with no hooks or CLAUDE.md, plus 136 with the owner's real settings (all plugins,
+hooks, CLAUDE.md), plugins switched off one at a time. Haiku 5.5 n=5-10 per arm, Sonnet 5.5 n=2-3; about $10.50 at
+list price. Task t1: a cart module, the test hits one of three seeded bugs. t5: the same with a decoy (a stale
+"0..50" comment, code right per the CHANGELOG). t2/t6: a question about a git flag that does not exist.
+- **Words change what is done with a find, not the find.** Bare Haiku named the second bug and asked in 10/10,
+  fixing it unasked in 0/10. An action with a reason ("check edge cases: this ships, money errors cost") fixed all
+  three in 10/10 (p≈1e-5), at 3.7x output tokens and 1.8x time. Caps and threats, "important for my career",
+  `ultrathink` in `-p`, "fast", "economical": 0/10, the same as bare.
+- **A terse-reply rule hides finds.** The caveman per-prompt text placed in the prompt: Haiku named the extra bug
+  in 2/10 (bare 10/10). The `findings` line in the system prompt brought it to 8/10 with 0/10 unasked fixes.
+  Under the real settings the gap is small: all plugins 4/5, with `findings` 5/5. Sonnet named it 3/3 in every combo;
+  with no plugins it also fixed it unasked in 2/3, with them 0/3.
+- **Decoy:** 0/50 changed the right code to match the stale comment, in every arm.
+- **No combination conflicts:** replies in Russian 136/136, no run errors, t3 arithmetic 25/25.
+- **Guard false positive:** `git-guard` refused `git worktree remove -h` in 34 of 37 t6 runs (the model then answered from memory); fixed.
+- **Long context:** a rule at the top of ~35k tokens was kept 15/15 with no reminder; 300k+ sessions untested.
+- **Rules produced:** the `findings` SessionStart/SubagentStart line in `tools/hooks/gates.ts`; give a reason with
+  an instruction instead of emphasis.
+**Status:** current. Opus, live sessions past 300k and subagents spawned from a real chat were not tested.
+
 ## Appendix: what a pull run spends
 
 Moved here from `PULL.md`, which workers read in full; none of it changes what a worker does.
