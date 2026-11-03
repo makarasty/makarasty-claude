@@ -166,8 +166,9 @@ mechanical: **a round that changes nothing ends the interview.** Stopping when t
 formality; stopping when the plan stops moving is a decision procedure, and in practice it takes three to
 five rounds.
 
-Ask a whole round at once, numbered, each with your recommended answer, so the operator can reply "all
-yours" and lose nothing:
+Ask a whole round at once as one `AskUserQuestion` (rule in section 8b: never a question typed into the
+reply), each question with your recommended answer as its first option, so the operator can take them all and
+lose nothing. A round of more than four questions is split into calls of four. The draft of one question:
 
 ```
 Q1 - Axis: I am splitting by screen ownership, six slices. The alternative is by user role, which
@@ -243,7 +244,7 @@ code carry `isolation: worktree`, and queue tasks of `kind: implement`, `fix`, `
 <run> <chip> --create <base>` when its chip opened in the main checkout, with the `base:` of its first task;
 every code task carries `base: <the integration branch>`, the branch you merge finished work into (section
 8b), because a worker's own default is the main checkout's current branch, which is not necessarily it.
-Never write worktree setup into the run's rules by hand. A coordinator that did put its trees at `C:/wtRM01`, outside `.claude/worktrees/`,
+Never write worktree setup into the run's rules by hand. A coordinator that did put its trees at `C:/wtRM01`, outside `.claude/worktrees/`, left them
 where nothing in the plugin can register or clean them.
 
 ## 3b. Fixed briefs, or a queue

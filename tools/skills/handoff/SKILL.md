@@ -34,6 +34,12 @@ Wait up to about two minutes for the agents and shells this chat started whose r
 Stop only what this chat started and is not a server or a watcher, and ask before stopping an agent that
 is still writing. The person's dev servers are theirs. What still runs goes into State with PID and owner.
 
+An agent's report reaches only the chat that spawned it, and the next chat cannot read it from the
+transcript (`list_events` shows tool calls as stubs). An agent still running after the wait: tell it with
+`SendMessage` to write its report to `<handoff dir>/<name>/<agent>.md` and name that path in State, or
+stop it and put its task in Next. Never offer the chip while a result the next chat needs is still due
+here. Nothing writes to the handoff file after the chip is offered, background jobs included.
+
 **A fleet watch is the exception: stop it.** When this chat is a fleet's coordinator and the operator
 explicitly asked for a handoff anyway, its `fleet-wait` watch is a background task of this chat, and it shares `<run>/.watch-seen` with whatever watch the next chat arms.
 Left running, the old one reports each event first and marks it seen, and the new chat never hears it.
@@ -43,9 +49,11 @@ that cannot stop it (the task id is lost) says so in State, so the next chat kno
 ### 2. Find this chat's id
 
 Load the session tools with ToolSearch `select:mcp__ccd_session_mgmt__get_session,mcp__ccd_session_mgmt__list_sessions,mcp__ccd_session_mgmt__list_events,mcp__ccd_session_mgmt__search_session_transcripts`.
-`mcp__ccd_session_mgmt__get_session` with `"self"` gives the `local_...` id and the title. Without the
-session tools, use `CLAUDE_CODE_SESSION_ID` and the transcript path
-`<config dir>/projects/<cwd with every non-alphanumeric as ->/<id>.jsonl`.
+`mcp__ccd_session_mgmt__get_session` with `"self"` gives the `local_...` id and the title. The transcript
+is named by a different id, `CLAUDE_CODE_SESSION_ID`: record both. Resolve the transcript's absolute path
+now and check that it exists:
+`ls "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/projects/*/"$CLAUDE_CODE_SESSION_ID".jsonl`.
+Without the session tools, the uuid is the only id.
 
 ### 3. Snapshot the checkout
 
@@ -54,37 +62,61 @@ A chip opens in a fresh worktree, without this checkout's uncommitted and untrac
 without touching the real index:
 
 ```bash
-p="<handoff dir>/<name>.patch"; i="${p%.patch}.index"; mkdir -p "$(dirname "$p")" &&
-GIT_INDEX_FILE="$i" git read-tree HEAD && GIT_INDEX_FILE="$i" git add -A \
-  && GIT_INDEX_FILE="$i" git diff --cached --binary HEAD > "$p"; rm -f "$i"; [ -s "$p" ] || rm -f "$p"
+p="<handoff dir>/<name>.patch"; i="${p%.patch}.index"; big="${p%.patch}.untracked-big.txt"; mkdir -p "$(dirname "$p")" &&
+GIT_INDEX_FILE="$i" git read-tree HEAD && GIT_INDEX_FILE="$i" git add -A &&
+git ls-files -z --others --exclude-standard | xargs -0 -r stat -c '%s %n' | awk '$1>1048576{sub(/^[0-9]+ /,"");print}' > "$big" &&
+{ [ ! -s "$big" ] || tr '\n' '\0' < "$big" | GIT_INDEX_FILE="$i" xargs -0 git rm -q --cached --; } &&
+GIT_INDEX_FILE="$i" git diff --cached --binary HEAD > "$p"; rm -f "$i"; [ -s "$p" ] || rm -f "$p"; [ -s "$big" ] || rm -f "$big"
 ```
 
 `<name>` is the handoff file's name from step 4 without `.md`. The patch holds every uncommitted file in
-the checkout, other chats' too, and not what `.gitignore` hides. Staging is not kept. A clean tree leaves
-no patch.
+the checkout, other chats' too, and not what `.gitignore` hides. Untracked files over 1 MB (screenshots,
+photos, build output) stay out of it; their paths are in `<name>.untracked-big.txt`, which State cites.
+A clean tree leaves no patch.
+
+Staging is not kept in the patch, and in a shared checkout it is someone's: record
+`git diff --cached --name-only` in State, each file with its owner, so the next chat does not commit
+another chat's staged file with its own.
+
+Anything the next chat needs from this session's scratchpad (screenshots the person sent, measuring
+scripts, a drafted commit message or reply) dies with it. Copy those files to `<handoff dir>/<name>/`
+and cite that path; short drafted text goes into the file itself, verbatim.
 
 ### 4. Write the file
 
 `<handoff dir>/<yyyy-mm-dd>-<id6>-<slug>.md`, outside every repository; `<id6>` is the first 6 characters
 of the session id after `local_`, so parallel chats never share a name. In English,
-whatever language the chat was in: it is read by a model. Sections, each only when it has content:
+whatever language the chat was in: it is read by a model. That covers the file only: anything the next
+chat says or asks the person stays in the person's language. Sections, each only when it has content:
 
-- **Goal**: the person's request in their own words, quoted short, then one line on what done means. A
-  chat that was compacted no longer holds the request: take it from the compaction summary and mark it
-  "(from compaction summary)".
+- **Goal**: the person's request in their own words, quoted short, every part of it (a "review, red team,
+  in a loop, finish it" keeps all four), then one line on what done means. Done is the person's bar, not a
+  smaller one this chat would like: "доведи до конца" stays "until finished", not "committed locally, the
+  rest to the owner". A chat that was compacted no longer holds the request: take it from the compaction
+  summary and mark it "(from compaction summary)".
 - **Done**: what changed, by commit hash or path, and how each piece was verified (the command, the
   result). Something not verified says so.
 - **Next**: the remaining steps in order, each with its done-when. The first step is the one the next
   chat can start without asking anything. Items collected with /makarasty-tools:hold and not yet fixed
-  go here, every one, numbered as the person gave them.
+  go here, every one, numbered as the person gave them. So does every known defect or review finding left
+  open, each with where it is: an open item not written here is lost. One is "report, do not fix" only
+  when the person said so, quoted.
 - **Decided**: what the person already ruled on, and ideas they rejected, so nobody asks again.
-- **Traps**: what failed here and why, so it is not tried twice.
+- **Traps**: what failed here and why, so it is not tried twice, with the exact working command next to the
+  failing one (a server that starts only from its own folder, a flag a guard blocks). How a commit goes
+  through in this project, when this chat learned it: hooks, guards, which tests the hook runs, what an
+  agent may not do (`--no-verify`) and so must hand to the person.
 - **State**: the absolute path of this checkout, the branch and HEAD sha from step 3, the patch path, the
-  uncommitted files and whose they are (this chat's, another chat's, unknown), running processes, local URLs.
-- **The person**: only what this chat learned and their `CLAUDE.md` and memory do not already say - how
-  they want answers, a codeword in play, what not to touch.
+  uncommitted and the staged files and whose they are (this chat's, another chat's, unknown), other live
+  chats on the same checkout or branch by title, running processes, local URLs.
+- **The person**: what this chat learned that their `CLAUDE.md` and memory do not already say. Read those
+  first and leave out every line they cover (answer language and length, how to ask questions, "check
+  before claiming" are usually there); the section is often empty. Worth a line: how they reacted
+  here ("не понял" to an abstract question means give a concrete example), a codeword in play, what not
+  to touch.
 - **Open questions**: what only this chat could answer, if anything is still unclear.
-- **Source**: this chat's title and id, and its transcript path.
+- **Source**: this chat's title, its `local_...` id, its `CLAUDE_CODE_SESSION_ID`, and the transcript's
+  absolute path from step 2.
 - **Model**: `sonnet` when Next is a written plan to carry out, `opus` when judgement is left, `fable`
   only for design.
 
@@ -114,15 +146,16 @@ State: the next chat then works only from the checkout path.
 - `prompt`: the receiver prompt below, filled in, plus the focus from the arguments, if any.
 
 > Continue work handed off from the chat '<title>' (<id>). Read <handoff file> in full before anything
-> else. This session may have opened in a fresh worktree without the work. Load
+> else. Your first message, before any other tool call, is a readback in at most five lines in the
+> person's language: the goal, what is done and verified, what is unverified, the first step. Then work.
+> This session may have opened in a fresh worktree without the work. Load
 > mcp__ccd_directory__change_directory with ToolSearch and move to <checkout path>; until this turn ends
 > use absolute paths and `git -C <checkout path>`. If it is unavailable or refused, work here: when HEAD
 > is not <sha>, run `git switch -C handoff/<slug> <sha>`; then, if <patch path> exists and
 > `git apply --check <patch path>` passes, `git apply <patch path>`.
 > If `git merge-base --is-ancestor <sha> HEAD` fails in the checkout (the branch was switched or
-> rewritten), stop and ask the person. Before acting, reply in at most five lines in the person's
-> language: the goal, the first step, and what is unverified. Then start with the first Next step. If a
-> fact is missing, read that chat with mcp__ccd_session_mgmt__list_events; ask it with SendMessage (to:
+> rewritten), stop and ask the person. Start with the first Next step. If a fact is missing, look in
+> <handoff dir>/<name>/ and grep the transcript <transcript path>; ask that chat with SendMessage (to:
 > its id) only as a last resort, one precise question.
 
 When the next chat is to run a fleet (a coordinator relaunch builds its own chip, with its own prompt, and
@@ -148,8 +181,8 @@ transcript, or ask the person."
 
 ### 7. Reply and stop
 
-Two lines in the person's language: the chip is up, and which model to open it on, with the reason in a
-few words. Then stop working on the task, so two chats never edit the same files. Do not archive this
+Two lines in the person's language: the chip is up, which model to open it on with the reason in a few
+words, and that from now on the task is discussed in the new chat, not here. Then stop working on the task, so two chats never edit the same files. Do not archive this
 chat; the person does that once the new chat has given its readback. Answer questions from the next chat
 briefly, from what this chat knows.
 

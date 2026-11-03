@@ -42,7 +42,7 @@ Stop here when steps 1-2 answer the question (no new model, no row in doubt).
    result: commits a later fix blamed or a revert undid, tasks that took 2+ review rounds, and controls,
    with a seeded draw. Categories and known bugs are sealed in `review/sealed/answers.json`: do not read it
    until scoring, so nothing you say steers the reviewers.
-2. Choose arms that separate model from effort, for example `new:high,current:high,current:medium`.
+2. Choose arms that separate model from effort, for example `opus:high,sonnet:high,sonnet:medium` with the new and the current model's names (`plan` refuses a name it has no price for).
    `node "$T" plan <run> --arms <...> [--whole K]` prints the cost estimate per arm and in total, seals the
    codes once, and makes one folder per reviewer, `blind/<NN>-<CODE>/`, holding only the change and a
    snapshot of the files at the commit (no repo path, no answers). It stops on an `UNPRICED` arm or judge

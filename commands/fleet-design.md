@@ -39,8 +39,8 @@ stage; if every screen styles itself, it does not.
 Hold a complete draft from the first exchange: run id `<date>-canvas[-<slug>]`, the enumerated screen
 list with each screen's route and the source files behind it, the viewport, the canvas title (what the
 operator would call it - the application's name - never the tool or the format), whether the `compare`
-stage runs, and whether `propose` is in scope now. Then ask one round, numbered, each with your
-recommended answer, so "all yours" loses nothing:
+stage runs, and whether `propose` is in scope now. Then ask one round as `AskUserQuestion` calls of at most four
+questions, each with your recommended answer as its first option, so "all yours" loses nothing. Drafts:
 
 ```
 Q1 - Screens: eleven, listed above, from mainNav and router meta.title. Correct the list; there is no

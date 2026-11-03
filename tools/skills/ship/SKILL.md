@@ -63,7 +63,7 @@ in one question.
 3. Group the rest by intent: one logical change per commit (a fix, a feature, a doc update, a dependency
    bump), ordered so each commit leaves the tree working. A file that mixes two intents goes with its
    dominant one; say which in the reply.
-4. Commit each group per commit.md, by path.
+4. Commit each group per commit/SKILL.md, by path.
 
 Done when `git status --short` shows only the files step 0 and this step left out.
 
@@ -127,7 +127,7 @@ clean after.
   Commits by other authors stay out unless the user asks: the notes are about this user's work.
 - Format: when the repository has its own release how-to or update log (`git ls-files` names something
   like release, changelog or update log), follow it, and read the last two entries so the new one
-  repeats neither their wording nor their items. Write the entry and commit it per commit.md.
+  repeats neither their wording nor their items. Write the entry and commit it per commit/SKILL.md.
 - Notes: a few lines grouped as new / fixed / other, each a plain sentence a user of the software would
   understand, no commit prefixes or hashes. In Russian when the user writes in Russian.
 
@@ -135,7 +135,7 @@ clean after.
 
 A request that said to push settles it, on the default branch too, and so does invoking ship with no
 arguments, whose whole meaning is commit and push. Without either, ask once before the
-first push to the default branch (commit.md says how to find it). Then `git push`, or `git push -u origin
+first push to the default branch (commit/SKILL.md says how to find it). Then `git push`, or `git push -u origin
 <branch>` when there is no upstream. Read the output:
 
 - `! [rejected] ... (fetch first)` or `(non-fast-forward)`: the remote moved. `git fetch`, step 2's

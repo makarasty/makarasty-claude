@@ -45,10 +45,10 @@ of the README, not the toggle.
 6. Stop rule: if the scan finds no tells and the reread finds none, return the text unchanged and say so in
    one line. Run at most two rewrite passes. Scans and rereads are not passes.
 7. Keep length where the content earns it. A dense technical explanation is not slop because it is long.
-10. Keep the writer's own voice when the text is someone else's. When the person gives a sample of their
-    own writing, match its sentence length, punctuation and register.
-11. Return the rewritten text only, with no note about what changed, except the one-line notes above. For a
-    file, write it back and say which file in one line.
+8. Keep the writer's own voice when the text is someone else's. When the person gives a sample of their
+   own writing, match its sentence length, punctuation and register.
+9. Return the rewritten text only, with no note about what changed, except the one-line notes above. For a
+   file, write it back and say which file in one line.
 
 Lines someone will say aloud to a vendor or their support are a different register: use
 `/makarasty-tools:say`.

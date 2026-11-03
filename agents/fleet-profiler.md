@@ -100,7 +100,7 @@ Final message is a JSON array, nothing else:
 Raw traces stay with you; the parent gets the table.
 
 **When your prompt names a run and a chip NN**, file each row yourself with
-`printf '%s' '<one JSON finding>' | sh "$f" find "$r" NN`, using the `$f` and `$r` it gives you, and `beat`
+`sh "$f" find "$r" NN <<'EOF'`, the JSON finding on the next line, then `EOF` (a quoted heredoc, so an apostrophe in `observed` cannot break it), using the `$f` and `$r` it gives you, and `beat`
 at boundaries. Never call `next`, `finish` or `drained`: the coordinator does, for your slot. `find`
 refuses a line without `area`, `severity`, `observed`, `evidence` and `mechanism_status`, so map a row to:
 
@@ -113,5 +113,5 @@ refuses a line without `area`, `severity`, `observed`, `evidence` and `mechanism
 - `repro`: the expression or steps. `conditions`: viewport, zoom and the frame count from the gate.
 
 Your final message is then only the counts filed per severity and the `unreached` object
-(`{"unreached": "runs 2-3, blocked by <reason>"}`), not the rows. With no run named, the array above is the
+(`{"unreached": "runs 2-3", "reason": "<why>"}`), not the rows. With no run named, the array above is the
 output.

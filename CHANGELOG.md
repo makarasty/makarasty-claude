@@ -1,5 +1,25 @@
 # Changelog
 
+## makarasty 1.10.1, makarasty-tools 1.11.0 — 2026-11-03
+
+- **Handoff keeps what receivers kept losing** (from 10 real handoffs and their receiving chats). The chip prompt
+  opens with the five-line readback (skipped by 9 of 9 receivers when it sat mid-prompt). Goal quotes every part of
+  the request and keeps the person's bar for done; every open defect goes into Next. Source holds both session ids and
+  the transcript path. State lists staged files with their owner and other live chats. Scratchpad files the next chat
+  needs are copied beside the handoff; drafted text goes in verbatim. Agents still running report to a file before the
+  chip; nothing writes to the file after it. The person section holds only what CLAUDE.md and memory do not.
+- **Handoff patch skips untracked files over 1 MB** and lists them in `<name>.untracked-big.txt` (some patches
+  reached 494 MB of PNGs).
+- **Fixes from a prompt audit.** `unreached` examples in fleet-scenario, fleet-design-eye and fleet-profiler carry the
+  `reason` key `find` requires; their `find` call uses a quoted heredoc, so an apostrophe no longer breaks it. ship
+  points to `commit/SKILL.md`, not a missing `commit.md`. cleanup reads a live run from `coordinator` and `FINISHED`,
+  not a nonexistent `watch.sh`. tune's `--arms` example uses priced model names. unslop's steps are renumbered; a
+  fleet-plan sentence is finished.
+- **Question rounds are `AskUserQuestion`** in fleet-plan, fleet-design and fleet-call, split into calls of four;
+  fleet-plan's own 8b rule already said so.
+- **cleanup unlinks every link before a recursive delete** (`find -type l -exec rm {} +`, then `rm -rf`): `rm -rf`
+  follows a junction left in place as `rmdir /s` does.
+
 ## makarasty-tools 1.10.1 — 2026-11-02
 
 - **Screenshots in the economy rules.** Routine ones at scale 0.5 in a subagent; one the person wants to see is shown. A soft rule.

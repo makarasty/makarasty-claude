@@ -40,7 +40,7 @@ that the operator did not ask to keep.
 
 **Live first.** A session is live when `~/.claude/sessions/<pid>.json` exists and that pid is running; read
 only its `sessionId`, `pid` and `cwd` (`node -e` printing those fields). A fleet run is live when its
-coordinator session is live or its `watch.sh` runs: its worktrees (`.fleet/<run>/worktrees`), dev servers
+coordinator session (the id in `.fleet/<run>/coordinator`) is live or the run has no `FINISHED` file: its worktrees (`.fleet/<run>/worktrees`), dev servers
 and watch are never picks, and package caches wait until it ends. The repositories to look at are the
 parents of the live sessions' `cwd`s and the git repos one level below them.
 
@@ -106,8 +106,10 @@ Done when each area has a list or says "nothing found".
 
 Per item: what it is, size or memory, age, why it is nobody's, the command, and what breaks if that is
 wrong. Rank by what it frees. Hundreds of folders of one kind are one pick with one generated command.
-Commands that remove folders are `rm -rf` in Git Bash or `cmd /c rmdir /s /q`, never `Remove-Item -Recurse`,
-which follows a junction into its target. Caches are cleaned by their own tool (`npm cache clean --force`,
+Commands that remove folders unlink every junction and symlink inside first, at any depth, then delete:
+`find "<dir>" -type l -exec rm {} + && rm -rf "<dir>"` in Git Bash (`rm` on a link removes only the link).
+A recursive delete with a link left in place, `rm -rf`, `rmdir /s` or `Remove-Item -Recurse` alike, follows
+it into its target. Caches are cleaned by their own tool (`npm cache clean --force`,
 `pip cache purge`, `uv cache clean`, `bun pm cache rm`). A stale worktree or merged branch of a repo is one pick whose command is `/makarasty-tools:prune`, run
 only on the yes: it moves them to an undoable local trash and never follows a junction. A fleet run's own
 worktree is removed through its run's `fleet.sh clean`.

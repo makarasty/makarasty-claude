@@ -44,8 +44,8 @@ wrote in, and the **speak** language is the one they named, English when they na
 
 Hold a complete draft from the first exchange: run id `<date>-call[-<slug>]`, the counterpart, the two
 languages, the enumerated source list with what each one is expected to yield, the answers to bring
-home, the reserved topics, and where the page goes. Then ask one round, numbered, each with your
-recommended answer, so "all yours" loses nothing:
+home, the reserved topics, and where the page goes. Then ask one round as `AskUserQuestion` calls of at most four
+questions, each with your recommended answer as its first option, so "all yours" loses nothing. Drafts:
 
 ```
 Q1 - Counterpart: the carrier API's support desk. They can explain a response and say what we send wrong; they

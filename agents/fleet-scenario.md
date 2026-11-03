@@ -105,9 +105,9 @@ from a report about a similar symptom elsewhere.
 An empty array is a valid answer.
 
 Steps you could not reach get one final object:
-`{"unreached": "steps 7-9, blocked by <reason>"}`
+`{"unreached": "steps 7-9", "reason": "<why>"}`
 
 **When your prompt names a run and a chip NN**, file each finding yourself with
-`printf '%s' '<one JSON finding>' | sh "$f" find "$r" NN`, using the `$f` and `$r` it gives you, and `beat`
+`sh "$f" find "$r" NN <<'EOF'`, the JSON finding on the next line, then `EOF` (a quoted heredoc, so an apostrophe in `observed` cannot break it), using the `$f` and `$r` it gives you, and `beat`
 at boundaries. Never call `next`, `finish` or `drained`: the coordinator does, for your slot. Your final
 message is then only the counts filed per severity and the `unreached` object, not the findings.
