@@ -12,11 +12,12 @@ const HEAVY = ['vitest run', 'vitest', 'npx vitest run', 'npx --yes vitest run -
   'npm test -- --coverage', 'nx run-many -t test', 'nx run-many --target=test', 'turbo run test', 'turbo test', './gradlew test', 'gradlew.bat build', './gradlew clean check',
   'cargo test', 'cargo +nightly test --release', 'cargo test -- --nocapture', 'pytest', 'python -m pytest', 'pytest -v', 'python3.14 -m pytest -x', 'node --test',
   'node scripts/fleet-selftest.mjs', 'node scripts/fleet-selftest.mjs --jobs 2', 'cd app && npm test', 'git status; npm test', 'env CI=1 npm test',
+  'vitest --changed', 'vitest run --changed', 'vitest --changed HEAD~1', 'vitest run --changed main', 'npx vitest run --changed origin/main', 'npm test -- --changed origin/main', 'npm test -- --changed HEAD~1', 'npx vitest --changed', 'npx vitest run --changed=HEAD~1', 'npm test -- --changed', 'npm run test -- --changed', 'pnpm test --changed',
   'timeout 900 npm test', 'FOO=1 vitest run', 'bash -c "npm test"', 'sh -lc "cd x && vitest run"', 'cmd /c "npm test"', 'echo $(npm test)', '(npm test)', 'time npm run typecheck',
   'if true; then npm test; fi', 'tsc --noEmit 2>&1 | tail -5', 'npm test | tee out.log']
 
 // Scoped, informational or not a verify run at all.
-const SCOPED = ['vitest run src/x.test.ts', 'vitest run auth', 'vitest related src/a.ts', 'vitest run -t "login works"', 'vitest run --changed', 'vitest run --project unit', 'npx vitest run packages/a',
+const SCOPED = ['vitest run src/x.test.ts', 'vitest run auth', 'vitest related src/a.ts', 'vitest run --changed src/a.test.ts', 'vitest --changed a.spec.ts', 'vitest run --changed HEAD~1 src/a.test.ts', 'vitest run --changed src/', 'npm run test:changed', 'vitest run -t "login works"', 'vitest run --project unit', 'npx vitest run packages/a',
   'vitest --version', 'vitest --help', 'vitest list', 'jest --listTests', 'jest src/a.test.js', 'jest --onlyChanged', 'jest -t name', 'jest --findRelatedTests src/a.ts', 'mocha test/a.js', 'mocha --grep login',
   'playwright test e2e/a.spec.ts', 'playwright test --grep login', 'playwright test --project=chromium', 'playwright install', 'tsc --noEmit -p packages/a', 'tsc --noEmit -p packages/a/tsconfig.json',
   'vue-tsc --noEmit -p apps/web/tsconfig.app.json', 'tsc src/a.ts --noEmit', 'tsc -b packages/a', 'tsc --version', 'tsc -v', 'tsc --init', 'tsc --watch', 'tsc -w --noEmit', 'vue-tsc --watch',

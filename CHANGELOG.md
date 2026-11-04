@@ -1,5 +1,13 @@
 # Changelog
 
+## makarasty-tools 1.14.1 — 2026-11-04
+
+- **kill-guard refuses `taskkill /T`**, with or without `/PID`: a tree kill takes every child of the PID, other
+  chats' processes included. Kill the one PID (`taskkill /PID n /F`), then each child you own by its PID.
+- **budget-guard counts `--changed` as a heavy run** (`vitest --changed`, `--changed HEAD~1`, `npm test -- --changed`):
+  vitest walks the import graph from the changed files and can run most of the suite. `--changed <file>` and
+  `--related` stay scoped.
+
 ## makarasty 1.10.3, makarasty-tools 1.14.0 — 2026-11-04
 
 - **handoff works again.** 1.13.0's git-guard refused the scratch-index snapshot (`GIT_INDEX_FILE="$i" git add -A`),

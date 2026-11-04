@@ -21,11 +21,13 @@ const BLOCK_PS2 = ['Stop-Process -Id (Get-Process node).Id -Force', 'Stop-Proces
 const BLOCK_PS = ['Stop-Process -Name node', 'Stop-Process -Name node -Force', 'Stop-Process -name:node', 'Stop-Process -N node', 'spps -Name node', 'kill -Name node',
   'Get-Process node | Stop-Process', 'Get-Process node | Stop-Process -Force', 'gps node | spps', 'Get-Process | Where-Object { $_.Name -like "node*" } | Stop-Process -Force',
   'Get-Process -Name node | Stop-Process', 'Get-Process node,chrome | Stop-Process', 'if ($x) { Stop-Process -Name node }', 'taskkill /IM node.exe', 'pkill node']
-const ALLOW = ['taskkill /PID 4242', 'taskkill /PID 4242 /T', 'taskkill /F /T /PID 4242', 'taskkill /pid 4242 /t /f', 'taskkill //F //PID 4242', 'taskkill /?', 'kill 4242', 'kill -9 4242',
+const TREE_BLOCK = ['taskkill /PID 4242 /T', 'taskkill /F /T /PID 4242', 'taskkill /pid 4242 /t /f', 'taskkill /PID 4242 /t', 'taskkill -T -PID 4242', 'taskkill //F //PID 4242 //T',
+  'taskkill /FI "PID eq 4242" /T', 'cmd /c "taskkill /PID 4242 /T /F"', 'cmd //c taskkill //PID 4242 //T']
+const ALLOW = ['taskkill /PID 4242', 'taskkill /PID 4242 /F', 'taskkill //F //PID 4242', 'taskkill /?', 'kill 4242', 'kill -9 4242',
   'kill -TERM 4242 4243', 'kill %1', 'kill -l', 'pgrep node', 'pgrep -f vite | head', 'ps aux | grep node', 'echo pkill node', 'echo "taskkill /IM node.exe"',
   "git commit -m 'stop using taskkill /IM'", 'git commit -F - <<EOF\ntaskkill /IM node.exe\nEOF', 'grep -rn pkill src', 'cat killall.txt', 'npm run kill-port', 'killport 3000',
-  'cmd /c "taskkill /PID 4242 /T /F"', 'powershell -Command "Stop-Process -Id 4242 -Force"', 'bash -c "kill 4242"', 'cd x && kill 4242', 'netstat -ano | grep 3000',
-  'taskkill /FI "PID eq 4242"', 'taskkill /F /FI "PID eq 4242" /T', 'taskkill /PID 4242 /FI "STATUS eq RUNNING"', 'cmd //c taskkill //PID 4242 //T', 'sudo -u root kill 4242',
+  'cmd /c "taskkill /PID 4242 /F"', 'powershell -Command "Stop-Process -Id 4242 -Force"', 'bash -c "kill 4242"', 'cd x && kill 4242', 'netstat -ano | grep 3000',
+  'taskkill /FI "PID eq 4242"', 'taskkill /F /FI "PID eq 4242"', 'taskkill /PID 4242 /FI "STATUS eq RUNNING"', 'cmd //c taskkill //PID 4242 //F', 'sudo -u root kill 4242',
   'timeout -s KILL 5 kill 4242', 'netstat -ano | grep :3000 | awk \'{print $5}\' | xargs kill', 'kill $(lsof -t -i:3000)', 'cat <<EOF | tee out.txt\npkill node\nEOF',
   'bash -s <<EOF\nkill 4242\nEOF',
   'echo "it\'s" && git commit -F - <<EOF\npkill node is the old way\nEOF', 'git commit -m "don\'t" && cat <<EOF > n.md\ntaskkill /IM node.exe was bad\nEOF',
@@ -33,16 +35,23 @@ const ALLOW = ['taskkill /PID 4242', 'taskkill /PID 4242 /T', 'taskkill /F /T /P
 const ALLOW_PS = ['Stop-Process -Id 4242', 'Stop-Process -Id 4242 -Force', 'Stop-Process -Id:4242', 'Stop-Process 4242', 'Stop-Process -Id 4242, 4243', 'spps -Id 4242', 'kill 4242',
   'Get-Process -Id 4242 | Stop-Process', 'Get-Process -Id 4242 | Stop-Process -Force', '(Get-NetTCPConnection -LocalPort 3000).OwningProcess | Stop-Process',
   'Get-NetTCPConnection -LocalPort 3000 | Select-Object -ExpandProperty OwningProcess | Stop-Process -Id $_', 'Stop-Process -Id $pid', 'foreach ($p in $ids) { Stop-Process -Id $p }',
-  'Get-Process node', 'Get-Process node | Select-Object Id,CommandLine', 'taskkill /PID 4242 /T', 'taskkill /F /PID 4242 /T',
+  'Get-Process node', 'Get-Process node | Select-Object Id,CommandLine', 'taskkill /PID 4242 /F', 'taskkill /F /PID 4242',
   'Get-CimInstance Win32_Process -Filter "Name=\'node.exe\'" | Select ProcessId,CommandLine', 'Write-Output "Stop-Process -Name node"',
   'Get-Process node | Where-Object { $_.Id -eq 4242 } | Stop-Process', 'Get-Process | ? { $_.Id -eq 4242 } | ForEach-Object { Stop-Process -Id $_.Id }',
-  'Get-Process -Id 4242 | ForEach-Object { Stop-Process -Id $_.Id }', 'Stop-Process -Id (Get-Process -Id 4242).Id', 'taskkill /FI "PID eq 4242" /T',
+  'Get-Process -Id 4242 | ForEach-Object { Stop-Process -Id $_.Id }', 'Stop-Process -Id (Get-Process -Id 4242).Id', 'taskkill /FI "PID eq 4242"',
   'Get-NetTCPConnection -LocalPort 3000 | ForEach-Object { Stop-Process -Id $_.OwningProcess }']
 
 test('kill by name is refused, in Bash and PowerShell, direct or through a nested shell', () => {
   expect(BLOCK.filter((c) => !check(c))).toEqual([])
   expect(BLOCK_PS.filter((c) => !check(c, 'PowerShell'))).toEqual([])
   expect(BLOCK_PS2.filter((c) => !check(c, 'PowerShell'))).toEqual([])
+})
+
+test('taskkill /T (tree kill) is refused even with a PID, in any case and dash form', () => {
+  expect(TREE_BLOCK.filter((c) => !check(c))).toEqual([])
+  expect(check('taskkill /PID 4242 /T', 'PowerShell')).toContain('whole child tree')
+  expect(denial('taskkill /PID 4242 /T /F', false)).toContain('taskkill /PID n /F')
+  expect(denial('taskkill /PID 4242 /T /F', true)).toBeNull()
 })
 
 test('a long hostile line is read in linear time', () => {
@@ -58,10 +67,10 @@ test('kill by PID is allowed, and so is text that only mentions a kill command',
 
 test('the refusal says how to kill by PID, and the switch turns the guard off', () => {
   const m = denial('taskkill /F /IM node.exe', false)!
-  expect(m).toContain('taskkill /PID <n> /T')
+  expect(m).toContain('taskkill /PID <n> /F')
   expect(m).toContain('Stop-Process -Id <n>')
   expect(m).toContain('MAKARASTY_KILL_GUARD=off')
   expect(denial('taskkill /F /IM node.exe', true)).toBeNull()
   expect(denial('git status', false)).toBeNull()
-  expect(denial('taskkill /PID 4242 /T', false)).toBeNull()
+  expect(denial('taskkill /PID 4242 /F', false)).toBeNull()
 })

@@ -3,13 +3,14 @@ import type { Register } from 'claude-code'
 // Refuses killing a process BY NAME: `taskkill /IM`, `Stop-Process -Name`, `Get-Process x | Stop-Process`, `pkill`,
 // `killall`, `kill $(pgrep x)`. A name matches every process of that name, and on a shared box that includes other
 // sessions' dev servers, test runners and the person's own tools (a `taskkill /IM node.exe` once killed a sandbox proxy
-// that another chat was using). Allowed: by PID (`taskkill /PID 4242 /T /F`, `Stop-Process -Id 4242`, `kill 4242`).
+// that another chat was using). Allowed: by PID (`taskkill /PID 4242 /F`, `Stop-Process -Id 4242`, `kill 4242`). `taskkill /T` is refused: it takes the whole child tree.
 // Look the PID up first (Get-CimInstance Win32_Process, `netstat -ano`, `ps`), check it is yours, then kill that PID.
 // Shape borrowed from git-guard and delete-guard: a function hook, quotes masked, no process spawned. The person can
 // still run anything themselves with `!`.
 // shortcut: wmic/CIM Terminate, `.Kill()` on a Get-Process object, and a variable or foreach loop that holds the name
 // (`$p = Get-Process node; Stop-Process -Id $p.Id`) are not read; upgrade if one bites.
-const WHY = 'it kills every process of that name, other sessions\' and the person\'s own included. Find the PID first (`Get-CimInstance Win32_Process`, `netstat -ano`, `ps`), check it is yours, then kill that PID: `taskkill /PID <n> /T`, `Stop-Process -Id <n>`, `kill <n>`'
+const WHY = 'it kills every process of that name, other sessions\' and the person\'s own included. Find the PID first (`Get-CimInstance Win32_Process`, `netstat -ano`, `ps`), check it is yours, then kill that PID: `taskkill /PID <n> /F`, `Stop-Process -Id <n>`, `kill <n>`'
+const TREE = 'taskkill /T kills the whole child tree, which can include other sessions\' processes: kill the one PID (`taskkill /PID n /F`), then each child you own by its PID'
 const SHELL = /^((ba|z|da|k)?sh|pwsh|powershell|cmd)$/
 const SHELL_CMD = /^-\w*c$|^-command$|^\/{1,2}[ck]$/i
 // Wrappers whose own options (and the values of some) come before the command they run.
@@ -104,6 +105,7 @@ export function check(cmd: string, tool = 'Bash', depth = 0): string | null {
           const pid = args.some((w) => /^[/-]{1,2}pid$/i.test(w))
           const fi = args.flatMap((w, k) => (/^[/-]{1,2}fi$/i.test(w) ? [args[k + 1] ?? ''] : []))
           if (args.some((w) => /^[/-]{1,2}im$/i.test(w)) || (!pid && fi.some((f) => !/^\s*pid\s+eq\s+\d+\s*$/i.test(f)))) return `taskkill /IM (or /FI on a name): ${WHY}`
+          if (args.some((w) => /^[/-]{1,2}t$/i.test(w))) return TREE
         } else if (head === 'pkill' || head === 'killall') return `${head}: ${WHY}`
         else if (head === 'stop-process' || head === 'spps' || (head === 'kill' && tool === 'PowerShell')) {
           if (args.some((w) => /^-n(a(m(e)?)?)?(:|$)/i.test(w))) return `Stop-Process -Name: ${WHY}`

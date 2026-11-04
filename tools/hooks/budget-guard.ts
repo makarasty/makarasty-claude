@@ -10,8 +10,8 @@ import type { Register } from 'claude-code'
 //
 // Heavy: vitest/jest/mocha/ava/playwright test with no file filter, tsc/vue-tsc on a project, `npm|pnpm|yarn|bun test`
 // `typecheck` `check` scripts, `nx run-many`, `turbo run test`, `gradlew test|check|build`, `cargo test`, `pytest` with no
-// path, `node --test` with no file, `node scripts/fleet-selftest.mjs`. Scoped runs pass: a file or directory operand,
-// `-t`/`--grep`/`-k`, `--changed`/`--related`, `--project <one>`, `--filter`, `-p <tsconfig of one package>`, a qualified
+// path, `node --test` with no file, `node scripts/fleet-selftest.mjs`, and any of them with `--changed`. Scoped runs pass: a file or directory operand,
+// `-t`/`--grep`/`-k`, `--related`, `--project <one>`, `--filter`, `-p <tsconfig of one package>`, a qualified
 // gradle task (`:app:test`), `cargo test -p x`; so do `--version`/`--help`/`--listTests`. A single package's tsconfig is
 // scoped; `-p .` and `-p tsconfig.json` are the repo's own and heavy.
 //
@@ -120,8 +120,9 @@ function tok(w: string): string {
 const VALUE = /^(-c|--config|--root|-r|--reporter|--outputfile|--pool|--max-?workers|--min-?workers|-j|--jobs|--test-?timeout|--hook-?timeout|--environment|--mode|--dir|--shard|--timeout|--require|--import|-p|--project|--filter|-F|-t|-g|-k|-m|-n|--grep|--tests|--package|--test-?name-?pattern|--test-?path-?pattern|--cov|--rootdir|--maxfail|--tb|--ignore|--target|--module|--lib|--outdir|--jsx|--types|--outfile|--declarationdir|--moduleresolution|--prefix|--cwd|-C|--workspace)$/i
 const PM_VALUE = /^(--filter|-F|--prefix|--cwd|-C|--dir|--workspace|-w)$/
 const INFO = /^(--version|-h|--help|--listtests|--list|--collect-only|--co|--showconfig|--init|--listfilesonly|--dry-run)$/i
-// A filter that narrows what runs: by test name, by changed files, by project.
-const SCOPE = /^(-t|-g|-k|--grep|--testnamepattern|--testpathpattern|--test-name-pattern|--changed|--onlychanged|--only-changed|--related|--findrelatedtests|--project|--filter|-F|--workspace|--prefix|--cwd|--lf|--last-failed)(=|$)/i
+// A filter that narrows what runs: by test name, by related files, by project. Not `--changed`: vitest walks the import graph
+// from the changed files and can run most of the suite (owner rule), so it stays a heavy run.
+const SCOPE = /^(-t|-g|-k|--grep|--testnamepattern|--testpathpattern|--test-name-pattern|--onlychanged|--only-changed|--related|--findrelatedtests|--project|--filter|-F|--workspace|--prefix|--cwd|--lf|--last-failed)(=|$)/i
 // Not a verify run: a watcher, vitest's UI server, gradle's continuous build.
 const WATCH = /^(--watch|--watchall|--watch=true|--ui|--continuous)$/i
 // The package scripts that are surely the whole suite or the whole typecheck. Any other `test:<x>` (`test:changed`, `test:dom`,
@@ -131,13 +132,17 @@ const TARGET = /^(test|typecheck|type-check)$/i
 // `command` and `builtin` are not wrappers: `command -v tsc` looks a tool up, it does not run it.
 const WRAP = new Set(['time', 'nice', 'nohup', 'env', 'cross-env', 'npx', 'bunx', 'pnpx', 'exec', 'sudo', 'stdbuf', 'call', 'xvfb-run', 'dotenv'])
 
+// `--changed [<git ref>]`: a following word is the ref (`HEAD~1`, `main`, `origin/main`), not a file operand, unless it looks like a
+// path (a file extension or a trailing slash).
+const GIT_REF = /^(?!-)(?!.*(\.[A-Za-z]\w*|\/)$).+$/
+
 // The words that are not flags, each flag's value skipped, up to `--`.
 function pos(args: string[]): string[] {
   const out: string[] = []
   for (let i = 0; i < args.length; i++) {
     const a = args[i]!
     if (a === '--') break
-    if (a.startsWith('-')) { if (VALUE.test(a)) i++; continue }
+    if (a.startsWith('-')) { if (VALUE.test(a) || (a.toLowerCase() === '--changed' && GIT_REF.test(args[i + 1] ?? ''))) i++; continue }
     out.push(a)
   }
   return out
@@ -292,7 +297,7 @@ export function check(command: string, tool: string, input: { run_in_background?
   if (fresh.length) {
     why.push(`another heavy verify run is live on this machine: ${list(fresh)}. ` +
       'Several sessions share one 32 GB box and a whole-repo typecheck or suite costs gigabytes each. Wait for it (its result is yours to read) or scope your run to one file or project ' +
-      '(`vitest run src/x.test.ts`, `tsc --noEmit -p packages/a`, `-t`, `--changed`). If it looks hung, tell the user; do not end it yourself')
+      '(`vitest run src/x.test.ts`, `tsc --noEmit -p packages/a`, `-t`, `--related`). If it looks hung, tell the user; do not end it yourself')
   }
   const loose = runs.find((r) => (r.bg || input.run_in_background === true) && !r.timeout)
   if (loose) {

@@ -81,8 +81,9 @@ what the command line itself shows and lets the command through when the guard i
   It also refuses `git add -A`, `-u`, `add .` and `commit -a` there (they sweep other chats' files); a private
   worktree, a root-level `wt*` folder or a folder the same line creates runs them.
 - **kill-guard** refuses killing by process name (`taskkill /IM`, `pkill`, `killall`, `Stop-Process -Name`,
-  `Get-Process x | Stop-Process`, `kill $(pgrep x)`) and lets a kill by PID through (`taskkill /PID n /T`,
-  `Stop-Process -Id n`, `kill n`). A name matches other chats' processes too. It does not read `wmic ... terminate`,
+  `Get-Process x | Stop-Process`, `kill $(pgrep x)`) and lets a kill by PID through (`taskkill /PID n /F`,
+  `Stop-Process -Id n`, `kill n`). It refuses `taskkill /T` too: a tree kill takes every child of the PID, other
+  chats' included. A name matches other chats' processes too. It does not read `wmic ... terminate`,
   `.Kill()` or a name held in a variable.
 - **delete-guard** covers the deletes Claude Code runs without asking: `.git`, `find . -delete`,
   `cmd /c rd /s /q .`, `rm -rf "$PWD"`, `cd .. && rm -rf <project>`. Claude Code already refuses `rm -rf .`
