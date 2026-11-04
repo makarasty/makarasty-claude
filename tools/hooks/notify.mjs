@@ -35,9 +35,14 @@
 // For the same reason every error text has its URLs and bot tokens blanked before it is printed or stored.
 //
 // The excerpt - the last 500 characters of the chat's final message - can carry code, data or secrets the
-// chat printed. It goes to every channel except the public ntfy.sh server (www.ntfy.sh, ntfy.sh:443 and
-// ntfy.sh. are the same server), where it is off unless "excerpt": true. "excerpt": false turns it off
-// everywhere.
+// chat printed, so by default only the status line goes out. It is opt-in: MAKARASTY_NOTIFY_EXCERPT=1 in the
+// environment, or "excerpt": true in notify.json ("excerpt": false wins over the variable). When on, the
+// message first passes through redactExcerpt(), which blanks: URLs; Telegram bot tokens; Discord webhooks;
+// sk-/sk-ant-, sk_live_/sk_test_, gh*_ and github_pat_ keys; AKIA/ASIA ids; xox* tokens; AIza keys; JWTs
+// (eyJ...eyJ); ntfy topics; PRIVATE KEY blocks; and the value after api_key / secret / token / password
+// followed by : or =, when the value is quoted or is 8+ characters with no space and a digit (prose such as
+// "the token: refresh now rotates" is left alone). Anything else a chat printed still goes out. The excerpt never goes to the public
+// ntfy.sh server (www.ntfy.sh, ntfy.sh:443 and ntfy.sh. are the same server).
 //
 // What the hook does with an armed session:
 //   Stop          send "<project>: <label> finished" plus the end of the last message, then disarm.
@@ -144,6 +149,21 @@ const writeJSON = (file, o) => {
 // Error text can carry the request URL (fetch's "Failed to parse URL from <url>") and so a webhook token,
 // a topic or a bot token. It is printed where a chat reads it and stored in the marker, so it passes here.
 const redact = (s) => String(s).replace(/https?:\/\/\S+/gi, '<url>').replace(/\b\d{5,}:[\w-]{20,}/g, '<token>');
+// The excerpt is free text: redact() plus the token shapes of the commit skill's secret scan and `key: value` pairs.
+const SECRET_SHAPES = [
+    /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/g,
+    /discord(?:app)?\.com\/api\/webhooks\/\d+\/[\w-]{20,}/gi,
+    /(?<![A-Za-z0-9])sk-(?:ant-)?[\w-]{20,}/g,
+    /sk_(?:live|test)_[A-Za-z0-9]{16,}/g,
+    /gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[\w]{22,}/g,
+    /(?:AKIA|ASIA)[0-9A-Z]{16}/g,
+    /xox[abposr]-[A-Za-z0-9-]{10,}/g,
+    /AIza[\w-]{35}/g,
+    /eyJ[\w-]{10,}\.eyJ[\w.-]*/g,
+    /ntfy\.sh\/[\w-]{8,}/gi,
+];
+const redactExcerpt = (s) => SECRET_SHAPES.reduce((t, re) => t.replace(re, '<redacted>'), redact(s))
+    .replace(/(api[_-]?key|secret|token|password)([ \t]*[:=][ \t]*)("[^"\n]+"|'[^'\n]+'|\S+)/gi, (all, k, sep, v) => (/^["']/.test(v) || (v.length >= 8 && /\d/.test(v)) ? `${k}${sep}<redacted>` : all));
 // One shape on disk whatever the wizard or a hand wrote. A bad value is dropped with a line naming the key.
 const str = (v) => (typeof v === 'string' ? v.trim() : '');
 const isURL = (s) => { try {
@@ -196,7 +216,7 @@ const publicNtfy = (u) => { try {
 catch {
     return true;
 } };
-const withExcerpt = (cfg, name) => cfg.excerpt ?? !(name === 'ntfy' && publicNtfy(cfg.ntfy));
+const withExcerpt = (cfg, name) => (cfg.excerpt ?? process.env.MAKARASTY_NOTIFY_EXCERPT === '1') && !(name === 'ntfy' && publicNtfy(cfg.ntfy));
 // Every request shares one deadline, so retries can never outlast the hook's own timeout.
 let deadline = Infinity;
 const left = () => deadline - Date.now();
@@ -488,7 +508,7 @@ async function hook() {
             const question = /[?？][^\p{L}\p{N}]*$/u.test(last);
             const note = m.resumed ? ' (the chat had been reopened after an interruption)' : '';
             m.text = `${who} finished${elapsed(m)}${question ? ', with a question for you' : ''}${note}`;
-            m.excerpt = tail(last);
+            m.excerpt = tail(redactExcerpt(last));
             m.done = now();
             writeJSON(file, m); // durable before the network: a message that never arrives loses nothing
             const r = await send(m.text, m.excerpt, 'done');

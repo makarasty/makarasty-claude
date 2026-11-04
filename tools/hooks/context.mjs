@@ -158,11 +158,9 @@ try {
     mkdirSync(dir, { recursive: true });
     writeFileSync(file, String(level));
     const k = Math.round(tokens / 1000);
-    console.log(`This chat's context is at ${k}k tokens. Answer the person's message as usual; then, unless this ` +
-        `session is a fleet worker or the task ends within this turn, add one line offering to hand the rest ` +
-        `to a fresh chat with /makarasty-tools:handoff, in the person's language; a fleet coordinator ignores this ` +
-        `line; its marks come from the watch (COORDINATOR CONTEXT), and its relaunch is in fleet-plan 8b. Offer it at a natural break, ` +
-        `not mid-edit: if this turn ends with work half-done, offer it at the next break. A handoff costs answer quality in the next chat's first prompts [M49], so offer it only where the work changes phase, not to shorten a chat that is going well. Do not run it unasked.`);
+    console.log(`This chat's context is at ${k}k tokens. Answer the person's message as usual; then say the context size once, save the state and notes (progress, open items, decisions) where a new chat could pick them up, and keep working. ` +
+        `Offer a handoff with /makarasty-tools:handoff only if the person asked for one: a handoff costs answer quality in the next chat's first prompts [M49]. ` +
+        `A fleet worker or coordinator ignores this line; its marks come from the watch (COORDINATOR CONTEXT), and its relaunch is in fleet-plan 8b. Do not offer or run a handoff unasked.`);
 }
 catch {
     // A hook that fails must not cost the person their prompt.

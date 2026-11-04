@@ -87,7 +87,7 @@ test('a prompt that asks for the handoff is recognised; one that only mentions i
 
 test('the texts are the ones context.mjs printed', () => {
   expect(reminder(724400)).toMatch(/^This chat's context is at 724k tokens\. Answer the person's message as usual;/)
-  expect(reminder(724400)).toMatch(/Do not run it unasked\.$/)
+  expect(reminder(724400)).toMatch(/Do not offer or run a handoff unasked\.$/)
   expect(afterCompact('/x/t.jsonl')).toContain('still on disk, one JSON object per line: /x/t.jsonl.')
 })
 

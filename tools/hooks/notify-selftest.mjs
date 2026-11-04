@@ -106,7 +106,7 @@ check('and names the missing config', 'none configured', out);
 hook('{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"done"}');
 count('an unarmed Stop sends nothing', 0);
 section('armed in the same turn as the work');
-writeFileSync(conf, '{"ntfy":"https://ntfy.sh/selftest","excerpt":true}\n');
+writeFileSync(conf, '{"ntfy":"https://ntfy.example.org/selftest","excerpt":true}\n');
 out = both(node([n, '--arm', 'the', 'build'], { cwd: tmp }));
 check('arm reports the label', '"the build"', out);
 check('and the channel', 'channels: ntfy', out);
@@ -235,7 +235,7 @@ hs.srv.kill();
 check('needs you goes out as high + warning', 'high/warning', read(`${tmp}/porth.h`));
 check('an error as high + x', 'high/x', read(`${tmp}/porth.h`));
 check('a finish as default + white_check_mark', 'default/white_check_mark', read(`${tmp}/porth.h`));
-writeFileSync(conf, '{"ntfy":"https://ntfy.sh/selftest","excerpt":true}\n');
+writeFileSync(conf, '{"ntfy":"https://ntfy.example.org/selftest","excerpt":true}\n');
 node([n, '--disarm']);
 section('direct sends');
 node([n, 'send', 'fleet 2026-09-08-x FINISHED: 3 findings']);
@@ -259,9 +259,65 @@ node([n, '--arm', 'the', 'secret']);
 hook('{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"API_KEY=abc123"}');
 check('the head still goes out', 'the secret finished', last());
 if (last().includes('API_KEY'))
-    bad('but ntfy.sh gets no excerpt by default');
+    bad('ntfy.sh gets no excerpt by default');
 else
-    ok('but ntfy.sh gets no excerpt by default');
+    ok('ntfy.sh gets no excerpt by default');
+writeFileSync(conf, '{"ntfy":"https://ntfy.example.org/selftest"}\n');
+node([n, '--arm', 'the', 'secret']);
+hook('{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"API_KEY=abc123"}');
+if (last().includes('API_KEY'))
+    bad('a private ntfy gets no excerpt by default either');
+else
+    ok('a private ntfy gets no excerpt by default either');
+node([n, '--arm', 'the', 'secret']);
+hook('{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"Build green, 12 tests pass."}', { MAKARASTY_NOTIFY_EXCERPT: '1' });
+check('MAKARASTY_NOTIFY_EXCERPT=1 turns the excerpt on', 'Build green, 12 tests pass.', last());
+// Each secret is built from pieces, so this file passes the secret scan; the body is 40 characters of a made-up value.
+const body = 'Zq8Lm3Vb7Nx2Wc5Rt9Yh4Js6Dg0Fa1Pe8Uo3Ik2';
+const secrets = [
+    ['a URL', 'https://x.example/hook?t=9'], ['a Telegram bot token', '123456789:' + body.slice(0, 35)],
+    ['a Discord webhook', 'discord' + '.com/api/webhooks/123456789012/' + body], ['an sk-ant key', 'sk-' + 'ant-api03-' + body],
+    ['an sk key', 'sk-' + body], ['a Stripe key', 'sk_' + 'live_' + body.slice(0, 24)], ['a GitHub token', 'gh' + 'p_' + body],
+    ['a fine-grained GitHub token', 'github_' + 'pat_' + body.slice(0, 30)], ['an AWS key id', 'AK' + 'IA' + 'ZQ8LM3VB7NX2WC5R'],
+    ['a Slack token', 'xox' + 'b-123456789012-' + body.slice(0, 12)], ['a Google key', 'AI' + 'za' + body.slice(0, 35)],
+    ['a JWT', 'ey' + 'Jhbgcioijiuzi1nirt.ey' + 'Jzdwiioiixmjmindu4otailn0'], ['an ntfy topic', 'ntfy' + '.sh/' + body.slice(0, 12)],
+    ['api_key=', 'API_KEY=abc123def456'],
+];
+for (const [what, v] of secrets) {
+    node([n, '--arm', 'the', 'secret']);
+    hook(`{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"before ${v} after"}`, { MAKARASTY_NOTIFY_EXCERPT: '1' });
+    const got = last();
+    if (got.includes(v.slice(-12)) || !got.includes('before') || !got.includes('after'))
+        bad(`${what} in the excerpt is blanked`, got.slice(0, 200));
+    else
+        ok(`${what} in the excerpt is blanked`);
+}
+// A quoted value is blanked whole; the JSON payload carries the quotes escaped.
+node([n, '--arm', 'the', 'secret']);
+hook('{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"before password: \\"hunter2hunter2\\" after"}', { MAKARASTY_NOTIFY_EXCERPT: '1' });
+if (last().includes('hunter2') || !last().includes('before password: <redacted> after'))
+    bad('a quoted password value is blanked', last().slice(0, 200));
+else
+    ok('a quoted password value is blanked');
+// Prose that names a secret is not code: it goes out as written.
+for (const prose of ['The secret: nothing leaked; password = hashed with bcrypt', 'Fixed the token: refresh now rotates', 'csrfToken: the header']) {
+    node([n, '--arm', 'the', 'secret']);
+    hook(`{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"${prose}"}`, { MAKARASTY_NOTIFY_EXCERPT: '1' });
+    check(`prose "${prose.slice(0, 24)}..." is not blanked`, prose, last());
+}
+node([n, '--arm', 'the', 'secret']);
+hook('{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"key\\n-----BEGIN ' + 'RSA PRIVATE KEY-----\\nMIIEowIBAAKCAQEAu1SU1LfVLPHCoz\\n-----END ' + 'RSA PRIVATE KEY-----\\ndone"}', { MAKARASTY_NOTIFY_EXCERPT: '1' });
+if (last().includes('MIIEow') || !last().includes('done'))
+    bad('a PRIVATE KEY block in the excerpt is blanked', last().slice(0, 200));
+else
+    ok('a PRIVATE KEY block in the excerpt is blanked');
+writeFileSync(conf, '{"ntfy":"https://ntfy.sh/selftest","excerpt":true}\n');
+node([n, '--arm', 'the', 'secret']);
+hook('{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"API_KEY=abc123"}', { MAKARASTY_NOTIFY_EXCERPT: '1' });
+if (last().includes('API_KEY'))
+    bad('the public ntfy.sh never gets it, even opted in');
+else
+    ok('the public ntfy.sh never gets it, even opted in');
 for (const u of ['https://www.ntfy.sh/selftest', 'https://ntfy.sh:443/selftest', 'https://ntfy.sh./selftest', 'https://NTFY.SH/selftest']) {
     writeFileSync(conf, `{"ntfy":"${u}"}\n`);
     node([n, '--arm', 'the', 'secret']);
@@ -323,7 +379,7 @@ else
 out = flaky(`${fl}/c.json`, 0, 2);
 check('a read refused twice reads as not armed, not as a crash', 'null', out);
 section('not a finish yet');
-writeFileSync(conf, '{"ntfy":"https://ntfy.sh/selftest","excerpt":true}\n');
+writeFileSync(conf, '{"ntfy":"https://ntfy.example.org/selftest","excerpt":true}\n');
 node([n, '--arm', 'the', 'job']);
 let b = lines();
 hook('{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"Started it in the background.","background_tasks":[{"id":"b1","status":"running"}],"session_crons":[]}');
@@ -428,7 +484,7 @@ if (exists(marker))
 else
     bad('and the undelivered finish stays on disk');
 node([n, '--disarm']);
-writeFileSync(conf, '{"ntfy":"https://ntfy.sh/selftest","excerpt":true}\n');
+writeFileSync(conf, '{"ntfy":"https://ntfy.example.org/selftest","excerpt":true}\n');
 // Whether node starts at all is the arming test in gates.ts (tests in gates.test.ts: no marker, a marker, another config
 // dir, ~/.claude when CLAUDE_CONFIG_DIR is unset). What is left here is what notify.mjs itself does.
 section('markers: pruning and /clear');

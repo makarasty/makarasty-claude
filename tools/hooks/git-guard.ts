@@ -12,7 +12,8 @@ import type { Register } from 'claude-code'
 // `'sweep'` (add -A, commit -a) also runs in a root-level `wt*` worktree and in a folder this very line makes with `git init <path>`
 // or `git clone`: no other session's files are there. Every other discard stays refused in a `wt*` worktree.
 // shortcut: a worktree elsewhere is not seen (no process or file read here); upgrade if one bites.
-type Rule = [RegExp | ((s: string) => boolean), string, (boolean | 'sweep')?]
+// `'tree'` is `'sweep'` without the scratch-index exemption: a commit rewrite still hits the real HEAD.
+type Rule = [RegExp | ((s: string) => boolean), string, (boolean | 'sweep' | 'tree')?]
 // Git takes any unambiguous prefix of a long option (`reset --har` is --hard); an ambiguous prefix fails in git,
 // so over-matching it is harmless. `opt('force')` matches --force and its prefixes, never --force-with-lease.
 const pre = (w: string): string => w[0] + [...w.slice(1)].reduceRight((a, c) => `(?:${c}${a})?`, '')
@@ -108,6 +109,10 @@ const skipsConfig = (s: string): boolean => {
 // A pathspec that means the whole tree: `.`, `./`, `:/`, `:/.`.
 const ALLPATH = /^(\.\/?|:\/\.?|:)$/
 // A folder in one spelling: lower case, `/c/x` as `c:/x`.
+// A scratch index: a value that is not empty, not the repo's own `index` file and not computed (`$(git rev-parse --git-path index)`).
+const SCRATCH = (v: string): boolean => v.replace(/[\s.'"]+$/, '').length > 0 && !/^\$null$/i.test(v) && !/\$\(|`|\$\{/.test(v) && !/(^|[\\/])index$/i.test(v.replace(/[\s.'"]+$/, ''))
+// The last GIT_INDEX_FILE= among a command's leading words decides.
+const lastIdx = (ws: string[]): boolean => { let v: string | undefined; for (const w of ws) { const m = /^(?:\$env:)?GIT_INDEX_FILE=([\s\S]*)$/i.exec(w); if (m) v = m[1]! } return v !== undefined && SCRATCH(v) }
 const norm = (x: string): string => x.toLowerCase().replace(/^\/([a-z])\//, '$1:/')
 const isWt =(dir: string): boolean => /^(\/[a-z]|[a-z]:)\/wt[^/]*(\/|$)/.test(dir.toLowerCase())
 const RULES: Rule[] = [
@@ -137,7 +142,11 @@ const RULES: Rule[] = [
     && (operands(s).some((o) => ALLPATH.test(o)) || (new RegExp(`\\s${opt('all', 'update')}`).test(s) || hasShort(s, 'A', '', '') || hasShort(s, 'u', '', '')) && operands(s).length === 0),
     "git add -A / -u / --all / . stages every session's uncommitted files, not only yours: git add your own paths by name", 'sweep'],
   [(s) => /^commit\b/.test(s) && !new RegExp(`\\s${opt('dry-run')}`).test(s) && (new RegExp(`\\s${opt('all')}`).test(flagsOf(s)) || hasShort(s, 'a', 'mFCctU', 'uS')),
-    "git commit -a commits every session's modified files, not only yours: git add your own paths by name, then commit", 'sweep'],
+    "git commit -a commits every session's modified files, not only yours: git add your own paths by name, then commit", 'tree'],
+  // --only or your own paths keep other sessions' STAGED files out of the amend; that HEAD is still your commit is the commit skill's check.
+  [(s) => /^commit\b/.test(s) && new RegExp(`\\s${opt('amend')}`).test(flagsOf(s)) && ((t) => (!new RegExp(`\\s${opt('only')}`).test(flagsOf(s)) && !hasShort(s, 'o', 'mFCctU', 'uS') && t === null)
+    || (t ?? []).some((p) => ALLPATH.test(p) || p === '*'))(/\s--\s+\S/.test(s) ? s.split(/\s--\s+/).slice(1).join(' ').split(' ') : null),
+    "amend only with --only or your own paths, so other sessions' staged files stay out (git commit --amend --only -F -, or --amend -- <paths>, never . or :/); check HEAD is still your commit first", 'tree'],
   // A reversed patch (`git diff | git apply -R`) undoes every uncommitted change it lists in the tree;
   // only --cached keeps it to the index. --check, --stat, --numstat and --summary apply nothing, unless --apply.
   [(s) => /^apply\b/.test(s) && new RegExp(`\\s(-[a-zA-Z0-9]*R[a-zA-Z0-9]*(\\s|$)|${opt('reverse')})`).test(s) && !/\s--cached(\s|$)/.test(s)
@@ -248,7 +257,7 @@ function lex(src: string, lits: string[], nested: string[], ps: boolean): string
 }
 
 // A git subcommand line, and the variable that stood in for git when one did.
-type Sub = { sub: string; via?: string; dir: string }
+type Sub = { sub: string; via?: string; dir: string; idx?: boolean }
 // `cwd` is the tree a command runs in until a `cd`, `pushd` or `Set-Location` before it moves it.
 // shortcut: a cd inside a subshell `(cd x; git ..)` is read as lasting to the end of the line; upgrade if that bites.
 function subcommands(cmd: string, ps: boolean, depth = 0, cwd = ''): Sub[] {
@@ -272,6 +281,7 @@ function subcommands(cmd: string, ps: boolean, depth = 0, cwd = ''): Sub[] {
   const cleaned = lex(text, lits, nested, ps)
     .replace(/<<<\s*((?:\\.|[^\s;&|()<>\\])+)/g, (_, w: string) => ` \u0004${w.replace(/\\(\s)/g, '\u0005')} `).replace(REDIR, ' ')
   const out: Sub[] = []
+  let idxPs = false
   // A quoted word as the shell hands it on: `"git"`, `& "C:\Program Files\Git\cmd\git.exe"`.
   // Spliced quotes (`st''ash`, `"st"ash`) are one word to the shell.
   const unq = (w: string): string => w.replace(/\u0001(\d+)\u0001/g, (_, n) => lits[+n]!)
@@ -293,6 +303,14 @@ function subcommands(cmd: string, ps: boolean, depth = 0, cwd = ''): Sub[] {
     const last = words.pop()!.replace(/(?<!\{)\}$/, '')
     if (last) words.push(last)
     let at = 0, wrapped = false
+    // PowerShell `$env:GIT_INDEX_FILE='x'` on its own line points every later git of the command at a scratch index.
+    if (ps) {
+      const t = words.map(unq).join(' ')
+      const m = /^\$env:GIT_INDEX_FILE\s*=\s*([\s\S]*)$/i.exec(t)
+      if (m) idxPs = SCRATCH(m[1]!.trim())
+      // Any other segment that names the variable (Remove-Item Env:\GIT_INDEX_FILE, SetEnvironmentVariable(..., $null)) ends the exemption.
+      else if (/GIT_INDEX_FILE/i.test(t)) idxPs = false
+    }
     // PS call operator, VAR=x prefixes, shell keywords before a command, env/command/sudo and their flags
     while (at < words.length) {
       const w = words[at]!
@@ -341,6 +359,8 @@ function subcommands(cmd: string, ps: boolean, depth = 0, cwd = ''): Sub[] {
     let dir = cur
     if (words.slice(0, at).some((w) => /^GIT_(DIR|WORK_TREE)=/.test(w))) dir = '?'
     if (!via && words.slice(0, at).some((w) => ENV_CONFIG.test(w))) out.push({ sub: '-c env', dir })
+    // A scratch index (`GIT_INDEX_FILE=x git add -A`) is not the tree's index: add -A there stages nobody's files.
+    const idx = idxPs || lastIdx(words.slice(0, at).map(unq))
     let i = at + 1
     if (via) { if (!VIA_GUARDED.test(unq(words[i] ?? ''))) continue }
     else {
@@ -359,7 +379,7 @@ function subcommands(cmd: string, ps: boolean, depth = 0, cwd = ''): Sub[] {
       const hooks = `${ci('core.hookspath')}|${ci('gpg.program')}`, sign = `(${ci('commit')}|${ci('tag')})${ci('.gpgsign')}`
       if (new RegExp(`(^|\\s)(-c\\s*(${ci('core.hookspath')}|${ci('gpg.program')}=(${GPG_BAD}|\\u0003|)(?=\\s|$)|${sign}${FALSY})|--config-env[=\\s](${hooks}|${sign}))`).test(glob)) out.push({ sub: '-c hooks', dir })
     }
-    if (i < words.length) out.push({ sub: words.slice(i).map(arg).filter(Boolean).join(' '), via, dir })
+    if (i < words.length) out.push({ sub: words.slice(i).map(arg).filter(Boolean).join(' '), via, dir, idx })
     // `git submodule foreach [--recursive] <command>` runs that command in every submodule.
     if (unq(words[i] ?? '') === 'submodule') {
       let f = words.findIndex((w, k) => k > i && unq(w) === 'foreach')
@@ -377,7 +397,24 @@ function subcommands(cmd: string, ps: boolean, depth = 0, cwd = ''): Sub[] {
 // (over-blocks) and a backtick continuation is not joined; the hook always passes it, guess only for a new caller.
 export function check(cmd: string, tool = 'Bash', where: Where = {}): string | null {
   const made = new Set<string>()
-  for (const { sub, via, dir } of subcommands(cmd, tool === 'PowerShell', 0, where.cwd ?? '')) {
+  const subs = subcommands(cmd, tool === 'PowerShell', 0, where.cwd ?? '')
+  // A pipe hides git's exit code: a failed hook looks like success. Read from the raw text (the lexer splits pipes), quoted text blanked.
+  // Heredoc bodies are message text, not commands: dropped first, as subcommands() does.
+  const raw = cmd.replace(/(?<!<)<<-?\s*['"]?(\w+)['"]?([^\n]*)(?:\n([\s\S]*?))?\n\s*\1\b/g, (_, _t, rest: string) => ' ' + rest)
+    .replace(/'[^']*'|"(?:[^"\\]|\\.)*"/g, '""').replace(REDIR, ' ')
+  // The git subcommand of one pipe stage: the first non-option word after git, skipping -C <dir> and -c k=v.
+  const stageSub = (p: string): string => {
+    const w = p.trim().split(/\s+/), g = w.findIndex((x) => GIT.test(x))
+    let k = g + 1
+    while (g >= 0 && k < w.length && w[k]!.startsWith('-')) k += GLOBAL_WITH_VALUE.test(w[k]!) ? 2 : 1
+    return g < 0 ? '' : w[k] ?? ''
+  }
+  if (!/pipefail|PIPESTATUS/.test(cmd)) for (const seg of raw.split(/&&|\|\||[;&\n]/)) {
+    const st = seg.split(/(?<!\|)\|(?!\|)/)
+    const k = st.findIndex((p, n) => /^(commit|push)$/.test(stageSub(p)) && st.slice(n + 1).some((q) => /^(tail|head|tee|select-object|select)\b/i.test(q.trim())))
+    if (k >= 0) return `git ${stageSub(st[k]!)}: piping it into tail/head/tee/Select-Object hides git's exit code, so a failed hook looks like success: run it bare and check $? (or git ls-remote after a push), or use set -o pipefail / PIPESTATUS`
+  }
+  for (const { sub, via, dir, idx } of subs) {
     const name = sub.split(' ')[0]!
     // A folder this line creates: `init <path>`, or `clone <url> [dir]`. A bare `git init` in an existing tree makes nothing.
     const mk = /^(init|clone)(\s|$)/.exec(sub)?.[1]
@@ -391,7 +428,7 @@ export function check(cmd: string, tool = 'Bash', where: Where = {}): string | n
     const own = isPrivate(dir, where.tmp)
     if (!via && name.includes('$')) return `git ${name}: ${VARIABLE}`
     // shortcut: a bare `$var` before a guarded subcommand word is read as git, so `$pkg restore` is refused too.
-    for (const [rule, why, discard] of RULES) if (!(discard === 'sweep' ? own || isWt(dir) || made.has(norm(dir)) : own && discard) && (typeof rule === 'function' ? rule(sub) : rule.test(sub))) return via ? `${via} ${name}: ${VARIABLE}` : `git ${name}: ${why}`
+    for (const [rule, why, discard] of RULES) if (!(discard === 'sweep' ? own || isWt(dir) || made.has(norm(dir)) || idx : discard === 'tree' ? own || isWt(dir) || made.has(norm(dir)) : own && discard) && (typeof rule === 'function' ? rule(sub) : rule.test(sub))) return via ? `${via} ${name}: ${VARIABLE}` : `git ${name}: ${why}`
   }
   return null
 }

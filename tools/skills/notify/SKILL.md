@@ -83,10 +83,12 @@ or at any time, checks that every saved channel still works.
 
 ## What the person gets
 
-One message, once, in the form `<project>: <label> finished`, with the last 500 characters of the chat's
-final message under it, so the lock screen shows the verdict and not just "task done". The public ntfy.sh
-server gets no excerpt unless `notify.json` holds `"excerpt": true`; `"excerpt": false` turns it off on
-every channel. Say so when the work handles data that should not leave the machine.
+One message, once, in the form `<project>: <label> finished`. The last 500 characters of the chat's final
+message go under it only when `MAKARASTY_NOTIFY_EXCERPT=1` is set or `notify.json` holds `"excerpt": true`
+(`"excerpt": false` wins); the public ntfy.sh server never gets it. Blanked first: URLs, Telegram bot tokens,
+Discord webhooks, `sk-`/`sk-ant-`/`sk_live_`/`sk_test_`/`gh*_`/`github_pat_`/`AKIA`/`ASIA`/`xox*`/`AIza` keys, JWTs,
+ntfy topics, PRIVATE KEY blocks, and the value after `api_key`, `secret`, `token` or `password` with `:` or `=` when it is quoted or is 8+
+characters with no space and a digit. Other text, prose such as "the token: refresh now rotates" included, goes out as written.
 
 When the work ran a minute or more, the finish, error and needs-you lines say how long (`finished after 12
 min`). ntfy also gets a priority and an emoji tag per kind: finished is `default` with a check mark, needs

@@ -217,7 +217,7 @@ test('skipping hooks or signing is refused, the reads and unrelated -n are not',
     'git -c core.hooksPath=/dev/null commit -m x', 'git -c core.hookspath=x status', 'git -c commit.gpgsign=false commit -m x', 'git -c Commit.GpgSign=no commit -m x',
     'git --config-env core.hooksPath=V commit -m x', 'git --config-env=commit.gpgsign=V commit -m x'].filter((c) => !check(c))).toEqual([])
   expect(check('git commit --no-verify -m x')).toContain('run it themselves with `!`')
-  expect(['git commit -m "--no-verify mentioned"', 'git commit -m "-n"', 'git commit -m x --amend', 'git commit --dry-run', 'git log -n 5', 'git rev-list -n 1 HEAD',
+  expect(['git commit -m "--no-verify mentioned"', 'git commit -m "-n"', 'git commit --dry-run', 'git log -n 5', 'git rev-list -n 1 HEAD',
     'git config core.hooksPath', 'git config --get core.hooksPath', 'git -c core.autocrlf=false commit -m x', 'git -c commit.gpgsign=true commit -m x',
     'git push -n', 'git push --dry-run', 'git merge -n x', 'git rebase -n main', 'git cherry-pick -n x', 'git revert -n x', 'git clean -n', 'git rm -n a.ts',
     'git add -n .', 'git mv -n a b', 'git prune -n', 'git commit -S -m x', 'git tag -s v1'].filter((c) => check(c))).toEqual([])
@@ -335,7 +335,7 @@ const SWEEP = ['git add -A', 'git add --all', 'git add .', 'git add ./', 'git ad
   'git commit -a -m x', 'git commit -am x', 'git commit -am"init"', 'git commit --all -m x', 'git commit -m x -a', 'git commit --amend -a --no-edit',
   'git add -A && git commit -m "wip" 2>&1', 'git -C /x/main add -A', 'cd /x/main && git add .', 'bash -c "git add -A"']
 const SCOPED = ['git add src/a.ts', 'git add -A src', 'git add -A -- src/a.ts', 'git add --all src/', 'git add -u src', 'git add -p', 'git add -n .', 'git add --dry-run -A', 'git add ./src/a.ts',
-  'git commit -m x', 'git commit -m "-a"', 'git commit -m "git add -A"', 'git commit --amend --no-edit', 'git commit --allow-empty -m x', 'git commit --dry-run -a', 'git commit -m x -- a.ts',
+  'git commit -m x', 'git commit -m "-a"', 'git commit -m "git add -A"', 'git commit --allow-empty -m x', 'git commit --dry-run -a', 'git commit -m x -- a.ts',
   'git commit --author "A <a@b.c>" -m x', 'echo git add -A', 'git init app && cd app && git add . && git commit -am init', 'git init C:/tmpx && cd /c/tmpx && git add -A', 'git init /c/tmpy && cd C:/tmpy && git commit -am x','git clone u x && cd x && git add -A', 'git clone u && cd u && git add -A',
   'git init /tmp/x && git -C /tmp/x add -A']
 const PRIVATE = ['C:\\wtmerge', 'C:\\wtRM01\\frontend', 'C:/wt', '/c/wtmerge', '/c/wtRM01/sub', 'D:\\wtx', 'C:\\Users\\mky\\app\\.claude\\worktrees\\fleet-1', 'C:\\Users\\mky\\AppData\\Local\\Temp\\clone']
@@ -353,4 +353,87 @@ test('git add -A / . and commit -a are refused in the shared tree and allowed in
   expect(['git reset --hard', 'git clean -fdx', 'git checkout -- .', 'git stash drop', 'git stash', 'git restore .', 'git push --force', 'git rm -f a.ts', 'git commit --no-verify -m x',
     'cd C:/wtmerge && git reset --hard', 'cd /c/wtRM01 && git clean -fd'].filter((c) => !check(c, 'Bash', c.startsWith('cd') ? MAIN : WTM))).toEqual([])
   expect(check('git push --force', 'Bash', WTM)).toContain('git push')
+})
+
+test('a scratch GIT_INDEX_FILE frees add -A, and only that', () => {
+  const handoff = `p="x.patch"; i="\${p%.patch}.index"; mkdir -p "$(dirname "$p")" &&\nGIT_INDEX_FILE="$i" git read-tree HEAD && GIT_INDEX_FILE="$i" git add -A &&\nGIT_INDEX_FILE="$i" git diff --cached --binary HEAD > "$p"; rm -f "$i"`
+  expect(['GIT_INDEX_FILE=/tmp/i git add -A', 'GIT_INDEX_FILE=x git add .', 'env GIT_INDEX_FILE=x git add -A', handoff].filter((c) => check(c, 'Bash', MAIN))).toEqual([])
+  expect(check("$env:GIT_INDEX_FILE='x'; git add -A", 'PowerShell', MAIN)).toBeNull()
+  expect(['git add -A', 'GIT_INDEX_FILE= git add -A', 'FOO=1 git add -A', 'GIT_INDEX_FILE=x git reset --hard', 'GIT_INDEX_FILE=x git clean -fd', 'env GIT_INDEX_FILE=x git checkout -- .',
+    'GIT_INDEX_FILE=x git commit --amend --no-edit', 'GIT_INDEX_FILE=x git push --force'].filter((c) => !check(c, 'Bash', MAIN))).toEqual([])
+  expect(check("$env:GIT_INDEX_FILE='x'; git reset --hard", 'PowerShell', MAIN)).toContain('reset')
+})
+
+test('git commit --amend needs --only or paths', () => {
+  expect(['git commit --amend', 'git commit --amend --no-edit', 'git commit --amend -m x', 'git commit --amend -F msg.txt', 'git commit --amend --reuse-message=HEAD', 'git commit -m x --amend',
+    'git commit --amen --no-edit', 'git -C r commit --amend --no-edit'].filter((c) => !check(c, 'Bash', MAIN))).toEqual([])
+  expect(check('git commit --amend', 'Bash', MAIN)).toContain('amend only with --only')
+  expect(['git commit --amend --only -F -', 'git commit --amend -o -m x', 'git commit --amend --no-edit -- a.ts b.ts', 'git commit --amend --only -- a.ts', 'git commit -m "--amend"',
+    'git commit -m x', 'git commit --amend -m "-- x"'].filter((c) => check(c, 'Bash', MAIN))).toEqual(['git commit --amend -m "-- x"'])
+  expect(['git commit --amend --no-edit'].filter((c) => check(c, 'Bash', { cwd: 'C:\\wtmerge' }))).toEqual([])
+  expect(check('git commit --amend --no-edit', 'Bash', { cwd: 'C:\\Users\\mky\\app\\.claude\\worktrees\\w1' })).toBeNull()
+})
+
+test('git commit or push piped into tail/head/tee/Select-Object is refused unless pipefail or PIPESTATUS', () => {
+  expect(['git push 2>&1 | tail -5', 'git commit -m x | Select-Object -Last 3', 'git commit -m x | select -Last 3', 'git push | tee out.log', 'git -C r push origin main | head',
+    'git add a && git commit -m x 2>&1 | tail -3', 'git.exe push | Select-Object -First 2'].filter((c) => !check(c, c.includes('Select') || c.includes('select') ? 'PowerShell' : 'Bash', MAIN))).toEqual([])
+  expect(check('git push 2>&1 | tail -5')).toContain('git ls-remote')
+  expect(['set -o pipefail; git push | tail -3', 'git push | tail -3; echo ${PIPESTATUS[0]}', 'git log | head', 'git log --grep=push | head', 'git commit -m "x | tail"', 'git push || tail x',
+    'git push && git log | head', 'git commit -m x | cat'].filter((c) => check(c, 'Bash', MAIN))).toEqual([])
+})
+
+test('commit -a under a scratch index is still refused (it moves the real branch)', () => {
+  expect(['GIT_INDEX_FILE=/tmp/i git commit -am x', 'GIT_INDEX_FILE=x git commit -a -m x', 'env GIT_INDEX_FILE=x git commit --all -m x'].filter((c) => !check(c, 'Bash', MAIN))).toEqual([])
+  expect(check('GIT_INDEX_FILE=/tmp/i git commit -am x', 'Bash', MAIN)).toContain('git commit -a')
+})
+
+test('a GIT_INDEX_FILE that is the repo index or computed does not free add -A', () => {
+  expect(['GIT_INDEX_FILE=.git/index git add -A', 'GIT_INDEX_FILE=index git add -A', 'GIT_INDEX_FILE=/r/.git/INDEX git add -A', 'GIT_INDEX_FILE="$(git rev-parse --git-path index)" git add -A',
+    'GIT_INDEX_FILE=$(git rev-parse --git-path index) git add -A', 'GIT_INDEX_FILE=`git rev-parse --git-path index` git add -A', 'GIT_INDEX_FILE="${GIT_DIR}/i" git add -A',
+    'GIT_INDEX_FILE=/tmp/i GIT_INDEX_FILE=.git/index git add -A'].filter((c) => !check(c, 'Bash', MAIN))).toEqual([])
+  expect(['GIT_INDEX_FILE=/tmp/i.index git add -A', 'GIT_INDEX_FILE="$i" git add -A', 'GIT_INDEX_FILE=.git/index GIT_INDEX_FILE=/tmp/i git add -A'].filter((c) => check(c, 'Bash', MAIN))).toEqual([])
+  expect(check("$env:GIT_INDEX_FILE='.git/index'; git add -A", 'PowerShell', MAIN)).toContain('add')
+  expect(check("$env:GIT_INDEX_FILE='$(git rev-parse --git-path index)'; git add -A", 'PowerShell', MAIN)).toContain('add')
+})
+
+test('PowerShell: removing or clearing GIT_INDEX_FILE ends the exemption', () => {
+  expect(check("$env:GIT_INDEX_FILE='x'; git add -A; Remove-Item Env:GIT_INDEX_FILE; git add -A", 'PowerShell', MAIN)).toContain('add')
+  expect(check("$env:GIT_INDEX_FILE='x'; git add -A; remove-item env:git_index_file; git add -A", 'PowerShell', MAIN)).toContain('add')
+  expect(check("$env:GIT_INDEX_FILE='x'; git add -A; $env:GIT_INDEX_FILE=$null; git add -A", 'PowerShell', MAIN)).toContain('add')
+  expect(check("$env:GIT_INDEX_FILE = 'x'; git add -A; git diff --cached", 'PowerShell', MAIN)).toBeNull()
+})
+
+test('the amend refusal names the real reason, and an all-paths pathspec does not count as paths', () => {
+  expect(check('git commit --amend', 'Bash', MAIN)).toContain("staged files stay out")
+  expect(check('git commit --amend', 'Bash', MAIN)).toContain('check HEAD is still your commit')
+  expect(check('git commit --amend', 'Bash', MAIN)).not.toContain('a peer made')
+  expect(['git commit --amend --no-edit -- .', 'git commit --amend --only -F - -- .', 'git commit --amend --no-edit -- ./', 'git commit --amend -- :/', 'git commit --amend -- a.ts .',
+    'git commit --amend --no-edit -- *'].filter((c) => !check(c, 'Bash', MAIN))).toEqual([])
+  expect(['git commit --amend --no-edit -- src/a.ts', 'git commit --amend --only -F - -- src'].filter((c) => check(c, 'Bash', MAIN))).toEqual([])
+})
+
+test('the pipe check ignores heredoc bodies and reads only the git stage of each pipe', () => {
+  expect(check(`git commit -F - <<'MSG'
+guard: refuse git push | tail
+MSG`, 'Bash', MAIN)).toBeNull()
+  expect(check(`git commit -F - <<'MSG' | tail -3
+msg
+MSG`, 'Bash', MAIN)).toContain('git commit')
+  expect(['git commit -m x && git diff HEAD~1 -- tools/skills/commit/SKILL.md | head', 'git commit -m x && git log --grep=push | head', 'git push && git log origin/push-fix | head -1',
+    'git commit -m x; git status | tail -3', 'git push || git log | head'].filter((c) => check(c, 'Bash', MAIN))).toEqual([])
+  expect(['git -C r push | tail', 'git -c core.x=1 commit -m x | head', 'git commit -m x && git push 2>&1 | tail -2'].filter((c) => !check(c, 'Bash', MAIN))).toEqual([])
+})
+
+test('Windows trailing dots and spaces in GIT_INDEX_FILE still name the repo index', () => {
+  expect(['GIT_INDEX_FILE=.git/index. git add -A', 'GIT_INDEX_FILE=".git/index " git add -A', 'GIT_INDEX_FILE=".git/index. ." git add -A', "GIT_INDEX_FILE='index.' git add -A",
+    'GIT_INDEX_FILE=. git add -A'].filter((c) => !check(c, 'Bash', MAIN))).toEqual([])
+  expect(check("$env:GIT_INDEX_FILE='.git/index.'; git add -A", 'PowerShell', MAIN)).toContain('add')
+  expect(check('GIT_INDEX_FILE=/tmp/i.index git add -A', 'Bash', MAIN)).toBeNull()
+})
+
+test('PowerShell: any later segment that names GIT_INDEX_FILE without a scratch value ends the exemption', () => {
+  const pre = "$env:GIT_INDEX_FILE='x'; git add -A; "
+  expect([pre + 'Remove-Item Env:\GIT_INDEX_FILE; git add -A', pre + "Remove-Item -Path 'Env:\GIT_INDEX_FILE'; git add -A", pre + "[Environment]::SetEnvironmentVariable('GIT_INDEX_FILE', $null); git add -A",
+    pre + "$env:GIT_INDEX_FILE='.git/index'; git add -A", pre + "Set-Item -Path Env:GIT_INDEX_FILE -Value ''; git add -A"].filter((c) => !check(c, 'PowerShell', MAIN))).toEqual([])
+  expect(check(pre + "$env:GIT_INDEX_FILE='y'; git add -A", 'PowerShell', MAIN)).toBeNull()
 })

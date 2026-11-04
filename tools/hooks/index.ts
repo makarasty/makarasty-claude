@@ -7,6 +7,7 @@ import { register as deleteGuard } from './delete-guard.ts'
 import { register as loopGuard } from './loop-guard.ts'
 import { register as budgetGuard } from './budget-guard.ts'
 import { register as secretGuard } from './secret-guard.ts'
+import { register as generatedGuard } from './generated-guard.ts'
 import { register as gates } from './gates.ts'
 
 // The engine loads one hooks module per plugin: this is it.
@@ -20,5 +21,6 @@ export const register: Register = (on, options) => {
   deleteGuard(on, options)
   budgetGuard(on, options)
   secretGuard(on, options)
+  generatedGuard(on, options)
   gates(on, options)
 }
