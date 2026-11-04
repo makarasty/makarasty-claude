@@ -6,9 +6,13 @@ import type { Register } from 'claude-code'
 // Allowed on purpose: commit, branch switch without force, reset (mixed/soft), stash list/show, clean -n,
 // restore --staged, push --force-with-lease, switch/checkout -c/-b/-C/-B (the reflog keeps an overwritten branch tip;
 // this guard is about uncommitted work). The person can still run anything themselves with `!`.
-// A discard (third element `true`) is allowed in a private tree: a fleet worker's own worktree under `.claude/worktrees/`
-// or a clone under the OS temp dir, which no other session shares. Everything else is refused in every tree.
-type Rule = [RegExp | ((s: string) => boolean), string, boolean?]
+// A discard (third element `true`) is allowed in a private tree: a fleet worker's own worktree under `.claude/worktrees/`,
+// a root-level `wt*` worktree (C:\wtmerge, /c/wtRM01) or a clone under the OS temp dir, which no other session shares.
+// Everything else is refused in every tree. `git add -A` / `add .` / `commit -a` sweep other sessions' files: refused in the shared tree.
+// `'sweep'` (add -A, commit -a) also runs in a root-level `wt*` worktree and in a folder this very line makes with `git init <path>`
+// or `git clone`: no other session's files are there. Every other discard stays refused in a `wt*` worktree.
+// shortcut: a worktree elsewhere is not seen (no process or file read here); upgrade if one bites.
+type Rule = [RegExp | ((s: string) => boolean), string, (boolean | 'sweep')?]
 // Git takes any unambiguous prefix of a long option (`reset --har` is --hard); an ambiguous prefix fails in git,
 // so over-matching it is harmless. `opt('force')` matches --force and its prefixes, never --force-with-lease.
 const pre = (w: string): string => w[0] + [...w.slice(1)].reduceRight((a, c) => `(?:${c}${a})?`, '')
@@ -101,6 +105,11 @@ const skipsConfig = (s: string): boolean => {
     || (new RegExp(`^${ci('gpg.program')}$`).test(k) && new RegExp(`^(${GPG_BAD}|\\u0003)$`).test(v))
     || (new RegExp(`^(${ci('commit')}|${ci('tag')})${ci('.gpgsign')}$`).test(k) && /^(false|no|off|0|\u0003)$/i.test(v))
 }
+// A pathspec that means the whole tree: `.`, `./`, `:/`, `:/.`.
+const ALLPATH = /^(\.\/?|:\/\.?|:)$/
+// A folder in one spelling: lower case, `/c/x` as `c:/x`.
+const norm = (x: string): string => x.toLowerCase().replace(/^\/([a-z])\//, '$1:/')
+const isWt =(dir: string): boolean => /^(\/[a-z]|[a-z]:)\/wt[^/]*(\/|$)/.test(dir.toLowerCase())
 const RULES: Rule[] = [
   // Read-only stash subcommands pass, and create, which only writes a commit object; branch applies and
   // drops the stash, so it is refused too.
@@ -122,6 +131,13 @@ const RULES: Rule[] = [
     'git checkout <path> (src/, ./, :/) discards uncommitted changes', true],
   [new RegExp(`^switch\\b.*\\s(-[a-zA-Z]*f[a-zA-Z]*(?=\\s|$)|${opt('force', 'discard-changes')})`), 'git switch --discard-changes discards uncommitted changes', true],
   [(s) => /^restore\b/.test(s) && !(/\s(--staged|-S)\b/.test(s) && !/\s(--worktree|-W)\b/.test(s)), 'git restore without --staged discards uncommitted changes', true],
+  // Staging or committing "everything" takes the files of every session that shares the tree. `add -A src/` is scoped.
+  // -A/-u alone sweep; with paths they are scoped, unless one path is the whole tree (`add -A src .`).
+  [(s) => /^add\b/.test(s) && !new RegExp(`\\s(-[a-zA-Z]*n[a-zA-Z]*|${opt('dry-run')})(\\s|$)`).test(s)
+    && (operands(s).some((o) => ALLPATH.test(o)) || (new RegExp(`\\s${opt('all', 'update')}`).test(s) || hasShort(s, 'A', '', '') || hasShort(s, 'u', '', '')) && operands(s).length === 0),
+    "git add -A / -u / --all / . stages every session's uncommitted files, not only yours: git add your own paths by name", 'sweep'],
+  [(s) => /^commit\b/.test(s) && !new RegExp(`\\s${opt('dry-run')}`).test(s) && (new RegExp(`\\s${opt('all')}`).test(flagsOf(s)) || hasShort(s, 'a', 'mFCctU', 'uS')),
+    "git commit -a commits every session's modified files, not only yours: git add your own paths by name, then commit", 'sweep'],
   // A reversed patch (`git diff | git apply -R`) undoes every uncommitted change it lists in the tree;
   // only --cached keeps it to the index. --check, --stat, --numstat and --summary apply nothing, unless --apply.
   [(s) => /^apply\b/.test(s) && new RegExp(`\\s(-[a-zA-Z0-9]*R[a-zA-Z0-9]*(\\s|$)|${opt('reverse')})`).test(s) && !/\s--cached(\s|$)/.test(s)
@@ -360,12 +376,22 @@ function subcommands(cmd: string, ps: boolean, depth = 0, cwd = ''): Sub[] {
 // shortcut: with no tool the command is read as Bash, so a PowerShell backtick counts as a substitution
 // (over-blocks) and a backtick continuation is not joined; the hook always passes it, guess only for a new caller.
 export function check(cmd: string, tool = 'Bash', where: Where = {}): string | null {
+  const made = new Set<string>()
   for (const { sub, via, dir } of subcommands(cmd, tool === 'PowerShell', 0, where.cwd ?? '')) {
     const name = sub.split(' ')[0]!
+    // A folder this line creates: `init <path>`, or `clone <url> [dir]`. A bare `git init` in an existing tree makes nothing.
+    const mk = /^(init|clone)(\s|$)/.exec(sub)?.[1]
+    if (mk) {
+      const o = operands(noValues(sub, '-b', '--branch', '--depth', '-o', '--origin', '--template', '-c', '--config', '--reference', '-j', '--jobs', '--separate-git-dir', '--initial-branch'))
+      const t = mk === 'init' ? o[0] : o[1] ?? o[0]?.replace(/\/+$/, '').replace(/^.*[/:]/, '').replace(/\.git$/, '')
+      const d = t && resolveDir(dir, t)
+      // The starting folder or one above it (`init .`, `clone u ..`) is an existing tree, not a new one.
+      if (d && d !== '?' && norm(d) !== norm(dir) && !norm(dir).startsWith(norm(d).replace(/\/?$/, '/'))) made.add(norm(d))
+    }
     const own = isPrivate(dir, where.tmp)
     if (!via && name.includes('$')) return `git ${name}: ${VARIABLE}`
     // shortcut: a bare `$var` before a guarded subcommand word is read as git, so `$pkg restore` is refused too.
-    for (const [rule, why, discard] of RULES) if (!(own && discard) && (typeof rule === 'function' ? rule(sub) : rule.test(sub))) return via ? `${via} ${name}: ${VARIABLE}` : `git ${name}: ${why}`
+    for (const [rule, why, discard] of RULES) if (!(discard === 'sweep' ? own || isWt(dir) || made.has(norm(dir)) : own && discard) && (typeof rule === 'function' ? rule(sub) : rule.test(sub))) return via ? `${via} ${name}: ${VARIABLE}` : `git ${name}: ${why}`
   }
   return null
 }
@@ -379,7 +405,7 @@ export function denial(command: string, off: boolean, tool = 'Bash', where: Wher
   // No command is named as a way round: a discard by another route (`git show HEAD:f > f`) loses the same work.
   return why && `Blocked by makarasty-tools git-guard: ${why}. It is refused because it cannot be undone and other chats' uncommitted work may share this tree. ` +
     'Safe ways: commit your own change or copy the file aside first; undo your own edit by changing only the lines you edited; ' +
-    'ask the user; or ask them to run it themselves with `!`. A discard in your own `.claude/worktrees/` worktree or a temp clone is not guarded. ' +
+    'ask the user; or ask them to run it themselves with `!`. A discard, `add -A` or `commit -a` in your own `.claude/worktrees/` or C:\\wt* worktree or a temp clone is not guarded. ' +
     'MAKARASTY_GIT_GUARD=off turns this off.'
 }
 

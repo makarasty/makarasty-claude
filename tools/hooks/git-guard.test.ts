@@ -30,7 +30,7 @@ const NEW_ALLOW = ['git push', 'git push -u origin feat', 'git push --force-with
   'git log > out.txt', 'git log --oneline 2>&1 | head', 'git commit -m "undo git reset --hard"', 'git commit -m "git stash and git push --force"',
   "git commit -m 'git branch -D x'", 'git commit -m "msg" && git log', 'echo "git stash"', "echo 'git reset --hard'", 'bash -c "echo git stash"',
   'bash -c "git status"', 'bash script.sh', 'sh -c "ls"', 'echo $(git rev-parse HEAD)', 'echo `git log -1`', '(git status)', 'git diff HEAD^ > x.patch',
-  'bash <<EOF\ngit status\nEOF', "git commit -F - <<'EOF'\nbash -c 'git stash'\nEOF", 'git add -A && git commit -m "wip" 2>&1']
+  'bash <<EOF\ngit status\nEOF', "git commit -F - <<'EOF'\nbash -c 'git stash'\nEOF"]
 
 test('every redirection, subshell, nested shell and wrapper bypass is refused', () => {
   expect(BYPASS.filter((c) => !check(c))).toEqual([])
@@ -217,7 +217,7 @@ test('skipping hooks or signing is refused, the reads and unrelated -n are not',
     'git -c core.hooksPath=/dev/null commit -m x', 'git -c core.hookspath=x status', 'git -c commit.gpgsign=false commit -m x', 'git -c Commit.GpgSign=no commit -m x',
     'git --config-env core.hooksPath=V commit -m x', 'git --config-env=commit.gpgsign=V commit -m x'].filter((c) => !check(c))).toEqual([])
   expect(check('git commit --no-verify -m x')).toContain('run it themselves with `!`')
-  expect(['git commit -m "--no-verify mentioned"', 'git commit -m "-n"', 'git commit -am x', 'git commit -m x --amend', 'git commit --dry-run', 'git log -n 5', 'git rev-list -n 1 HEAD',
+  expect(['git commit -m "--no-verify mentioned"', 'git commit -m "-n"', 'git commit -m x --amend', 'git commit --dry-run', 'git log -n 5', 'git rev-list -n 1 HEAD',
     'git config core.hooksPath', 'git config --get core.hooksPath', 'git -c core.autocrlf=false commit -m x', 'git -c commit.gpgsign=true commit -m x',
     'git push -n', 'git push --dry-run', 'git merge -n x', 'git rebase -n main', 'git cherry-pick -n x', 'git revert -n x', 'git clean -n', 'git rm -n a.ts',
     'git add -n .', 'git mv -n a b', 'git prune -n', 'git commit -S -m x', 'git tag -s v1'].filter((c) => check(c))).toEqual([])
@@ -225,7 +225,7 @@ test('skipping hooks or signing is refused, the reads and unrelated -n are not',
 
 // Review round 9 (red team): a message glued to -m is not -n, nothing after `--` is a flag, config reads stay reads.
 test('a short cluster stops at its value, and nothing after -- is a flag', () => {
-  expect(['git commit -m"init"', "git commit -m'init'", 'git commit -minit', 'git commit -am"init"', 'git commit -am x', 'git commit -m x -uno', 'git commit -uno -m x',
+  expect(['git commit -m"init"', "git commit -m'init'", 'git commit -minit', 'git commit -m x -uno', 'git commit -uno -m x',
     'git commit -m x -- -n', 'git commit -m x -- --no-verify', 'git commit -m "x" -S', 'git am -p1 p.mbox', 'git commit -C HEAD', 'git commit -F -n.txt',
     'git commit -m --no-verify', 'git commit --message -n', 'git commit --message "-n"', 'git commit --author "A <a@b.c>" -m x', 'git pull -n', 'git pull --no-stat'].filter((c) => check(c))).toEqual([])
   expect(['git commit -nm"init"', 'git commit -anm x', 'git commit -n -m x', 'git commit -m x -n', 'git commit -qn', 'git am -qn p.mbox', 'git commit -m x --no-verify',
@@ -257,7 +257,7 @@ test('rm, read-tree and gc are refused by abbreviated and dated flags', () => {
 
 // Review round 10 (red team, false blocks): rename of the current branch, -qb, other tools' subcommand words, git's default prune age, hooks setup.
 test('everyday setups pass: first-push rename, clustered -b, other tools behind a variable, default gc age, relative hooksPath', () => {
-  expect(['git branch -M main', 'git branch -m main', 'git init && git add . && git commit -m init && git branch -M main',
+  expect(['git branch -M main', 'git branch -m main', 'git init app && cd app && git add . && git commit -m init && git branch -M main',
     'git checkout -qb feature origin/main', 'git checkout -tb feat origin/feat', 'git checkout -b feat',
     '$DOTNET restore', '"$DOTNET" restore', '$NUGET restore', '$SVN checkout url dir', '$MAKE clean -f build.mk', '$G apply p.patch', '$G branch -D x',
     'git gc --aggressive --prune=2.weeks.ago', 'git gc --prune=1.month.ago', 'git gc --prune=2.years.ago', 'git gc --prune=2020-01-01', 'git gc --prune', 'git gc --no-prune',
@@ -326,4 +326,31 @@ test('a heredoc hides neither the rest of its line nor code piped into a shell',
     "git checkout -qb feat origin/feat", 'git reset "--soft"',
   ].filter((c) => check(c))).toEqual([])
   expect(["git commit -m @'\nmsg\n'@; git stash"].filter((c) => !check(c, 'PowerShell'))).toEqual([])
+})
+
+// Staging or committing everything sweeps other sessions' files: refused in the shared tree, allowed in a private worktree.
+const SWEEP = ['git add -A', 'git add --all', 'git add .', 'git add ./', 'git add -A .', 'git add -- .', 'git add -f .', 'git add -Af', 'git add :/', 'git add --al', 'git add -u', 'git add --update', 'git add -A src .', 'git add --all src :/', 'git add -u :',
+  'git init && git add -A', 'git clone u x && git add -A', 'git init /tmp/x && git add -A', 'git -C /c/wtmerge init && git add -A', 'git init app && git add -A', 'git init . && git add -A', 'git init ./ && git commit -am x', 'git clone u . && git add -A', 'git init .. && git add -A',
+  'git init C:/Users/mky/Desktop/LiveProjects/app && git add -A', 'git init /c/Users/mky/Desktop/LiveProjects/app/ && git add -A', 'git clone u C:/Users/mky/Desktop && git add -A',
+  'git commit -a -m x', 'git commit -am x', 'git commit -am"init"', 'git commit --all -m x', 'git commit -m x -a', 'git commit --amend -a --no-edit',
+  'git add -A && git commit -m "wip" 2>&1', 'git -C /x/main add -A', 'cd /x/main && git add .', 'bash -c "git add -A"']
+const SCOPED = ['git add src/a.ts', 'git add -A src', 'git add -A -- src/a.ts', 'git add --all src/', 'git add -u src', 'git add -p', 'git add -n .', 'git add --dry-run -A', 'git add ./src/a.ts',
+  'git commit -m x', 'git commit -m "-a"', 'git commit -m "git add -A"', 'git commit --amend --no-edit', 'git commit --allow-empty -m x', 'git commit --dry-run -a', 'git commit -m x -- a.ts',
+  'git commit --author "A <a@b.c>" -m x', 'echo git add -A', 'git init app && cd app && git add . && git commit -am init', 'git init C:/tmpx && cd /c/tmpx && git add -A', 'git init /c/tmpy && cd C:/tmpy && git commit -am x','git clone u x && cd x && git add -A', 'git clone u && cd u && git add -A',
+  'git init /tmp/x && git -C /tmp/x add -A']
+const PRIVATE = ['C:\\wtmerge', 'C:\\wtRM01\\frontend', 'C:/wt', '/c/wtmerge', '/c/wtRM01/sub', 'D:\\wtx', 'C:\\Users\\mky\\app\\.claude\\worktrees\\fleet-1', 'C:\\Users\\mky\\AppData\\Local\\Temp\\clone']
+test('git add -A / . and commit -a are refused in the shared tree and allowed in a private worktree', () => {
+  expect(SWEEP.filter((c) => !check(c, 'Bash', MAIN))).toEqual([])
+  expect(SCOPED.filter((c) => check(c, 'Bash', MAIN))).toEqual([])
+  expect(check('git add -A', 'Bash', MAIN)).toContain('your own paths')
+  expect(check('git commit -am x', 'Bash', MAIN)).toContain('git commit -a')
+  for (const cwd of PRIVATE) expect(SWEEP.filter((c) => !/ -C |cd |init|clone/.test(c) && check(c, 'Bash', { cwd }))).toEqual([])
+  expect(['cd C:/wtmerge && git add -A', 'cd /c/wtRM01 && git commit -am x', 'git -C C:\\wtmerge add .', 'cd /c/wtmerge/sub; git add .'].filter((c) => check(c, 'Bash', MAIN))).toEqual([])
+  // Not a private tree: a folder that only starts like one, or a wt dir deeper in the tree.
+  expect(['C:\\Users\\mky\\wtmerge', 'C:\\work', '/c/swt'].filter((cwd) => !check('git add -A', 'Bash', { cwd }))).toEqual([])
+  // A wt* worktree frees only add -A and commit -a: every discard and every other rule still holds there.
+  const WTM = { cwd: 'C:\\wtmerge' }
+  expect(['git reset --hard', 'git clean -fdx', 'git checkout -- .', 'git stash drop', 'git stash', 'git restore .', 'git push --force', 'git rm -f a.ts', 'git commit --no-verify -m x',
+    'cd C:/wtmerge && git reset --hard', 'cd /c/wtRM01 && git clean -fd'].filter((c) => !check(c, 'Bash', c.startsWith('cd') ? MAIN : WTM))).toEqual([])
+  expect(check('git push --force', 'Bash', WTM)).toContain('git push')
 })

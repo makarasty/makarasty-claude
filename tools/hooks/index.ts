@@ -1,6 +1,7 @@
 import type { Register } from 'claude-code'
 import { register as router } from './router.ts'
 import { register as gitGuard } from './git-guard.ts'
+import { register as killGuard } from './kill-guard.ts'
 import { register as reads } from './reads.ts'
 import { register as deleteGuard } from './delete-guard.ts'
 import { register as loopGuard } from './loop-guard.ts'
@@ -14,6 +15,7 @@ export const register: Register = (on, options) => {
   loopGuard(on, options)
   router(on, options)
   gitGuard(on, options)
+  killGuard(on, options)
   reads(on, options)
   deleteGuard(on, options)
   budgetGuard(on, options)

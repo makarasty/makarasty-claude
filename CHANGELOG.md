@@ -1,5 +1,18 @@
 # Changelog
 
+## makarasty-tools 1.13.0 — 2026-11-04
+
+- **New kill-guard: no kill by process name.** Refuses `taskkill /IM` (and `/FI` on anything but a PID), `pkill`,
+  `killall`, `Stop-Process -Name`, `Get-Process <name> | Stop-Process` (also inside `ForEach-Object { }`),
+  `Stop-Process -Id (Get-Process <name>).Id`, and `kill $(pgrep x)` or `ps | grep x | xargs kill`, through
+  `sudo`/`timeout`/`env` wrappers, `cmd /c`, `bash -c`, `powershell -Command` and heredocs fed to a shell. A name
+  matches every process of that name, other chats' dev servers included. By PID passes: `taskkill /PID n /T /F`,
+  `Stop-Process -Id n`, `kill n`. `MAKARASTY_KILL_GUARD=off` turns it off.
+- **git-guard refuses `git add -A`, `-u`, `--all`, `add .` and `commit -a` in a shared tree.** They stage or commit
+  every chat's uncommitted files. Scoped forms (`add -A src/`, `add -n .`, `commit --dry-run -a`) pass. They run in
+  a chat's own worktree (`.claude/worktrees`, temp dir, a root-level `wt*` folder such as `C:\wtmerge`) and in a folder
+  the same line creates with `git init <path>` or `git clone`. Other discards stay refused in a `wt*` worktree.
+
 ## makarasty 1.10.2, makarasty-tools 1.12.0 — 2026-11-03
 
 - **Findings are named, not dropped** [M53]. A new line goes to every main session (startup, clear, resume,

@@ -78,6 +78,12 @@ what the command line itself shows and lets the command through when the guard i
 
 - **git-guard** refuses discards in a shared checkout and lets them run in a chat's own worktree or a temp
   clone, where 43 of 51 historical refusals had landed for nothing [M46].
+  It also refuses `git add -A`, `-u`, `add .` and `commit -a` there (they sweep other chats' files); a private
+  worktree, a root-level `wt*` folder or a folder the same line creates runs them.
+- **kill-guard** refuses killing by process name (`taskkill /IM`, `pkill`, `killall`, `Stop-Process -Name`,
+  `Get-Process x | Stop-Process`, `kill $(pgrep x)`) and lets a kill by PID through (`taskkill /PID n /T`,
+  `Stop-Process -Id n`, `kill n`). A name matches other chats' processes too. It does not read `wmic ... terminate`,
+  `.Kill()` or a name held in a variable.
 - **delete-guard** covers the deletes Claude Code runs without asking: `.git`, `find . -delete`,
   `cmd /c rd /s /q .`, `rm -rf "$PWD"`, `cd .. && rm -rf <project>`. Claude Code already refuses `rm -rf .`
   and `..` [M45]. It walks no links: rm, rd and Windows PowerShell 5.1 unlink a junction and leave its target;
