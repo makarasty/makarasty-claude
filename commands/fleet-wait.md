@@ -150,7 +150,7 @@ else, the stall timer included, still applies.
 **A `LEFTOVER:` line is a process nobody waits for**: run `fleet.sh procs <run> --kill` in that turn
 (`fleet-plan` 8b, "Watch the machine's memory"). `LEFTOVER, ASK THE OPERATOR:` is a closed chat's tree that
 serves something (a dev server, an `http.server`; the line lists its pids leaves first): ask the operator once whether it can go, and only on
-their word end its pids one at a time, children first - `taskkill /PID <n> /F` on Windows, never `/T`, which
+their word end its pids one at a time, children first - `taskkill /PID <n> /F` on Windows (`//PID <n> //F` from Git Bash), never `/T`, which
 follows reused pids; `kill <n>` elsewhere.
 
 **A `WORKER MODEL NN` line means worker NN stopped itself at `whoami` and waits for you.** Make the calls

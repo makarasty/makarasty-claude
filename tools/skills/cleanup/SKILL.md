@@ -161,7 +161,7 @@ Ask once which numbers to act on. Processes on a yes: `CLOSED CHAT` and `ORPHANE
 the census again with `--leftovers --kill --pid <the chosen pids, comma-separated>`, which ends only those
 trees, children first - when that census file contains `--pid` (makarasty 1.5.14 and later; an older one
 ignores the filter and ends every eligible line, so then go pid by pid as below). Every other chosen process - a `CLOSED CHAT SERVING` line the operator named, a line
-the census left alone, a pid found by hand - is ended pid by pid with `taskkill /PID <n> /F`, children first,
+the census left alone, a pid found by hand - is ended pid by pid with `taskkill /PID <n> /F` (`taskkill //PID <n> //F` from Git Bash), children first,
 never `/T`, which follows reused pids. Then list again.
 Files found by hand are the operator's to delete: print the commands for the chosen items.
 

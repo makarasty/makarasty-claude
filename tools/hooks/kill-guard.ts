@@ -9,8 +9,8 @@ import type { Register } from 'claude-code'
 // still run anything themselves with `!`.
 // shortcut: wmic/CIM Terminate, `.Kill()` on a Get-Process object, and a variable or foreach loop that holds the name
 // (`$p = Get-Process node; Stop-Process -Id $p.Id`) are not read; upgrade if one bites.
-const WHY = 'it kills every process of that name, other sessions\' and the person\'s own included. Find the PID first (`Get-CimInstance Win32_Process`, `netstat -ano`, `ps`), check it is yours, then kill that PID: `taskkill /PID <n> /F`, `Stop-Process -Id <n>`, `kill <n>`'
-const TREE = 'taskkill /T kills the whole child tree, which can include other sessions\' processes: kill the one PID (`taskkill /PID n /F`), then each child you own by its PID'
+const WHY = 'it kills every process of that name, other sessions\' and the person\'s own included. Find the PID first (`Get-CimInstance Win32_Process`, `netstat -ano`, `ps`), check it is yours, then kill that PID: `taskkill /PID <n> /F` (from Git Bash `taskkill //PID <n> //F`: it rewrites `/PID` into a path), `Stop-Process -Id <n>`, `kill <n>`'
+const TREE = 'taskkill /T kills the whole child tree, which can include other sessions\' processes: kill the one PID (`taskkill /PID n /F`; from Git Bash `taskkill //PID n //F`), then each child you own by its PID'
 const SHELL = /^((ba|z|da|k)?sh|pwsh|powershell|cmd)$/
 const SHELL_CMD = /^-\w*c$|^-command$|^\/{1,2}[ck]$/i
 // Wrappers whose own options (and the values of some) come before the command they run.

@@ -1,5 +1,10 @@
 # Changelog
 
+## makarasty 1.10.4, makarasty-tools 1.14.2 — 2026-11-04
+
+- **Kill hints work from Git Bash.** Git Bash rewrites `taskkill /PID` into `C:/Program Files/Git/PID`, so the
+  advised command failed there. kill-guard, cleanup and fleet-wait now also give `taskkill //PID <n> //F`.
+
 ## makarasty-tools 1.14.1 — 2026-11-04
 
 - **kill-guard refuses `taskkill /T`**, with or without `/PID`: a tree kill takes every child of the PID, other
