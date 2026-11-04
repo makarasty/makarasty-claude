@@ -1,5 +1,30 @@
 # Changelog
 
+## makarasty 1.10.3, makarasty-tools 1.14.0 — 2026-11-04
+
+- **handoff works again.** 1.13.0's git-guard refused the scratch-index snapshot (`GIT_INDEX_FILE="$i" git add -A`),
+  so every handoff from the main checkout lost its patch. A sweep (`add -A`/`-u`/`.`) now passes under a scratch
+  `GIT_INDEX_FILE`; not when the value is the real index (basename `index`), a `$(...)`/backtick/`${...}` expansion,
+  or after `Remove-Item Env:GIT_INDEX_FILE`. `commit -a` and destructive rules still apply under it.
+- **git-guard refuses `git commit --amend` without `--only` or your own paths** (`-- .` counts as all paths), so
+  other sessions' staged files stay out. **And `git commit`/`git push` piped into `tail`, `head`, `tee` or
+  `Select-Object`**: the pipe hides git's exit code, so a failed hook reads as success. `pipefail` passes.
+- **New generated-guard:** Edit/Write of a compiled `.mjs`/`.js` listed in `src/build.sha256` is refused; edit the
+  source and rebuild.
+- **notify sends the status line only.** The last 500 characters of the reply go out only with
+  `MAKARASTY_NOTIFY_EXCERPT=1` (or `"excerpt": true`), with URLs, tokens, keys and `key=value` secrets blanked, and
+  never to public ntfy.sh.
+- **The 700K reminder says save state and keep working**; a handoff is offered only when the person asked. Fleet
+  retirement is unchanged.
+- **Skills:** review and finish loop until a clean round or three rounds; finish does not push with a confirmed bug
+  open. Every subagent spawn carries `effort`. prune, scrub, proof and tune spell the script path in every call
+  (shell variables do not survive between calls). redteam attackers stay read-only. review's checks get a live-run
+  check and a kill-after. commit and ship may run their own grep/awk secret scan. Trigger fixes: "закоммить только
+  своё и запушь" (ship), "unpause the fleet" (fleet-pause), explain no longer claims "можно деплоить?".
+- **Docs:** junction deletes match [M45] (`rm -rf`, `rd /s`, `Remove-Item -Recurse -Force` unlink; `git worktree
+  remove` and a glob through the link empty the target) in cleanup, WORKTREES, CLAUDE.md and README; COMMANDS.md
+  sizes measured.
+
 ## makarasty-tools 1.13.0 — 2026-11-04
 
 - **New kill-guard: no kill by process name.** Refuses `taskkill /IM` (and `/FI` on anything but a PID), `pkill`,

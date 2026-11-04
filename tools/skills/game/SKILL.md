@@ -73,7 +73,7 @@ runs before and after.
 
 ## 3. Challenge
 
-One `Agent` (`subagent_type: Explore`, `model: opus`, in the foreground: read-only by its tools), the proposals inline in its
+One `Agent` (`subagent_type: Explore`, `model: opus`, `effort: medium`, in the foreground: read-only by its tools), the proposals inline in its
 prompt, told: read only, no installs, no settings, do not launch the game or end processes; disprove each
 proposal - wrong for this game version, no measurable effect, a myth, a hidden risk, a conflict with another
 proposal; every `stands` or `falls` names a source URL or a file on this machine, and a reason from memory is

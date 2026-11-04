@@ -1,5 +1,5 @@
 ---
-description: The end of a task in one command - review this chat's change until a round finds nothing, red team it, fix what holds, run the narrow tests, then commit under the person's own name and push. Use on "проведи ревью, красную команду, по кругу, закоммить от меня и запушь", "доведи до идеала и запушь", "финализируй", "finish this". A review alone is /makarasty-tools:review; a commit alone is /makarasty-tools:commit; a bare push, or "fix the tests and push" with no review asked, is /makarasty-tools:ship.
+description: The end of a task in one command - review this chat's change until a round finds nothing (max three rounds), red team it, fix what holds, run the narrow tests, then commit under the person's own name and push. Use on "проведи ревью, красную команду, по кругу, закоммить от меня и запушь", "доведи до идеала и запушь", "финализируй", "finish this". A review alone is /makarasty-tools:review; a commit alone is /makarasty-tools:commit; a bare push, or "fix the tests and push" with no review asked, is /makarasty-tools:ship.
 argument-hint: [--no-push] [--no-redteam]
 ---
 
@@ -24,7 +24,9 @@ chats may have uncommitted work in the same checkout.
    Before it pushes, `git log --oneline @{u}..HEAD`: commits this run did not make would be pushed too, so
    name them and ask once. Invoking finish without `--no-push` is the request to push, on the default
    branch too. A protected-branch rejection is reported with ship's pull-request offer, never retried.
-   With `--no-push` or "без пуша", `makarasty-tools:commit` instead.
+   With `--no-push` or "без пуша", `makarasty-tools:commit` instead. Also `commit` instead, and report it
+   as open, when a confirmed `bug` is still open after step 1's last round or the red team's re-review: nothing
+   is pushed with a known bug, on any path, `--no-redteam` included.
 
 Steps 2 and 4 run once per finish. The questions and medium risks that review or the red team leave go into the report; they do not stop the run. A step that stops (a finding that needs a decision, a rejected push)
 is asked or reported right there; the steps after it do not run on a half-finished change.

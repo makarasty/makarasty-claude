@@ -183,7 +183,7 @@ All twenty-four can be started by you or by Claude, and most trigger on plain ph
 as me", "закоммить от меня", "ping me when the tests are done".
 
 **Context hook.** Once a chat's context passes 700k tokens, and again every 150k above that, the chat is
-told to offer a handoff in one line (a chat that coordinates or works a fleet run gets none: the run's own marks watch it, below). `MAKARASTY_HANDOFF_AT` and `MAKARASTY_HANDOFF_STEP` move the levels;
+told to say the context size once, save its state and notes, and keep working; a handoff is offered only if the person asked (a chat that coordinates or works a fleet run gets none: the run's own marks watch it, below). `MAKARASTY_HANDOFF_AT` and `MAKARASTY_HANDOFF_STEP` move the levels;
 `MAKARASTY_HANDOFF_AT=0` turns it off.
 
 **Model router.** A subagent that Opus or Fable spawns without naming a model runs on Sonnet when its
@@ -370,7 +370,7 @@ One step here is not obvious, and it was measured [M32]: a worktree usually has 
 into the main checkout, and `git worktree remove` **follows that junction and deletes what it points at**.
 Eight runs out of eight on Windows, at the top level and nested, `--force` included, exit code 0 every
 time. So `clean` unlinks every junction and symlink inside a worktree before anything recursive touches
-it. The same applies to the harness's own `ExitWorktree` and to any hand-written `rm -rf`. See
+it. The same applies to the harness's own `ExitWorktree`; a hand-written `rm -rf` unlinks a junction and spares its target [M45], but unlinking first stays the habit. See
 [`docs/WORKTREES.md`](docs/WORKTREES.md) and [`docs/SAFETY.md`](docs/SAFETY.md).
 
 ## Real runs, and what they cost

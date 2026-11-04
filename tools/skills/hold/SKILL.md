@@ -72,11 +72,11 @@ that come with the codeword ("абрикос, флитом, без worktree") de
    questions. Pass along what the person already said ("без worktree", "в этом чате") so it is not asked.
 5. **Reuse what the project has**. Find its own button, popup, table, skeleton and spacing primitives
    before writing any; no new global style overrides.
-6. **Fan out** when groups touch disjoint files: one subagent per group with `model: "sonnet"`, each
+6. **Fan out** when groups touch disjoint files: one subagent per group with `model: "sonnet"`, `effort: "high"`, each
    given its items, the shared piece and the done-when. Review every returned diff yourself before
    accepting it. Groups that share a file run in one agent, or here.
 7. **Look**: before and after for each group, in every theme the app has. Screenshots are heavy, so the
-   look goes to a `makarasty:fleet-scenario` agent with `model: "sonnet"` after `/makarasty:fleet-login`,
+   look goes to a `makarasty:fleet-scenario` agent with `model: "sonnet"`, `effort: "medium"` after `/makarasty:fleet-login`,
    and only its findings come back. Without a pane or the makarasty plugin, a visual fix nobody looked at is reported as not checked.
    When the person wants to see it ("покажи скриншотами", "как было, как стало"), record each group with
    `/makarasty-tools:proof`: the before shot goes before the edit, and the report numbers the blocks.

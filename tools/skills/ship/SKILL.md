@@ -1,7 +1,7 @@
 ---
-description: Ships the working tree: separate commits under the user's name, merges named branches and resolves conflicts, pushes, optionally tags a release. Use for "commit everything as separate commits and push", "pull all branches into mine and fix conflicts", "tag a release with patch notes", or закоммить от моего имени отдельными коммитами и запушь, стяни все ветки, смержи, подтяни, слей, влей все ветки в мою, учти параллельную работу, закоммить только своё, запушь, залей, закомить и запуш (voice typos count). A single commit with no push is the commit command.
+description: Ships the working tree: separate commits under the user's name, merges named branches and resolves conflicts, pushes, optionally tags a release. Use for "commit everything as separate commits and push", "pull all branches into mine and fix conflicts", "tag a release with patch notes", or закоммить от моего имени отдельными коммитами и запушь, стяни все ветки, смержи, подтяни, слей, влей все ветки в мою, учти параллельную работу, закоммить только своё и запушь, залей, закомить и запуш (voice typos count). A single commit with no push is the commit command.
 argument-hint: [branch ... | all] [mine] [tag [<name>]] [notes]
-allowed-tools: Bash(git:*), Bash(gh:*), Read, Grep, Glob, Edit, Agent, ToolSearch, mcp__ccd_session_mgmt__list_sessions, mcp__ccd_session_mgmt__list_events
+allowed-tools: Bash(git:*), Bash(gh:*), Bash(grep:*), Bash(awk:*), Read, Grep, Glob, Edit, Agent, ToolSearch, mcp__ccd_session_mgmt__list_sessions, mcp__ccd_session_mgmt__list_events
 ---
 
 Ship does three things: commits the user's work as separate commits under their own name, merges the
@@ -38,7 +38,7 @@ A file another chat is halfway through does not belong in this commit. The sessi
 deferred: load them with ToolSearch `select:mcp__ccd_session_mgmt__list_sessions,mcp__ccd_session_mgmt__list_events`,
 and use the fallback below only when that finds nothing. `list_sessions` with `limit: 50`, kept to the
 ones whose `cwd` is this checkout and that were active in the last day. Give those to one `Agent` with
-`model: "sonnet"`: it reads each one's last 20 events with `list_events` and returns one line per chat -
+`model: "sonnet"`, `effort: "medium"`: it reads each one's last 20 events with `list_events` and returns one line per chat -
 the files it edited, and whether its last turn reported the work complete.
 
 - A chat is finished only when it is not running and its last turn reported completion. One that stopped

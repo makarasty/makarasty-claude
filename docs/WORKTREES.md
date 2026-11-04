@@ -34,11 +34,12 @@ rm "<wt>/node_modules"          # removes the LINK only, never what it points at
 git worktree remove <wt>        # now there is no link to follow
 ```
 
-So the rule is not "avoid `rmdir /S`". It is **unlink every reparse point inside a worktree before anything
-recursively deletes that worktree**: `git worktree remove`, the harness's `ExitWorktree`, a hand-rolled
-`rm -rf` or `rmdir /S` alike. A link left in place is a hole through which a delete reaches the rest of the
-disk. `rmdir /S` is only the part that looks dangerous. `git worktree remove` looks safe and is not, while the
-link is still there.
+Measured on Windows [M45]: Git Bash `rm -rf`, `rmdir /s` and PowerShell 5.1 `Remove-Item -Recurse -Force`
+unlink a junction and leave its target intact. The ones that empty the target are `git worktree remove`
+(`--force` too) and a glob through the link (`Remove-Item -Recurse <wt>\node_modules\*`). So the rule is
+not "avoid `rmdir /S`". It is **unlink every reparse point inside a worktree before anything recursively
+deletes that worktree**: still the safe habit, since a delete tool or a shell version not measured here may
+follow a link. `git worktree remove` looks safe and is not, while the link is still there.
 
 The link is followed at any depth, not only at the top of the tree. A junction at `<wt>/sub/node_modules`
 is followed as readily as one beside it, which is why the unlink walks the whole tree.

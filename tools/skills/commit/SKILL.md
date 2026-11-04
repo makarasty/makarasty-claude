@@ -1,7 +1,7 @@
 ---
 description: Commits this chat's own work under the author's identity, short human message, no AI trailer. Use for "commit this", "commit as me", "commit under my name", or закоммить, сделай коммит, закоммить от меня, закоммить от моего имени, коммит от меня, закомить. No push, no merge; when the request also says to push or pull in branches ("отдельными коммитами … запушь", "стяни все ветки"), ship is the command. Unlike a message-writing helper, this makes the commit.
 argument-hint: [optional paths, scope or message hint]
-allowed-tools: Bash(git:*), Read, Grep, Glob
+allowed-tools: Bash(git:*), Bash(grep:*), Bash(awk:*), Read, Grep, Glob
 ---
 
 Commit this chat's work as the person would write it. No signature, no attribution, nothing that says a

@@ -108,8 +108,9 @@ Per item: what it is, size or memory, age, why it is nobody's, the command, and 
 wrong. Rank by what it frees. Hundreds of folders of one kind are one pick with one generated command.
 Commands that remove folders unlink every junction and symlink inside first, at any depth, then delete:
 `find "<dir>" -type l -exec rm {} + && rm -rf "<dir>"` in Git Bash (`rm` on a link removes only the link).
-A recursive delete with a link left in place, `rm -rf`, `rmdir /s` or `Remove-Item -Recurse` alike, follows
-it into its target. Caches are cleaned by their own tool (`npm cache clean --force`,
+Measured [M45]: `rm -rf`, `rmdir /s` and PS 5.1 `Remove-Item -Recurse -Force` unlink a link left in place and
+spare its target; `git worktree remove` and a glob through the link (`Remove-Item -Recurse <dir>\link\*`)
+empty it, and an unmeasured tool may too. Caches are cleaned by their own tool (`npm cache clean --force`,
 `pip cache purge`, `uv cache clean`, `bun pm cache rm`). A stale worktree or merged branch of a repo is one pick whose command is `/makarasty-tools:prune`, run
 only on the yes: it moves them to an undoable local trash and never follows a junction. A fleet run's own
 worktree is removed through its run's `fleet.sh clean`.
@@ -122,7 +123,7 @@ skipped by the script with their reason. An `owner` item is a pick only when the
 
 ## 3. Challenge
 
-One `Agent` (`subagent_type: Explore`, `model: opus`, in the foreground: read-only by its tools), given the picks as a file
+One `Agent` (`subagent_type: Explore`, `model: opus`, `effort: medium`, in the foreground: read-only by its tools), given the picks as a file
 path, told: read only - end nothing, delete nothing, write nothing; defend each item against removal - a live
 chat still uses it (Git Bash breaks parent links, so a live chat's `cmd &` can look orphaned), the operator's
 own server or emulator, an MCP server or browser a live `claude`, terminal or IDE owns, a live fleet's worktree, unpushed commits, a cache a running build fills, a temp file

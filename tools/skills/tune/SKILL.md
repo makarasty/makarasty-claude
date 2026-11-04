@@ -5,11 +5,11 @@ allowed-tools: Bash(node:*), Read, Write, Agent
 ---
 
 The goal is one dated table, role -> model + effort, each row backed by evidence, compared with the last
-run. Scripts do the counting; the chat only judges. `T="${CLAUDE_SKILL_DIR}/tune.mjs"`; its header lists
+run. Scripts do the counting; the chat only judges. `"${CLAUDE_SKILL_DIR}/tune.mjs"` is the script; its header lists
 every command. All output lands in `~/.claude/makarasty/tune/` (call it `$OUT`).
 
 Ground rules, with the reason:
-- Run one `node "$T" ...` at a time and wait for it: the scans stream gigabytes of transcripts and hold a
+- Run one `node "${CLAUDE_SKILL_DIR}/tune.mjs" ...` at a time and wait for it: the scans stream gigabytes of transcripts and hold a
   lock; each command already has its own hard timeout. Exit 124 = timed out: report it, do not retry.
 - Objective signals rank first (known bugs caught, tests passing, review rounds, fix-needed share, owner
   corrections); the judge's score second. A judge is a model and has its own taste.
@@ -22,13 +22,13 @@ Ground rules, with the reason:
 
 ## Step 1: usage (free)
 
-`node "$T" usage --days 7`. Where the money went: per model, per role x model x effort, main vs subagent,
+`node "${CLAUDE_SKILL_DIR}/tune.mjs" usage --days 7`. Where the money went: per model, per role x model x effort, main vs subagent,
 project, main-chat context buckets, per day. Read it for which roles matter: a role under a few percent of
 the spend is not worth a benchmark.
 
 ## Step 2: quality from history (free)
 
-`node "$T" quality --days 30`. Per coder model+effort: findings in the first review, fix-needed share,
+`node "${CLAUDE_SKILL_DIR}/tune.mjs" quality --days 30`. Per coder model+effort: findings in the first review, fix-needed share,
 review rounds, $ per task; per subagent role: runs and median $; per main-chat model+effort: owner
 corrections per 100 messages. Say the sample size beside every claim, and check the bias line: an arm
 that got the smaller tasks looks better than it is. Agent types are matched by `coder` and `review`;
@@ -38,12 +38,12 @@ Stop here when steps 1-2 answer the question (no new model, no row in doubt).
 
 ## Step 3: benchmark (paid, only with consent)
 
-1. `node "$T" pick --n 10` picks real diffs from the repos in the history, by markers fixed before any
+1. `node "${CLAUDE_SKILL_DIR}/tune.mjs" pick --n 10` picks real diffs from the repos in the history, by markers fixed before any
    result: commits a later fix blamed or a revert undid, tasks that took 2+ review rounds, and controls,
    with a seeded draw. Categories and known bugs are sealed in `review/sealed/answers.json`: do not read it
    until scoring, so nothing you say steers the reviewers.
 2. Choose arms that separate model from effort, for example `opus:high,sonnet:high,sonnet:medium` with the new and the current model's names (`plan` refuses a name it has no price for).
-   `node "$T" plan <run> --arms <...> [--whole K]` prints the cost estimate per arm and in total, seals the
+   `node "${CLAUDE_SKILL_DIR}/tune.mjs" plan <run> --arms <...> [--whole K]` prints the cost estimate per arm and in total, seals the
    codes once, and makes one folder per reviewer, `blind/<NN>-<CODE>/`, holding only the change and a
    snapshot of the files at the commit (no repo path, no answers). It stops on an `UNPRICED` arm or judge
    and on a run already planned; `--force-new-run` voids the old plan's reviews and starts over.
@@ -55,12 +55,12 @@ Stop here when steps 1-2 answer the question (no new model, no row in doubt).
 5. Judges: strongest model, each given a few diffs, prompt exactly
    `Follow <run>/review/judge-task.md for diffs <NN list>. tune-run=<run id> JUDGE=<j1, j2...>`. The tag
    lets `cost` count judge spend; judges never see `map.json`.
-6. `node "$T" cost <run>` then `node "$T" score <run>`: unseals, writes `score.md`, objective columns first.
+6. `node "${CLAUDE_SKILL_DIR}/tune.mjs" cost <run>` then `node "${CLAUDE_SKILL_DIR}/tune.mjs" score <run>`: unseals, writes `score.md`, objective columns first.
 
 Whole-task arms (optional, `--whole K`, the costliest part): candidates come fresh from current open work
-(the backlog, the handoff, open questions). For each, run `node "$T" open <repo> --since <date the item
+(the backlog, the handoff, open questions). For each, run `node "${CLAUDE_SKILL_DIR}/tune.mjs" open <repo> --since <date the item
 was written> --files <its files> --grep <its id>`, then its reproduction at HEAD; drop it when either says
-it is done. One `node "$T" clone <repo> HEAD <dir>` per task x arm; the prompt is `task-common.md` with its
+it is done. One `node "${CLAUDE_SKILL_DIR}/tune.mjs" clone <repo> HEAD <dir>` per task x arm; the prompt is `task-common.md` with its
 placeholders filled. Score by the task's tests first, then a blind judge reading both diffs and
 BENCH_RESULT.md files by code; write `<run>/whole/results.json` as
 `[{"task":"t1","code":"A","tests_pass":true,"score":8}]` before `score`.
@@ -77,7 +77,7 @@ Write `$OUT/<YYYY-MM-DD>.md`:
 ```
 
 One row per role that has spend in step 1; evidence names the step, the numbers and n. A row with no new
-evidence keeps last run's choice and says so. Then `node "$T" diff` and report to the person, in their
+evidence keeps last run's choice and says so. Then `node "${CLAUDE_SKILL_DIR}/tune.mjs" diff` and report to the person, in their
 language: what changes, why, what it costs or saves per week from step 1, and what was not measured
 (roles with too small n, effort levels not tried, the judge's single taste). Applying the table to agent
 files, routers or docs is a separate change the person asks for.

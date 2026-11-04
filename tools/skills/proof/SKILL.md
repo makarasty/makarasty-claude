@@ -8,12 +8,12 @@ answers "блок 23 сделано плохо, переделай". The pane's 
 cannot be saved. So the pane renders the page to PNG itself (html-to-image) and POSTs it to a local
 receiver, and you get back one small JSON line. A report of 30 blocks costs no image tokens.
 
-`P="${CLAUDE_SKILL_DIR}/proof.mjs"`; every command is `node "$P" <cmd> <dir> ...`. `<dir>` is a fresh
+Shell variables do not survive between calls, so every command spells the full path: `node "${CLAUDE_SKILL_DIR}/proof.mjs" <cmd> <dir> ...`. `<dir>` is a fresh
 folder under the system temp dir for this task (it holds the PNGs, `blocks.jsonl`, `report.html`).
 
 ## Flow
 
-1. Start the receiver in the background: `node "$P" serve <dir>`. It prints `PORT=<n>`, writes `<dir>/.port`,
+1. Start the receiver in the background: `node "${CLAUDE_SKILL_DIR}/proof.mjs" serve <dir>`. It prints `PORT=<n>`, writes `<dir>/.port`,
    and stops itself after 2 h without a valid shot, or on `stop`. It binds 127.0.0.1 only. `.port` holds
    `<port> <token>`: `/shot`, `/lib.js` and `/ping` answer 403 without that token (no web page can write
    into `<dir>`), and a Host other than `127.0.0.1:<port>` or `localhost:<port>` is refused. `snippet` bakes
@@ -24,7 +24,7 @@ folder under the system temp dir for this task (it holds the PNGs, `blocks.jsonl
    frame count twice, a second apart, and believe the second. Under ten frames the pane is blind and its
    render is a photo of a stopped page; ask the operator to display it, as that doc says.
 3. For each UI change, number it `NN` and:
-   - `node "$P" snippet <dir> NN-before [css-selector]` prints one JS expression. Run it in the pane's
+   - `node "${CLAUDE_SKILL_DIR}/proof.mjs" snippet <dir> NN-before [css-selector]` prints one JS expression. Run it in the pane's
      `javascript_tool` BEFORE you edit. No selector: the visible viewport (the body clipped to
      innerWidth x innerHeight, scroll undone). With a selector: that whole element, however tall.
    - Edit. Wait on the condition that means rendered (a selector present, a flag flipped), not on a sleep.
@@ -33,9 +33,9 @@ folder under the system temp dir for this task (it holds the PNGs, `blocks.jsonl
      `block ... --note "no baseline: the edit came before the shot"`. A baseline from a second dev server
      on a clean worktree is out of scope for this skill.
    - Run `snippet ... NN-after` the same way, in the same viewport and theme.
-   - `node "$P" block <dir> --title "..." --what "one line of what changed" --files a.vue,b.css --before NN-before --after NN-after --viewport 1280x720 --theme light`.
+   - `node "${CLAUDE_SKILL_DIR}/proof.mjs" block <dir> --title "..." --what "one line of what changed" --files a.vue,b.css --before NN-before --after NN-after --viewport 1280x720 --theme light`.
      Read the viewport from `innerWidth x innerHeight`; for a dark shot emulate the scheme first.
-4. After the work: `node "$P" report <dir> --title "..." --inline`. Publish `<dir>/report.html` with the
+4. After the work: `node "${CLAUDE_SKILL_DIR}/proof.mjs" report <dir> --title "..." --inline`. Publish `<dir>/report.html` with the
    Artifact tool as a private artifact; if there is none, give the local path. Without `--inline` the file
    links the PNGs beside it and must stay with them. `--out` outside `<dir>` copies the PNGs next to the
    out file. If the inline file would pass 15 MB, `report --inline` writes the linked variant instead and
@@ -43,7 +43,7 @@ folder under the system temp dir for this task (it holds the PNGs, `blocks.jsonl
 5. "блок N переделай ...": redo only that block, take a new `NN-after`, `block <dir> --id N` with the changed
    fields, rebuild with `report --inline`, and republish to the same artifact or path. Block numbers never
    change, so the person's references stay valid.
-6. `node "$P" stop <dir>` when the task is done.
+6. `node "${CLAUDE_SKILL_DIR}/proof.mjs" stop <dir>` when the task is done.
 
 ## When the shot fails
 

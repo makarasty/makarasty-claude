@@ -207,7 +207,7 @@ Work done after the file takes precedence.
 ### 2. Read only what answers three questions
 
 What was asked, what was claimed done, what was next. A long chat takes many pages, so give the reading
-to one `Agent` with `model: "sonnet"`: it pages `mcp__ccd_session_mgmt__list_events` back with
+to one `Agent` with `model: "sonnet"`, `effort: "medium"`: it pages `mcp__ccd_session_mgmt__list_events` back with
 `before_uuid` until the original request appears or a compaction summary does (in a compacted chat that
 summary is the request: treat it as the goal), at most eight pages. It reads user turns and final answers
 and returns only the three answers with the files and commits named. Without the session tools, the same

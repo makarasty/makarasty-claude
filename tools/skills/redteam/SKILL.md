@@ -16,7 +16,7 @@ step the plan cannot do, a prompt the skill misfires on). "Исправь", "п�
 
 ## 2. Attack
 
-Three to five subagents in parallel, `subagent_type: Explore` (read-only by its tools), `model: "sonnet"`,
+Three to five subagents in parallel, `subagent_type: Explore` (read-only by its tools), `model: "sonnet"`, `effort: "medium"` (`"high"` for security code),
 each with its own angle chosen for this target. Angles that tend to pay:
 
 - **a plan or idea**: the assumption it rests on that is false here; a case it does not cover; an
@@ -35,13 +35,13 @@ tooling or the OS, and this contract:
   is dropped. A code defect needs the input that breaks it.
 - Effort, time and migration cost are not findings: agents do the work. Judge by whether it works, what
   it breaks, what it costs at run time, and safety. No style or naming preferences.
-- No whole-repo typecheck and no whole test suite. At most one scoped run, after checking that no other
-  test or typecheck is live on the machine, with a hard timeout of about twice its normal time; a timeout
-  is reported, never retried.
+- Attackers stay read-only and run no command. No whole-repo typecheck and no whole test suite: the judge
+  may do at most one scoped run, after checking that no other test or typecheck is live on the machine,
+  with a hard timeout of about twice its normal time; a timeout is reported, never retried.
 
 ## 3. Judge
 
-On Opus or better: here if this chat runs on one, otherwise one `Agent` with `model: "opus"` given the
+On Opus or better: here if this chat runs on one, otherwise one `Agent` with `model: "opus"`, `effort: "medium"`, given the
 findings and the sources. Re-check every finding against the source. Each one is **confirmed** (you
 reproduced it, or for a non-code finding read it in the source), **refuted** (one line why, the evidence
 that disproves it), or **unclear** (what would settle it). Merge duplicates. Do not soften a confirmed

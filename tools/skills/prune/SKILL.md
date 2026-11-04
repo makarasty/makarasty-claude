@@ -5,7 +5,7 @@ allowed-tools: Bash(node:*), Bash(git:*), Read
 ---
 
 A script does every git step; the chat reads its output, asks about the doubtful items and reports.
-`P="${CLAUDE_SKILL_DIR}/prune.mjs"`. Every command takes `--repo <dir>` (default: the current directory)
+Shell variables do not survive between calls: spell the full script path each time. Every command takes `--repo <dir>` (default: the current directory)
 and `--json`.
 
 What it promises, so the reply can say it plainly: it is local only. Nothing is pushed, fetched or deleted
@@ -15,7 +15,7 @@ Each entry comes back with `restore <id>`, a week or a month later.
 
 ## Flow
 
-1. `node "$P" scan`. Each candidate gets a verdict and a reason:
+1. `node "${CLAUDE_SKILL_DIR}/prune.mjs" scan`. Each candidate gets a verdict and a reason:
    - `trash`: a branch merged into the default branch (origin/HEAD, else main, else master) and checked out
      nowhere; a clean worktree on a merged commit; a worktree whose folder is already gone and whose commit
      is merged or on some branch, remote branch or tag.
@@ -29,11 +29,11 @@ Each entry comes back with `restore <id>`, a week or a month later.
      checked out in a live one.
    Show the list in the person's language, one line per item, ids exactly as printed (`b:<branch>`,
    `w:<worktree>`).
-2. `node "$P" trash --safe`, with no question first: it is local and undoable, and the person asked for
+2. `node "${CLAUDE_SKILL_DIR}/prune.mjs" trash --safe`, with no question first: it is local and undoable, and the person asked for
    the cleanup. Skip this step when they only asked to look ("покажи", "что можно удалить").
 3. The `ask` items go in one `AskUserQuestion` call, `multiSelect: true`, one option per item with its reason
    as the description (four options per question; more items, more questions in the same call). Then
-   `node "$P" trash <id> <id> ...` for the chosen ones. Nothing chosen: nothing more.
+   `node "${CLAUDE_SKILL_DIR}/prune.mjs" trash <id> <id> ...` for the chosen ones. Nothing chosen: nothing more.
 4. Report in a few lines: what went to the trash (branch name or worktree path, and its trash id), each
    `left in place` line with its reason, and the exact restore command with the real script path,
    `node "<path>/prune.mjs" restore <id>`. Say that nothing on the remote was touched, and that the trash
