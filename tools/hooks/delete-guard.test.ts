@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { check, denial, type Env } from './delete-guard.ts'
+import { check, denial, register, type Env } from './delete-guard.ts'
 
 const WIN: Env = { cwd: 'C:\\Users\\dev\\proj', home: 'C:\\Users\\dev', tmp: 'C:\\Users\\dev\\AppData\\Local\\Temp' }
 const NIX: Env = { cwd: '/home/dev/proj', home: '/home/dev', tmp: '/tmp' }
@@ -343,4 +343,11 @@ test('a folder outside the project runs, unless it is the project, holds it, or 
   expect(['Remove-Item -Recurse -Force C:\\llq', 'Remove-Item -Recurse D:\\scratch', 'Remove-Item -Recurse -Force ..\\other', 'Remove-Item -Recurse -Force "C:\\Program Files\\x"'].filter((c) => check(c, 'PowerShell', DEEP))).toEqual([])
   const stop = ['rm -rf ..', 'rm -rf ../..', 'rm -rf .', 'rm -rf ../../..', 'cd .. && rm -rf proj', 'rm -rf ~', 'rm -rf ~/Documents', 'rm -rf ~/.ssh', 'rm -rf ~/proj-sibling', 'rm -rf /', 'rm -rf .git', 'rm -rf .git/objects', 'rm -rf $TMPDIR']
   expect(stop.filter((c) => !check(c, 'Bash', DEEP))).toEqual([])
+})
+
+const matcher = (register: (on: never) => void): RegExp => { let m!: RegExp; register((((_e: string, o: { tool: RegExp }) => { m = o.tool; return { catch: () => {} } }) as never)); return m }
+test('Monitor is a shell: its command is read like Bash', async () => {
+  expect(matcher(register).test('Monitor')).toBe(true)
+  expect(await denial('rm -rf ..', 'Monitor', WIN)).toContain('delete-guard')
+  expect(await denial('rm -rf dist', 'Monitor', WIN)).toBeNull()
 })

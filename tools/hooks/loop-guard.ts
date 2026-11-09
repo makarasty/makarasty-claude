@@ -34,7 +34,7 @@ export const hash = (s: string): string => {
 export function callOf(e: Record<string, unknown>): Call {
   const tool = String(e.tool)
   const str = (v: unknown): string => (typeof v === 'string' ? v : '')
-  if (tool === 'Bash' || tool === 'PowerShell') return { tool, input: str(e.command).replace(/\s+/g, ' ').trim() }
+  if (tool === 'Bash' || tool === 'PowerShell' || (tool === 'Monitor' && typeof e.command === 'string')) return { tool, input: str(e.command).replace(/\s+/g, ' ').trim() }
   if (tool === 'Edit') return { tool, input: `${str(e.file_path)} ${hash(str(e.old_string) + '\0' + str(e.new_string))}` }
   if (tool === 'Write') return { tool, input: `${str(e.file_path)} ${hash(str(e.content))}` }
   const { tool_use_id: _a, agentId: _b, tool: _c, ...rest } = e

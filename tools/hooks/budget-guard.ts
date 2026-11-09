@@ -1,7 +1,7 @@
 import type { Register } from 'claude-code'
 
 // Enforces the "Verify budget" rule: a whole-repo typecheck or whole-suite test run costs gigabytes, and several agent
-// sessions share one 32 GB box. On a Bash or PowerShell call that is a HEAVY verify run it refuses when
+// sessions share one 32 GB box. On a Bash, PowerShell or Monitor call that is a HEAVY verify run it refuses when
 //   1. another heavy verify run is already live on the machine (wait for it, or scope this one), or
 //   2. the run goes to the background with no kill-after limit (a hung run holds its RAM for hours).
 // Shape borrowed from git-guard and delete-guard: a function hook, a small lexer, an exported pure `check`. Unlike them
@@ -299,7 +299,7 @@ export function check(command: string, tool: string, input: { run_in_background?
       'Several sessions share one 32 GB box and a whole-repo typecheck or suite costs gigabytes each. Wait for it (its result is yours to read) or scope your run to one file or project ' +
       '(`vitest run src/x.test.ts`, `tsc --noEmit -p packages/a`, `-t`, `--related`). If it looks hung, tell the user; do not end it yourself')
   }
-  const loose = runs.find((r) => (r.bg || input.run_in_background === true) && !r.timeout)
+  const loose = tool === 'Monitor' ? undefined : runs.find((r) => (r.bg || input.run_in_background === true) && !r.timeout) // a Monitor ends at its own timeout_ms
   if (loose) {
     why.push(`\`${loose.text}\` starts a heavy verify run in the background with no kill-after limit, and a hung run holds its RAM for hours. Every long run gets a hard timeout: ` +
       (tool === 'PowerShell'
@@ -341,8 +341,8 @@ export const isWindows = (os?: string, comspec?: string, sysroot?: string): bool
 export const WIN_LIST = "Get-CimInstance Win32_Process -Property ProcessId,CommandLine,CreationDate -Filter 'Name=''node.exe'' OR Name=''bun.exe'' OR Name=''python.exe'' OR Name=''java.exe'' OR Name=''cargo.exe'' OR Name=''pytest.exe''' | ForEach-Object { '' + $_.ProcessId + [char]9 + $(if ($_.CreationDate) { [int]((Get-Date) - $_.CreationDate).TotalSeconds } else { '' }) + [char]9 + $_.CommandLine }"
 
 export const register: Register = on => {
-  on('tool.call', { tool: /^(Bash|PowerShell)$/ }, async ($, e, next) => {
-    const command = e.tool === 'Bash' || e.tool === 'PowerShell' ? e.command : ''
+  on('tool.call', { tool: /^(Bash|PowerShell|Monitor)$/ }, async ($, e, next) => {
+    const command = (e.tool === 'Bash' || e.tool === 'PowerShell' || e.tool === 'Monitor' ? e.command : '') ?? '' // a Monitor on a ws has no command
     // Cheap look first (the lexer), the process listing only for a line that is a heavy verify run.
     if (!heavy(command, e.tool).length) return next(e)
     if ((await $.env.get('MAKARASTY_BUDGET_GUARD')) === 'off') return next(e)

@@ -447,8 +447,8 @@ export function denial(command: string, off: boolean, tool = 'Bash', where: Wher
 }
 
 export const register: Register = on => {
-  on('tool.call', { tool: /^(Bash|PowerShell)$/ }, async ($, e, next) => {
-    const command = e.tool === 'Bash' || e.tool === 'PowerShell' ? e.command : ''
+  on('tool.call', { tool: /^(Bash|PowerShell|Monitor)$/ }, async ($, e, next) => {
+    const command = (e.tool === 'Bash' || e.tool === 'PowerShell' || e.tool === 'Monitor' ? e.command : '') ?? '' // a Monitor on a ws has no command
     const off = (await $.env.get('MAKARASTY_GIT_GUARD')) === 'off'
     let deny = MAYBE.test(command) && denial(command, off, e.tool)
     // Only a refused command needs to know whether its tree is private.

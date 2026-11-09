@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { check, denial } from './kill-guard.ts'
+import { check, denial, register } from './kill-guard.ts'
 
 const BLOCK = ['taskkill /IM node.exe', 'taskkill /F /IM node.exe', 'taskkill /f /im node.exe /t', 'taskkill //F //IM node.exe', 'taskkill.exe /IM chrome.exe',
   'taskkill /FI "IMAGENAME eq node.exe"', 'taskkill /F /FI "WINDOWTITLE eq x"', 'pkill node', 'pkill -f vite', 'killall node', 'sudo killall -9 node',
@@ -73,4 +73,11 @@ test('the refusal says how to kill by PID, and the switch turns the guard off', 
   expect(denial('taskkill /F /IM node.exe', true)).toBeNull()
   expect(denial('git status', false)).toBeNull()
   expect(denial('taskkill /PID 4242 /F', false)).toBeNull()
+})
+
+const matcher = (register: (on: never) => void): RegExp => { let m!: RegExp; register((((_e: string, o: { tool: RegExp }) => { m = o.tool; return { catch: () => {} } }) as never)); return m }
+test('Monitor is a shell: its command is read like Bash', () => {
+  expect(matcher(register).test('Monitor')).toBe(true)
+  expect(denial('taskkill /IM node.exe', false, 'Monitor')).toContain('taskkill')
+  expect(denial('taskkill //PID 12 //F', false, 'Monitor')).toBeNull()
 })

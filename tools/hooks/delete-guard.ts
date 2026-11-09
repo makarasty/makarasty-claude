@@ -534,8 +534,8 @@ export function denial(command: string, tool: string, env: Env): string | null {
 }
 
 export const register: Register = on => {
-  on('tool.call', { tool: /^(Bash|PowerShell)$/ }, async ($, e, next) => {
-    const command = e.tool === 'Bash' || e.tool === 'PowerShell' ? e.command : ''
+  on('tool.call', { tool: /^(Bash|PowerShell|Monitor)$/ }, async ($, e, next) => {
+    const command = (e.tool === 'Bash' || e.tool === 'PowerShell' || e.tool === 'Monitor' ? e.command : '') ?? '' // a Monitor on a ws has no command
     if (!MAYBE.test(command)) return next(e)
     let deny: string | null = null
     try {

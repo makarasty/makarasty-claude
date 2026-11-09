@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { check, heavy, isWindows, parse, STALE_SECONDS, WIN_LIST, type Proc } from './budget-guard.ts'
+import { check, heavy, register, isWindows, parse, STALE_SECONDS, WIN_LIST, type Proc } from './budget-guard.ts'
 
 const NONE: Proc[] = []
 const LIVE_VITEST: Proc[] = [{ pid: 4321, cmd: '"C:\\Program Files\\nodejs\\node.exe" C:\\work\\app\\node_modules\\vitest\\vitest.mjs run' }]
@@ -210,4 +210,13 @@ test('a long or odd line is lexed in a bounded time', () => {
     heavy(input)
     expect(performance.now() - t0 < 500).toBe(true)
   }
+})
+
+const matcher = (register: (on: never) => void): RegExp => { let m!: RegExp; register((((_e: string, o: { tool: RegExp }) => { m = o.tool; return { catch: () => {} } }) as never)); return m }
+test('Monitor: a heavy run counts against a live one, but is never loose (its timeout_ms ends it)', () => {
+  expect(matcher(register).test('Monitor')).toBe(true)
+  expect(check('npm test', 'Monitor', {}, LIVE_VITEST)).toContain('another heavy verify run is live')
+  expect(check('npm test &', 'Monitor', {}, NONE)).toBeNull()
+  expect(check('npm test', 'Monitor', {}, undefined)).toBeNull()
+  expect(check('git status', 'Monitor', {}, LIVE_VITEST)).toBeNull()
 })

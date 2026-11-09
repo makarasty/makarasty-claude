@@ -95,3 +95,9 @@ test('memory is bounded: 50 loops, 10 calls each', () => {
   expect(stateFor('s79|').calls.length).toBe(10)
   expect(stateFor('s0|').calls.length).toBe(0) // evicted, started again empty
 })
+
+test('Monitor commands are normalised like Bash; a ws Monitor has no command to read', () => {
+  expect(callOf({ tool: 'Monitor', command: 'tail  -f x\n' })).toEqual(callOf({ tool: 'Monitor', command: ' tail -f x' }))
+  expect(callOf({ tool: 'Monitor', command: 'tail  -f x\n' }).input).toBe('tail -f x')
+  expect(callOf({ tool: 'Monitor', ws: { url: 'ws://a' } }).input).not.toBe('')
+})

@@ -1,5 +1,12 @@
 # Changelog
 
+## makarasty-tools 1.14.3 — 2026-11-05
+
+- **Shell guards cover the Monitor tool.** A Monitor `command` runs in the Bash shell, but git-, kill-, delete- and
+  budget-guard matched only Bash and PowerShell, so `git reset --hard`, `taskkill /IM`, `rm -rf` or a second
+  whole-suite run sent through Monitor went unchecked. They now check it as Bash. budget-guard does not ask a Monitor
+  for a kill-after limit: its `timeout_ms` is one. loop-guard collapses whitespace in Monitor commands too.
+
 ## makarasty 1.10.4, makarasty-tools 1.14.2 — 2026-11-04
 
 - **Kill hints work from Git Bash.** Git Bash rewrites `taskkill /PID` into `C:/Program Files/Git/PID`, so the

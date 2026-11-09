@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { check, denial } from './git-guard.ts'
+import { check, denial, register } from './git-guard.ts'
 
 const BLOCK = ['git stash', 'git stash -u', 'git stash pop', 'cd x && git stash', 'git -C ../r stash', 'git reset --hard HEAD~1',
   'git clean -fd', 'git clean --force', 'git checkout -- a.ts', 'git checkout .', 'git checkout HEAD -- a.ts', 'git checkout -f main',
@@ -436,4 +436,11 @@ test('PowerShell: any later segment that names GIT_INDEX_FILE without a scratch 
   expect([pre + 'Remove-Item Env:\GIT_INDEX_FILE; git add -A', pre + "Remove-Item -Path 'Env:\GIT_INDEX_FILE'; git add -A", pre + "[Environment]::SetEnvironmentVariable('GIT_INDEX_FILE', $null); git add -A",
     pre + "$env:GIT_INDEX_FILE='.git/index'; git add -A", pre + "Set-Item -Path Env:GIT_INDEX_FILE -Value ''; git add -A"].filter((c) => !check(c, 'PowerShell', MAIN))).toEqual([])
   expect(check(pre + "$env:GIT_INDEX_FILE='y'; git add -A", 'PowerShell', MAIN)).toBeNull()
+})
+
+const matcher = (register: (on: never) => void): RegExp => { let m!: RegExp; register((((_e: string, o: { tool: RegExp }) => { m = o.tool; return { catch: () => {} } }) as never)); return m }
+test('Monitor is a shell: its command is read like Bash', () => {
+  expect(matcher(register).test('Monitor')).toBe(true)
+  expect(denial('git reset --hard', false, 'Monitor')).toContain('git reset')
+  expect(denial('git status', false, 'Monitor')).toBeNull()
 })
