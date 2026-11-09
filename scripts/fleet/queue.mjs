@@ -4,6 +4,24 @@ import { spawnSync } from 'node:child_process';
 import { basename } from 'node:path';
 import { HERE, RUN_FORMAT, lf, need, out, err, isDir, isFile, read, firstLine, names, field, NEEDS, HANDBACK_OF, operatorOwed, now, cal, calint, pluginVersion, loadScript, claimsOf, verifyHeld, laneGaps, registerChip, chatGone, wakeLoop, indent, cat, STOP_WHAT_YOU_STARTED, nativePath, takeLock, dropLock, closing, CLOSING_STALE_MS, afterIds, taskKind, fmValues, frontmatter, asText, noCr, chipFinished, budgetOf, refiledAs, writeWhole, walksOf } from './lib.mjs';
 // ---- next ------------------------------------------------------------------------------------------------
+// `claim` runs `next` with its printing caught: `dispatch` shows the header only on a refusal, never the body.
+let sink = null;
+let claimedId = '';
+const say = (s) => { if (sink)
+    sink.push(typeof s === 'string' ? s : Buffer.from(s).toString('utf8'));
+else
+    out(s); };
+export function claim(c, chip, lane) {
+    sink = [];
+    claimedId = '';
+    try {
+        const code = next(c, chip, lane);
+        return { code, text: sink.join(''), id: claimedId };
+    }
+    finally {
+        sink = null;
+    }
+}
 export function next(c, chip, lane) {
     const run = c.run;
     registerChip(c, chip);
@@ -21,11 +39,11 @@ export function next(c, chip, lane) {
         }
     }
     if (existsSync(`${run}/${chip}.retired`)) {
-        out(`RETIRED: chip ${chip} was replaced by a fresh worker. You were retired: end this turn with one line, commit nothing, start nothing. ${STOP_WHAT_YOU_STARTED}\n`);
+        say(`RETIRED: chip ${chip} was replaced by a fresh worker. You were retired: end this turn with one line, commit nothing, start nothing. ${STOP_WHAT_YOU_STARTED}\n`);
         return 9;
     }
     if (existsSync(`${run}/FINISHED`)) {
-        out(`RUN FINISHED: ${basename(c.absrun)} has landed. End this turn with one line, commit nothing, start nothing. ${STOP_WHAT_YOU_STARTED}\n`);
+        say(`RUN FINISHED: ${basename(c.absrun)} has landed. End this turn with one line, commit nothing, start nothing. ${STOP_WHAT_YOU_STARTED}\n`);
         return 9;
     }
     if (existsSync(`${run}/brief-${chip}.md`)) {
@@ -45,22 +63,22 @@ export function next(c, chip, lane) {
     }
     if (existsSync(`${run}/${chip}.retiring`) && claimsOf(c, chip).length === 0 && !walksOf(c, chip).length) {
         const hb = spawnSync('sh', [c.sh, 'handback', run, chip], { encoding: 'utf8', stdio: ['inherit', 'pipe', 'inherit'] });
-        out(indent(hb.stdout || ''));
+        say(indent(hb.stdout || ''));
         const r = firstLine(`${run}/${chip}.retiring`).split('\r').join('');
         rmSync(`${run}/${chip}.retiring`, { force: true });
         // handback wrote the unanswered asks into .retired already.
         appendFileSync(`${run}/${chip}.retired`, `context${r ? `, replaced by ${r}` : ''}\n`);
-        out(`RETIRED: your context is past its mark${r ? ` and worker ${r} takes your lane` : ''}. You were retired: end this turn with one line, commit nothing, start nothing. ${STOP_WHAT_YOU_STARTED}\n`);
+        say(`RETIRED: your context is past its mark${r ? ` and worker ${r} takes your lane` : ''}. You were retired: end this turn with one line, commit nothing, start nothing. ${STOP_WHAT_YOU_STARTED}\n`);
         return 9;
     }
     if (existsSync(`${run}/PAUSED`)) {
-        out(`RUN PAUSED: ${firstLine(`${run}/PAUSED`)}. Nothing is handed out while a pause stands.\n`);
-        out('Background this, end your turn, and after it prints resumed carry on with the claim you hold; call next only if you hold none (a pane worker may still take its one repo task):\n');
-        out(wakeLoop(c, chip));
+        say(`RUN PAUSED: ${firstLine(`${run}/PAUSED`)}. Nothing is handed out while a pause stands.\n`);
+        say('Background this, end your turn, and after it prints resumed carry on with the claim you hold; call next only if you hold none (a pane worker may still take its one repo task):\n');
+        say(wakeLoop(c, chip));
         return 8;
     }
     if (existsSync(`${run}/chips/${chip}.switch`)) {
-        out('SWITCH PENDING: run whoami before claiming; on exit 10 end this turn as it says.\n');
+        say('SWITCH PENDING: run whoami before claiming; on exit 10 end this turn as it says.\n');
         return 10;
     }
     mkdirSync(`${run}/tasks/claimed`, { recursive: true });
@@ -118,28 +136,33 @@ function nextHeld(c, chip, lane) {
                 if (m)
                     free = m[1] ?? '';
             }
-            out(`MACHINE TIGHT: ${free || 'unknown'} GB free, floor ${floor} GB. Nothing is wrong with you; the box is full.\n`);
-            out('Background this and wait. Do NOT write .done, and do not end this turn without it running:\n');
-            out(`  [ -e "${c.absrun}/FINISHED" ] && { echo run-finished; exit 0; }; until node "${loader}" --clear ${clear} >/dev/null 2>&1${chatGone()}; do sleep 60; done; echo memory-back\n`);
-            out('Then claim again. While you wait, give back what your browser holds: a tab keeps its renderer until\n');
-            out('it is closed, and a reload returns none of it [M34]. tabs_create, tabs_select the new tab, then\n');
-            out('tabs_close the heavy one. Keep one tab open: the last one closing closes the pane, and only the\n');
-            out('operator can show it again.\n');
+            say(`MACHINE TIGHT: ${free || 'unknown'} GB free, floor ${floor} GB. Nothing is wrong with you; the box is full.\n`);
+            say('Background this and wait. Do NOT write .done, and do not end this turn without it running:\n');
+            say(`  [ -e "${c.absrun}/FINISHED" ] && { echo run-finished; exit 0; }; until node "${loader}" --clear ${clear} >/dev/null 2>&1${chatGone()}; do sleep 60; done; echo memory-back\n`);
+            say('Then claim again. While you wait, give back what your browser holds: a tab keeps its renderer until\n');
+            say('it is closed, and a reload returns none of it [M34]. tabs_create, tabs_select the new tab, then\n');
+            say('tabs_close the heavy one. Keep one tab open: the last one closing closes the pane, and only the\n');
+            say('operator can show it again.\n');
             return 6;
         }
         rmSync(`${run}/tight/${chip}`, { force: true });
     }
     let waiting = 0;
     let held; // verify_held, read again after any claim this scan lost to another worker
-    for (const n of names(`${run}/tasks/ready`)) {
+    // The longest budget first (the stable sort keeps the directory order among equals): the task that runs
+    // longest starts earliest, so the run's end is not one long task begun last.
+    const ready = names(`${run}/tasks/ready`).flatMap((n) => {
         const f = `${run}/tasks/ready/${n}`;
         // A directory named `<id>.md` was claimed and then crashed the read, leaving a claim nobody could close.
         if (!n.endsWith('.md') || !isFile(f))
-            continue;
+            return [];
+        const text = read(f);
+        return [{ n, f, text, b: budgetOf(text) }];
+    }).sort((x, y) => y.b - x.b);
+    for (const { n, f, text } of ready) {
         const id = n.slice(0, -3);
         if (existsSync(`${run}/tasks/done/${id}`))
             continue;
-        const text = read(f);
         // A worker with no pane must not claim a pane task; a repo worker, or one that named no lane, takes a
         // verify task, one at a time across the fleet.
         const want = field(text, NEEDS) || 'repo';
@@ -161,7 +184,11 @@ function nextHeld(c, chip, lane) {
             continue;
         }
         const deps = afterIds(text);
-        if (deps.some((d) => !existsSync(`${run}/tasks/done/${d}`))) {
+        // A dep whose coder has finished (`coded`) frees an implement or design task, which only needs its files, and
+        // only a dep that is not a root: every other task (fix, root, verify, pane, ...) records or checks the final
+        // tree, and a fix's `before` proof on an unreviewed tree can be refuted by a change the review later reverts.
+        const early = ['implement', 'design'].includes(taskKind(text));
+        if (deps.some((d) => !existsSync(`${run}/tasks/done/${d}`) && (!early || taskKind(read(`${run}/tasks/ready/${d}.md`)) === 'root' || !existsSync(`${run}/tasks/claimed/${d}/coded`)))) {
             waiting++;
             continue;
         }
@@ -203,6 +230,7 @@ function nextHeld(c, chip, lane) {
                 continue;
             }
         }
+        claimedId = id;
         const t = now();
         writeFileSync(`${run}/tasks/claimed/${id}/owner`, `chip ${chip}\nclaimed ${t}\n`);
         writeFileSync(`${run}/tasks/claimed/${id}/heartbeat`, `${t}\n`);
@@ -219,13 +247,13 @@ function nextHeld(c, chip, lane) {
             }
         }
         const b = String(budgetOf(text));
-        out(`CLAIMED ${id}\nLANE ${lane || 'any'}\n`);
+        say(`CLAIMED ${id}\nLANE ${lane || 'any'}\n`);
         if (want === 'verify' && lane !== 'verify') {
-            out('VERIFY LANE: this is a verify task and the lane is one worker wide across the fleet.\n');
-            out('  Nobody else can run a full suite until you finish it, so keep it scoped and close it.\n');
+            say('VERIFY LANE: this is a verify task and the lane is one worker wide across the fleet.\n');
+            say('  Nobody else can run a full suite until you finish it, so keep it scoped and close it.\n');
         }
-        out(`BUDGET_MIN ${b}\n`);
-        out(`ABORT_AFTER_SEC ${Number(b) * calint(c, 'budget_multiplier', 2) * 60}\n`);
+        say(`BUDGET_MIN ${b}\n`);
+        say(`ABORT_AFTER_SEC ${Number(b) * calint(c, 'budget_multiplier', 2) * 60}\n`);
         // Past the first few tasks, a task belongs in its own subagent [M30].
         if (want !== 'pane') {
             let dn = 0;
@@ -236,25 +264,25 @@ function nextHeld(c, chip, lane) {
             }
             if (dn >= calint(c, 'delegate_past_tasks', 3)) {
                 // Measured on 2026-10-12-owner-polish-2: a task worked inline grew the session by 54k at p50, 130k at p90.
-                out(`DELEGATE: you have finished ${dn} tasks in this session; a task worked inline leaves 54 k of context behind (p50), 130 k (p90) [M41].\n`);
-                out('  Hand this task to ONE makarasty:fleet-coder subagent at the task\'s model - task file, RULES.md, your notes in its prompt - with findings filed through find. Keep your own context flat.\n');
+                say(`DELEGATE: you have finished ${dn} tasks in this session; a task worked inline leaves 54 k of context behind (p50), 130 k (p90) [M41].\n`);
+                say('  Hand this task to ONE makarasty:fleet-coder subagent at the task\'s model - task file, RULES.md, your notes in its prompt - with findings filed through find. Keep your own context flat.\n');
             }
         }
-        out(`ARM_CLOCK background what this prints: sh "${c.sh}" clock "${c.absrun}" ${chip} ${id} ${b}\n---\n`);
-        out(readFileSync(f));
+        say(`ARM_CLOCK background what this prints: sh "${c.sh}" clock "${c.absrun}" ${chip} ${id} ${b}\n---\n`);
+        say(readFileSync(f));
         return 0;
     }
     // "Drained" and "waiting on a wave that has not landed" are different states with different exit codes:
     // a worker told the first writes its `.done`.
     if (waiting > 0) {
-        out(`QUEUE WAITING${lane ? ` for lane ${lane}` : ''}: ${waiting} task(s) held by an unfinished \`after:\` dependency, a held verify lane, or an \`operator:\` line not yet cleared\n`);
-        out('  Poll rather than finishing: this queue opens again when those tasks land.\n');
+        say(`QUEUE WAITING${lane ? ` for lane ${lane}` : ''}: ${waiting} task(s) held by an unfinished \`after:\` dependency, a held verify lane, or an \`operator:\` line not yet cleared\n`);
+        say('  Poll rather than finishing: this queue opens again when those tasks land.\n');
         return 7;
     }
     for (const l of laneGaps(c))
         if (l.includes('is not a lane'))
-            out(`${l}\n`);
-    out(`QUEUE DRAINED${lane ? ` for lane ${lane}` : ''}\n`);
+            say(`${l}\n`);
+    say(`QUEUE DRAINED${lane ? ` for lane ${lane}` : ''}\n`);
     return 3;
 }
 // ---- the small readers this group shares -----------------------------------------------------------------

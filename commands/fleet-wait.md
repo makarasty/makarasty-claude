@@ -17,11 +17,15 @@ advancing, which is the only thing that revives a dead session.
 
 Arm the same loop with `n` = the slots registered (`docs/ONECHAT.md`). A subagent's completion arrives as
 its own task notification, not through this loop; the loop stays armed for `COORDINATOR CONTEXT`, `SERVICE
-DOWN`, `LEFTOVER`, `STALL`, the pause lines and `run complete`. `task finished` and a `.done` line are your
-own `finish` and `drained` writes: nothing to do. In one chat a `STALL` is information only: the loop
-counts claims, done markers, `ask/` and slot markers as progress, never heartbeats, so it fires after
-`quiet` seconds of any long task. Never `TaskStop` on it. Only that task's own clock (`budget-elapsed-<id>`)
-means its subagent hung: `TaskStop` it and re-spawn on the same claim (`docs/ONECHAT.md`, loop step 2).
+DOWN`, `LEFTOVER`, `budget-elapsed-<id>`, the pause lines and `run complete`. A run dir with a `slots`
+directory is one chat, and there the loop prints nothing for `task finished`, `worker finished queue` (a
+`.done` line) or the `STALL` block: the first two are your own `finish` and `drained` writes, and `STALL` is
+information only, since the loop counts claims, done markers, `ask/` and slot markers as progress, never
+heartbeats, so it would fire after `quiet` seconds of any long task. Separate chats keep all three lines.
+In one chat `budget-elapsed-<id>` is the signal that a subagent hung: the loop prints it once when a
+claim's `deadline` file (`dispatch` writes it) has passed, checked every sixth tick and never while paused
+(a resume adds the pause's length to every deadline). `TaskStop` that agent and re-spawn on the same claim
+(`docs/ONECHAT.md`, loop step 2).
 There are no worker chats, so no `send_message`: every line below that says to message a worker by title
 is for opt-in separate chats.
 
@@ -58,7 +62,7 @@ seen="$d"/.watch-seen; touch "$seen"; sed -i "s|^.*\.fleet/$run/||" "$seen"
 # A .waiting is keyed by its mtime, so a worker blind a second time is announced again; an older watch's
 # bare entry gets the mtime of the file it announced.
 while IFS= read -r e; do case "$e" in *.waiting) [ -e "$d/$e" ] && e="$e@$(date -r "$d/$e" +%s)";; esac; printf '%s\n' "$e"; done < "$seen" > "$seen.tmp" && mv "$seen.tmp" "$seen"
-last=$(date +%s); down=""; tick=0; ps=0; acks=""; ps0=0; t0=$last; cr=$(printf '\r'); pl=""
+last=$(date +%s); down=""; tick=0; ps=0; acks=""; ps0=0; pst=0; t0=$last; cr=$(printf '\r'); pl=""
 tok="$$.$t0"; echo "$tok" > "$d/.watch-owner"   # one watch per run: arming a new one ends the one before
 sf=$(grep -ls "\"sessionId\":\"${CLAUDE_CODE_SESSION_ID:-none}\"" "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sessions"/*.json 2>/dev/null | head -1)  # this chat's record; gone when it ends
 [ -n "${CLAUDE_CODE_SESSION_ID:-}" ] && echo "$CLAUDE_CODE_SESSION_ID" > "$d/coordinator"  # whoever watches, coordinates
@@ -70,6 +74,7 @@ while true; do
   [ $(( $(date +%s) - t0 )) -ge 1780 ] && { echo "watch expired: re-arm it"; break; }
   cur=""; read -r cur < "$d/.watch-owner" 2>/dev/null; [ "$cur" = "$tok" ] || { echo "watch superseded: a newer watch runs this run"; break; }
   tick=$((tick+1))
+  one=0; [ -d "$d/slots" ] && one=1   # one chat: the run dir has slots/
   if [ $((tick % 6)) -eq 1 ]; then
     if [ -n "$sf" ] && [ ! -e "$sf" ]; then echo "coordinator chat gone"; break; fi
     for u in $svc; do
@@ -87,12 +92,26 @@ while true; do
       case "$l" in "CLOSED CHAT SERVING"*) echo "LEFTOVER, ASK THE OPERATOR: $l";; *) echo "LEFTOVER: $l";; esac; done
   fi
   if [ -e "$d/PAUSED" ]; then   # a pause is announced once, each ack once, and the stall timer rests
-    [ $ps = 1 ] || { ps=1; acks=""; ps0=$(date +%s); last=$ps0; echo "PAUSED: $(head -1 "$d/PAUSED")"; }
+    [ $ps = 1 ] || { ps=1; acks=""; ps0=$(date +%s); pst=$ps0; last=$ps0; echo "PAUSED: $(head -1 "$d/PAUSED")"; }
     if [ $ps0 -gt 0 ] && [ $(( $(date +%s) - ps0 )) -ge 150 ]; then ps0=0   # once: who has not stopped 150 s in
       [ -f "$FS" ] && sh "$FS" status "$d" | sed -n '/^== PAUSED/,/^== /{/^== PAUSED/p;/still working/p;}'; fi
     for a in "$d"/stopped/*; do [ -e "$a" ] || continue; w=$(basename "$a"); case " $acks " in *" $w "*) continue;; esac
       acks="$acks $w"; last=$(date +%s); echo "worker $w stopped"; done
-  elif [ $ps = 1 ]; then ps=0; last=$(date +%s); echo "RESUMED"; fi
+  elif [ $ps = 1 ]; then ps=0; last=$(date +%s); echo "RESUMED"
+    # A pause must not eat a budget: every deadline moves out by the pause's length.
+    # shortcut: the length counts from this watch's first sight of PAUSED, so a pause that spans a re-arm shifts only the part after it; upgrade: have the pause write its start time into PAUSED.
+    for dl in "$d"/tasks/claimed/*/deadline; do [ -f "$dl" ] || continue; dv=""; read -r dv < "$dl"
+      case "$dv" in ''|*[!0-9]*) continue;; esac; echo $((dv + last - pst)) > "$dl"; done
+  fi
+  # Budget deadlines, after the pause block so a resume has shifted them before they are read; one chat only has them.
+  if [ $((tick % 6)) -eq 1 ] && [ $ps = 0 ]; then
+    for dl in "$d"/tasks/claimed/*/deadline; do [ -f "$dl" ] || continue; t=$(basename "$(dirname "$dl")")
+      case "$t" in *.released-*|*.dead-*) continue;; esac   # a handed-back claim
+      [ -e "$d/tasks/done/$t" ] && continue; dv=""; read -r dv < "$dl"; case "$dv" in ''|*[!0-9]*) continue;; esac
+      k="deadline:$t@$dv"; case "|$(tr '\n' '|' < "$seen")" in *"|$k|"*) continue;; esac   # a rearm writes a new value: announced again
+      [ "$(date +%s)" -ge "$dv" ] && { echo "$k" >> "$seen"; echo "budget-elapsed-$t"; }
+    done
+  fi
   sl="|$(tr '\n' '|' < "$seen")"   # read each tick: a watch being superseded appends here too
   for f in "$d"/tasks/claimed/*/owner "$d"/tasks/done/* "$d"/ask/*.md "$d"/*.done "$d"/*.blocked "$d"/*.retired "$d"/*.waiting; do
     [ -e "$f" ] || continue; r=${f#"$d"/}; case "$f" in *.waiting) r="$r@$(date -r "$f" +%s)";; esac; case "$sl" in *"|$r|"*) continue;; esac; echo "$r" >> "$seen"; sl="$sl$r|"; last=$(date +%s)
@@ -100,13 +119,14 @@ while true; do
       *.waiting) echo "NEEDS OPERATOR: $f -- $(cat "$f")";;
       */ask/*) echo "QUESTION FOR PLANNER: $f -- $(head -c 300 "$f")";;
       */owner) ;;
-      */tasks/done/*) echo "task finished: $f";;
+      */tasks/done/*) [ $one = 1 ] || echo "task finished: $f";;
       *.retired) echo "worker retired: $f";;
+      *.done) [ $one = 1 ] || echo "worker finished queue: $f";;
       *) echo "worker finished queue: $f";;
     esac
   done
   now=$(date +%s)
-  if [ $ps = 0 ] && [ $((now-last)) -ge $quiet ]; then
+  if [ $ps = 0 ] && [ $one = 0 ] && [ $((now-last)) -ge $quiet ]; then   # not in one chat: there it is information only
     echo "STALL: nothing on disk changed for $(( (now-last)/60 ))m"
     for c in "$d"/tasks/claimed/*/; do
       [ -d "$c" ] || continue; t=$(basename "$c"); [ -e "$d/tasks/done/$t" ] && continue

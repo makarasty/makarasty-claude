@@ -26,6 +26,8 @@ import { join, dirname, basename, resolve, sep, isAbsolute } from 'node:path';
 import { spawnSync, spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
+import { makePlan, check } from '../lib/confirm.mjs';
+import { chats } from '../lib/live.mjs';
 
 const WIN = process.platform === 'win32';
 const HOUR = 3600e3, DAY = 24 * HOUR, MB = 1 << 20, GB = 1 << 30;
@@ -186,41 +188,25 @@ export function gather() {
     return ctx;
 }
 
-// Claude Code sessions from <config>/sessions/*.json (CLAUDE_CONFIG_DIR and ~/.claude both). Live: the pid runs
-// and, when the snapshot has it, started at procStart. A pid missing from the snapshot but alive now counts as live
-// (a chat opened since). A file that will not read is a live chat of unknown id and folder, so the rules that
-// need ids hold everything: chats rewrite these files all the time, and a torn read must not drop a chat.
+// Claude Code sessions, by the one liveness rule in ../lib/live.mjs: the pid runs with its recorded start, the chat
+// has not ended, and its last transcript event says how long it has been idle. An idle chat still holds (the desktop
+// app keeps a finished chat's process alive, and only the owner knows it is done); its hold says so, with the hours.
+// A file that will not read is a live chat of unknown id and folder, so the rules that need ids hold everything.
 export function sessions(ctx) {
-    const dirs = [...new Set([join(state(), '..', 'sessions'), join(homedir(), '.claude', 'sessions')].map(d => resolve(d)))];
-    const byPid = new Map(ctx.procs.map(p => [+p.pid, p]));
-    const alive = pid => { try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; } };
-    const out = [];
-    for (const f of dirs.flatMap(d => ls(d).map(n => join(d, n)))) {
-        if (!f.endsWith('.json')) continue;
-        let j = null;
-        for (let i = 0; i < 3 && !j; i++) {
-            try { j = JSON.parse(readFileSync(f, 'utf8')); } catch (e) { if (e.code === 'ENOENT') break; Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50); }
-        }
-        if (!j) { if (Date.now() - (lst(f)?.mtimeMs ?? 0) < 600e3) out.push({ id: '', pid: 0, cwd: '', live: true }); continue; } // a file broken for 10 minutes is a crash's leftover, not a chat writing it
-        if (!j.pid) continue;
-        const p = byPid.get(+j.pid);
-        const live = p ? (!j.procStart || !p.start || Math.abs(Number(p.start) - Number(j.procStart)) < 2e7) : alive(+j.pid);
-        // root: the repo around the cwd, so a chat opened in <repo>\frontend still holds <repo>\node_modules
-        let root = j.cwd ?? '';
-        for (let d = root; d && dirname(d) !== d; d = dirname(d)) if (lst(join(d, '.git'))) { root = d; break; }
-        out.push({ id: String(j.sessionId ?? ''), pid: +j.pid, cwd: j.cwd ?? '', root, live });
-    }
-    return out;
+    return chats({ procs: ctx.procs }).filter(s => s.state !== 'dead')
+        .map(s => ({ ...s, live: s.state === 'live' || s.state === 'idle' }));
 }
+
+const who = s => `${s.id.slice(0, 8)}${s.title ? ` "${s.title}"` : ''}${s.state === 'idle' ? `, idle ${(s.idleMin / 60).toFixed(1)} h${s.idleMin >= 120 ? ': ask the owner to close it if it is done' : ''}` : ''}`;
 
 // Why p must not be touched now, or null.
 export function holdOf(p, ctx) {
     for (const s of ctx.sessions) {
         if (!s.live) continue;
-        if (s.id && norm(p).includes(s.id.toLowerCase())) return `live chat ${s.id.slice(0, 8)} owns it`; // its scratch, also when resumed mid-apply
+        if (s.id && norm(p).includes(s.id.toLowerCase())) return `chat ${who(s)} owns it`; // its scratch, also when resumed mid-apply
         const r = s.root || s.cwd;
         if (!r || inside(homedir(), r)) continue; // a chat started in home or a drive root holds no folder
-        if (inside(p, r) || inside(r, p)) return `live chat ${s.id.slice(0, 8)} works in ${r}`;
+        if (inside(p, r) || inside(r, p)) return `chat ${who(s)} works in ${r}`;
     }
     const k = norm(p);
     for (const q of ctx.procs) {
@@ -666,13 +652,13 @@ function show(s) {
         if (!list.length) continue;
         L.push('', t);
         for (const i of list) {
-            L.push(`  ${i.id.padEnd(w)} ${gb(i.bytes).padStart(9)} ${ago(i.newest).padStart(5)}  ${i.title}  [${i.method === 'vendor' ? i.vendor : i.method}]`);
-            const pad = `  ${''.padEnd(w)}   `;
+            L.push(`  ${(i.n ? i.n + '.' : '').padStart(4)} ${i.id.padEnd(w)} ${gb(i.bytes).padStart(9)} ${ago(i.newest).padStart(5)}  ${i.title}  [${i.method === 'vendor' ? i.vendor : i.method}]`);
+            const pad = `       ${''.padEnd(w)}   `;
             if (i.paths.length <= 10) L.push(...i.paths.map(p => pad + p)); else L.push(`${pad}${i.paths.length} paths, e.g. ${i.paths[0]} (--json lists all)`);
             if (i.uninstall) L.push(`${pad}uninstaller: ${i.uninstall}`);
-            for (const e of [...i.evidence, ...(i.lose ? [`lose: ${i.lose}`] : [])]) L.push(`  ${''.padEnd(w)}   ${e}`);
-            for (const b of i.blockers) L.push(`  ${''.padEnd(w)}   HELD: ${b}`);
-            if (i.held.length) L.push(`  ${''.padEnd(w)}   kept ${i.held.length} path(s): ${i.held[0].why}${i.held.length > 1 ? ', ...' : ''}`);
+            for (const e of [...i.evidence, ...(i.lose ? [`lose: ${i.lose}`] : [])]) L.push(`       ${''.padEnd(w)}   ${e}`);
+            for (const b of i.blockers) L.push(`       ${''.padEnd(w)}   HELD: ${b}`);
+            if (i.held.length) L.push(`       ${''.padEnd(w)}   kept ${i.held.length} path(s): ${i.held[0].why}${i.held.length > 1 ? ', ...' : ''}`);
         }
     }
     if (s.heldOnly.length) L.push('', 'held, nothing to do now:', ...s.heldOnly.map(h => `  ${h.title} - ${gb(h.bytes)} in ${h.paths} path(s): ${h.why}`));
@@ -751,11 +737,12 @@ function selftest() {
         assert.equal(TYPES.paths({ paths: ['%TEMP%'], within: '%LOCALAPPDATA%' }).length, 0, 'a TEMP outside LOCALAPPDATA (D:\\, a RAM disk) is not cleaned');
         put(join(local, 'unzipped', 'f'), 1024, old); // an unzip: old modified date, created now
         assert.ok(measure(join(local, 'unzipped', 'f')).newest > Date.now() - HOUR, 'a file created now is new whatever its modified date');
-        writeFileSync(join(tmp, 'claude', 'sessions', '2.json'), '{"pid": 1, "sessio'); // torn mid-write
+        const tornFile = join(tmp, 'claude', 'sessions', `${process.pid}.json`); // named by a running pid, as Claude Code names them
+        writeFileSync(tornFile, '{"pid": 1, "sessio'); // torn mid-write
         const torn = { ...ctx, sessions: sessions(ctx) };
         assert.ok(!evaluate([rules[0]], torn).items.length, 'a session file that does not read holds every scratch folder');
-        rmSync(join(tmp, 'claude', 'sessions', '2.json'));
-        assert.equal(holdOf(join(home, 'proj', 'build'), ctx)?.startsWith('live chat'), true, 'a live chat holds its cwd');
+        rmSync(tornFile);
+        assert.equal(holdOf(join(home, 'proj', 'build'), ctx)?.startsWith('chat '), true, 'a live chat holds its cwd');
         writeFileSync(join(tmp, 'bad.json'), JSON.stringify({ rules: [{ id: 'x', title: 'x', tier: 'maybe', method: 'delete', paths: [] }] }));
         assert.throws(() => loadRules(join(tmp, 'bad.json')), /tier must be/);
         // The shipped catalog: every pattern starts at ~, a %VAR% or a drive, and holds no control character (a \r or \v
@@ -814,8 +801,18 @@ function main(argv) {
     const json = take('--json'), extra = take('--rules', 1);
     const [cmd, ...ids] = argv;
     const say = (obj, lines) => console.log(json ? JSON.stringify(obj, null, 1) : lines().join('\n'));
-    if (cmd === 'scan') { const s = evaluate(loadRules(extra), gather()); return say(s, () => show(s)); }
+    if (cmd === 'scan') {
+        const s = evaluate(loadRules(extra), gather());
+        // The person picks by these numbers; confirm.mjs reads their answer. Same order as show() prints.
+        const list = TIERS.flatMap(t => s.items.filter(i => i.tier === t));
+        const plan = makePlan('cleanup', list.map(i => ({ id: i.id, what: i.title, bytes: i.bytes, how: i.method === 'recycle' || i.method === 'uninstall' ? 'undo' : 'forever',
+            note: i.method === 'recycle' ? 'to the Recycle Bin' : i.method === 'uninstall' ? 'its uninstaller opens' : undefined,
+            held: i.blockers.join('; ') || (i.tier === 'admin' ? 'admin item: written to a .bat' : i.method === 'none' ? 'yours to do by hand' : undefined) })), { scope: 'machine' });
+        for (const p of plan.items) if (p.n) list.find(i => i.id === p.id).n = p.n;
+        return say(s, () => show(s));
+    }
     if (cmd === 'apply' && ids.length) {
+        try { check('cleanup', ids, { scope: 'machine' }); } catch (e) { console.error(e.message); process.exitCode = 2; return; }
         const a = apply(ids, loadRules(extra));
         process.exitCode = a.rows.some(r => ['skipped', 'unchanged', 'error'].includes(r.outcome)) ? 1 : 0;
         return say(a, () => [...a.rows.map(r => `${r.outcome.padEnd(11)} ${r.id}  ${gb(Math.max(0, r.before - r.after))}${r.notes.length ? '  ' + r.notes.join('; ') : ''}`),

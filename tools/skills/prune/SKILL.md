@@ -27,14 +27,18 @@ Each entry comes back with `restore <id>`, a week or a month later.
      submodule's `ignore` says; files marked assume-unchanged or skip-worktree (an edit there does not
      show in `git status`); a worktree that holds another worktree inside it; a locked worktree; a branch
      checked out in a live one.
-   Show the list in the person's language, one line per item, ids exactly as printed (`b:<branch>`,
-   `w:<worktree>`).
-2. `node "${CLAUDE_SKILL_DIR}/prune.mjs" trash --safe`, with no question first: it is local and undoable, and the person asked for
-   the cleanup. Skip this step when they only asked to look ("покажи", "что можно удалить").
-3. The `ask` items go in one `AskUserQuestion` call, `multiSelect: true`, one option per item with its reason
-   as the description (four options per question; more items, more questions in the same call). Then
-   `node "${CLAUDE_SKILL_DIR}/prune.mjs" trash <id> <id> ...` for the chosen ones. Nothing chosen: nothing more.
-4. Report in a few lines: what went to the trash (branch name or worktree path, and its trash id), each
+   Show the list in the person's language, one line per item, numbers and ids exactly as printed (`b:<branch>`,
+   `w:<worktree>`); `keep` items have no number and cannot be chosen.
+2. Skip the rest when they only asked to look ("покажи", "что можно удалить"). Nothing moves without the
+   person's own answer, read by a script from this chat: not even `trash --safe`, and a bare "да" is no
+   selection, and `#N` is not read: numbers only. Ask which numbers: one `AskUserQuestion`, options "Все" and "Ничего", numbers through Other
+   (say in the question that "Все" includes the `ask` items, with their reasons).
+3. `node "${CLAUDE_SKILL_DIR}/../lib/confirm.mjs" select prune-trash`. Exit 2: ask again with its reason.
+   Show its restated block as printed, then one `AskUserQuestion` with one question per `ASK:` line, options
+   exactly that label and "Нет" (the label alone: the grant needs one answer line equal to it, nothing added). Then `node "${CLAUDE_SKILL_DIR}/../lib/confirm.mjs" grant prune-trash`.
+4. `node "${CLAUDE_SKILL_DIR}/prune.mjs" trash <id> <id> ...` with only the ids after `GRANTED:`; it refuses
+   any other. Nothing granted: nothing more.
+5. Report in a few lines: what went to the trash (branch name or worktree path, and its trash id), each
    `left in place` line with its reason, and the exact restore command with the real script path,
    `node "<path>/prune.mjs" restore <id>`. Say that nothing on the remote was touched, and that the trash
    stays until the person empties it; nothing empties it on its own.
@@ -51,7 +55,10 @@ directory is inside (`/proc`, else `lsof` when installed) and leaves the worktre
 - `restore <id>`: a branch whose name is taken now is refused; `--as <new name>` restores it beside. A
   worktree goes back to its old path, refused when that path exists, and brings its branch back with it.
 - `empty <id> ... | --older 30d | --all`: deletes for good, only when the person asks, and only what they
-  chose. A bare `empty` deletes nothing and names the three choices.
+  chose. A bare `empty` deletes nothing and names the three choices. A question like "а это почистить?" is
+  not the choice. Run `list` (it prints the numbered list and writes the plan), then the same steps as in
+  Flow 2-3 with `prune-empty` (the ASK labels say "навсегда"); `empty` refuses ids that were not granted. A `list --all` plan is for `empty --all` only, and a grant is for
+  the repo it was made in (a trash id like `20261104-131209-1` can exist in two repos; `list --all` holds those).
 - `restore` and `empty` act only on an index line whose ref is its own `refs/makarasty-trash/<id>/...`
   and whose paths are its own trash folder (and, for `from`, a folder outside the git dir). Any other line
   is refused with its line number in `index.jsonl` and left as it is.

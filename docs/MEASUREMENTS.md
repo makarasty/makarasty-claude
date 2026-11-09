@@ -696,8 +696,8 @@ second apart, and the second is believed at any value, not only between 1 and 59
 - **Coordinator context per task: about 3 to 4 k** with a header-only claim, a prompt of paths and a report of
   at most 15 lines, so about 150 to 200 tasks fit in 700 K.
 **Rule:** `docs/MODELS.md` (Pace) and `docs/ONECHAT.md` carry the economy flow this estimate argues for.
-**Status:** current as an estimate. Unmeasured end to end: the first one-chat run is analysed with
-`fleet-analyze` and this entry is replaced by the result.
+**Status:** superseded on the coordinator's context: three one-chat runs measured about 9 k per spawn, not 3-4 k
+[M54]. The worker-side saving here is still unmeasured.
 
 ## M44 — makarasty-tools against no plugin, headless A/B on Sonnet
 **2026-10-20**, `claude -p --model sonnet`, 49 runs, $0.98. Arm A loads no user plugin
@@ -846,6 +846,41 @@ list price. Task t1: a cart module, the test hits one of three seeded bugs. t5: 
 - **Rules produced:** the `findings` SessionStart/SubagentStart line in `tools/hooks/gates.ts`; give a reason with
   an instruction instead of emphasis.
 **Status:** current. Opus, live sessions past 300k and subagents spawned from a real chat were not tested.
+
+## M54 — What one spawn costs a one-chat coordinator, and what `dispatch` takes out
+**2026-11-09**, three coordinator transcripts read by source (chars/4): darkkitty c630a8c9 (73 spawns, 684k peak),
+SkullDogsBot 890c74ed (81 spawns, 736k), life-lines be5bfb7e (49 spawns, 555k).
+- **About 9 k of context per spawn, not the 3-4 k [M43] estimated** (684k / 73 = 9.4k).
+- Per spawn, darkkitty: Agent prompt 695 tokens (the template plus `RULES.md` pasted each time), subagent report
+  about 1,050 (the 15-line rule was not kept), Agent launch result 270. Per task 3-4 Bash calls for claim,
+  `before.diff`, `prove before` and the clock, about 165 tokens of input each plus their output.
+- Watch lines that need no action in one chat (`task finished`, a `.done`, STALL): 41, 50 and 20 wake-ups per run
+  (3.8k, 5.0k, 1.7k tokens of event text, plus a coordinator turn each); clock notifications 17, 38 and 7.
+- **After `dispatch` (built, selftest only, no fleet run yet):** its stdout is 350 bytes, the Agent prompt one line
+  (`Read <path> and follow it.`, about 30 tokens), the report at most 400 characters (a hook sends a longer one back
+  once). Estimated per task with a review: about 4.1k before (2 x 695 + 2 x 1,050 + ~650 Bash) against about 0.8k
+  after, so roughly 3.3k of the ~19k two spawns cost: about 18%, before the watch wake-ups also removed.
+- **Rule produced:** `docs/ONECHAT.md` "Card"; `fleet.sh dispatch`, `coded`, `rearm`; the watch's deadline line.
+**Status:** estimate from measured parts. The first one-chat run on dispatch is read with the same bucket script
+and replaces this entry. Also seen, not this plugin's: a third-party plugin's per-prompt text was 21k tokens of
+c630a8c9 (about 100 tokens on every prompt and every notification).
+
+## M55 — Liveness of chats, and a wait-loop guard that was measured and not built
+**2026-11-09**, this machine.
+- **Liveness:** 16 Claude sessions had a running pid. The old rule (pid alone) called all 16 live. The new rule
+  (pid with its start time, an ended marker, the last transcript event under 30 min) called 6 live and 10 idle, idle
+  from 54 minutes to 76 hours; one is a chat finished four days ago whose process the desktop app kept. Idle still
+  holds, so nothing is released by this, but the hold now names the chat, its first prompt and its idle hours.
+  `chats()` took 327 ms for 16 sessions.
+- **Transcript mtime is not an event time:** a copy gave 81% of the transcripts one mtime (11-02), so `prune` now
+  reads the last record's `timestamp`.
+- **A guard refusing background `until/while ... sleep` loops with no bound:** over 14 days, 7,889 background
+  Bash and PowerShell calls; it would have refused 2,043 (26%), 429 of them outside the fleet worker's own loop,
+  and caught 0 of the 25 background shells that never finished (those were dev servers and bounded fleet loops
+  cut by the chat ending). The harness itself recommends that loop for one notification. Not built; the fleet
+  worker's own loop got a 60-minute cap instead.
+- **Rule produced:** `tools/skills/lib/live.mjs`; `commands/fleet-run.md` wait loop cap.
+**Status:** current for this machine on this day.
 
 ## Appendix: what a pull run spends
 

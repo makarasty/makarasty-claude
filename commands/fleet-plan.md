@@ -356,7 +356,7 @@ Schedule those workers in their own wave. They are measuring a machine the other
 register one slot per lane width with `chips <run> <NN-MM> <lane> --agents`, one call per lane, disjoint
 ranges, all in this turn, and start claiming. No chip is offered: each claim becomes one background
 subagent, typed by task kind, with the model and effort from the `pace:` line and a prompt of paths and the pasted content of `RULES.md`, once.
-Read `docs/ONECHAT.md` in full now, before the first claim.
+Read the Card section of `docs/ONECHAT.md` now, before the first claim; the rest of that file is reference, read the section a line sends you to.
 
 **Cold read, between writing `RULES.md` and registering the slots; skip it for a queue of two tasks or
 fewer.** Nobody tests that a task file can be started by someone who was not in the interview, and a

@@ -203,7 +203,7 @@ claim again when it fires:
 ```bash
 q="$r"; k() { ls "$q/tasks/ready" "$q/tasks/done" "$q/tasks/cleared" 2>/dev/null | wc -l; [ -e "$q/tasks/queue-open" ] && echo open; ls "$q"/*.retiring 2>/dev/null; }
 sf=$(grep -ls "\"sessionId\":\"$CLAUDE_CODE_SESSION_ID\"" "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sessions"/*.json 2>/dev/null | head -1)
-s=$(k); until [ -e "$q/FINISHED" ] || [ "$(k)" != "$s" ] || { [ -n "$sf" ] && [ ! -e "$sf" ]; }; do sleep 30; done; echo recheck
+n=0; s=$(k); until [ -e "$q/FINISHED" ] || [ "$(k)" != "$s" ] || { [ -n "$sf" ] && [ ! -e "$sf" ]; } || [ $n -ge 120 ]; do sleep 30; n=$((n+1)); done; echo recheck
 ```
 
 Do not write `.done` and do not close the chat: a session that ends cannot be reopened.

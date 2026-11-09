@@ -20,7 +20,8 @@ import { commands as pause } from './fleet/pause.mjs';
 import { commands as ops } from './fleet/ops.mjs';
 import { commands as pane } from './fleet/pane.mjs';
 import { commands as trees } from './fleet/trees.mjs';
-const commands = { ...queue, ...watch, ...planner, ...pause, ...ops, ...pane, ...trees };
+import { commands as dispatch } from './fleet/dispatch.mjs';
+const commands = { ...queue, ...watch, ...planner, ...pause, ...ops, ...pane, ...trees, ...dispatch };
 // ---- entry -----------------------------------------------------------------------------------------------
 // fleet.sh switched Git Bash's argument conversion off for its exec of node; what node runs (git, hooks,
 // `sh fleet.sh <other>`) gets the setting the caller had.
@@ -34,6 +35,8 @@ function restoreArgConversion() {
         process.env.MSYS2_ARG_CONV_EXCL = prev;
     delete process.env.FLEET_ARG_CONV_PREV;
 }
+// Commands whose first argument is the caller's own chip.
+const CHIP_CMDS = ['whoami', 'find', 'beat', 'finish', 'clock', 'ask', 'pane-ask', 'worktree', 'next', 'drained', 'dispatch', 'coded', 'rearm'];
 function main(argv) {
     restoreArgConversion();
     const [sh = 'fleet.sh', cmd = '', run = '', ...rest] = argv;
@@ -45,11 +48,11 @@ function main(argv) {
     // Every worker-side call whose third argument is the worker's own chip registers the session, not only
     // `next`: a worker on an assigned brief never calls `next`. `integration` is the coordinator's own tree.
     // A chip names files in the run: `drained <run> ../esc` wrote esc.done beside the run.
-    if (['whoami', 'find', 'beat', 'finish', 'clock', 'ask', 'pane-ask', 'worktree', 'next', 'drained'].includes(cmd) && rest[0] && !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(rest[0])) {
+    if (CHIP_CMDS.includes(cmd) && rest[0] && !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(rest[0])) {
         err(`chip id '${rest[0]}' is not a name (letters, digits, _ and -)\n`);
         return 2;
     }
-    if (['whoami', 'find', 'beat', 'finish', 'clock', 'ask', 'pane-ask', 'worktree', 'next', 'drained'].includes(cmd) && rest[0] && rest[0] !== 'integration') {
+    if (CHIP_CMDS.includes(cmd) && rest[0] && rest[0] !== 'integration') {
         const other = chipTakenBy(c, rest[0]);
         if (other) {
             err(`CHIP TAKEN: chip ${rest[0]} already runs in another live session (${other.slice(0, 8)}), so its chip was clicked twice. Do nothing in this run: end this turn with one line saying so, and close this chat.\n`);

@@ -157,7 +157,7 @@ deleted for good, to the Recycle Bin, its uninstaller opens (one window per prog
 is "size unknown", never counted. `Yours to decide` shows the ten largest; the rest come on "покажи все".
 The Recycle Bin line says not to empty it until the operator has checked what this run moved there.
 
-Ask once which numbers to act on. Processes on a yes: `CLOSED CHAT` and `ORPHANED RUN` census lines through
+Processes: ask once which numbers to act on. Processes on a yes: `CLOSED CHAT` and `ORPHANED RUN` census lines through
 the census again with `--leftovers --kill --pid <the chosen pids, comma-separated>`, which ends only those
 trees, children first - when that census file contains `--pid` (makarasty 1.5.14 and later; an older one
 ignores the filter and ends every eligible line, so then go pid by pid as below). Every other chosen process - a `CLOSED CHAT SERVING` line the operator named, a line
@@ -165,8 +165,21 @@ the census left alone, a pid found by hand - is ended pid by pid with `taskkill 
 never `/T`, which follows reused pids. Then list again.
 Files found by hand are the operator's to delete: print the commands for the chosen items.
 
-Scan items on a yes, by id. A group item (scratch, temp, crash dumps) is whatever matches when `apply`
-runs, so when more than an hour has passed since the scan, scan again and show what changed before acting.
+Scan items are deleted only with the operator's own answer, read by a script from this chat, not reported by you.
+A bare "да" or "всё" after the list is never enough, and `#N` is not read: numbers only. In the report a disk item keeps the number `scan` printed
+before it; `apply` refuses an id the steps below did not grant:
+
+1. Show the numbered list exactly as `scan` printed it.
+2. Ask which numbers: one `AskUserQuestion`, options "Все" and "Ничего", numbers through Other.
+3. `node "${CLAUDE_SKILL_DIR}/../lib/confirm.mjs" select cleanup`. Exit 2: ask again with its reason.
+4. Show its restated block as printed, then one `AskUserQuestion` with one question per `ASK:` line, options
+   exactly that label and "Нет" (the label alone: the grant needs one answer line equal to it, nothing added).
+5. `node "${CLAUDE_SKILL_DIR}/../lib/confirm.mjs" grant cleanup`. Act only on the ids after `GRANTED:`, name what
+   was `NOT GRANTED`; nothing granted, nothing deleted.
+
+A grant lasts 30 minutes and one `apply` per id. A group item (scratch, temp, crash dumps) is whatever matches
+when `apply` runs, so when more than an hour has passed since the scan, scan again (the steps start over) and
+show what changed before acting.
 
 - `node "${CLAUDE_SKILL_DIR}/machine.mjs" apply <id> ...`: looks again first, then per method: `delete` for
   good (caches, old versions, scratch), `vendor` through the tool's own command (`npm cache clean --force`),

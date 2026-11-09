@@ -210,7 +210,19 @@ as health: `fleet-wait` now emits a stall line on a quiet interval for exactly t
                        opt-in worktrees the integration checkout path and URL and the merges in order,
                        operator decisions, pane check tasks filed and their state
   worktrees/<NN>       the worktree chip NN registered, for `fleet.sh clean`
+  tasks/claimed/<id>/before.diff   what the task's `owns:` paths held before it, written by `dispatch`
+  tasks/claimed/<id>/deadline      epoch seconds at which the watch prints `budget-elapsed-<id>` (budget x
+                       multiplier), written by `dispatch` and `rearm`, moved out by a pause's length on resume
+  tasks/claimed/<id>/prompt.md     the worker's spawn prompt, written last by `dispatch`: its presence marks the claim
+                       dispatched; `review.md` beside it is the reviewer's, for a code task
+  tasks/claimed/<id>/coded         written by `coded` when the coder finished: an implement or design task waiting
+                       on it by `after:` may start before its review
+  reports/<id>.md      a subagent's full report (`<id>.review.md` for a review); its reply is 3 lines
 ```
+
+Outside the run, the tools plugin writes `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/makarasty/ended/<session-id>` on
+SessionEnd (not on `/clear`) and removes it on SessionStart: a session with the marker is not live for
+`chipTakenBy` and `procs`, whatever its pid says.
 
 A pause also leaves a marker outside the run: `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/makarasty/paused/<cksum of
 the absolute run path>`, holding that path. The hooks readdir that directory first; empty or missing, they

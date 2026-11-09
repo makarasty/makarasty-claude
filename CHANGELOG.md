@@ -1,5 +1,32 @@
 # Changelog
 
+## makarasty 1.11.0, makarasty-tools 1.15.0 — 2026-11-09
+
+- **Deletes need the person's own answer, item by item.** After real incidents (38 items gone on "Да, всё", a
+  worktree a live chat used trashed, trash emptied for good on "а это почистить?"), `cleanup apply`, `prune trash`
+  and `prune empty` act only on ids granted by `tools/skills/lib/confirm.mjs`: the scan's numbered list, a
+  selection read from this chat's transcript (a bare "да", a typo or a stray word is asked again), a restated block
+  naming every item, its size, undoable or FOREVER, and what is left alone, then a second answer that is exactly
+  the label per class. The grant is for this session, this repo or machine, 30 minutes, one use, checked inside the
+  lock on the final pick. A compact summary or a subagent's record never counts as an answer.
+- **One liveness rule for chats** (`tools/skills/lib/live.mjs`): pid with its start time, an ended marker the
+  SessionEnd hook writes (not on `/clear`; removed on SessionStart), and the last transcript event, never the file
+  mtime. On this machine 16 running chats read as 6 live and 10 idle, idle up to 76 h [M55]; idle still holds, and
+  the hold now names the chat, its first prompt and its idle hours. `prune` reads event times, fleet `procs` and
+  `chipTakenBy` honour the marker, and `procs` checks the start time on Windows.
+- **`fleet.sh dispatch`** claims, saves `before.diff`, records a fix's before proof, writes the budget deadline and
+  writes the worker's and reviewer's prompts to files: the Agent prompt is one line. `coded` releases implement
+  and design tasks waiting by `after:` when the coder finishes; `rearm` gives a re-spawn a fresh deadline; `next`
+  takes the longest task first. A coordinator paid about 9 k of context per spawn, not the 3-4 k estimated; dispatch
+  plus 3-line reports take out an estimated 18% [M54].
+- **Reports go to files.** A worker writes `reports/<id>.md` and replies in at most 3 lines and 400 characters; a
+  SubagentStop hook sends a longer reply back once.
+- **The watch speaks only when there is something to do in one chat:** no `task finished`, `.done` or STALL lines,
+  and it prints `budget-elapsed-<id>` from the deadline file, so the per-task clock is gone. `docs/ONECHAT.md` opens
+  with a 2 KB card instead of asking to be re-read whole.
+- **A fleet worker's wait loop ends after 60 minutes.** A guard against every unbounded background wait loop was
+  measured and not built: it would have refused 26% of background calls and caught none of the ones that hung [M55].
+
 ## makarasty-tools 1.14.3 — 2026-11-05
 
 - **Shell guards cover the Monitor tool.** A Monitor `command` runs in the Bash shell, but git-, kill-, delete- and

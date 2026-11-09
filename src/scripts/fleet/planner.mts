@@ -72,7 +72,7 @@ function badTaskId(id: string): boolean {
 // The paths of a task's `owns:` as written: inline (`a, b` or `[a, b]`) or a YAML list under the key. Only an
 // unindented `owns:` counts: an indented one sits inside some other key's block (`notes: |`). A quoted path
 // may hold blanks (`["q1/a b.ts", q2/x]`); an unquoted one ends at a blank or comma.
-function ownsOf(text: string): string[] {
+export function ownsOf(text: string): string[] {
   const ps: string[] = [];
   const words = (v: string): void => {
     for (const m of v.trim().replace(/^\[(.*)\]$/, '$1').matchAll(/"([^"]*)"|'([^']*)'|([^\s,"']+)/g)) {

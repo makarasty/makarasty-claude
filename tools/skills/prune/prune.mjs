@@ -25,6 +25,8 @@ import { homedir, tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
+import { makePlan, check } from '../lib/confirm.mjs';
+import { chats, lastEvent } from '../lib/live.mjs';
 
 const HOUR = 3600e3, DAY = 24 * HOUR;
 const LOCK = 'makarasty-trash'; // the lock reason on a trashed worktree: `makarasty-trash <id>`
@@ -150,10 +152,16 @@ function touched(wt) {
     return t;
 }
 
-// Newest Claude transcript for a chat started in the worktree: projects/<path with non-alphanumerics as '-'>.
+// When a Claude chat last did something in the worktree: now while a chat whose folder is inside it is live or idle
+// (lib/live.mjs), else the last EVENT of its transcripts, projects/<path with non-alphanumerics as '-'>. Never the file
+// mtime as the answer: one copy gave 81% of transcripts the same mtime. A write only moves mtime forward, so mtime
+// still picks which files to open.
 // shortcut: the `<slug>-` prefix (chats started in a subfolder) also catches a sibling named `<wt>-x`; that costs an
 // extra ask, never a wrong trash.
-function chatTouched(wt) {
+function chatTouched(wt, since = Date.now() - 2 * HOUR) {
+    const all = chats();
+    // A chat whose session file would not read (unknown folder) may be in any worktree: ask about it, as cleanup holds everything.
+    if (all.some(s => s.unknown || (s.state === 'live' || s.state === 'idle') && s.cwd && (key(s.cwd) === key(wt) || inside(s.cwd, wt)))) return Date.now();
     const root = join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'projects');
     const fold = s => process.platform === 'linux' ? s : s.toLowerCase();
     const slug = fold(resolve(wt).replace(/[^a-zA-Z0-9]/g, '-'));
@@ -161,7 +169,7 @@ function chatTouched(wt) {
     try { names = readdirSync(root); } catch { return 0; }
     for (const n of names) if (fold(n) === slug || fold(n).startsWith(slug + '-')) {
         const d = join(root, n);
-        try { t = Math.max(t, statSync(d).mtimeMs); for (const f of readdirSync(d)) t = Math.max(t, statSync(join(d, f)).mtimeMs); } catch { }
+        try { for (const f of readdirSync(d)) if (f.endsWith('.jsonl') && statSync(join(d, f)).mtimeMs >= since) t = Math.max(t, lastEvent(join(d, f)) ?? 0); } catch { }
     }
     return t;
 }
@@ -408,9 +416,11 @@ function trashWorktree(c, it) {
     return record(c, { id, kind: 'worktree', name: it.name, sha, from: it.path, to, ref, branch: it.branch });
 }
 
-export function cmdTrash(repo, ids, safe) {
+// gate(ids) runs inside the lock on exactly the ids to act on (the person's grant, see confirm.mjs); false acts on nothing and returns null.
+export function cmdTrash(repo, ids, safe, gate) {
     const c = context(repo);
     return withLock(c, () => {
+        if (gate && !gate(safe ? cmdScan(repo).items.filter(i => i.verdict === 'trash').map(i => i.id) : ids)) return null;
         const done = [], failed = [], seen = new Set();
         const act = (items, kind, fn) => {
             for (const it of items) {
@@ -537,15 +547,22 @@ function emptyOne(c, r, notes) {
     if (r.kind === 'branch' && run(['rev-parse', '-q', '--verify', 'refs/heads/' + r.name], c.cwd).code) run(['config', '--remove-section', 'branch.' + r.name], c.cwd);
 }
 
-export function cmdEmpty(repo, ids, olderMs, all = false) {
+// The entries `empty` takes: named ids whatever their age unless --older is given too; --older alone takes entries past that age.
+function emptyPicks(c, ids, olderMs) {
+    const cut = olderMs === undefined ? Infinity : Date.now() - olderMs;
+    return readIdx(c.index).filter(r => (!ids.length || ids.includes(r.id)) && Date.parse(r.at) <= cut);
+}
+
+export function cmdEmpty(repo, ids, olderMs, all = false, gate) {
     // Nothing is ever emptied on its own: the trash keeps everything until the person names what goes.
     if (!ids.length && olderMs === undefined && !all) throw new Refusal('empty needs a choice: trash ids, --older <age> (like 30d), or --all; see list');
     const c = context(repo);
     if (!existsSync(c.index)) return { gone: [], failed: [], notes: [] };
     return withLock(c, () => {
-        const cut = olderMs === undefined ? Infinity : Date.now() - olderMs, gone = [], failed = [], notes = [];
+        const gone = [], failed = [], notes = [];
         // Named ids go whatever their age unless --older is given too; --older alone takes entries past that age; --all takes everything.
-        const pick = readIdx(c.index).filter(r => (!ids.length || ids.includes(r.id)) && Date.parse(r.at) <= cut);
+        const pick = emptyPicks(c, ids, olderMs);
+        if (gate && !gate(pick.map(r => r.id))) return null; // the grant is checked on exactly this pick, under the lock
         for (const r of pick) { try { emptyOne(c, r, notes); gone.push(r.id); } catch (e) { failed.push({ id: r.id, why: e.message }); } }
         for (const id of ids) if (!pick.some(r => r.id === id)) failed.push({ id, why: 'no such trash entry, or younger than --older' });
         writeIdx(c.index, readIdx(c.index).filter(r => !gone.includes(r.id)));
@@ -614,7 +631,10 @@ function selftest() {
         g(repo, 'worktree', 'add', '-q', '--detach', wt('wt-gone'), 'main'); rmSync(wt('wt-gone'), { recursive: true, force: true });
         for (const d of ['wt-clean', 'wt-dirty', 'wt-chat']) backdate(wt(d));
         const chat = join(tmp, 'claude', 'projects', wt('wt-chat').replace(/[^a-zA-Z0-9]/g, '-'));
-        mkdirSync(chat, { recursive: true }); writeFileSync(join(chat, 'session.jsonl'), '{}\n');
+        mkdirSync(chat, { recursive: true }); writeFileSync(join(chat, 'session.jsonl'), `${JSON.stringify({ type: 'user', timestamp: new Date().toISOString() })}\n`);
+        // a fresh file whose last event is old says nothing: a copy resets mtimes
+        const oldChat = join(tmp, 'claude', 'projects', wt('wt-clean').replace(/[^a-zA-Z0-9]/g, '-'));
+        mkdirSync(oldChat, { recursive: true }); writeFileSync(join(oldChat, 'session.jsonl'), `${JSON.stringify({ type: 'user', timestamp: new Date(Date.now() - 5 * DAY).toISOString() })}\n`);
         const before = remoteRefs();
 
         const s = cmdScan(repo);
@@ -638,6 +658,18 @@ function selftest() {
         assert.deepEqual(cmdScan(repo).items.filter(i => i.verdict === 'trash'), [], 'nothing left to trash');
         assert.ok(cmdList(null, true).some(r => r.repo === realpathSync.native(join(repo, '.git'))), 'list --all finds the repo');
         assert.match(cmdTrash(repo, ['b:unmerged'], false).failed[0]?.why ?? '', /^kept: unique work/, 'a keep item is refused');
+        let gated;
+        assert.equal(cmdTrash(repo, ['b:unmerged'], false, ids => { gated = ids; return false; }), null, 'a refusing gate acts on nothing');
+        assert.deepEqual(gated, ['b:unmerged']);
+        assert.ok(!existsSync(join(repo, '.git', 'makarasty-trash', '.lock')), 'the lock is released after a refusal');
+        // a chat whose session file will not read may be anywhere: chatTouched answers now (the worktree is asked about)
+        const home0 = process.env.USERPROFILE, sessions = join(tmp, 'claude', 'sessions');
+        process.env.USERPROFILE = process.env.HOME = tmp; mkdirSync(sessions, { recursive: true });
+        try {
+            assert.equal(chatTouched(join(tmp, 'nowhere')), 0, 'no chats: untouched');
+            writeFileSync(join(sessions, `${process.pid}.json`), '{ torn');
+            assert.ok(Date.now() - chatTouched(join(tmp, 'nowhere')) < 5000, 'an unknown chat: touched now');
+        } finally { rmSync(join(sessions, `${process.pid}.json`), { force: true }); if (home0 === undefined) delete process.env.USERPROFILE; else process.env.USERPROFILE = home0; }
 
         // Branch restore: refused while the name is taken, then under another name.
         g(repo, 'branch', 'merged', 'main');
@@ -674,6 +706,9 @@ function selftest() {
         assert.throws(() => cmdEmpty(repo, [], undefined), /empty needs a choice/, 'a bare empty deletes nothing');
         assert.equal(cmdList(repo).length, 4, 'and the trash is untouched');
         assert.deepEqual(cmdEmpty(repo, [], 30 * DAY).gone, [], '--older 30d keeps younger entries');
+        assert.equal(cmdEmpty(repo, [], 0, false, ids => { gated = ids; return false; }), null, 'a refusing gate empties nothing');
+        assert.equal(gated.length, 4, 'the gate sees the final pick');
+        assert.equal(cmdList(repo).length, 4);
         const e = cmdEmpty(repo, [], 0);
         assert.deepEqual(e.failed, []);
         assert.equal(e.gone.length, 4);
@@ -760,16 +795,35 @@ function main(argv) {
     const [cmd, ...args] = argv;
     const say = (obj, lines) => console.log(json ? JSON.stringify(obj, null, 1) : lines().join('\n'));
     const hint = `node prune.mjs`;
+    // Deleting needs the person's own answer, read by confirm.mjs from this chat's transcript (see its header).
+    // A grant is for one repo's list (scope = its git dir) or for `list --all` ('all'), see confirm.mjs.
+    const confirmed = (tool, ids, scope) => {
+        try { check(tool, ids, { scope }); return true; } catch (e) {
+            console.error(e.message + (/scope "all"/.test(e.message) ? ' (a `list --all` plan: run `empty --all`)' : ''));
+            process.exitCode = 2; return false;
+        }
+    };
+    const number = (tool, rows, item, scope) => {
+        const items = makePlan(tool, rows.map(item), { scope, dup: 'same trash id in another repo: empty it from inside that repo' }).items;
+        items.forEach((p, i) => { if (p.n) rows[i].n = p.n; });
+        return items;
+    };
+    const home = () => key(context(repo).common);
     if (cmd === 'scan') {
         const s = cmdScan(repo), w = Math.max(4, ...s.items.map(i => i.id.length));
+        number('prune-trash', s.items, i => ({ id: i.id, what: `${i.kind} ${i.kind === 'worktree' ? i.path : i.name}`, bytes: null, how: 'undo',
+            note: 'to the makarasty trash, `restore <id>` brings it back', held: i.verdict === 'keep' ? i.reason : undefined }), home());
         const n = v => s.items.filter(i => i.verdict === v).length;
         return say(s, () => [`${s.repo}  default ${s.default}`,
-            ...s.items.map(i => `${i.verdict.padEnd(5)}  ${i.id.padEnd(w)}  ${i.kind === 'worktree' ? i.path + '  ' : ''}${i.reason}`),
+            ...s.items.map(i => `${(i.n ? i.n + '.' : '').padStart(4)} ${i.verdict.padEnd(5)}  ${i.id.padEnd(w)}  ${i.kind === 'worktree' ? i.path + '  ' : ''}${i.reason}`),
             `trash ${n('trash')}, ask ${n('ask')}, keep ${n('keep')}${s.inTrash ? `; ${s.inTrash} already in the trash (${hint} list)` : ''}`]);
     }
     if (cmd === 'trash') {
         if (!safe && !args.length) throw new Refusal('trash takes ids from scan, or --safe for every trash verdict');
-        const t = cmdTrash(repo, args, safe);
+        // --safe: the ids it would take now; only what the person granted is moved (checked inside the lock, on the final ids).
+        const ids = safe ? cmdScan(repo).items.filter(i => i.verdict === 'trash').map(i => i.id) : args, scope = home();
+        const t = cmdTrash(repo, ids, false, final => confirmed('prune-trash', final, scope));
+        if (!t) return;
         process.exitCode = t.failed.length ? 1 : 0;
         return say(t, () => [
             t.done.length ? 'moved to the trash (local only; nothing on any remote was touched):' : 'nothing moved',
@@ -780,7 +834,8 @@ function main(argv) {
     }
     if (cmd === 'list') {
         const rows = cmdList(repo, all);
-        return say(rows, () => rows.length ? rows.map(r => `${all ? r.repo + '  ' : ''}${r.id}  ${ago(Date.parse(r.at)).padStart(3)}  ${r.kind.padEnd(13)} ${r.kind === 'branch' ? r.name : r.from}`) : ['the trash is empty']);
+        const plan = number('prune-empty', rows, r => ({ id: r.id, what: `${r.kind} ${r.kind === 'branch' ? r.name : r.from}`, bytes: null, how: 'forever' }), all ? 'all' : home());
+        return say(rows, () => rows.length ? rows.map((r, i) => `${(r.n ? r.n + '.' : '').padStart(4)} ${all ? r.repo + '  ' : ''}${r.id}  ${ago(Date.parse(r.at)).padStart(3)}  ${r.kind.padEnd(13)} ${r.kind === 'branch' ? r.name : r.from}${plan[i].held ? `  held: ${plan[i].held}` : ''}`) : ['the trash is empty']);
     }
     if (cmd === 'restore') {
         if (args.length !== 1) throw new Refusal('restore takes one trash id (see: list)');
@@ -788,7 +843,12 @@ function main(argv) {
         return say(r, () => ['restored: ' + r.notes.join('; ')]);
     }
     if (cmd === 'empty') {
-        const e = cmdEmpty(repo, args, olderArg === undefined ? undefined : parseAge(olderArg), Boolean(all));
+        const older = olderArg === undefined ? undefined : parseAge(olderArg);
+        // No choice at all is cmdEmpty's own refusal; otherwise the ids it picks inside the lock must all be granted.
+        // A `list --all` plan is for `empty --all` only; a plain `list` plan serves both.
+        const scope = all ? [home(), 'all'] : home();
+        const e = cmdEmpty(repo, args, older, Boolean(all), final => confirmed('prune-empty', final, scope));
+        if (!e) return;
         process.exitCode = e.failed.length ? 1 : 0;
         return say(e, () => [`deleted for good: ${e.gone.length ? e.gone.join(' ') : 'nothing'}`, ...e.notes, ...e.failed.map(f => `kept ${f.id}: ${f.why}`)]);
     }

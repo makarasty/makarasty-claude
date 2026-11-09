@@ -17,6 +17,13 @@
 #                                                  exit 2 = HOLDING, this chip holds a claim already (a pane
 #                                                  chip may hold one pane and one repo task); BUSY, another
 #                                                  next of this chip is claiming; or a lane it does not know
+#   fleet.sh dispatch <run-dir> <chip> [lane]      coordinator: next plus everything before the spawn: before.diff, the
+#                                                  failing `prove ... before` of a fix, deadline, prompt.md, review.md; prints
+#                                                  DISPATCHED/AGENT/PROMPT lines. Next's exit codes; 12 = no owns:/repro:
+#                                                  (fix the task file, run it again), 11 = refuted: repro passes already
+#   fleet.sh rearm   <run-dir> <chip> <task-id>    rewrite the claim's deadline to now + budget x multiplier: REARMED <id> <epoch>.
+#                                                  exit 1 = the chip does not hold it. Run it when a hung subagent is re-spawned
+#   fleet.sh coded   <run-dir> <chip> <task-id>    the coder is done: an `after:` task (not verify/pane) may start
 #   fleet.sh beat    <run-dir> <chip> <task-id>    refresh heartbeat. exit 4 = claim lost, take another
 #   fleet.sh clock   <run-dir> <chip> <task-id> [budget-min]   print the self-disarming abort clock to background
 #   fleet.sh finish  <run-dir> <chip> <task-id> [branch]   mark the task done; its clock then exits on its own.

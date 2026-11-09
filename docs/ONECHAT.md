@@ -2,13 +2,40 @@
 
 The default fleet. One coordinator chat runs the queue and spawns one fresh background subagent per task,
 in the main checkout, on its current branch. No worker chats, no worktrees: both are opt-in (last section).
-You re-read this file whenever you coordinate; it carries no history, only the rule and one clause of
+Read the Card below once at the start; the sections after it are reference, so read the one a line sends
+you to, not the whole file again. It carries no history, only the rule and one clause of
 evidence. `${CLAUDE_PLUGIN_ROOT}` is the makarasty plugin's directory.
 
 ```bash
 f="${CLAUDE_PLUGIN_ROOT}/scripts/fleet.sh"
 r=<absolute run dir>
 ```
+
+## Card
+
+The loop, for each free slot `NN` in lane `<lane>`. Dispatch every free slot in one turn.
+
+1. `sh "$f" dispatch "$r" NN <lane>`. It claims, saves `before.diff`, records the before proof of a fix or
+   root, sets the budget deadline and writes the spawn prompt. Exit `0`: a claim, go to 2. `3`: `drained`.
+   `7`: wait for the next notification or watch line. `6`: wait for `memory-back`. `8`: paused, spawn nothing.
+   `9`: run landed, spawn nothing. `1` `PROVE FAILED`: read the line, fix the repro or the
+   environment, dispatch again (the claim is kept and resumes). `2`: the slot holds a claim already
+   dispatched, or its task file cannot be read (the line says which). `12`: fix the task file (`NO OWNS`,
+   `NEED REPRO`), dispatch again. `11` `REFUTED <id>`: write it in `$r/NN.notes.md`, then
+   `FLEET_REFUTED=1 sh "$f" finish "$r" NN <id>`.
+2. `Agent` with `run_in_background: true`: `subagent_type` and `model` from the `AGENT` line (`-` means the
+   pace line's), `effort` from the pace line, `prompt` the `PROMPT` line as printed.
+3. On the coder's notification, read its reply only: 3 lines ending in `DONE`, `DONE_WITH_CONCERNS` or
+   `BLOCKED`. In that same turn run `sh "$f" coded "$r" NN <id>` (it releases tasks waiting by `after:`) and
+   spawn the reviewer with the `REVIEW_PROMPT` line. Pace fastest: one review, no re-review. No code, no review.
+4. `budget-elapsed-<id>` from the watch: `TaskStop` that agent, `sh "$f" rearm "$r" NN <id>`, re-spawn once
+   on the same claim, with a note that the edits in its `owns:` are its predecessor's to continue.
+5. On a pass: write `files`, `sh "$f" finish "$r" NN <id>`, dispatch the slot again (loop step 5 has the lines).
+
+Two rules. Never read `reports/` yourself: a Haiku `[mech]` agent reads one and returns a line. Never block
+dispatch on a question: dispatch every free slot first, keep a non-urgent question in `STATE.md`, and ask
+them together in one `AskUserQuestion` when no slot can be dispatched. An open `AskUserQuestion` blocks your
+turn, so agents finish but nothing new starts; one run waited 94 minutes on one question.
 
 ## Before the loop
 
@@ -48,77 +75,70 @@ r=<absolute run dir>
 
 For each free slot `NN` in lane `<lane>`:
 
-1. **Claim, header and frontmatter.** `next` prints a header, a `---` line, then the task file, which opens
-   with its own `---` frontmatter. The third `---` closes the frontmatter: you see the header and
-   frontmatter (`owns:`, `kind`, `model`, `verdict-model`, `test:`, `repro:`, `needs:`) and never
-   the body; the subagent reads the file.
+1. **Dispatch.** `dispatch` claims as `next` does, with the same exit codes, and prints only the header, never
+   the task body. On a claim it does, in the main checkout, what a coder needs before it starts: `before.diff`
+   (what the task's paths held before it), the before proof of a `kind: fix` or `kind: root`, the budget
+   deadline file `tasks/claimed/<id>/deadline` that the watch reads, and the spawn prompt `prompt.md` (for a
+   code task also the reviewer's, `review.md`), both in the claim's directory. On a slot that holds a claim
+   not yet dispatched it resumes that claim instead of saying `HOLDING`.
 
    ```bash
-   o=$(sh "$f" next "$r" NN <lane>); rc=$?; printf '%s\n' "$o" | awk '/^---$/&&++n==3{exit}1'; echo "rc=$rc"
+   o=$(sh "$f" dispatch "$r" NN <lane>); rc=$?; printf '%s\n' "$o"; echo "rc=$rc"
    ```
 
-   - `0`: `CLAIMED <id>`, `BUDGET_MIN`, `ARM_CLOCK`. Ignore `DELEGATE`: it is for chat workers, and a
-     subagent already is the delegation.
+   - `0`: `DISPATCHED <id> kind <kind> lane <lane>`, then `AGENT <subagent_type> model <m|-> verdict-model
+     <vm|->`, `PROMPT <line>` and, for a code task, `REVIEW_PROMPT <line>`. Each prompt line is one sentence,
+     "Read <abs path> and follow it.", and goes to the `Agent` as it is. (`next` prints `ARM_CLOCK` and
+     `DELEGATE` for chat workers; in one chat you never call `next`.)
    - `3` drained: `sh "$f" drained "$r" NN <lane>` writes `NN.done`; that slot is finished. A pane or
      verify slot that never had work is drained the same way, or `landed` waits for it. Its exit `5`
      means the queue is still open: treat it as `7`. Ignore its `GIVE YOUR BROWSER MEMORY BACK` (close
      the heavy tab) and `RENAME THIS SESSION TO` lines: they are for a worker chat, and this chat is yours.
    - `7` waiting: tasks held by `after:`, the verify lane or an uncleared `operator:`. Spawn nothing on this
-     slot; claim again on the next completion or watch line.
-   - `6` machine tight: background the wait line it prints, claim again on `memory-back`.
-   - `8` paused: spawn nothing (Pause, below). `2 HOLDING`: the slot still holds a claim; finish it first.
-   - `9` `RUN FINISHED`: the run has landed. Spawn nothing on any slot and `TaskStop` the clocks you
-     backgrounded; the rest of that line is for a worker chat.
-
-   On `0`, before the spawn, save what the task's paths held before it, always (it prints nothing):
-
-   ```bash
-   { git status --porcelain -uall -- <owns paths>; git diff -- <owns paths>; } > "$r/tasks/claimed/<id>/before.diff"
-   ```
-
-   A code task (fix, root, implement, design) never goes out without `owns:`: add it to the task file first,
-   or its edit is missing from the end commit and from review. A task with no code and no `owns:` gets an empty one, `: > "$r/tasks/claimed/<id>/before.diff"`, and later an empty
-   `files`: git with an empty pathspec reads the whole tree, so never run these lines without paths.
-
-   A `kind: fix` or `kind: root` task also gets its failing run recorded now, from the main checkout,
-   because `finish` refuses it without a before and an after. The command is the frontmatter's `repro:`.
-   When that line is empty (`fixqueue` found steps or prose, or a root has a member without a command),
-   write one into the task file's `repro:` line first: one shell command that fails while the defect is
-   there. For a fix, make it from the body's reproduction; a long body goes to a Haiku `[mech]` agent that
-   reads it and returns that one line, so the body stays out of your context. For a root, rule on it from
-   its members' `repro:` lines and reproductions (the tasks in `gates:`); when no one command covers them,
-   give the claim back by "A fix or root that cannot be proven", below.
-
-   ```bash
-   g="${CLAUDE_PLUGIN_ROOT}/scripts/fleet-gate.mjs"
-   node "$g" prove "$r" <id> before -- '<the repro: line, word for word>' 2>&1 | tail -1
-   ```
-
-   Pass it as one single-quoted argument (a `'` inside written `'\''`): `prove` runs a single argument as
-   written, and a root's `(a) || (b)` left bare is parsed by your own shell instead. A `repro:` uses forward
-   slashes: `prove` runs it in bash, where `node sub\x.mjs` runs `subx.mjs` (bash on Windows takes `node sub/x.mjs`).
-
-   A last line `the reproduction passes already ...` (after `before: exit 0`) means the finding is refuted.
-   Spawn no coder, write
-   that in `$r/NN.notes.md`, and run `FLEET_REFUTED=1 sh "$f" finish "$r" NN <id>` (a `kind: fix` only when its `before` passed; a `kind: root`
-   whatever `before` did, once `$r/NN.notes.md` holds a line `refuted <id>: <why the shared cause is a coincidence>`).
+     slot; dispatch again on the next completion or watch line.
+   - `6` machine tight: background the wait line it prints, dispatch again on `memory-back`.
+   - `8` paused: spawn nothing (Pause, below). `2 HOLDING`: the slot holds a dispatched claim; finish it first.
+   - `9` `RUN FINISHED`: the run has landed. Spawn nothing on any slot; the rest of that line is for a worker
+     chat.
+   - `12` the task file needs a fix first. `NO OWNS`: a code task (fix, root, implement, design) never goes
+     out without `owns:`; add it to the task file, or its edit is missing from the end commit and from
+     review. A task with no code and no `owns:` gets an empty `before.diff` from `dispatch`, and later an empty
+     `files` (`: > "$r/tasks/claimed/<id>/files"`): git with an empty pathspec reads the whole tree, so never
+     run the `git status` / `git diff` lines of step 5 or of the re-review without paths. `NEED REPRO`: a
+     `kind: fix` or `kind: root` needs its failing run recorded, because `finish` refuses it without a before and
+     an after, and the command is the frontmatter's `repro:`. When that line is empty (`fixqueue` found steps or
+     prose, or a root has a member without a command), write one into the task file's `repro:` line: one shell
+     command that fails while the defect is there. For a fix, make it from the body's reproduction; a long body
+     goes to a Haiku `[mech]` agent that reads it and returns that one line, so the body stays out of your
+     context. For a root, rule on it from its members' `repro:` lines and reproductions (the tasks in
+     `gates:`); when no one command covers them, give the claim back by "A fix or root that cannot be proven",
+     below. A `repro:` uses forward slashes: `prove` runs it in bash, where `node sub\x.mjs` runs `subx.mjs`
+     (bash on Windows takes `node sub/x.mjs`). Then dispatch again.
+   - `11` `REFUTED <id>`: the before proof passed already, so the finding is refuted. Spawn no coder, write
+     that in `$r/NN.notes.md`, and run `FLEET_REFUTED=1 sh "$f" finish "$r" NN <id>` (a `kind: fix` only when its
+     `before` passed; a `kind: root` whatever `before` did, once `$r/NN.notes.md` holds a line
+     `refuted <id>: <why the shared cause is a coincidence>`).
 
    A task whose frontmatter has `handback-of: <old id>` (filed by "A fix or root that cannot be proven",
-   below) skips both lines: `next` already copied the old claim's `before` into its proof, and a new
-   `before` would run over the predecessor's partial edits. Copy the old claim's list instead:
-   `cp "$r"/tasks/claimed/<old id>.released-*/before.diff "$r/tasks/claimed/<id>/"`.
-2. **Background the `ARM_CLOCK` line**: run the `clock` command it names and background exactly what that
-   prints (`run_in_background`). It prints `budget-elapsed-<id>` at twice the budget, and it is the only
-   thing that catches a hung subagent: the watch's `STALL` counts no heartbeats, fires on any long task,
-   and is information only. On it: `TaskStop` that agent and re-spawn once on the same claim,
-   told the edits in its `owns:` are its predecessor's to continue, with a fresh clock. On a second firing,
-   `TaskStop` the agent. A task with no proof to give (no `kind: fix` or `kind: root`) then finishes with
-   the remainder written as unreached in `NN.notes.md` (with a `test:` line and no recorded pass, also
-   `untested <id>: <why>` there and `FLEET_UNTESTED=1` on `finish`). A fix or root task never does: `finish` refuses it
-   unproven, the claim stays held, and everything `after:` it (a root's `gates:` members) and `landed`
-   wait for ever. It goes the way of "A fix or root that cannot be proven", below.
-3. **Spawn the subagent**: `Agent`, `run_in_background: true`, `model` and `effort` from the pace line
-   (always pass `model`: an unnamed one inherits your tier). Type by task kind:
+   below) gets neither a new before nor a new `before.diff` from `dispatch`: a new `before` would run over the
+   predecessor's partial edits, so it keeps the old claim's `before` proof and copies its list,
+   `tasks/claimed/<old id>.released-*/before.diff`.
+2. **The budget clock is the watch's.** `dispatch` wrote the deadline, twice the budget. The watch prints
+   `budget-elapsed-<id>` once when it passes, and not while the run is paused; it is the only thing that
+   catches a hung subagent, since the watch's `STALL` counts no heartbeats, fires on any long task, and is
+   information only (in one chat the watch does not even print it). On `budget-elapsed-<id>`: `TaskStop` that
+   agent, run `sh "$f" rearm "$r" NN <id>` (a fresh deadline, which the watch announces again), and re-spawn
+   once on the same claim, with the `PROMPT` line and a note that the edits in its `owns:` are its
+   predecessor's to continue. On the second `budget-elapsed-<id>`, `TaskStop` it. A task with no proof
+   to give (no `kind: fix` or `kind: root`) then finishes with the remainder written as unreached in
+   `NN.notes.md` (with a `test:` line and no recorded pass, also `untested <id>: <why>` there and
+   `FLEET_UNTESTED=1` on `finish`). A fix or root task never does: `finish` refuses it unproven, the claim
+   stays held, and everything `after:` it (a root's `gates:` members) and `landed` wait for ever. It goes the
+   way of "A fix or root that cannot be proven", below. `ARM_CLOCK` and its `clock` command are for chat
+   workers; a coordinator here never backgrounds one.
+3. **The spawn is the `AGENT` and `PROMPT` lines**: `Agent`, `run_in_background: true`, `model` from the
+   `AGENT` line (`-` means the pace line's; always pass one: an unnamed `model` inherits your tier) and `effort`
+   from the pace line. `subagent_type` is on the `AGENT` line, by task kind:
 
    | Task | `subagent_type` |
    |---|---|
@@ -131,26 +151,18 @@ For each free slot `NN` in lane `<lane>`:
    | `kind: redesign`: directions, propose | `makarasty:fleet-coder` at the design tier, the top one; assemble at sonnet |
    | speed, stability, `kind: perf` | `makarasty:fleet-profiler` |
 
-   The prompt is paths, plus the content of `RULES.md` pasted once (it is short, and a worker that is only
-   pointed at it re-reads it: one run read it 59 times, a review prompt file 101 times [M51]); the task file,
-   diffs and logs stay paths:
-
-   ```
-   Task <r>/tasks/ready/<id>.md. Run <r>. Chip NN.
-   Rules (pasted once, do not read RULES.md again): <the content of <r>/RULES.md>
-   Brief (pasted once, do not read it again): <the content of the review or red-team brief file; only for a spawn that has one>
-   owns: <the task's owns: line>
-   Test: timeout <S> <the task's test: line, the scoped test command>   (a hit limit is reported, never retried)
-   Tab: <tabId>                      (browser agents only)
-   Proof, after your change: node "<g>" prove "<r>" <id> after -- '<the repro: line, word for word>'   (fix, root)
-   Test proof, after your change: node "<g>" prove "<r>" <id> after -- 'timeout <S> <the test: line, a `'` in it written `'''`>'   (instead of running Test bare; no before)
-   Include the Test proof line only for `kind: implement` or `design` with a `test:` line when `<r>/RUN_FORMAT`
-   holds 2 or more (the run's format stamp, written at its first `next`); a run stamped 1 has no such gate.
-   Findings: sh "<f>" find "<r>" NN, one JSON finding on stdin; it files, it is no probe. Heartbeat: sh "<f>" beat "<r>" NN <id>.
-   Never next, finish, drained, commit, git add -A, stash, checkout --, switch.
-   Report in at most 15 lines: files changed, test result, what is left.
-   Last line (fleet-coder only): DONE, DONE_WITH_CONCERNS: <one line> or BLOCKED: <one line>.
-   ```
+   `dispatch` builds `prompt.md` from one template: the task file path, the run and the chip; the content of
+   `RULES.md` pasted once (it is short, and a worker that is only pointed at it re-reads it: one run read it 59
+   times, a review prompt file 101 times [M51]) and the review or red-team brief when the spawn has one; the
+   task's `owns:` and its `test:` line as `timeout <S> <test>` (a hit limit is reported, never retried); for a
+   fix or root the `prove ... after` line with the `repro:` word for word; for `kind: implement` or `design`
+   with a `test:` line in a run whose `RUN_FORMAT` holds 2 or more, the `Test proof` form of it (a run stamped 1
+   has no such gate); the `find` and `beat` commands; the never-list (`next`, `finish`, `drained`, commit,
+   `git add -A`, stash, `checkout --`, switch); and the report rule: the full report goes to
+   `$r/reports/<id>.md`, and the reply is at most 3 lines and 400 characters ending in `DONE`,
+   `DONE_WITH_CONCERNS: <line>` or `BLOCKED: <line>` (a hook sends an over-long reply back once). The task
+   file, diffs and logs stay paths. A browser agent also needs its tab: add `Tab: <tabId>` after the `PROMPT`
+   line.
 
    `timeout <S>` is the Bash form (exit 124 = limit hit). `<S>` is about twice the test's normal time in
    seconds, never above 590 (`PROTOCOL.md`, "Wait for the event"), under the 600000 ms both shell tools stop
@@ -158,9 +170,12 @@ For each free slot `NN` in lane `<lane>`:
    In PowerShell `timeout` is timeout.exe, a sleep: use the PowerShell tool's own `timeout` parameter (ms,
    at most 600000). Longer, in either shell: a background run plus `TaskStop` at the limit. macOS without coreutils: `gtimeout`, or background plus `TaskStop`.
 
-4. **On its notification**, read the report. A `fleet-coder` report ends in `DONE`,
-   `DONE_WITH_CONCERNS: <line>` or `BLOCKED: <line>` (`agents/fleet-coder.md`); read that line first. Other
-   agents' reports have no such line. Concerns go to `NN.notes.md`. On `BLOCKED`:
+4. **On its notification**, read the reply, not `reports/<id>.md`. A `fleet-coder` reply is at most 3 lines
+   ending in `DONE`, `DONE_WITH_CONCERNS: <line>` or `BLOCKED: <line>` (`agents/fleet-coder.md`); read that
+   line. Other agents' replies have no such line. Concerns go to `NN.notes.md`. On `DONE` or
+   `DONE_WITH_CONCERNS`, run `sh "$f" coded "$r" NN <id>` before the review, in the same turn that spawns it:
+   it releases the code tasks waiting on this one by `after:` (a `needs: verify` or `needs: pane` task still
+   waits for `finish`). On `BLOCKED`:
    - `repro invalid: <why>`: the `repro:` fails for a reason outside the defect. Ask the operator with one
      `AskUserQuestion`; no handback, since the next coder meets the same command.
    - Any other fix or root goes by "A fix or root that cannot be proven", below.
@@ -173,9 +188,10 @@ For each free slot `NN` in lane `<lane>`:
    one line, `ruling: <what> - <why>`, in your next `STATE.md` update; `fleet-collect` lists them.
 
    Otherwise, for a code task spawn `makarasty:fleet-reviewer` at the
-   task's `verdict-model` (the pace line's when it names none), `effort` by the Economy table below on `git diff -- <owns paths>` and
-   `git status --porcelain -uall -- <owns paths>`, told to read every `??` file whole (a new file is in no
-   diff; never `git add -N`, the index is shared), with the task file, the claim's `before.diff` (so it
+   task's `verdict-model` (the pace line's when it names none), `effort` by the Economy table below, and the
+   `REVIEW_PROMPT` line as its prompt. `review.md` points it at `git diff -- <owns paths>` and
+   `git status --porcelain -uall -- <owns paths>`, tells it to read every `??` file whole (a new file is in no
+   diff; never `git add -N`, the index is shared), and gives it the task file, the claim's `before.diff` (so it
    rules on this task's change only; an empty one means the whole `owns:` diff is this task's) and
    `$r/answers/00-broadcast.md` if it exists. The verdict is short:
    pass, or defects each with the input that breaks it. Rounds by the pace line:
@@ -189,7 +205,8 @@ For each free slot `NN` in lane `<lane>`:
    (Economy, below), the same spawn goes to Opus: the bump is the fix round, not a second one.
 
    **Re-review**, after every fix round: an unreviewed fix is where regressions land. Before the fix coder
-   starts, save the paths as step 1 does, into `tasks/claimed/<id>/pre-fix.diff`. Spawn `fleet-reviewer` at
+   starts, save the paths into `tasks/claimed/<id>/pre-fix.diff`
+   (`{ git status --porcelain -uall -- <owns paths>; git diff -- <owns paths>; } > "$r/tasks/claimed/<id>/pre-fix.diff"`). Spawn `fleet-reviewer` at
    the model of the first review, with the defect list, the task file, that file as its `before.diff` and the
    same `??` rule. It answers `ADDRESSED` or `NOT ADDRESSED` per defect, then any defect the fix itself
    introduced; nothing else. All `ADDRESSED` and nothing new: go to step 5. Otherwise:
@@ -199,7 +216,7 @@ For each free slot `NN` in lane `<lane>`:
    - A defect with none (an unrequested hunk, a test that cannot fail) goes to the operator with one
      `AskUserQuestion` naming the task and the defect; the claim stays held. A second reject by the Economy
      rule below goes the same way.
-5. Write the task's file list, then finish, no branch (one checkout), then claim again on that slot:
+5. Write the task's file list, then finish, no branch (one checkout), then dispatch that slot again:
 
    ```bash
    git status --porcelain -uall -- <owns paths> > "$r/tasks/claimed/<id>/files"
@@ -210,7 +227,7 @@ For each free slot `NN` in lane `<lane>`:
    so the lists are on disk for the end commit and a crash. Exit `1` with "done marker NOT written" is a fix
    or root task the gate did not prove, and its `NOT PROVEN` line says why. No `after` recorded, or the
    reproduction still failing after, goes back to a fresh `fleet-coder` on the same claim with that line,
-   inside the task's clock; once the clock has fired twice, "A fix or root that cannot be proven" applies.
+   inside the task's budget; once its `budget-elapsed-<id>` has come and the re-spawn failed too, "A fix or root that cannot be proven" applies.
    An implement or design task with a `test:` line gets the same refusal, `NOT TESTED`, in a run stamped format 2:
    it goes back to a fresh `fleet-coder` the same way, told to record the pass (`docs/GATE.md`, "test"). A fix round
    after a review runs the test through `prove` again, since a change to `owns:` after the pass is refused.
@@ -235,7 +252,7 @@ claim back instead, so the run moves on:
 2. `sh "$f" handback "$r" NN`. It renames the claim to `<id>.released-<ts>` and files the task again as
    `<id>-r<k>`, with `handback-of: <id>` (`next` copies the old claim's recorded `before` into the new claim's proof) and
    `continued-from-chip: NN`. Every task whose `after:` named `<id>`, a root's `gates:` members too, now
-   names the new id. On a slot it prints `RELEASED NN` and retires nothing: claim again on the same slot.
+   names the new id. On a slot it prints `RELEASED NN` and retires nothing: dispatch the same slot again.
    The edits stay in the shared checkout for the next coder to continue.
 3. The re-filed task runs as any other (step 1 skips its `before`). Its coder is told to read
    `$r/NN.notes.md` first.
@@ -258,6 +275,10 @@ that is both in `dirty-at-start` and changed by a task is the operator's call: l
 Cadence, from the pace line: **one commit at the end of the run** (the default and the cheapest), or one per
 wave; with opt-in worktrees each task commits on its own branch. Reviews read the uncommitted diff of `owns:`, so none of them waits on a commit.
 
+**End of run.** After collect, always, in this order: the end commit as written above; then, with opt-in
+worktrees, merge the branches back; then, when `FLEET.md` names a task board, move the run's cards to
+review; then report the commit sha.
+
 ## Economy: the top model decides, everything mechanical goes cheaper
 
 | Step | Maximum economy (default) | Balanced | Spend for speed |
@@ -278,11 +299,13 @@ Why this is cheaper, and the estimate behind it: `docs/MODELS.md`, "Pace".
 
 ## Context hygiene
 
-Your context is the run's ceiling: about 3-4 k per task, so 150-200 tasks per 700 K [M43]. Keep it there.
+Your context is the run's ceiling: measured about 9 k per spawn on three coordinators before `dispatch` [M54]
+(the Agent prompt, the report, and the Bash calls around a claim), so the run's size follows from what each
+spawn costs you. Keep it low.
 
-- Claim with the header and frontmatter only (`awk '/^---$/&&++n==3{exit}1'`). Never print a task body.
-- Spawn prompts carry paths, never pasted content, except `RULES.md` (and a review or red-team brief file), pasted once and marked "do not read it again" [M51].
-- Reports at most 15 lines; reviewer verdicts short.
+- `dispatch` prints the header only. Never print a task body.
+- The spawn prompt is the one `PROMPT` line; `RULES.md` (and a review or red-team brief file) is pasted once into `prompt.md` by `dispatch` and marked "do not read it again" [M51].
+- Reports are 3 lines in the reply, the rest in `reports/<id>.md`; reviewer verdicts short.
 - Never read a diff, a log or a findings file yourself: `fleet.sh status`, the verdicts and `ask/` only.
   Anything larger goes to a Haiku `[mech]` agent that returns a line.
 
@@ -314,9 +337,9 @@ fresh background tab said 268 fps and was false [M42]. `docs/BROWSER.md`, "The g
 ## Pause, crash, relaunch
 
 **Pause** (`/makarasty:fleet-pause`): stop spawning. The hooks hold your subagents after
-`pause_grace_seconds` (30) from the pause. `TaskStop` every agent not back by then, and the clocks you backgrounded
-(`budget-elapsed-<id>` ends only on `FINISHED`, a done marker or `NN.done`/`.blocked`/`.retired`, and a pause
-writes none, so on resume a fresh clock would run beside the old one and stop a healthy agent). Ack its
+`pause_grace_seconds` (30) from the pause. `TaskStop` every agent not back by then. There are no clocks of
+yours to stop: the budget clock is the watch's deadline files, which it does not check while paused and moves
+out by the pause's length on resume, so a stopped agent costs no budget. Ack its
 slot with `sh "$f" paused "$r" NN`. The hooks hold every subagent of yours while paused, a `[mech]` one too, so
 `STATE.md` is yours to write until the resume. On resume, re-spawn per held claim as after a crash.
 
@@ -328,12 +351,12 @@ slot with `sh "$f" paused "$r" NN`. The hooks hold every subagent of yours while
    claim is that claim's (porcelain paths are top-relative, `owns:` is not), and one in
    `dirty-at-start` is the operator's. Never discard a partial edit.
 2. Re-spawn one subagent per held claim (`sh "$f" status "$r"` lists them), told that the edits in its
-   `owns:` are its predecessor's to continue, with a fresh clock.
+   `owns:` are its predecessor's to continue.
 3. Re-arm the watch. No messages to send: there are no worker chats.
 
 **Relaunch at the 700 K mark.** Only you cross it; every subagent starts fresh. On `COORDINATOR CONTEXT`:
 ask once, and on yes stop spawning, start `fleet.sh relaunch` **naming no chips** (it pauses), `TaskStop`
-your agents and their clocks, ack their slots, update `STATE.md` yourself (the pause holds every subagent), and offer the one coordinator chip
+your agents, ack their slots, update `STATE.md` yourself (the pause holds every subagent), and offer the one coordinator chip
 (`docs/RELAUNCH.md`, "One chat"). The new coordinator takes over and re-spawns per held claim, as after a
 crash.
 

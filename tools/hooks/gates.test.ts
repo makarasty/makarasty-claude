@@ -19,6 +19,7 @@ type World = {
   holdAge?: number
   env?: Record<string, string>
   run?: 'hang' | 'fail'
+  exists?: string
 }
 function world(on: On, o: World = {}) {
   const writes: Record<string, string> = {}
@@ -47,7 +48,7 @@ function world(on: On, o: World = {}) {
     if (plain(e.path) === o.fleet) return { value: { ...entry, kind: 'dir' as const } }
     return { deny: 'ENOENT' }
   })
-  on('fs.exists', async () => ({ value: false }))
+  on('fs.exists', async (_$, e) => ({ value: plain(e.path) === o.exists }))
   on('fs.write', async (_$, e) => { writes[plain(e.path)] = e.text; return { value: undefined } })
   on('process.run', async (_$, e) => {
     runs.push({ argv: e.argv, stdin: e.init?.stdin, timeoutMs: e.init?.timeoutMs })
@@ -166,6 +167,16 @@ test('SessionEnd runs it for /clear only', async ($, on) => {
   await $.classic.SessionEnd({ reason: 'clear' })
   expect(w.runs).toHaveLength(1)
   expect(w.runs[0]!.timeoutMs).toBe(5000)
+})
+
+test('SessionEnd writes the ended marker except for /clear, which still reaches notify', async ($, on) => {
+  const w = world(on, { markers: ['s1.json'] })
+  await $.classic.SessionEnd({ reason: 'prompt_input_exit', session_id: 's1' })
+  expect(w.writes['/cfg/makarasty/ended/s1']).toBe(new Date(10 * DAY).toISOString())
+  expect(w.runs).toEqual([])
+  await $.classic.SessionEnd({ reason: 'clear', session_id: 's2' })
+  expect(w.writes['/cfg/makarasty/ended/s2']).toBeUndefined() // /clear: the process lives on under the old id
+  expect(w.runs).toHaveLength(1)
 })
 
 test('without CLAUDE_CONFIG_DIR it looks in ~/.claude, USERPROFILE first, then HOME', async ($, on) => {
@@ -324,4 +335,12 @@ test('an armed chat past the threshold gets both: notify runs and the reminder i
   const r = await $.classic.UserPromptSubmit(prompt())
   expect(w.events()).toEqual(['UserPromptSubmit'])
   expect(r.additionalContext).toEqual([reminder(724400)])
+})
+
+test('SessionStart of any source removes the ended marker of a session that comes back', async ($, on) => {
+  const w = world(on, { markers: 'missing', exists: '/cfg/makarasty/ended/s1' })
+  await $.classic.SessionStart({ source: 'resume', session_id: 's1' })
+  expect(w.runs.map(r => plain(String(r.argv.at(-1))))).toEqual(['/cfg/makarasty/ended/s1'])
+  await $.classic.SessionStart({ source: 'startup', session_id: 's2' })
+  expect(w.runs).toHaveLength(1)
 })

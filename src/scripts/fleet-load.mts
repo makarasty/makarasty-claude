@@ -248,12 +248,22 @@ const CHAT_SHELL = /[\\/]\.claude[\\/]shell-snapshots[\\/]snapshot-|__claudeCode
 // the session ends. One whose pid is no longer in the snapshot crashed, and does not count as alive.
 function liveSessions(byPid: Map<number, Proc>): Session[] | null {
   // The host's rule, as the fleet scripts and hooks read it.
-  const dir = (process.env.CLAUDE_CONFIG_DIR || `${os.homedir()}/.claude`) + '/sessions';
+  const cfg = process.env.CLAUDE_CONFIG_DIR || `${os.homedir()}/.claude`;
+  const dir = cfg + '/sessions';
   let names: string[] = [];
   try { names = fs.readdirSync(dir).filter((f) => f.endsWith('.json')); } catch { return null; }
   const ids: Session[] = [];
   for (const f of names) {
-    try { const s = JSON.parse(fs.readFileSync(dir + '/' + f, 'utf8')); if (s.sessionId && byPid.has(s.pid)) ids.push({ id: s.sessionId, pid: s.pid, started: s.startedAt || 0 }); } catch { /* a file being rewritten */ }
+    try {
+      const s = JSON.parse(fs.readFileSync(dir + '/' + f, 'utf8'));
+      const p = byPid.get(s.pid);
+      if (!s.sessionId || !p) continue;
+      // A reused pid (Windows only, as recordLive): the process started (Created, unix ms) at another time than the session's procStart (FILETIME), tolerance two seconds as in cleanup.
+      if (process.platform === 'win32' && s.procStart && p.Created && Math.abs((p.Created + 11644473600000) * 1e4 - Number(s.procStart)) >= 2e7) continue;
+      // The desktop app keeps a finished chat's process alive: the SessionEnd hook leaves this marker.
+      if (fs.existsSync(`${cfg}/makarasty/ended/${String(s.sessionId).replace(/[^\w.-]/g, '_')}`)) continue;
+      ids.push({ id: s.sessionId, pid: s.pid, started: s.startedAt || 0 });
+    } catch { /* a file being rewritten */ }
   }
   return ids;
 }

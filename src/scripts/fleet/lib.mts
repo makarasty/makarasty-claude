@@ -487,6 +487,8 @@ export function chipTakenBy(c: Ctx, chip: string): string {
 // Windows the process's own start time is compared with the record's procStart (a FILETIME). Asked only
 // when two sessions claim one chip, so the PowerShell call is rare. Unanswerable counts as live.
 function recordLive(t: string): boolean {
+  const sid = /"sessionId"\s*:\s*"([^"]+)"/.exec(t)?.[1];
+  if (sid && existsSync(`${configDir()}/makarasty/ended/${sid.replace(/[^\w.-]/g, '_')}`)) return false; // the chat ended; the desktop app keeps its process
   const p = Number(/"pid"\s*:\s*(\d+)/.exec(t)?.[1]);
   if (!(p > 0)) return true;
   if (!alive(p)) return false;

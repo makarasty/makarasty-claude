@@ -85,3 +85,65 @@ test('a subagent call carries its agent id to the hook as agent_id', async ($, o
   expect(p.agent_id).toBe('a1b2')
   expect(p.tool_input).toEqual({ command: 'ls' })
 })
+
+// ---- SubagentStop: a dispatched worker's reply stays short ----
+
+const DISPATCH = 'Read C:/runs/r1/tasks/claimed/t7/prompt.md and follow it.'
+const long = Array.from({ length: 5 }, (_, i) => `line ${i}`).join('\n')
+const jsonl = (first: string, last: string) => [
+  { type: 'user', message: { role: 'user', content: first } },
+  { type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: last }] } },
+].map(r => JSON.stringify(r)).join('\n')
+
+function stopWorld(on: On, opts: { fleet: boolean; first?: string; last?: string }) {
+  mock.env(on, { CLAUDE_CONFIG_DIR: '/cfg' })
+  on('classic.SubagentStop', () => ({}))
+  on('fs.exists', () => ({ value: opts.fleet }))
+  on('fs.read', () => ({ value: jsonl(opts.first ?? DISPATCH, opts.last ?? 'DONE') }))
+}
+const ev = (o: object = {}) => ({ session_id: 's1', stop_hook_active: false, agent_id: 'a1', agent_type: 'worker', agent_transcript_path: '/a.jsonl', ...o })
+
+test('a long reply from a dispatch prompt is blocked with the report path', async ($, on) => {
+  stopWorld(on, { fleet: true, last: long })
+  const r = await $.classic.SubagentStop(ev({ last_assistant_message: long }))
+  expect(r.block).toContain('5 lines')
+  expect(r.block).toContain('C:/runs/r1/reports/t7.md')
+})
+
+test('the reply is read from the transcript tail when the event lacks it', async ($, on) => {
+  stopWorld(on, { fleet: true, last: 'x'.repeat(401) })
+  expect((await $.classic.SubagentStop(ev())).block).toContain('401 chars')
+})
+
+test('a short reply passes', async ($, on) => {
+  stopWorld(on, { fleet: true })
+  expect((await $.classic.SubagentStop(ev({ last_assistant_message: 'a\nb\nDONE' }))).block).toBeUndefined()
+})
+
+test('a subagent not spawned from a dispatch prompt passes', async ($, on) => {
+  stopWorld(on, { fleet: true, first: 'Find the bug in foo.ts', last: long })
+  expect((await $.classic.SubagentStop(ev({ last_assistant_message: long }))).block).toBeUndefined()
+})
+
+test('a second stop (stop_hook_active) passes', async ($, on) => {
+  stopWorld(on, { fleet: true, last: long })
+  expect((await $.classic.SubagentStop(ev({ stop_hook_active: true, last_assistant_message: long }))).block).toBeUndefined()
+})
+
+test('outside a fleet nothing is read', async ($, on) => {
+  stopWorld(on, { fleet: false, last: long })
+  expect((await $.classic.SubagentStop(ev({ last_assistant_message: long }))).block).toBeUndefined()
+})
+
+test('a run path with a space still finds the report path', async ($, on) => {
+  stopWorld(on, { fleet: true, first: 'Read C:/Users/John Doe/runs/r1/tasks/claimed/t7/prompt.md and follow it.', last: long })
+  expect((await $.classic.SubagentStop(ev({ last_assistant_message: long }))).block).toContain('C:/Users/John Doe/runs/r1/reports/t7.md')
+})
+
+test('a reviewer is told to end with PASS or DEFECTS, not DONE', async ($, on) => {
+  stopWorld(on, { fleet: true, first: 'Read C:/runs/r1/tasks/claimed/t7/review.md and follow it.', last: long })
+  const b = (await $.classic.SubagentStop(ev({ last_assistant_message: long }))).block ?? ''
+  expect(b).toContain('t7.review.md')
+  expect(b).toContain('PASS or DEFECTS: <count>')
+  expect(b).not.toContain('DONE')
+})

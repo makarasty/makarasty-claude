@@ -210,6 +210,24 @@ export const register: Register = on => {
     return (await findingsOn($)) ? { ...out, additionalContext: [...(out.additionalContext ?? []), findings] } : out
   })
 
+  // A session id that comes back (resume) is live again: drop the ended marker, whatever the source.
+  on('classic.SessionStart', async ($, e, next) => {
+    try {
+      const f = `${await base($)}/ended/${String(e.session_id ?? '').replace(/[^\w.-]/g, '_')}`
+      if (e.session_id && (await $.fs.exists(f))) await $.process.run(['node', '-e', 'require("fs").rmSync(process.argv[1],{force:true})', f], { timeoutMs: 3000 }) // shortcut: the engine has no fs delete event, so node removes it
+    } catch { /* a marker that cannot be removed must not cost the session its start */ }
+    return next(e)
+  })
+
+  // Every end reason but /clear leaves a marker: the desktop app keeps a finished chat's process alive, so pid alone says live.
+  // /clear keeps the process running and its sessions file may still name the old id, so a marker would release a live chat.
+  on('classic.SessionEnd', async ($, e, next) => {
+    try {
+      if (e.session_id && e.reason !== 'clear') await $.fs.write(`${await base($)}/ended/${String(e.session_id).replace(/[^\w.-]/g, '_')}`, new Date(await $.clock.now()).toISOString())
+    } catch { /* a marker that cannot be written must not cost the session its end */ }
+    return next(e)
+  })
+
   on('classic.SessionEnd', { reason: 'clear' }, async ($, e, next) => {
     if (await armed($)) await notify($, e, 5000).catch(() => {})
     return next(e)
