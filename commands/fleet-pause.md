@@ -1,7 +1,7 @@
 ---
 description: Pause a fleet run so every worker really stops, or lift the pause. Use on "поставь флит на паузу", "останови флит", "заморозь воркеров", "сними с паузы", "продолжи флит после паузы", "pause the fleet", "stop the workers", "unpause the fleet".
 argument-hint: <run-id> [off] [reason]
-allowed-tools: Bash, Read, Glob, Grep, TaskStop, mcp__ccd_session_mgmt__send_message
+allowed-tools: Bash, Read, Glob, Grep, TaskStop, mcp__ccd_session_mgmt__list_sessions, mcp__ccd_session_mgmt__send_message
 ---
 
 ## One chat, the default
@@ -73,13 +73,21 @@ workers that have not. A holder that has not acknowledged reads "no ack yet"; 15
 after `PAUSED` (`pause_still_working_seconds`) it reads "still working", and the watch says so too. Workers
 legitimately sleep 90 to 120 seconds, so an earlier word would send you after the wrong ones. In one chat
 (subagent workers) repeat the check about every 20 seconds, for at most 3 minutes, until `k` equals `n`. With
-separate worker chats do not poll: `SendMessage` each worker session (its name from `ListAgents`) with
-`notify_when_idle: true`, then read status once per idle notice until `k` equals `n`; if no notice comes in 3
-minutes, read status once and report who has not acked. Each worker commits its work in progress on its task branch, stops its
+separate worker chats do not poll by model turns (`SendMessage`'s `notify_when_idle` is refused for desktop
+sessions, measured 2026-11-11). Message each worker (text below), then wait for the acks with one background
+shell loop (Bash `run_in_background`): it ends when every holder has its `$r/stopped/NN` or after 3 minutes,
+and prints who has not acked:
+
+```bash
+n=0; until ! sh "$f" status "$r" | grep -q '^  worker .*: \(no ack yet\|still working\)' || [ $n -ge 9 ]; do sleep 20; n=$((n+1)); done; sh "$f" status "$r" | grep -A12 '^== PAUSED'
+```
+
+Each worker commits its work in progress on its task branch, stops its
 subagents and background tasks, runs `fleet.sh paused <run> <chip>` (which writes `$r/stopped/<chip>`) and
-waits. Say how many stopped. For each worker still working after 3 minutes, name it by number and send
-one status message to the session titled `fleet <run-id> NN` with `mcp__ccd_session_mgmt__send_message`
-("the run is paused: finish the step, commit, run fleet.sh paused, wait"); a worker inside one long tool
+waits. Say how many stopped. Find the chats with `mcp__ccd_session_mgmt__list_sessions` unfiltered, raising `limit` until its oldest row predates the run's start (after a relaunch the old coordinator started the workers and `{linked:true}` lists only sessions this chat started), matching titles
+`fleet <run-id> NN` and send each one `mcp__ccd_session_mgmt__send_message`
+("the run is paused: finish the step, commit, run fleet.sh paused, wait"), before the loop above; for each
+worker still working after 3 minutes, name it by number. A worker inside one long tool
 call stops at its next one.
 
 While paused, `next` hands out nothing and exits 8, `drained` writes no `.done`, the abort clocks stand

@@ -1,7 +1,7 @@
 ---
 description: Wait for a run's workers to finish without spending model turns, then collect. Use while workers are running, or to ask whether a run has finished.
 argument-hint: <run-id> [expected worker count]
-allowed-tools: Bash, Read, Write, Glob, Grep, Monitor, Agent, TaskStop, PushNotification, ToolSearch, mcp__ccd_session_mgmt__list_sessions, mcp__ccd_session_mgmt__send_message, mcp__ccd_session_mgmt__set_session_model, mcp__ccd_session_mgmt__set_session_effort
+allowed-tools: Bash, Read, Write, Glob, Grep, Monitor, Agent, TaskStop, PushNotification, ToolSearch, mcp__ccd_session_mgmt__list_sessions, mcp__ccd_session_mgmt__send_message, mcp__ccd_session_mgmt__set_session_model, mcp__ccd_session_mgmt__set_session_effort, mcp__ccd_session__start_session, mcp__ccd_session__dismiss_task, mcp__ccd_session_mgmt__detach_session, mcp__ccd_session_mgmt__clear_session
 ---
 
 Watch `.fleet/<run-id>/` for workers finishing. Do the waiting in the shell, where it is free. A re-read
@@ -220,9 +220,9 @@ relaunch unasked. Do what `fleet-plan` section 8b says at that line: `PushNotifi
 workers NN only", when only workers are over), and on "yes" `fleet.sh relaunch`, run with
 `run_in_background` and in two calls: it pauses the run, hands the named workers' tasks back, asks you to
 update `STATE.md`, and on the second call prints one coordinator chip and fresh worker chips (with
-`--keep-coordinator`, only the worker chips, and you stay). Stop this watch with `TaskStop` before you start them (each its own `mcp__ccd_session__start_session`, initiation `own_initiative`: the turn began from a watch line, so even the operator's AskUserQuestion answer leaves a card, and you PushNotification the operator to start it; `user_asked` only when the operator's own message began the turn) (and with `--keep-coordinator` re-arm it at once, `n` raised to every chip ever offered): two watches share
+`--keep-coordinator`, only the worker chips, and you stay). Stop this watch with `TaskStop` before you start them (each its own `mcp__ccd_session__start_session`, context "fresh": the turn began from a watch line, so `user_asked` is refused there, an AskUserQuestion answer included; use `own_initiative`, a card, and PushNotification the operator to start it; `user_asked` only when the operator's own message began the turn [M56]) (and with `--keep-coordinator` re-arm it at once, `n` raised to every chip ever offered): two watches share
 `seen`, and the old one would report every event first and mark it seen, so the new coordinator never hears
-it. The new coordinator re-arms the watch itself. `fleet.sh contexts <run>` lists every session's context
+it. Once the fresh coordinator has started, call `mcp__ccd_session_mgmt__detach_session` with its id (it stays linked and wakes you at every turn it ends [M56]); if detach is refused, say your last line and call `clear_session` "self" last (`docs/RELAUNCH.md`). The new coordinator re-arms the watch itself. `fleet.sh contexts <run>` lists every session's context
 and marks the ones `OVER`. A coordinator that ignores the line holds the review state of the whole run in a
 context that is about to be compacted.
 

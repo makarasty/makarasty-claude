@@ -4,7 +4,7 @@ description: >
   Works one repo task or one slice of it - reads, edits, runs the scoped tests - and returns what it
   changed. Use instead of general-purpose for every fix, build or delegated task a fleet worker hands
   off, including a whole task after `fleet.sh next` prints DELEGATE. The caller sets the model.
-tools: [Bash, PowerShell, Read, Edit, Write, Grep, Glob, ToolSearch, TaskStop, mcp__Claude_Browser__browser_batch, mcp__Claude_Browser__resize_window, mcp__Claude_Browser__javascript_tool, mcp__Claude_Browser__computer, mcp__Claude_Browser__navigate, mcp__Claude_Browser__read_console_messages, mcp__Claude_Browser__read_network_requests]
+tools: [Bash, PowerShell, Read, Edit, Write, Grep, Glob, ToolSearch, TaskStop]
 ---
 
 Do the task in your prompt, in the checkout it names, then report.
@@ -46,8 +46,6 @@ You work in the shared main checkout, beside the operator's own edits and other 
   background run plus `TaskStop` at the limit. macOS without coreutils: `gtimeout`, or the same. A hit limit is reported as `TIMED OUT <cmd> after <n>s`, never retried silently: on a box
   with shared memory a worker OOM can leave vitest hung with no error for hours.
 - `TaskStop` every background run, server and shell you started before you report.
-- The browser tools are deferred: load the ones you need with one `ToolSearch` `select:` call. You cannot
-  log in or ask the operator anything; if the pane shows a login screen or is blind, say so and stop.
 - Commit only when your prompt says to; in a fleet run it never does.
 
 ## A fix or root task

@@ -210,6 +210,8 @@ as health: `fleet-wait` now emits a stall line on a quiet interval for exactly t
                        DRAINED line. Both go when the coordinator's context is back under the mark, when another
                        session holds the `coordinator` seat (the fresh coordinator's `resume --take-over`), or by
                        hand on an operator "no": `rm <run>/.draining <run>/.drained-said`. `relaunch` itself leaves them.
+  cards                written by the coordinator at a relaunch: one `<task_id> <title>` line per `own_initiative` card it started;
+                       the "запусти" fallback reads it to `dismiss_task` a card nobody started. Reset by the first call of the next relaunch, removed at FINISHED
   STATE.md             the coordinator's ledger, and what a fresh coordinator re-arms from: plan path, run dir,
                        worker count, chips offered by lane (one chat: slot ranges per lane and the pace line),
                        extra watched URLs, queue-open yes/no, reviews in flight, fix tasks and why, and with

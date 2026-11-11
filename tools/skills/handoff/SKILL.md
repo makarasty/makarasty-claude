@@ -168,6 +168,8 @@ turn a watch event or another session started):
 > <handoff dir>/<name>/ and grep the transcript <transcript path>; ask that chat with SendMessage (to:
 > its id) only as a last resort, one precise question.
 
+A session started this way, or by `hand_off_to_session`, stays linked: every turn it ends wakes this chat [M56]. Once the receiver has started (its session id is in the start result, or in `mcp__ccd_session_mgmt__list_sessions {linked:true}`), call `mcp__ccd_session_mgmt__detach_session` with it, unless you want those wakes. If detach is refused (it shares this worktree, or the person placed it from a card), say your last line and call `mcp__ccd_session_mgmt__clear_session` with "self" as the last call.
+
 When the next chat is to run a fleet (a coordinator relaunch builds its own chip, with its own prompt, and
 never reaches this step), the first Next step depends on whether a run exists. A new run:
 `/makarasty:fleet-plan` with the plan's path as its mission. A run already under way: read

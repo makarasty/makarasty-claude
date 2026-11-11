@@ -154,6 +154,7 @@ function resume(c: Ctx, a: string[]): number {
     if (!sid) { out('coordinator-pending is still set: no session id here, so no coordinator was recorded\n'); return; }
     writeFileSync(`${run}/coordinator`, `${sid}\n`);
     recordFleetSession(c.absrun);
+    // `cards` stays: the old coordinator may still dismiss worker cards nobody started; the next relaunch resets it.
     rmf(`${run}/coordinator-pending`, `${run}/.ctx-warned`, `${run}/.draining`, `${run}/.drained-said`, `${run}/chips/${sid}`);
     out(`this session is now the coordinator of ${basename(c.absrun)}\n`);
   };
@@ -497,6 +498,9 @@ function handback(c: Ctx, chip: string, o: (s: string) => void = out): number {
 // With no chips only the coordinator is replaced. With --keep-coordinator only the named workers are, no
 // coordinator chip or coordinator-pending is written, and this call resumes the run. Chips are two digits:
 // a bare 1 was once read as chip 01 and retired it.
+// How to start a chip [M56]: user_asked works only on a turn the operator's own message began.
+const startRule = (cards: string, absrun: string, coord: boolean) => `initiation "user_asked" when the operator's own message began this turn; on a turn a watch event began (an AskUserQuestion answer inside it too) the app refuses it, so use "own_initiative" (a card) and PushNotification the operator to start ${cards}; use it too when the call is refused. Each own_initiative start_session returns a task_id: append "<task_id> <title>" as one line to ${absrun}/cards at once (echo "<task_id> <title>" >> "${absrun}/cards"), because after hours or a compaction nothing else remembers it. When the card is not started, end the turn asking the operator to reply "запусти" or "start" in chat: their reply is their own turn and user_asked works then. On that reply first check whether each card already started (the operator may have clicked it) by the run's own record, not by title (an earlier relaunch's chats carry the same titles, this chat among them): a worker card started when \`fleet.sh contexts ${absrun}\` lists its chip${coord ? '; the coordinator card started when coordinator-pending is gone from the run dir. If coordinator-pending is still there, look once more after a minute: the fresh coordinator may still be reading before its take-over' : ''}. Started: start nothing for it. Not started: mcp__ccd_session__dismiss_task its task_id from ${absrun}/cards, then start it with user_asked.`;
+
 function relaunch(c: Ctx, a: string[]): number {
   const run = c.run;
   let waitMin = '5', keep = false;
@@ -554,6 +558,8 @@ function relaunch(c: Ctx, a: string[]): number {
     sleepS(5);
   }
 
+  // The first call of a new relaunch drops the last relaunch's cards; a repeat keeps the task_ids written since.
+  if (!again && !existsSync(`${run}/relaunch-waited`)) rmSync(`${run}/cards`, { force: true });
   if (!again) writeFileSync(`${run}/relaunch-waited`, '');
 
   // 3. hand back the chips being replaced
@@ -633,19 +639,21 @@ function relaunch(c: Ctx, a: string[]): number {
     out('Do these now, in this order, in this one turn:\n');
     out(`  1. Re-arm the watch for the new worker count: TaskStop the fleet-wait monitor, then arm /makarasty:fleet-wait ${runid} ${total}.\n`);
     if (!offeredNow) { out('  Nothing to offer: every replacement above has started.\n'); return 0; }
-    out('  2. Start every CHIP above, each as its own mcp__ccd_session__start_session with exactly that title, background and prompt, context "fresh", use_worktree false; initiation "user_asked" only when the operator\'s own message began this turn; otherwise (a watch line, an AskUserQuestion answer in a watch-started turn) "own_initiative", which shows a card, then PushNotification the operator to start it.\n');
-    out('  3. Tell the operator in one line: start the worker chips; nothing else to do, the run is already running.\n');
+    out('  2. Start every CHIP above, each as its own mcp__ccd_session__start_session with exactly that title, background and prompt, context "fresh", use_worktree false. '+startRule('the worker cards', c.absrun, false)+'\n');
+    out('  3. Tell the operator in one line: start the worker chips; nothing else to do, the run is already running. Worker chips you start stay linked to you on purpose: each turn they end wakes you [M56].\n');
     return 0;
   }
   writeFileSync(`${run}/coordinator-pending`, '');
   out(`CHIP coordinator\ntitle: fleet ${runid} coordinator\nbackground: Fresh coordinator of fleet run ${runid}, taking over after a relaunch. Run dir: ${c.absrun}. Start this one first; it reads STATE.md and resumes the run.\nprompt: You are the coordinator of fleet run ${runid}, taking over. Read ${c.absrun}/STATE.md in full, then sections 3b and 8b of the makarasty fleet-plan command (invoke /makarasty:fleet-plan only to read it if needed; do not re-run its interview or offer chips except those STATE.md lists as pending), then run \`sh ${fsh} resume ${c.absrun} --take-over\` and arm /makarasty:fleet-wait ${runid} ${total}.\n\n`);
   if (gap) out(`STILL WITHOUT A WORKER:\n${gap}\n`);
   out(`RELAUNCH READY for ${runid}: the run stays paused until the new coordinator resumes it.\n`);
-  out('Do these now, in this order, in this one turn:\n');
+  out('Do these now, in this order: steps 1-4 in this turn, steps 5 and 6 as soon as the fresh coordinator has started (a later turn when it is a card):\n');
   out(`  1. ${c.absrun}/STATE.md is current (checked: it is newer than the pause and the handbacks). Do not read diffs or dump files to add to it.\n`);
   out('  2. Stop your own watch: TaskStop on the fleet-wait monitor, so it does not report events the new coordinator must hear.\n');
-  out('  3. Start every CHIP above, the coordinator chip first, each as its own mcp__ccd_session__start_session with exactly that title, background and prompt, context "fresh", use_worktree false; initiation "user_asked" only when the operator\'s own message began this turn; otherwise (a watch line, an AskUserQuestion answer in a watch-started turn) "own_initiative", which shows a card, then PushNotification the operator to start it.\n');
+  out('  3. Start every CHIP above, the coordinator chip first, each as its own mcp__ccd_session__start_session with exactly that title, background and prompt, context "fresh" (never "fork": it carries this context over), use_worktree false. '+startRule('the card titled `fleet '+runid+' coordinator` (and the worker cards)', c.absrun, true)+'\n');
   out('  4. Tell the operator in one line: start the coordinator chip first, then the worker chips; the run stays paused until the new coordinator resumes it.\n');
+  out('  5. As soon as the fresh coordinator has started (the start_session result names its session id; for a card, the first note naming it, or mcp__ccd_session_mgmt__list_sessions {linked:true}), call mcp__ccd_session_mgmt__detach_session with that id, and with each worker chip id the same way. A started session stays linked: every turn it ends wakes this chat (10 such wakes cost a 700K coordinator 7.96M cache-read tokens [M56]). Detach also keeps the fresh coordinator from being archived with this chat.\n');
+  out('  6. If detach is refused (the fresh coordinator shares this session\'s worktree, or the operator placed it from a card): say your last line (run state is in STATE.md, the new coordinator owns the run), then call mcp__ccd_session_mgmt__clear_session with "self" as your last call; the operator approves that card. An empty chat costs almost nothing per wake. Never archive this chat while the fresh coordinator shares its worktree: archiving stops it, cleans up the worktree and archives finished side sessions with it.\n');
   return 0;
 }
 

@@ -882,6 +882,25 @@ c630a8c9 (about 100 tokens on every prompt and every notification).
 - **Rule produced:** `tools/skills/lib/live.mjs`; `commands/fleet-run.md` wait loop cap.
 **Status:** current for this machine on this day.
 
+## M56 — A started session wakes the chat that started it, and a relaunch woke a 700K coordinator for nothing
+**2026-11-11**, Claude Code 2.1.322, desktop app.
+- **Relaunch wakes:** run `2026-11-10-hold-polish`. The old coordinator (past 700K) started the new one with
+  `start_session` after the operator typed "Запусти". Every turn the new one ended woke the old one with a
+  `<side-sessions-event>`, and it spent a turn relaying one line: 10 wakes, 7,960,208 cache-read input tokens
+  (about 796K each), 11,131 cache-write, 1,472 output, in the old coordinator's transcript.
+- **Probes in this repo (Haiku children, no worktree):** (a) a `user_asked` child woke the parent on its turn end;
+  (b) after `mcp__ccd_session_mgmt__detach_session` the child answered a message and the parent got no note;
+  (c) `start_session` on a turn a Monitor event began was refused: "Start sessions only on the user's own words to
+  you here; this turn runs an automated event"; a `<side-sessions-event>` turn right after the operator's own turn
+  was allowed; (d) `SendMessage` with `notify_when_idle` to a desktop session: "no idle subscription was made:
+  notify_when_idle is only supported for Claude sessions on this machine in this release".
+- **Not measured:** whether a session the operator starts by clicking an `own_initiative` card wakes the parent,
+  and whether `detach_session` accepts it (its description refuses "a session the user placed (a fork, a task
+  chip)" and one that shares another session's worktree).
+- **Rule produced:** relaunch detaches the fresh coordinator, or clears the old one when detach is refused;
+  pause acks wait in a shell loop, not on `notify_when_idle`.
+**Status:** current for 2.1.322.
+
 ## Appendix: what a pull run spends
 
 Moved here from `PULL.md`, which workers read in full; none of it changes what a worker does.

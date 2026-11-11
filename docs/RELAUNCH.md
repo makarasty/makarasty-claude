@@ -16,7 +16,7 @@ Only the coordinator crosses the 700 K mark: every subagent starts fresh per tas
    "STATE.md NOT CURRENT", update `STATE.md` yourself, naming the claims whose subagent was stopped
    mid-task, then run call 2. Not a Haiku `[mech]` agent: while the run is paused the hooks hold every
    subagent of yours as `agent-<id>`, that one too.
-4. Step 4 below: `TaskStop` your watch, start the one coordinator chip (`mcp__ccd_session__start_session`), stop. The new coordinator takes the
+4. Step 4 below: `TaskStop` your watch, start the one coordinator chip (`mcp__ccd_session__start_session`, hand-over as in step 4 below: `user_asked` or a card, then `detach_session`), stop. The new coordinator takes the
    seat with `resume --take-over`, re-arms the watch with the slot count, and re-spawns one subagent per
    held claim, as after a crash (`docs/ONECHAT.md`).
 
@@ -56,9 +56,38 @@ directory.
    numbered after the highest offered, in the same lanes, and one coordinator chip titled
    `fleet <run-id> coordinator`.
 4. Do what call 2 prints. `TaskStop` your own watch (two watches share `.watch-seen`, and the old one would
-   swallow the events the new coordinator needs), start **every printed chip in one turn** (each its own `start_session`, the coordinator first; `initiation` `user_asked` only when the operator's own message began this turn; otherwise (a watch line, an AskUserQuestion answer in a watch-started turn) `own_initiative`, which shows a card, then PushNotification the operator to start it), then tell the
+   swallow the events the new coordinator needs), start **every printed chip in one turn** (each its own `start_session`, the coordinator first, `context` "fresh" with the `STATE.md` brief, never "fork": it would carry the 700K over), then tell the
    operator in one line: start the coordinator chip first, then the worker chips; the run stays paused
-   until the new coordinator resumes it. Then stop. Do not resume the run yourself.
+   until the new coordinator resumes it. Do not resume the run yourself. Who starts the chip [M56]:
+   - `initiation` `user_asked` works only on a turn the operator's own message began (or a
+     `<side-sessions-event>` turn right after one). On a turn a watch event began it is refused, an
+     AskUserQuestion answer received inside such a turn included. So try `user_asked` when the operator's own
+     message began this turn; otherwise, or when the call is refused, start it as `own_initiative` (a card)
+     and PushNotification the operator to start the card titled `fleet <run> coordinator` (and the worker
+     cards). Each `own_initiative` `start_session` returns a `task_id`: append `<task_id> <title>` as a line to
+     `<run>/cards` at once (hours or a compaction later nothing else remembers it). The fallback when the card is not
+     started, which needs no click: end the turn asking the
+     operator to reply "запусти" or "start" in chat; their reply is their own turn and `user_asked` works. On that
+     reply first check each card did not start already (the operator may have clicked it too) by the run's own
+     record, not by title (an earlier relaunch's chats, this one among them, carry the same titles): the
+     coordinator card started when `coordinator-pending` is gone from the run dir (if it is still there, look once
+     more after a minute: the fresh coordinator may still be reading); a worker card started when
+     `fleet.sh contexts <run>` lists its chip. Started: start nothing for it. Not started: `mcp__ccd_session__dismiss_task`
+     its `task_id` from `<run>/cards`, then start it with `user_asked`.
+   - A started session stays linked: every turn it ends wakes this chat. A 700K old coordinator relayed 10
+     such wakes for 7.96M cache-read tokens. So as soon as the fresh coordinator has started (the
+     `start_session` result names its session id; for a card, the first note naming it, or
+     `mcp__ccd_session_mgmt__list_sessions {linked:true}`), call `mcp__ccd_session_mgmt__detach_session`
+     with that id (and the worker chips' ids). Detach also keeps the fresh coordinator from being archived
+     together with this chat.
+   - If detach is refused (the fresh coordinator shares this session's worktree, or the operator placed it
+     from a card): say your last line (run state is in `STATE.md`, the new coordinator owns the run) and call
+     `mcp__ccd_session_mgmt__clear_session` with "self" as your last call. The app keeps waking this chat, and
+     an empty chat costs almost nothing per wake. The operator approves that card.
+   - Never archive this chat while the fresh coordinator shares its worktree: archiving stops it, cleans up
+     the worktree, and archives finished side sessions with it.
+   - Worker chats started by a coordinator stay linked on purpose: each turn they end wakes the coordinator
+     (with `--keep-coordinator` you stay, so do not detach them).
 **With `--keep-coordinator`** the same two calls print only the fresh worker chips, write no
 `coordinator-pending`, and **resume the run themselves at the end**: you carry on as coordinator. Start the
 chips in one turn, then re-arm the watch (`TaskStop` the old one first) with `n` = every chip ever offered,

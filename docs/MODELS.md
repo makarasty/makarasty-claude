@@ -204,8 +204,8 @@ what runs. The `effort:` line is what runs in all four of those unless a call pa
 the model on each `Agent` call. What follows is for a run that chose separate worker chats.
 
 The coordinator sets each queue worker's model and effort; the operator does not [M35]. A chip starts on
-whatever the app's model menu shows at the start, so the run says what it wants and the coordinator
-switches any worker that started on something else.
+whatever the app's model menu shows at the start, so the run says what it wants. `mcp__ccd_session__start_session` accepts `model` and `effort`, but the printed CHIP blocks do not carry them, so a
+new chat still starts on the menu model and the procedure below applies.
 
 The tools are the desktop app's session tools, deferred, so load them with ToolSearch first:
 

@@ -387,9 +387,10 @@ chip with `context: "fresh"` and `use_worktree: false`; `initiation` is `"user_a
 message began this turn, otherwise (a watch line, an AskUserQuestion answer in a watch-started turn)
 `"own_initiative"` (a card the operator starts with a click; the app refuses a start on a turn a watch event or
 another session's message started) and you PushNotification the operator to start the cards. Keep the title `fleet <run-id> NN`: `fleet.sh` and the watch match on it. It is no
-longer the only address: `mcp__ccd_session_mgmt__list_sessions {linked:true}` returns each started session's
-`name` and `startedBy`, and `SendMessage` takes that name; other session lists are opaque, change between calls,
-and reach other accounts on the same machine. The prompt carries the run's absolute path, because a chip session can start
+longer the only address: `mcp__ccd_session_mgmt__list_sessions {linked:true}` returns each session this chat started, with its
+`name` and `startedBy`, and `SendMessage` takes that name; `{linked:true}` is only this chat's own. A fleet chat this chat did not start (after a relaunch) is found by a title
+match on the unfiltered list, `limit` raised until its oldest row predates the run; the list changes between calls
+and reaches other accounts on the same machine, so match `fleet <run-id> NN` exactly. The prompt carries the run's absolute path, because a chip session can start
 in its own worktree where the gitignored `.fleet/` does not exist, and the path of the `fleet-run` that is
 actually installed. Start chips for every worker the run needs now, never paste lines in their place.
 
@@ -527,7 +528,7 @@ You are the one session the whole run depends on, and the one nothing restarts. 
   relaunch replaces the chain. A `WORKER CONTEXT` line for a queue worker is the exception: it names
   `fleet.sh retire`, which you run unasked (`fleet-wait`); for a brief worker it points at this same single
   ask. **The procedure is in `docs/RELAUNCH.md`: read it when the mark comes**, before
-  you ask: one notification, one `AskUserQuestion`, `fleet.sh relaunch` in two calls, then the chips.
+  you ask: one notification, one `AskUserQuestion`, `fleet.sh relaunch` in two calls, then the chips, then `detach_session` on the fresh coordinator (or `clear_session` "self" when detach is refused): a started session stays linked and wakes you at every turn it ends [M56].
 - **The broadcast is for every worker, including one that starts a day later.** Never put an order for
   named chips in it, above all a retire order: it reads as a standing rule (2026-10-06: worker 20 retired at
   420 K on "workers 01-05 retire, your context is past 400K", written eighteen hours before it started).

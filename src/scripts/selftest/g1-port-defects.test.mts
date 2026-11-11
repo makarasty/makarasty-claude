@@ -2,7 +2,7 @@
 // calibration numbers, owner lines, finish, recover, release, width, stranded, handback, clean and the watch.
 
 import { spawn } from 'node:child_process';
-import { rmdirSync, unlinkSync } from 'node:fs';
+import { readdirSync, rmdirSync, unlinkSync } from 'node:fs';
 import {
   FLEET_SH, ROOT, absent, check, code, copyFleet, exec, execAsync, exists, fleet, git, has, junction, mk, read,
   rm, setup, sh, SHELL, skip, sleep, touch, OLD, truthy, watchLoop, write,
@@ -204,7 +204,7 @@ if (has('git')) {
     r = fleet(['clean', '.fleet/r1', '--remove'], { cwd: m });
     holder.kill(); await gone;
     check('clean leaves a tree a process stands in', 'is in use', r.out);
-    truthy('with its files', exists(`${w}/conf`), exec('ls', ['-A', w]).out);
+    truthy('with its files', exists(`${w}/conf`), exists(w) ? readdirSync(w).join(' ') : 'gone');
   }
   r = fleet(['clean', '.fleet/r1', '--remove'], { cwd: m });
   check('and removes it once nothing holds it', 'removed  01', r.out);
@@ -245,7 +245,7 @@ if (has('git')) {
     git(m, 'worktree', 'lock', '--reason', 'initializing', wt5); rm(`${wt5}/conf`);
     r = fleet(['worktree', '.fleet/r1', '05', '--create', 'HEAD'], { cwd: m });
     check('a half-made tree is made again', 'a creation had stopped half way', r.out);
-    truthy('with its files back', exists(`${wt5}/conf`), exec('ls', ['-A', wt5]).out);
+    truthy('with its files back', exists(`${wt5}/conf`), exists(wt5) ? readdirSync(wt5).join(' ') : 'gone');
   } else {
     truthy('worktree --create made a tree for the half-made case', false, `'${wt5}'`);
   }

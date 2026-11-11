@@ -73,6 +73,8 @@ Windows machine, with no sessions, no browser and no tokens. It should end with 
 free RAM and the live `node.exe` count before it starts. To run one part, use
 `node --test scripts/selftest/<part>.test.mjs`.
 
+Hook and gate tests (`*.test.ts`) run with `claude plugin test .` (the fleet) or `claude plugin test tools` (the tools plugin). `claude plugin test .` also picks up `tools/**/*.test.ts` but runs them under the root hooks module, so `tools/hooks/gates.test.ts` fails there; the command has no file filter. Run `claude plugin test tools` for those.
+
 ### Changing the code
 
 The scripts and hooks are written in TypeScript under `src/` (and `tools/src/` for the tools plugin) and

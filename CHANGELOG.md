@@ -1,5 +1,26 @@
 # Changelog
 
+## makarasty 1.13.0, makarasty-tools 1.15.3 — 2026-11-11
+
+- **A relaunched coordinator no longer wakes the old one.** A session started with `start_session` stays linked:
+  each turn it ends wakes the chat that started it. In run `2026-11-10-hold-polish` the 700K old coordinator relayed
+  10 such wakes for 7.96M cache-read tokens [M56]. Now the old coordinator calls `detach_session` on the fresh
+  coordinator and the worker chips right after they start; when detach is refused (a shared worktree, or a chat
+  the operator placed) it says its last line and clears itself with `clear_session "self"`. It never archives
+  itself while the fresh one shares its worktree, and never starts it with context `fork`. handoff detaches the
+  same way.
+- **Start rule from live probes [M56].** A turn a watch event began cannot start a session, an AskUserQuestion
+  answer inside it included: the coordinator starts a card (`own_initiative`), keeps each card's `task_id` in
+  `<run>/cards`, and as a fallback asks the operator to reply "запусти" in chat. On that reply it checks the run's
+  own record (coordinator-pending gone, `fleet.sh contexts` listing the chip), not titles, dismisses cards nobody
+  started and only then starts them, so a click plus a reply cannot start two coordinators.
+- **Pause acks wait in one background shell loop.** 1.12.0's `notify_when_idle` never fires for desktop chats
+  ("no idle subscription was made"). Worker chats are found on the unfiltered session list by title, since after
+  a relaunch they were started by another chat.
+- fleet-wait and fleet-resume allow the session tools they call; fleet-coder drops the browser tools nothing gave
+  it a use for; MODELS.md says printed chips carry no model; `landed` clears the drain markers and `cards`;
+  part g1 of the selftest runs from PowerShell (no `ls`); README explains `claude plugin test .` against `tools`.
+
 ## makarasty 1.12.0, makarasty-tools 1.15.2 — 2026-11-11
 
 - **Sessions start with `mcp__ccd_session__start_session`.** The desktop app dropped `spawn_task`, which

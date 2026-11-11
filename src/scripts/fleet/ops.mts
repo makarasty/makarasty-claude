@@ -529,6 +529,7 @@ function landed(c: Ctx, a: string[]): number {
     writeFileSync(`${run}/FINISHED`, `finished ${now()}\nworkers ${have}\n`);
     const cfg = configDir();
     rmSync(`${cfg}/makarasty/paused/${cksum(c.absrun)}.retired`, { force: true });
+    for (const m of ['.draining', '.drained-said', 'cards']) rmSync(`${run}/${m}`, { force: true });
     const fs = `${cfg}/makarasty/fleet-sessions`;
     for (const s of names(fs)) {
       if (isFile(`${fs}/${s}`) && firstLine(`${fs}/${s}`).split('\r').join('') === c.absrun) rmSync(`${fs}/${s}`, { force: true });
