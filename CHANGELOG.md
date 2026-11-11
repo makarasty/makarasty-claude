@@ -1,5 +1,11 @@
 # Changelog
 
+## makarasty 1.13.1, makarasty-tools 1.15.4 — 2026-11-11
+
+- **A chat started from a clicked card detaches too.** Probed [M56]: the operator clicked an `own_initiative`
+  card, the parent was woken on its turn end, and `detach_session` accepted it. The relaunch and handoff texts no
+  longer name "placed from a card" as a reason detach is refused; only a shared worktree is.
+
 ## makarasty 1.13.0, makarasty-tools 1.15.3 — 2026-11-11
 
 - **A relaunched coordinator no longer wakes the old one.** A session started with `start_session` stays linked:

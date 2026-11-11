@@ -80,8 +80,8 @@ directory.
      `mcp__ccd_session_mgmt__list_sessions {linked:true}`), call `mcp__ccd_session_mgmt__detach_session`
      with that id (and the worker chips' ids). Detach also keeps the fresh coordinator from being archived
      together with this chat.
-   - If detach is refused (the fresh coordinator shares this session's worktree, or the operator placed it
-     from a card): say your last line (run state is in `STATE.md`, the new coordinator owns the run) and call
+   - If detach is refused (the fresh coordinator shares this session's worktree; a card the operator clicked
+     detaches fine [M56]): say your last line (run state is in `STATE.md`, the new coordinator owns the run) and call
      `mcp__ccd_session_mgmt__clear_session` with "self" as your last call. The app keeps waking this chat, and
      an empty chat costs almost nothing per wake. The operator approves that card.
    - Never archive this chat while the fresh coordinator shares its worktree: archiving stops it, cleans up

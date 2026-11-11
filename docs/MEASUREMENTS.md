@@ -894,9 +894,9 @@ c630a8c9 (about 100 tokens on every prompt and every notification).
   you here; this turn runs an automated event"; a `<side-sessions-event>` turn right after the operator's own turn
   was allowed; (d) `SendMessage` with `notify_when_idle` to a desktop session: "no idle subscription was made:
   notify_when_idle is only supported for Claude sessions on this machine in this release".
-- **Not measured:** whether a session the operator starts by clicking an `own_initiative` card wakes the parent,
-  and whether `detach_session` accepts it (its description refuses "a session the user placed (a fork, a task
-  chip)" and one that shares another session's worktree).
+- **A card the operator clicks** (`own_initiative`, then started by a click): the parent got the note on its turn
+  end, like any started session, and `detach_session` accepted it. Not measured: a child sharing the parent's
+  worktree (the tool's description refuses it).
 - **Rule produced:** relaunch detaches the fresh coordinator, or clears the old one when detach is refused;
   pause acks wait in a shell loop, not on `notify_when_idle`.
 **Status:** current for 2.1.322.
