@@ -3,13 +3,15 @@
 ## One chat
 
 Only the coordinator crosses the 700 K mark: every subagent starts fresh per task, so there is no
-`WORKER CONTEXT` line and no worker to replace. On `COORDINATOR CONTEXT`, or when the operator asks:
+`WORKER CONTEXT` line and no worker to replace. `COORDINATOR CONTEXT` starts a drain (`fleet.sh next` and `dispatch` hand out nothing; let the agents in flight
+finish). Ask at `DRAINED`, at `DRAIN TIMED OUT` (a claim open past `drain_cap_min`, 60 minutes [M57]), when
+the drain ran out at the next step, or when the operator asks:
 
 1. Steps 1 and 2 below: `PushNotification`, then one `AskUserQuestion` with your number and the options
-   "Relaunch now (recommended)" and "Not now".
+   "Relaunch now (recommended)" and "Not now". On "Not now" run `fleet.sh undrain <run>`.
 2. On yes: stop spawning, and start call 1 of step 3 below in the background, **naming no chips**: it
    pauses the run, and the claims stay held for the new coordinator.
-3. While it waits for acks: `TaskStop` every subagent and every clock you backgrounded (a clock ends only
+3. While it waits for acks: `TaskStop` every subagent still running (after a drain, usually none) and every clock you backgrounded (a clock ends only
    on `FINISHED`, a done marker or `NN.done`/`.blocked`/`.retired`, none of which a relaunch writes, so
    this chat's clocks would wake it and re-spawn claims the new coordinator works), and ack each slot that holds a claim with
    `sh "${CLAUDE_PLUGIN_ROOT}/scripts/fleet.sh" paused <absolute run dir> NN`. When call 1 stops on
@@ -17,7 +19,8 @@ Only the coordinator crosses the 700 K mark: every subagent starts fresh per tas
    mid-task, then run call 2. Not a Haiku `[mech]` agent: while the run is paused the hooks hold every
    subagent of yours as `agent-<id>`, that one too.
 4. Step 4 below: `TaskStop` your watch, start the one coordinator chip (`mcp__ccd_session__start_session`, hand-over as in step 4 below: `user_asked` or a card, then `detach_session`), stop. The new coordinator takes the
-   seat with `resume --take-over`, re-arms the watch with the slot count, and re-spawns one subagent per
+   seat with `resume --take-over` (refused with SEAT TAKEN when another coordinator holds it), detaches itself
+   (`detach_session` "self" [M56]; your detach is the backup), re-arms the watch with the slot count, and re-spawns one subagent per
    held claim, as after a crash (`docs/ONECHAT.md`).
 
 ## Opt-in: separate chats

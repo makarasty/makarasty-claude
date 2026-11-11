@@ -4,7 +4,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync
 import { spawnSync } from 'node:child_process';
 import { basename } from 'node:path';
 import type { Command, Ctx } from './lib.mjs';
-import { HERE, RUN_FORMAT, lf, need, out, err, isDir, isFile, read, firstLine, names, field, NEEDS, BUDGET, HANDBACK_OF, operatorOwed, now, cal, calint, pluginVersion, loadScript, claimsOf, draining, verifyHeld, laneGaps, registerChip, chatGone, wakeLoop, indent, cat, STOP_WHAT_YOU_STARTED, nativePath, takeLock, dropLock, closing, CLOSING_STALE_MS, afterIds, taskKind, fmValues, frontmatter, asText, noCr, chipFinished, budgetOf, refiledAs, writeWhole, walksOf } from './lib.mjs';
+import { HERE, RUN_FORMAT, lf, need, out, err, isDir, isFile, read, firstLine, names, field, NEEDS, BUDGET, HANDBACK_OF, operatorOwed, now, cal, calint, pluginVersion, loadScript, claimsOf, draining, drainedNote, verifyHeld, laneGaps, registerChip, chatGone, wakeLoop, indent, cat, STOP_WHAT_YOU_STARTED, nativePath, takeLock, dropLock, closing, CLOSING_STALE_MS, afterIds, taskKind, fmValues, frontmatter, asText, noCr, chipFinished, budgetOf, refiledAs, writeWhole, walksOf } from './lib.mjs';
 
 // ---- next ------------------------------------------------------------------------------------------------
 
@@ -101,12 +101,8 @@ function nextHeld(c: Ctx, chip: string, lane: string): number {
     return 2;
   }
   // The coordinator's context is past its mark: the agents in flight finish, and nothing new starts (watch.mts, ctx).
-  if (draining(c)) {
-    say('DRAINING: the coordinator is past its context mark and the run is draining before a relaunch. Nothing is handed out. Nothing is wrong with you.\n');
-    say('Background this, end your turn, and call next again after it prints draining-over (this is not a pause: TaskStop nothing, run no paused):\n');
-    say(`  until [ ! -e "${c.absrun}/.draining" ] || [ -e "${c.absrun}/${chip}.retired" ] || [ -e "${c.absrun}/FINISHED" ]${chatGone()}; do sleep ${calint(c, 'clock_poll_seconds', 30)}; done; echo draining-over\n`);
-    return 13;
-  }
+  // Only a task that would be handed out is refused below: an empty queue for the lane answers as ever, so the run can finish.
+  const drain = draining(c);
   if (!existsSync(`${run}/RUN_FORMAT`)) { try { writeFileSync(`${run}/RUN_FORMAT`, `${RUN_FORMAT}\n`); } catch { /* stamped next time */ } }
   mkdirSync(`${run}/tasks/claimed`, { recursive: true });
   mkdirSync(`${run}/tasks/done`, { recursive: true });
@@ -135,7 +131,7 @@ function nextHeld(c: Ctx, chip: string, lane: string): number {
     rmSync(`${run}/tight/${chip}`, { force: true });
   }
 
-  let waiting = 0;
+  let waiting = 0, drainBlocked = false;
   let held: string | undefined;   // verify_held, read again after any claim this scan lost to another worker
   // The longest budget first (the stable sort keeps the directory order among equals): the task that runs
   // longest starts earliest, so the run's end is not one long task begun last.
@@ -167,6 +163,9 @@ function nextHeld(c: Ctx, chip: string, lane: string): number {
     // tree, and a fix's `before` proof on an unreviewed tree can be refuted by a change the review later reverts.
     const early = ['implement', 'design'].includes(taskKind(text));
     if (deps.some((d) => !existsSync(`${run}/tasks/done/${d}`) && (!early || taskKind(read(`${run}/tasks/ready/${d}.md`)) === 'root' || !existsSync(`${run}/tasks/claimed/${d}/coded`)))) { waiting++; continue; }
+    // Claimed, its ready file stays: handing it out would fail the mkdir below anyway, so a drain must not count it.
+    if (isDir(`${run}/tasks/claimed/${id}`)) continue;
+    if (drain) { drainBlocked = true; break; }
     // mkdir is the claim's atomicity. The verify lane is one worker wide, and two workers could pass the held
     // check with two different verify tasks at the same instant: for a verify task, the check and the claim
     // happen together under the lane's own lock.
@@ -222,6 +221,17 @@ function nextHeld(c: Ctx, chip: string, lane: string): number {
     say(`ARM_CLOCK background what this prints: sh "${c.sh}" clock "${c.absrun}" ${chip} ${id} ${b}\n---\n`);
     say(readFileSync(f));
     return 0;
+  }
+  if (drainBlocked) {
+    if (openid) {
+      say(`DRAINING: the run is draining before a relaunch and hands out no second task. Finish your open claim ${openid} first, then call next again. Nothing is wrong with you.\n`);
+    } else {
+      say('DRAINING: the coordinator is past its context mark and the run is draining before a relaunch. Nothing is handed out. Nothing is wrong with you.\n');
+      say('Background this, end your turn, and call next again after it prints draining-over (this is not a pause: TaskStop nothing, run no paused):\n');
+      say(`  until [ ! -e "${c.absrun}/.draining" ] || [ -e "${c.absrun}/${chip}.retired" ] || [ -e "${c.absrun}/${chip}.retiring" ] || [ -e "${c.absrun}/FINISHED" ]${chatGone()}; do sleep ${calint(c, 'clock_poll_seconds', 30)}; done; echo draining-over\n`);
+    }
+    say(drainedNote(c));
+    return 13;
   }
   // "Drained" and "waiting on a wave that has not landed" are different states with different exit codes:
   // a worker told the first writes its `.done`.

@@ -383,11 +383,12 @@ const TYPES = {
     // Only empty ones: a real extensionless file on PATH (nodejs\npm, a shell script for Git Bash) is somebody's tool.
     shadows(r) {
         if (!WIN) return [];
-        const dirs = [...new Set((process.env.PATH ?? '').split(';').filter(Boolean))];
+        const dirs = [...new Set((process.env.PATH ?? '').split(';').map(d => d.trim().replace(/^"(.*)"$/, '$1')).filter(Boolean))];
         const exts = (process.env.PATHEXT || '.COM;.EXE;.BAT;.CMD').toLowerCase().split(';').filter(Boolean);
-        const names = new Map(dirs.map(d => [d, ls(d)]));
-        const progs = new Set([...names.values()].flat().map(n => n.toLowerCase()).filter(n => exts.some(e => n.endsWith(e))).map(n => n.slice(0, n.lastIndexOf('.'))));
-        return dirs.flatMap(d => names.get(d).filter(n => !n.includes('.') && progs.has(n.toLowerCase()) && lst(join(d, n))?.isFile() && lst(join(d, n)).size === 0)
+        const names = dirs.map(d => ls(d));
+        const progsIn = names.map(ns => new Set(ns.map(n => n.toLowerCase()).filter(n => exts.some(e => n.endsWith(e))).map(n => n.slice(0, n.lastIndexOf('.')))));
+        // flagged only if no folder before this one has the program (System32\where.exe wins over the empty file) and this one or a later one does
+        return dirs.flatMap((d, i) => names[i].filter(n => !n.includes('.') && !progsIn.slice(0, i).some(p => p.has(n.toLowerCase())) && progsIn.slice(i).some(p => p.has(n.toLowerCase())) && lst(join(d, n))?.isFile() && lst(join(d, n)).size === 0)
             .map(n => ({ slug: n, title: `${r.title}: ${join(d, n)}`, paths: [join(d, n)], evidence: [`empty, no extension: PowerShell runs it instead of the real ${n} and Windows asks how to open it`] })));
     },
     bins(r, ctx) {
@@ -752,6 +753,16 @@ function selftest() {
             put(join(sa, 'tool'), 0); put(join(sa, 'npm'), 10); put(join(sa, 'lonely'), 0); put(join(sb, 'tool.exe'), 10); put(join(sb, 'npm.cmd'), 10);
             process.env.PATH = `${sa};${sb}`;
             assert.deepEqual(TYPES.shadows({ title: 'x' }).flatMap(g => g.paths), [join(sa, 'tool')], 'shadows: only an empty extensionless file named like a program');
+            process.env.PATH = `"${sa}";${sb}`;
+            assert.deepEqual(TYPES.shadows({ title: 'x' }).flatMap(g => g.paths), [join(sa, 'tool')], 'shadows: a quoted PATH entry is read as the folder');
+            const sc = join(tmp, 'pc'), sd = join(tmp, 'pd');
+            put(join(sc, 'where.exe'), 10); put(join(sd, 'where'), 0); put(join(sd, 'same'), 0); put(join(sd, 'same.exe'), 10);
+            process.env.PATH = `${sc};${sd}`;
+            assert.deepEqual(TYPES.shadows({ title: 'x' }).flatMap(g => g.paths), [join(sd, 'same')], 'shadows: a program in an earlier folder wins, so that empty file is left; one in its own folder is flagged');
+            const se = join(tmp, 'pe'), sf = join(tmp, 'pf'), sg = join(tmp, 'pg');
+            put(join(se, 'where.exe'), 10); put(join(sf, 'where'), 0); put(join(sg, 'where.exe'), 10);
+            process.env.PATH = `${se};${sf};${sg}`;
+            assert.deepEqual(TYPES.shadows({ title: 'x' }).flatMap(g => g.paths), [], 'shadows: a program in an earlier folder wins even when a later one has it too');
             process.env.PATH = saved.PATH;
         }
         put(join(local, 'unzipped', 'f'), 1024, old); // an unzip: old modified date, created now

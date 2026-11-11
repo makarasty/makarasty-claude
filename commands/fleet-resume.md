@@ -22,7 +22,12 @@ claims and partial edits survived on disk. `r` is the run's absolute directory, 
 0. Re-take the coordinator seat before any `next`: run `sh "$f" chips "$r" <NN-MM> <lane> --agents` again
    for each lane, with the ranges `STATE.md` lists. It rewrites `$r/coordinator` with this session, which
    is what makes the hooks treat your subagents as `agent-<id>`; re-registering a slot in its own lane is
-   allowed.
+   allowed. This is also how the same chat, back with a new session id after a restart, takes its seat
+   again when `resume --take-over` printed SEAT TAKEN: `chips` records the new id, and the old session's
+   `.draining` marker is dropped and armed again by the next `ctx`. If `<run>/coordinator-pending` stands and this chat is the old coordinator keeping the seat (a
+   relaunch the operator did not follow through), `mcp__ccd_session__dismiss_task` every task_id in
+   `<run>/cards` (a card already started answers "nothing to withdraw", which is harmless [M57]), then
+   remove `<run>/coordinator-pending`.
 1. `<run>/PAUSED` means paused (`/makarasty:fleet-pause <run-id> off`); `<run>/FINISHED` means landed.
 2. `git status --porcelain -uall`, and attribute each changed path: one in a done task's
    `$r/tasks/claimed/<id>/files` is that task's, one under `$(git rev-parse --show-prefix)<owns path>` of a

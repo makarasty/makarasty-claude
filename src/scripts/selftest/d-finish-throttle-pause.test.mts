@@ -5,7 +5,7 @@
 import { readdirSync, statSync } from 'node:fs';
 import { basename } from 'node:path';
 import {
-  setup, fleet, exec, sh, node, git, has, hp, nativePath, check, absent, code, starts, truthy, skip,
+  setup, fleet, exec, sh, node, git, has, hp, nativePath, check, absent, code, starts, truthy, skip, HAT,
   write, read, exists, names, ls, mk, rm, touch, task, OLD, copyFleet, ROOT, SCRIPTS, HOOKS, POLL, CK,
 } from './lib.mts';
 
@@ -465,13 +465,44 @@ if (has('git')) {
   // The step with no claim open asks once: the next tick does not print DRAINED as well.
   const d3 = `${tmp}/drain3`;
   tr('sess-d3', CK); write(`${d3}/coordinator`, 'sess-d3\n');
-  task(d3, 't1', 'repo', 10); write(`${d3}/tasks/claimed/t1/owner`, `chip 01\nclaimed ${nowIso()}\n`);
+  task(d3, 't1', 'repo', 10); task(d3, 't2', 'repo', 10); write(`${d3}/tasks/claimed/t1/owner`, `chip 01\nclaimed ${nowIso()}\n`);
   fleet(['ctx', d3], asCh);
   tr('sess-d3', CK + 100); write(`${d3}/tasks/done/t1`, '');
   r = fleet(['ctx', d3], asCh);
   check('the step with no claim open says no task is in flight', 'no task in flight, so there is nothing to wait for', r.out);
   r = fleet(['ctx', d3], asCh);
   truthy('and the next tick does not print DRAINED too', r.out === '', r.out);
+  // Nothing in flight and no ready task left unclaimed: the run lands, no relaunch.
+  const d3b = `${tmp}/drain3b`;
+  tr('sess-d3b', CK); write(`${d3b}/coordinator`, 'sess-d3b\n');
+  task(d3b, 't1', 'repo', 10); write(`${d3b}/tasks/claimed/t1/owner`, `chip 01\nclaimed ${nowIso()}\n`); write(`${d3b}/tasks/done/t1`, '');
+  r = fleet(['ctx', d3b], asCh);
+  check('the drain arming with the queue empty says to land the run', 'queue empty and nothing in flight: land the run (fleet-collect), no relaunch needed', r.out);
+  absent('and does not ask for a relaunch', 'nothing to wait for', r.out);
+  truthy('it still writes the drained marker', exists(`${d3b}/.drained-said`));
+  const d3c = `${tmp}/drain3c`;
+  tr('sess-d3c', CK); write(`${d3c}/coordinator`, 'sess-d3c\n');
+  task(d3c, 't1', 'repo', 10); write(`${d3c}/tasks/claimed/t1/owner`, `chip 01\nclaimed ${nowIso()}\n`);
+  fleet(['ctx', d3c], asCh);
+  write(`${d3c}/tasks/done/t1`, '');
+  r = fleet(['ctx', d3c], asCh);
+  check('DRAINED with the queue empty says to land the run too', 'DRAINED: queue empty and nothing in flight: land the run', r.out);
+  // A crash between `.draining` and `.ctx-warned`: the next tick prints the DRAIN line, not "ran out".
+  const d3d = `${tmp}/drain3d`;
+  tr('sess-d3d', CK); write(`${d3d}/coordinator`, 'sess-d3d\n');
+  task(d3d, 't1', 'repo', 10); write(`${d3d}/tasks/claimed/t1/owner`, `chip 01\nclaimed ${nowIso()}\n`);
+  write(`${d3d}/.draining`, 'sess-d3d\n');
+  r = fleet(['ctx', d3d], asCh);
+  check('a drain marker without the mark prints the DRAIN line', 'DRAIN. Start no new task', r.out);
+  truthy('and writes the mark', read(`${d3d}/.ctx-warned`).trim() === String(HAT), read(`${d3d}/.ctx-warned`));
+  // A ready task already claimed is no work to hand out: an idle worker is told the queue drained.
+  const d3e = `${tmp}/drain3e`;
+  tr('sess-d3e', CK); write(`${d3e}/coordinator`, 'sess-d3e\n');
+  task(d3e, 't1', 'repo', 10); write(`${d3e}/tasks/claimed/t1/owner`, `chip 01\nclaimed ${nowIso()}\n`);
+  fleet(['ctx', d3e], asCh);
+  r = fleet(['next', d3e, '02', 'repo']);
+  code('during a drain a claimed ready task does not make an idle worker wait: 3', 3, r.code);
+  check('QUEUE DRAINED', 'QUEUE DRAINED', r.out);
   // A marker of an earlier coordinator is stale: the new seat is not refused by it.
   write(`${d2}/.draining`, 'old-sid\n'); write(`${d2}/tasks/done/t1`, '');
   r = fleet(['next', d2, '02', 'repo']);
@@ -481,6 +512,82 @@ if (has('git')) {
   write(`${d2}/.draining`, 'sess-d2\n'); tr('sess-d2', 120);
   fleet(['ctx', d2], asCh);
   truthy('under the mark the drain marker goes', !exists(`${d2}/.draining`) && !exists(`${d2}/.ctx-warned`));
+
+  // The drain re-arms, ends on `undrain`, caps, and never blocks the end of the run.
+  const d4 = `${tmp}/drain4`;
+  tr('sess-d4', CK); write(`${d4}/coordinator`, 'sess-d4\n');
+  task(d4, 't1', 'repo', 10); task(d4, 't2', 'repo', 10);
+  write(`${d4}/tasks/claimed/t1/owner`, `chip 01\nclaimed ${nowIso()}\n`);
+  fleet(['ctx', d4], asCh);
+  rm(`${d4}/.draining`);
+  r = fleet(['ctx', d4], asCh);
+  check('a drain marker lost after .ctx-warned is armed again and the line repeats', 'DRAIN. Start no new task', r.out);
+  truthy('with the marker back', read(`${d4}/.draining`).startsWith('sess-d4'), read(`${d4}/.draining`));
+  write(`${d4}/.draining`, 'old-sid\n');
+  r = fleet(['ctx', d4], asCh);
+  check('a marker of an earlier session is replaced for the resumed coordinator', 'DRAIN. Start no new task', r.out);
+  truthy('with its own session id', read(`${d4}/.draining`).startsWith('sess-d4'), read(`${d4}/.draining`));
+  r = fleet(['undrain', d4]);
+  code('undrain exits 0', 0, r.code);
+  truthy('it removes the drain markers', !exists(`${d4}/.draining`) && !exists(`${d4}/.drained-said`) && !exists(`${d4}/.drain-timeout-said`));
+  truthy('and records the level it answered', read(`${d4}/.undrained`).trim() === String(HAT), read(`${d4}/.undrained`));
+  r = fleet(['ctx', d4], asCh);
+  truthy('ctx does not drain again at the same level', r.out === '' && !exists(`${d4}/.draining`), r.out);
+  r = fleet(['next', d4, '02', 'repo']);
+  check('and next hands a task out again', 'CLAIMED t2', r.out);
+  tr('sess-d4', CK + 100);
+  r = fleet(['ctx', d4], asCh);
+  check('at the next step the run drains again', 'DRAIN. Start no new task', r.out);
+  truthy('with the marker', exists(`${d4}/.draining`));
+  // The cap: one line, once, when a claim is still open after drain_cap_min.
+  const d5 = `${tmp}/drain5`;
+  tr('sess-d5', CK); write(`${d5}/coordinator`, 'sess-d5\n');
+  task(d5, 't1', 'repo', 10); write(`${d5}/tasks/claimed/t1/owner`, `chip 01\nclaimed ${nowIso()}\n`);
+  fleet(['ctx', d5], asCh);
+  r = fleet(['ctx', d5], asCh);
+  truthy('a young drain with a claim open is silent', r.out === '', r.out);
+  touch(`${d5}/.draining`, new Date(Date.now() - 61 * 60 * 1000));
+  r = fleet(['ctx', d5], asCh);
+  check('past the cap the drain times out', 'DRAIN TIMED OUT after 61 min, claims t1 still open', r.out);
+  check('and says what each answer does', 'on no run fleet.sh undrain', r.out);
+  r = fleet(['ctx', d5], asCh);
+  truthy('once', r.out === '', r.out);
+  // Paused time does not count against the cap, and a resume restarts it.
+  const d5b = `${tmp}/drain5b`;
+  tr('sess-d5b', CK); write(`${d5b}/coordinator`, 'sess-d5b\n');
+  task(d5b, 't1', 'repo', 10); write(`${d5b}/tasks/claimed/t1/owner`, `chip 01\nclaimed ${nowIso()}\n`);
+  fleet(['ctx', d5b], asCh);
+  touch(`${d5b}/.draining`, new Date(Date.now() - 61 * 60 * 1000)); write(`${d5b}/PAUSED`, '');
+  r = fleet(['ctx', d5b], asCh);
+  truthy('a drain older than the cap is silent while the run is paused', r.out === '', r.out);
+  fleet(['resume', d5b]);
+  truthy('resume restarts the cap', Date.now() - statSync(`${d5b}/.draining`).mtimeMs < 60 * 1000);
+  r = fleet(['ctx', d5b], asCh);
+  truthy('and the first tick after it is silent', r.out === '', r.out);
+  // undrain with the context unknown (no transcript): the mark itself, so the next ctx does not arm at once.
+  const d5c = `${tmp}/drain5c`;
+  write(`${d5c}/coordinator`, 'sess-d5c-none\n'); write(`${d5c}/.draining`, 'sess-d5c-none\n');
+  fleet(['undrain', d5c]);
+  truthy('undrain with an unknown context records the mark level', read(`${d5c}/.undrained`).trim() === String(HAT), read(`${d5c}/.undrained`));
+  // The run can finish during a drain: an empty queue answers as ever, a claim in an idle window is told to finish.
+  const d6 = `${tmp}/drain6`;
+  tr('sess-d6', CK); write(`${d6}/coordinator`, 'sess-d6\n');
+  task(d6, 'p1', 'pane', 10); write(`${d6}/tasks/claimed/p1/owner`, `chip 01\nclaimed ${nowIso()}\n`);
+  fleet(['ctx', d6], asCh);
+  r = fleet(['next', d6, '02', 'repo']);
+  code('an empty ready queue during a drain is the normal drained answer, not 13', 3, r.code);
+  check('QUEUE DRAINED', 'QUEUE DRAINED', r.out);
+  task(d6, 't2', 'repo', 10);
+  r = fleet(['next', d6, '01', 'repo']);
+  code('a worker in its idle window is refused with 13', 13, r.code);
+  check('and told to finish its open claim first', 'Finish your open claim p1 first', r.out);
+  r = fleet(['next', d6, '02', 'repo']);
+  check('a worker with a task to hand out gets the wait loop', 'draining-over', r.out);
+  check('that also ends on retiring', '02.retiring', r.out);
+  // A lost DRAINED line: the exit-13 text says it was announced.
+  write(`${dr}/.draining`, 'sess-dr\n'); write(`${dr}/.drained-said`, '');
+  r = fleet(['next', dr, '02', 'repo']);
+  check('exit 13 repeats that DRAINED was announced', 'DRAINED was announced already: ask the relaunch question now', r.out);
 
   // A background command's output past runaway_log_gb is named once. Closed chats left 5 GB of these.
   const rl = `${tmp}/runaway`;

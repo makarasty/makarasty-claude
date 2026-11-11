@@ -412,6 +412,9 @@ export function draining(c: Ctx): boolean {
   return true;
 }
 
+// `.drained-said` is written before its line is printed, so a lost line leaves the marker: exit 13 says so.
+export const drainedNote = (c: Ctx): string => existsSync(`${c.run}/.drained-said`) ? 'DRAINED was announced already: ask the relaunch question now (fleet-plan, 8b)\n' : '';
+
 // The pane walks one host claimed and has not served yet.
 export function walksOf(c: Ctx, chip: string): string[] {
   return names(`${c.run}/pane/running`).filter((w) => !existsSync(`${c.run}/pane/results/${w}.json`) &&

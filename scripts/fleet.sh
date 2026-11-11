@@ -54,6 +54,8 @@
 #                                                  runs on. exit 10 = not what want/<chip> says: end the turn
 #   fleet.sh ctx     <run-dir>                     one line per session whose context crosses its mark: the
 #                                                  coordinator (coordinator_handoff_k) or a worker (worker_relaunch_k)
+#   fleet.sh undrain <run-dir>                     the operator said no to the relaunch: end the drain (never rm .draining);
+#                                                  ctx drains again at the next step
 #   fleet.sh contexts <run-dir>                    every session the run knows: context in K, claim held, OVER
 #   fleet.sh pause   <run-dir> [reason|-]          stop the run: next hands out nothing, hooks hold the workers.
 #                                                  `-` reads the reason from stdin

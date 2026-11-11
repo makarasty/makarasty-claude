@@ -22,6 +22,8 @@
 // (subagents, workflow agents). Projects dir default: ${CLAUDE_CONFIG_DIR:-~/.claude}/projects/<slug>,
 // where the slug is the project root (the run dir's grandparent) with every non-alphanumeric character
 // replaced by '-'; a session not found there is searched for in every project folder.
+// `coordinator` holds only the latest coordinator, so earlier ones (after a relaunch, often in a worktree's
+// project folder `<slug>--claude-worktrees-<name>`) are found by their `<run> --take-over` text: all are priced.
 //
 // How a task's time is split (ported from the 2026-10-08 speed analysis behind M36): the gap before an
 // assistant line is model time (over five minutes it is a stall), the gap before a tool result is that
@@ -41,7 +43,7 @@
 // message carried (chars / 4), still a lower bound because thinking is not in the transcript.
 import { createReadStream, existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { createInterface } from 'node:readline';
-import { basename, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { homedir } from 'node:os';
 // ---------------------------------------------------------------------------------------------- prices
 // List prices in $ per million tokens, from the claude-api skill's model table (cached 2026-10-06). Cache
@@ -500,6 +502,44 @@ function locateSessions(sids, primary) {
     }
     return found;
 }
+// A relaunch overwrites `coordinator`, so the earlier coordinators are found by what they wrote: the relaunch prompt
+// `resume <run> --take-over`, printed by the coordinator that relaunched and run by the fresh one. They may sit in the
+// project folder of a worktree (`<slug>--claude-worktrees-<name>`), so scan the project folder and those siblings.
+// shortcut: a chat that merely quotes that command is counted too; transcripts older than the run dir are skipped.
+// A transcript past ~512 MB cannot be one string (ERR_STRING_TOO_LONG): a big file is scanned line by line.
+// shortcut: the pattern never spans two lines, which holds for the one-line JSON records of a transcript.
+async function mentions(file, re) {
+    if (statSync(file).size <= 64e6)
+        return re.test(readFileSync(file, 'latin1'));
+    const rl = createInterface({ input: createReadStream(file, { encoding: 'latin1' }), crlfDelay: Infinity });
+    for await (const line of rl)
+        if (re.test(line)) {
+            rl.close();
+            return true;
+        }
+    return false;
+}
+async function findCoordinators(run, primary) {
+    const re = new RegExp(`(?<![A-Za-z0-9_-])${basename(run).replace(/[^A-Za-z0-9_-]/g, '\\$&')}\\W{0,8}--take-over`);
+    const since = statSync(run).birthtimeMs || 0;
+    const root = dirname(primary), base = basename(primary);
+    const found = new Map();
+    for (const d of listDir(root)) {
+        if (d !== base && !d.startsWith(`${base}--claude-worktrees-`))
+            continue;
+        for (const f of listDir(join(root, d))) {
+            const sid = f.slice(0, -'.jsonl'.length);
+            if (!f.endsWith('.jsonl') || !SID_RE.test(sid))
+                continue;
+            try {
+                if (statSync(join(root, d, f)).mtimeMs >= since && await mentions(join(root, d, f), re))
+                    found.set(sid, join(root, d));
+            }
+            catch { /* unreadable: not ours */ }
+        }
+    }
+    return found;
+}
 function walkJsonl(dir, out = []) {
     let entries;
     try {
@@ -776,9 +816,13 @@ async function main() {
     const chips = readChips(run);
     const coord = readText(join(run, 'coordinator')).split(/\r?\n/)[0]?.trim() ?? '';
     const sids = [...chips.keys()];
-    if (SID_RE.test(coord) && !chips.has(coord))
-        sids.push(coord);
-    const where = locateSessions(sids, primary);
+    const scanned = await findCoordinators(run, primary);
+    const coords = new Set([...(SID_RE.test(coord) ? [coord] : []), ...scanned.keys()].filter((s) => !chips.has(s)));
+    sids.push(...coords);
+    const where = locateSessions(sids.filter((s) => !scanned.has(s) || chips.has(s)), primary);
+    for (const [s, d] of scanned)
+        if (coords.has(s))
+            where.set(s, d);
     const missing = sids.filter((s) => !where.has(s));
     const sessions = new Map();
     await Promise.all([...where].map(async ([sid, dir]) => { sessions.set(sid, await loadSession(sid, dir)); }));
@@ -918,10 +962,10 @@ async function main() {
             cost: +(ptok.cost + stok.cost).toFixed(2) });
     }
     // ---- coordinator
-    const coordSession = sessions.get(coord);
+    const coordSessions = [...coords].map((s) => sessions.get(s)).filter((s) => !!s);
     const coordTok = emptyTok();
-    if (coordSession)
-        for (const t of [coordSession.parent, ...coordSession.subs])
+    for (const cs of coordSessions)
+        for (const t of [cs.parent, ...cs.subs])
             for (const m of t.msgs) {
                 addTok(coordTok, m);
                 add(models, m.model, 1);
@@ -970,7 +1014,7 @@ async function main() {
     const report = {
         run: basename(run), run_dir: run, projects_dir: primary, brief_mode: briefMode,
         span: { start: new Date(spanA * 1000).toISOString(), end: new Date(spanB * 1000).toISOString(), hours: (spanB - spanA) / 3600 },
-        workers_seen: byChip.size, coordinator: coord || null, coordinator_found: !!coordSession,
+        workers_seen: byChip.size, coordinator: coord || null, coordinator_found: coordSessions.length > 0, coordinator_sessions: coordSessions.length,
         missing_transcripts: missing.map((s) => ({ sid: s, chip: chips.get(s) ?? 'coordinator' })), bad_lines: badLines,
         tasks: { claimed: tasks.length, done: done.length, median_min: pct(mins, 0.5), p90_min: pct(mins, 0.9) },
         time: { total_min: totalSec / 60, buckets_min: Object.fromEntries(BUCKETS.map((b) => [b, +((bucketsTotal.get(b) ?? 0) / 60).toFixed(1)])),
@@ -1008,6 +1052,9 @@ async function main() {
     L.push(`fleet-analyze ${report.run}: ${byChip.size} workers, span ${clock(spanA)} -> ${clock(spanB)} (${report.span.hours.toFixed(1)} h)`);
     if (missing.length)
         L.push(`  no transcript for ${missing.map((s) => `${chips.get(s) ?? 'coordinator'} (${s.slice(0, 8)})`).join(', ')}`);
+    // A missing coordinator transcript is named above; this is the file naming something that is no session at all.
+    if (coord && !sessions.has(coord) && !missing.includes(coord))
+        L.push(`  note: the coordinator file names "${coord.slice(0, 40)}", which is not among the sessions found`);
     L.push(`tasks done ${done.length} of ${tasks.length}${briefMode ? ' (briefs: one per worker)' : ''}; median ${pct(mins, 0.5).toFixed(1)} min, p90 ${pct(mins, 0.9).toFixed(1)}`);
     L.push(`where task time went (${f0(totalSec / 60)} min over done tasks that did not overlap):`);
     const bl = BUCKETS.map((b) => `${b} ${f0((bucketsTotal.get(b) ?? 0) / 60)} (${(share(b) * 100).toFixed(0)}%)`);
@@ -1023,7 +1070,7 @@ async function main() {
         L.push(`pauses (${pauses.source}): ${pauses.windows.length}, ${f0((bucketsTotal.get('paused') ?? 0) / 60)} min of idle task time paused, not lost`);
     L.push(`cache rewrites after >5 min idle: ${misses.length}, ${Mt(missTok)} tokens, ~${usd(missUsd)} over a cache read`);
     L.push(`tokens (workers): cache read ${Mt(workerTok.cr)}, cache write ${Mt(workerTok.cw)}, input ${Mt(workerTok.in)}, output ${Mt(workerTok.out)}`);
-    L.push(`cost, list-price estimate: total ${usd(totalUsd)} = workers ${usd(workerTok.cost)} (parents ${usd(parentTok.cost)}, subagents ${usd(subTok.cost)}) + coordinator ${usd(coordTok.cost)}${coordSession ? '' : ' (not found)'}`);
+    L.push(`cost, list-price estimate: total ${usd(totalUsd)} = workers ${usd(workerTok.cost)} (parents ${usd(parentTok.cost)}, subagents ${usd(subTok.cost)}) + coordinator ${usd(coordTok.cost)}${coordSessions.length ? (coordSessions.length > 1 ? ` (${coordSessions.length} sessions)` : '') : ' (not found)'}`);
     L.push(`  per done task ${usd(perTask)} (worker spend / tasks done)`);
     const wsorted = [...workers].sort((a, b) => Number(b.cost) - Number(a.cost));
     const wl = wsorted.slice(0, 8).map((w) => {

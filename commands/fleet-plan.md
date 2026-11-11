@@ -521,7 +521,7 @@ You are the one session the whole run depends on, and the one nothing restarts. 
   then update `STATE.md` and ask the operator the one relaunch question below (a mark crossed with nothing in
   flight says so in its first line and asks at once). If claims are still open at the next step (800 K),
   the line says the drain ran out: ask then anyway and tell the operator that a relaunch stops those
-  agents. On "no", end the drain as `docs/PROTOCOL.md` (`.draining`) says. Then relaunch naming no chips
+  agents. A `DRAIN TIMED OUT` line (a claim open past `drain_cap_min`, 60 minutes [M57]: a hung or dead agent?) is the same ask, now. On "no", run `fleet.sh undrain <run>` (never `rm` the marker): the drain starts again at the next step. Then relaunch naming no chips
   (`docs/RELAUNCH.md`, "One chat"). The operator may also just ask, at any time. Do not hand off by chip and
   do not run `/makarasty-tools:handoff`: a chain of handoff chips re-reads the world at every hop and loses
   what was only in context, and workers with a large context were never moved at all. One controlled

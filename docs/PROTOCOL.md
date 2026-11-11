@@ -204,12 +204,20 @@ as health: `fleet-wait` now emits a stall line on a quiet interval for exactly t
   replaced/<NN>        the chip that replaced NN (`none` when its lane had nothing left), written by `retire`
                        and `relaunch`; a second `retire` reads it and offers nothing again
   coordinator          the session id of whoever arms the watch; `fleet.sh ctx` reads its context size
-  .draining            written by `ctx` when the coordinator's context first crosses `coordinator_handoff_k`
-                       (first line: the coordinator's session id): `next` (exit 13) and `dispatch` hand out nothing
-                       while it stands; a worker holding a claim still gets HOLDING. `.drained-said` marks the one
-                       DRAINED line. Both go when the coordinator's context is back under the mark, when another
-                       session holds the `coordinator` seat (the fresh coordinator's `resume --take-over`), or by
-                       hand on an operator "no": `rm <run>/.draining <run>/.drained-said`. `relaunch` itself leaves them.
+  .draining            written by `ctx` when the coordinator's context is at or over `coordinator_handoff_k` and
+                       no drain stands (first line: the coordinator's session id; written before `.ctx-warned`, so
+                       a crash repeats the line and never skips the drain): `next` (exit 13) hands out nothing while it
+                       stands, `dispatch` too; an empty queue for the lane still answers as ever, so the run can finish.
+                       A worker holding a claim gets HOLDING, or in its idle window (one repo task beside a pane
+                       task) a 13 that says to finish its open claim first. `.drained-said` marks the one
+                       DRAINED line; `next` and `dispatch` repeat it at exit 13 when the line was lost.
+                       `.drain-timeout-said` marks the one DRAIN TIMED OUT line, printed when `.draining` is older
+                       than `drain_cap_min` (60 in `calibration.json` [M57]) and a claim is still open. All three go
+                       when the coordinator's context is back under the mark, or when another session holds the
+                       `coordinator` seat (the fresh coordinator's `resume --take-over`). An operator "no" ends
+                       the drain with `fleet.sh undrain <run>`, never by `rm`: it removes the three markers and
+                       writes `.undrained` with the current level, so `ctx` drains again at the next step
+                       (`coordinator_handoff_step_k`) and not before. `.undrained` goes with the others. `relaunch` itself leaves them.
   cards                written by the coordinator at a relaunch: one `<task_id> <title>` line per `own_initiative` card it started;
                        the "запусти" fallback reads it to `dismiss_task` a card nobody started. Reset by the first call of the next relaunch, removed at FINISHED
   STATE.md             the coordinator's ledger, and what a fresh coordinator re-arms from: plan path, run dir,

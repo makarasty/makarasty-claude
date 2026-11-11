@@ -901,6 +901,26 @@ c630a8c9 (about 100 tokens on every prompt and every notification).
   pause acks wait in a shell loop, not on `notify_when_idle`.
 **Status:** current for 2.1.322.
 
+## M57 — Subagent probes, and how long a task in flight takes
+**2026-11-11**, Claude Code 2.1.322, desktop app, this machine.
+- **TaskStop on a working subagent:** a Haiku subagent ran a foreground Bash loop writing one line every 2 s.
+  After `TaskStop` the file stayed at 13 lines for 12 s (last write 4 s before the stop): the loop died with it.
+- **Nested background subagent:** a Haiku `general-purpose` subagent spawned a background Haiku child
+  (`sleep 20; echo CHILD-DONE`); the completion notice reached the subagent, which got `CHILD-DONE` after ~23 s.
+  Not measured: a plugin agent (`agents/*.md` with `Agent` in its tools) doing the same, and the hooks' view of
+  the grandchild.
+- **`dismiss_task` on a card already started:** "no longer pending, so there is nothing to withdraw ... Nothing was
+  changed". Harmless to call on a stale id.
+- **Task time in flight** (`scripts/fleet-analyze.mjs`): run 2026-11-10-hold-polish median 10.4 min, p90 48.1 min;
+  run 2026-11-06-oxi-roadmap median 19.4 min, p90 58.9 min. A drain that waits for the claims in flight should
+  expect up to about an hour; longer means a hung or dead agent.
+- **fleet-analyze under-reads relaunched runs:** on hold-polish it read 1 of 3 coordinator sessions and 0
+  subagents ($21.9); a script over every coordinator session and subagent file gave $449. On oxi-roadmap $129
+  against $687.
+- **Rule produced:** `drain_cap_min` 60 (the drain asks anyway after it); fleet-analyze reads every session the
+  run recorded.
+**Status:** current for 2.1.322.
+
 ## Appendix: what a pull run spends
 
 Moved here from `PULL.md`, which workers read in full; none of it changes what a worker does.

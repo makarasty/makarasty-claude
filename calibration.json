@@ -18,6 +18,7 @@
   "pause_grace_seconds": 30,
   "pause_still_working_seconds": 150,
   "runaway_log_gb": 1,
+  "drain_cap_min": 60,
   "_provenance": {
     "repo_tasks_per_worker": "M16 - measured throughput 2.87 and 4.25 tasks per hour per worker on repo-heavy runs",
     "repo_worker_ceiling": "M21 - a session with no pane is ~330 MB, so the ceiling is attention rather than memory",
@@ -28,6 +29,7 @@
     "coordinator_handoff_k": "operator, 2026-10-06: auto-compaction starts a little past 900 K, so the coordinator asks at 700 K and again at 800 K (the step), leaving room to write STATE.md, stop the workers and print the chips before it. The earlier 300 K was chosen after the 2026-10-05 coordinator reached 510 K at thirty percent of its plan; the operator moved it up because a relaunch costs more than the context it saves below this. fleet.sh ctx and status read it.",
     "coordinator_handoff_step_k": "How often the warning repeats past the mark, for the coordinator and for a worker. Chosen.",
     "worker_relaunch_k": "operator, 2026-10-06: the same mark as the coordinator, 700 K, for the same reason (auto-compaction starts a little past 900 K). A repo worker grows 20-30 k per task worked inline and four were compacted near their thirtieth [M30] (2026-10-12: a median 54 k, 130 k at the 90th percentile [M41]); M39 costed a 450 K mark and the operator kept 700 K, because a relaunch loses what only the context held and needs a click; [M41] keeps it and enforces DELEGATE instead; the coordinator then retires a queue worker unasked (fleet.sh retire, 1.5.14), and asks the operator once before relaunching a brief or older worker. fleet.sh ctx and contexts read it.",
+    "drain_cap_min": "M57 - a task in flight took a median 10.4 and 19.4 min, p90 48.1 and 58.9 min on two runs; a drain still holding a claim after an hour is a hung or dead agent, so ctx asks the operator then. Read by fleet.sh ctx.",
     "pause_grace_seconds": "The operator chose it: a paused worker gets this long from its first tool call after the pause to finish the step in hand before the hooks hold it to git, fleet.sh and the wake loop; a worker that never calls is held at four times this long after the PAUSED timestamp. Not a measurement. Read by hooks/run-dir.mjs.",
     "pause_still_working_seconds": "Chosen: a worker holding a claim with no ack this long after PAUSED is named \"still working\" by fleet.sh status, so the coordinator can message it by title; before that it is \"no ack yet\". Long enough for a worker in the middle of a 90-120 s sleep or a build to reach its next call.",
     "runaway_log_gb": "Chosen after 2026-10-08, when closed chats had left 5 GB of tasks/*.output from interactive python loops: a background command that has written this much output is a loop, not a build. fleet.sh ctx names the file once, for the coordinator to stop its writer.",

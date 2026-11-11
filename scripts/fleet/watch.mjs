@@ -2,8 +2,11 @@
 import { appendFileSync, existsSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename } from 'node:path';
 import { tmpdir } from 'node:os';
-import { lf, sub, out, isDir, read, firstLine, names, now, slashes, cal, calint, pluginVersion, live, claimsOf, laneGaps, cat, noCr, mtimeMs, newer, olderThanMin, chipFinished, started, recordedVersion, versionReadable, versionOlder, installedVersion, claimHolders, openClaims, workerSessions, sessionCtx, coordinatorSid, recordFleetSession, coordCtx, gt, afterIds, operatorOwed, isFile } from './lib.mjs';
+import { lf, sub, out, isDir, read, firstLine, names, now, slashes, cal, calint, pluginVersion, live, claimsOf, laneGaps, cat, noCr, mtimeMs, newer, olderThanMin, chipFinished, started, recordedVersion, versionReadable, versionOlder, installedVersion, claimHolders, openClaims, draining, workerSessions, sessionCtx, coordinatorSid, recordFleetSession, coordCtx, gt, afterIds, operatorOwed, isFile } from './lib.mjs';
 // ---- ctx and contexts ------------------------------------------------------------------------------------
+// A ready task nobody has claimed or finished: a fresh coordinator still has work to hand out.
+const unstarted = (run) => names(`${run}/tasks/ready`).some((n) => n.endsWith('.md') && !existsSync(`${run}/tasks/done/${n.slice(0, -3)}`) && !isDir(`${run}/tasks/claimed/${n.slice(0, -3)}`));
+const LAND = 'queue empty and nothing in flight: land the run (fleet-collect), no relaunch needed';
 // One line per session whose context crosses its next mark, nothing otherwise; the watch calls this every
 // minute. At the first mark the run drains (no new task, `.draining`); the coordinator asks the operator once
 // when nothing is in flight, or at the next step (fleet-plan, 8b).
@@ -17,36 +20,50 @@ export function ctx(c) {
             const level = at + Math.floor((Number(k) - at) / step) * step;
             const open = openClaims(c), ids = open.join(' ');
             const asking = `bring ${absrun}/STATE.md up to date, then ask the operator once whether to relaunch the run with a fresh coordinator (fleet-plan, 8b). Do not hand off by chip and do not relaunch unasked.`;
-            if (gt(level, cat(`${run}/.ctx-warned`, '0'))) {
-                const first = !existsSync(`${run}/.ctx-warned`);
+            const dr = `${run}/.draining`;
+            // draining() drops a marker of another session (a resumed coordinator); it is armed again just below.
+            const on = draining(c);
+            // The drain is armed by its own marker, not by `.ctx-warned`; `undrain` holds it off until the next step.
+            const arm = !on && gt(level, cat(`${run}/.undrained`, '0'));
+            // A crash between `.draining` and `.ctx-warned` leaves the marker without the mark (absent, or below the first
+            // level): the next tick still prints the DRAIN line, not the "ran out" one.
+            const first = arm || (on && Number(cat(`${run}/.ctx-warned`, '0')) < at);
+            if (arm || (on && gt(level, cat(`${run}/.ctx-warned`, '0')))) {
+                // Order: the drain, then the mark, then the line. A crash between them repeats the line, never skips the drain.
+                if (arm) {
+                    rmSync(`${run}/.drained-said`, { force: true });
+                    rmSync(`${run}/.drain-timeout-said`, { force: true });
+                    writeFileSync(dr, `${coordinatorSid(c)}\n`);
+                }
                 writeFileSync(`${run}/.ctx-warned`, `${level}\n`);
-                // The drain: from the first crossing `next` hands out nothing (queue.mts), and the relaunch waits for what is in flight.
-                if (first)
-                    writeFileSync(`${run}/.draining`, `${coordinatorSid(c)}\n`);
-                if (first && !open.length)
-                    writeFileSync(`${run}/.drained-said`, '');
                 if (first && open.length) {
-                    out(`COORDINATOR CONTEXT ${k}K (mark ${at}K): DRAIN. Start no new task: fleet.sh next now hands out nothing. Let the ${open.length} agent(s) in flight finish (${ids}) and review their reports. When no claim is open, ${asking} Past this size the reviews you hold start to fall out of context.\n`);
+                    out(`COORDINATOR CONTEXT ${k}K (mark ${at}K): DRAIN. Start no new task: fleet.sh next now hands out nothing. Let the ${open.length} agent(s) in flight finish (${ids}) and review their reports. When no claim is open, ${asking}\n`);
                 }
                 else if (open.length) {
                     out(`COORDINATOR CONTEXT ${k}K (mark ${at}K, step ${step}K): the drain ran out, ${open.length} agent(s) are still in flight (${ids}). Ask the operator now, not later (fleet-plan, 8b): a relaunch stops those agents and their work in progress is lost. ${asking}\n`);
                 }
                 else {
                     // Said here, so the next tick does not print DRAINED and ask a second time.
-                    if (existsSync(`${run}/.draining`))
-                        writeFileSync(`${run}/.drained-said`, '');
-                    out(`COORDINATOR CONTEXT ${k}K (mark ${at}K): no task in flight, so there is nothing to wait for: ${asking} Past this size the reviews you hold start to fall out of context.\n`);
+                    writeFileSync(`${run}/.drained-said`, '');
+                    out(unstarted(run) ? `COORDINATOR CONTEXT ${k}K (mark ${at}K): no task in flight, so there is nothing to wait for: ${asking}\n` : `COORDINATOR CONTEXT ${k}K (mark ${at}K): ${LAND}\n`);
                 }
             }
-            else if (existsSync(`${run}/.draining`) && !existsSync(`${run}/.drained-said`) && !open.length) {
+            else if (on && !existsSync(`${run}/.drained-said`) && !open.length) {
                 writeFileSync(`${run}/.drained-said`, '');
-                out('DRAINED: no task in flight, ask the relaunch question now\n');
+                out(unstarted(run) ? 'DRAINED: no task in flight, ask the relaunch question now\n' : `DRAINED: ${LAND}\n`);
+            }
+            // The cap [M57]: a claim that never closes (a hung or dead agent) must not hold the run draining for ever.
+            // shortcut: open claims are counted without liveness (sweep reads heartbeats, ops.mts), the cap bounds it.
+            const tm = `${run}/.drain-timeout-said`;
+            // Paused time does not count: resume touches `.draining`, so the cap restarts there.
+            if (open.length && existsSync(dr) && !existsSync(`${run}/PAUSED`) && olderThanMin(dr, calint(c, 'drain_cap_min', 60)) && !existsSync(tm)) {
+                writeFileSync(tm, '');
+                out(`DRAIN TIMED OUT after ${Math.floor((Date.now() - mtimeMs(dr)) / 60000)} min, claims ${ids} still open (a hung or dead agent?): ask the operator now; on yes the relaunch stops them; on no run fleet.sh undrain ${absrun}\n`);
             }
         }
         else {
-            rmSync(`${run}/.ctx-warned`, { force: true });
-            rmSync(`${run}/.draining`, { force: true });
-            rmSync(`${run}/.drained-said`, { force: true });
+            for (const m of ['.ctx-warned', '.draining', '.drained-said', '.undrained', '.drain-timeout-said'])
+                rmSync(`${run}/${m}`, { force: true });
         }
     }
     // Workers: one state file per session, so a worker is named once per mark and a reopened chip starts over.
@@ -470,8 +487,23 @@ function budgets(run) {
     if (w * 4 < b)
         out('  BUDGETS TOO LOOSE: no abort clock can fire. Budget the next tasks at about three times the measured median.\n');
 }
+// The operator said no to the relaunch: the drain ends, and `ctx` drains again at the next step, not at the
+// level it already warned for.
+function undrain(c) {
+    const run = c.run;
+    const at = calint(c, 'coordinator_handoff_k', 700), step = calint(c, 'coordinator_handoff_step_k', 100);
+    const k = Number(coordCtx(c));
+    // Context unknown (no transcript yet): the mark itself, or the next ctx would arm the drain at once.
+    const level = k >= at ? at + Math.floor((k - at) / step) * step : Math.max(Number(cat(`${run}/.ctx-warned`, '0')) || 0, at);
+    for (const m of ['.draining', '.drained-said', '.drain-timeout-said'])
+        rmSync(`${run}/${m}`, { force: true });
+    writeFileSync(`${run}/.undrained`, `${level}\n`);
+    out(`UNDRAINED ${basename(c.absrun)}: next hands out tasks again; the drain starts again at ${level + step}K\n`);
+    return 0;
+}
 export const commands = {
     status: (c) => status(c),
     ctx: (c) => ctx(c),
+    undrain: (c) => undrain(c),
     contexts: (c) => contexts(c),
 };

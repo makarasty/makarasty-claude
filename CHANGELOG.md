@@ -1,5 +1,29 @@
 # Changelog
 
+## makarasty 1.14.0, makarasty-tools 1.15.5 — 2026-11-11
+
+From a review, a four-angle red team and a design consult over 1.12-1.13, plus probes [M57].
+- **The drain survives what goes wrong around it.** It arms by its own marker (`.draining` written before
+  `.ctx-warned`), so a crash between the two, or a resumed coordinator with a new session id, re-arms it instead
+  of skipping to the 800K ask. An operator "no" is `fleet.sh undrain <run>`; the drain comes back at the next
+  step. `drain_cap_min` 60 (task p90 48 and 59 min [M57]): after it, with claims still open, the watch prints
+  `DRAIN TIMED OUT` once and the operator is asked anyway; paused time does not count. A lost DRAINED line is
+  repeated in every exit-13 answer.
+- **A draining run can still finish.** `next` gives 13 only when it would hand a task out: an empty queue, or a
+  last task another worker already holds, keeps its own answer, so slots write `.done` and the run lands. When
+  the drain finds nothing in flight and nothing left, the watch says to land the run, not to relaunch. `dispatch`
+  takes the same decision from `next`. A holder in its pane idle window is told to finish its claim; the wait
+  loop also ends on `.retiring`.
+- **One seat, one coordinator.** `resume --take-over` without coordinator-pending refuses (`SEAT TAKEN`) unless
+  this session already holds the seat, and points a restarted coordinator to fleet-resume. The fresh coordinator
+  detaches itself after the take-over; worker cards get the same one-minute recheck as the coordinator card;
+  fleet-resume dismisses leftover cards. ONECHAT.md and RELAUNCH.md no longer tell a one-chat coordinator to ask
+  at the first mark and stop its agents. The mark line drops the claim that reviews fall out of context (M49).
+- **fleet-analyze reads every coordinator of a relaunched run** (found by the `--take-over` they ran, across
+  worktree project dirs) and streams transcripts over 64 MB; hold-polish went from $21.9 to $254 [M57].
+- **cleanup's `path-shadows` follows PATH order:** an empty file is listed only when no earlier PATH folder has
+  the program; quoted PATH entries are read.
+
 ## makarasty 1.13.1, makarasty-tools 1.15.4 — 2026-11-11
 
 - **A chat started from a clicked card detaches too.** Probed [M56]: the operator clicked an `own_initiative`

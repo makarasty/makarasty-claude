@@ -214,7 +214,7 @@ let the agents in flight finish and review their reports, because a relaunch sto
 coordinator cannot adopt one. The loop prints `DRAINED: no task in flight, ask the relaunch question now` once,
 when no claim is open: then update `STATE.md` and ask. At the next step (`coordinator_handoff_step_k`, 800 by
 default) with claims still open the line says the drain ran out: ask now, and say that the relaunch stops those
-agents. After a "no", end the drain as `docs/PROTOCOL.md` (`.draining`) says.
+agents. A `DRAIN TIMED OUT` line (a claim open past `drain_cap_min`, 60 minutes [M57]) is the same ask, now. After a "no", run `fleet.sh undrain <run>`.
 **Your own line, and a brief worker's, you never act on alone**: you do not hand off by chip and you do not
 relaunch unasked. Do what `fleet-plan` section 8b says at that line: `PushNotification`, one `AskUserQuestion` with the numbers and the options (a fourth, "Replace
 workers NN only", when only workers are over), and on "yes" `fleet.sh relaunch`, run with

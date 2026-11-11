@@ -354,9 +354,9 @@ slot with `sh "$f" paused "$r" NN`. The hooks hold every subagent of yours while
    `owns:` are its predecessor's to continue.
 3. Re-arm the watch. No messages to send: there are no worker chats.
 
-**Relaunch at the 700 K mark.** Only you cross it; every subagent starts fresh. On `COORDINATOR CONTEXT`:
-ask once, and on yes stop spawning, start `fleet.sh relaunch` **naming no chips** (it pauses), `TaskStop`
-your agents, ack their slots, update `STATE.md` yourself (the pause holds every subagent), and start the one coordinator chip (`mcp__ccd_session__start_session`)
+**Relaunch at the 700 K mark.** Only you cross it; every subagent starts fresh. `COORDINATOR CONTEXT` starts a drain: spawn nothing and let the agents in flight finish.
+Ask once, at `DRAINED`, at `DRAIN TIMED OUT` (`drain_cap_min`, 60 minutes [M57]), or when the drain ran out at the next step. On "no" run `fleet.sh undrain <run>`. On yes start `fleet.sh relaunch` **naming no chips** (it pauses), `TaskStop`
+only the agents still running then, ack their slots, update `STATE.md` yourself (the pause holds every subagent), and start the one coordinator chip (`mcp__ccd_session__start_session`)
 (`docs/RELAUNCH.md`, "One chat"). The new coordinator takes over and re-spawns per held claim, as after a
 crash.
 

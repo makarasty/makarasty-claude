@@ -150,6 +150,12 @@ function resume(c, a) {
         return 2;
     }
     const take = arg === '--take-over';
+    // No seat waiting and another session holds it: this chat is a stale or second coordinator, and lifts nothing.
+    const held = coordinatorSid(c);
+    if (take && !existsSync(`${run}/coordinator-pending`) && held && held !== (process.env.CLAUDE_CODE_SESSION_ID || '')) {
+        err(`SEAT TAKEN: another coordinator holds run ${basename(c.absrun)}; end your turn, start nothing. If this chat took the seat before a restart (same chat, new session id), run /makarasty:fleet-resume ${basename(c.absrun)} instead\n`);
+        return 1;
+    }
     const takeSeat = () => {
         if (!existsSync(`${run}/coordinator-pending`)) {
             if (take)
@@ -168,7 +174,7 @@ function resume(c, a) {
         writeFileSync(`${run}/coordinator`, `${sid}\n`);
         recordFleetSession(c.absrun);
         // `cards` stays: the old coordinator may still dismiss worker cards nobody started; the next relaunch resets it.
-        rmf(`${run}/coordinator-pending`, `${run}/.ctx-warned`, `${run}/.draining`, `${run}/.drained-said`, `${run}/chips/${sid}`);
+        rmf(`${run}/coordinator-pending`, `${run}/.ctx-warned`, `${run}/.draining`, `${run}/.drained-said`, `${run}/.undrained`, `${run}/.drain-timeout-said`, `${run}/chips/${sid}`);
         out(`this session is now the coordinator of ${basename(c.absrun)}\n`);
     };
     if (!existsSync(`${run}/PAUSED`)) {
@@ -196,6 +202,12 @@ function resume(c, a) {
         }
         catch { /* no owner */ }
     }
+    // The drain's cap does not count paused time either (ctx skips the check while PAUSED): restart it from now.
+    try {
+        const t = new Date();
+        utimesSync(`${run}/.draining`, t, t);
+    }
+    catch { /* not draining */ }
     // Logged before PAUSED goes: a resume that dies between the two still closes its window in the log.
     appendFileSync(`${run}/pauses.log`, `resumed ${now()}\n`);
     rmf(`${run}/PAUSED`, pauseMark(c), ...names(`${run}/stopped`).map((n) => `${run}/stopped/${n}`), `${run}/relaunch-waited`);
@@ -589,7 +601,7 @@ function handback(c, chip, o = out) {
 // coordinator chip or coordinator-pending is written, and this call resumes the run. Chips are two digits:
 // a bare 1 was once read as chip 01 and retired it.
 // How to start a chip [M56]: user_asked works only on a turn the operator's own message began.
-const startRule = (cards, absrun, coord) => `initiation "user_asked" when the operator's own message began this turn; on a turn a watch event began (an AskUserQuestion answer inside it too) the app refuses it, so use "own_initiative" (a card) and PushNotification the operator to start ${cards}; use it too when the call is refused. Each own_initiative start_session returns a task_id: append "<task_id> <title>" as one line to ${absrun}/cards at once (echo "<task_id> <title>" >> "${absrun}/cards"), because after hours or a compaction nothing else remembers it. When the card is not started, end the turn asking the operator to reply "запусти" or "start" in chat: their reply is their own turn and user_asked works then. On that reply first check whether each card already started (the operator may have clicked it) by the run's own record, not by title (an earlier relaunch's chats carry the same titles, this chat among them): a worker card started when \`fleet.sh contexts ${absrun}\` lists its chip${coord ? '; the coordinator card started when coordinator-pending is gone from the run dir. If coordinator-pending is still there, look once more after a minute: the fresh coordinator may still be reading before its take-over' : ''}. Started: start nothing for it. Not started: mcp__ccd_session__dismiss_task its task_id from ${absrun}/cards, then start it with user_asked.`;
+const startRule = (cards, absrun, coord) => `initiation "user_asked" when the operator's own message began this turn; on a turn a watch event began (an AskUserQuestion answer inside it too) the app refuses it, so use "own_initiative" (a card) and PushNotification the operator to start ${cards}; use it too when the call is refused. Each own_initiative start_session returns a task_id: append "<task_id> <title>" as one line to ${absrun}/cards at once (echo "<task_id> <title>" >> "${absrun}/cards"), because after hours or a compaction nothing else remembers it. When the card is not started, end the turn asking the operator to reply "запусти" or "start" in chat: their reply is their own turn and user_asked works then. On that reply first check whether each card already started (the operator may have clicked it) by the run's own record, not by title (an earlier relaunch's chats carry the same titles, this chat among them): a worker card started when \`fleet.sh contexts ${absrun}\` lists its chip${coord ? '; the coordinator card started when coordinator-pending is gone from the run dir' : ''}. A card that does not show as started yet: look once more after a minute before you dismiss it (${coord ? 'the fresh coordinator may still be reading before its take-over; ' : ''}a worker registers only at its first claim). Started: start nothing for it. Not started: mcp__ccd_session__dismiss_task its task_id from ${absrun}/cards, then start it with user_asked.`;
 function relaunch(c, a) {
     const run = c.run;
     let waitMin = '5', keep = false;
@@ -786,7 +798,7 @@ function relaunch(c, a) {
         return 0;
     }
     writeFileSync(`${run}/coordinator-pending`, '');
-    out(`CHIP coordinator\ntitle: fleet ${runid} coordinator\nbackground: Fresh coordinator of fleet run ${runid}, taking over after a relaunch. Run dir: ${c.absrun}. Start this one first; it reads STATE.md and resumes the run.\nprompt: You are the coordinator of fleet run ${runid}, taking over. Read ${c.absrun}/STATE.md in full, then sections 3b and 8b of the makarasty fleet-plan command (invoke /makarasty:fleet-plan only to read it if needed; do not re-run its interview or offer chips except those STATE.md lists as pending), then run \`sh ${fsh} resume ${c.absrun} --take-over\` and arm /makarasty:fleet-wait ${runid} ${total}.\n\n`);
+    out(`CHIP coordinator\ntitle: fleet ${runid} coordinator\nbackground: Fresh coordinator of fleet run ${runid}, taking over after a relaunch. Run dir: ${c.absrun}. Start this one first; it reads STATE.md and resumes the run.\nprompt: You are the coordinator of fleet run ${runid}, taking over. Read ${c.absrun}/STATE.md in full, then sections 3b and 8b of the makarasty fleet-plan command (invoke /makarasty:fleet-plan only to read it if needed; do not re-run its interview or offer chips except those STATE.md lists as pending), then run \`sh ${fsh} resume ${c.absrun} --take-over\`. If it prints SEAT TAKEN, another coordinator holds the run: end your turn and start nothing. After a successful take-over call mcp__ccd_session_mgmt__detach_session with "self" (the old coordinator started this chat, so every turn you end would wake it [M56]); if it is refused (shared worktree), say so in one line and go on. Then arm /makarasty:fleet-wait ${runid} ${total}.\n\n`);
     if (gap)
         out(`STILL WITHOUT A WORKER:\n${gap}\n`);
     out(`RELAUNCH READY for ${runid}: the run stays paused until the new coordinator resumes it.\n`);

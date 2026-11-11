@@ -224,6 +224,65 @@ writeFileSync(join(prun, '05.notes.md'), `stopped (paused ${at('12:00:10')}): a\
 rp = runP();
 if (rp)
     check('ambiguous notes: no pause, an outage', [rp.time.buckets_min['paused'], rp.time.buckets_min['outages >45m'] > 590], [0, true]);
+// ---- a relaunched run: `coordinator` names only the last coordinator. Two earlier ones are found by their
+// `<run> --take-over` text, one in the project folder, one in a worktree's folder (with a subagent); a chat
+// that only mentions the run is not a coordinator.
+const K1 = 'f1111111-0000-4000-8000-000000000011', K2 = 'f2222222-0000-4000-8000-000000000012';
+const K3 = 'f3333333-0000-4000-8000-000000000013', DECOY = 'f4444444-0000-4000-8000-000000000014';
+const rrun = join(root, '.fleet', 'rel');
+mkdirSync(join(rrun, 'chips'), { recursive: true });
+writeFileSync(join(rrun, 'chips', P), '05\n'); // a worker with a transcript, so there is something to analyze
+writeFileSync(join(rrun, 'coordinator'), K3 + '\n');
+const wt = `${projects}--claude-worktrees-wt`;
+const coordRows = (text) => jsonl([
+    user('09:00:00', text),
+    asst('09:00:30', 'k', OPUS, { input_tokens: 100, output_tokens: 1000 }, { type: 'text', text: 'ok' }, 'end_turn'),
+]);
+writeFileSync(join(projects, `${K1}.jsonl`), coordRows(`sh fleet.sh resume ${rrun} --take-over`));
+mkdirSync(join(wt, K2, 'subagents'), { recursive: true });
+writeFileSync(join(wt, `${K2}.jsonl`), coordRows(`sh fleet.sh resume ${rrun}" --take-over`)); // quoted: a Windows path is JSON-escaped in the transcript
+writeFileSync(join(wt, K2, 'subagents', 'agent-k.jsonl'), jsonl([
+    user('09:01:00', 'review'),
+    asst('09:01:10', 'ks', SONNET, { output_tokens: 50 }, { type: 'text', text: 'ok' }, 'end_turn'),
+]));
+writeFileSync(join(wt, `${K3}.jsonl`), coordRows('the latest coordinator, named by the coordinator file'));
+writeFileSync(join(projects, `${DECOY}.jsonl`), coordRows(`please look at ${rrun}`));
+writeFileSync(join(projects, 'f5555555-0000-4000-8000-000000000015.jsonl'), coordRows(`resume ${rrun}2 --take-over`)); // another run's name
+const xr = spawnSync(process.execPath, [script, rrun, '--json'], { encoding: 'utf8', env, maxBuffer: 64e6 });
+try {
+    const rr = JSON.parse(xr.stdout);
+    check('relaunched run: three coordinator sessions', rr.coordinator_sessions, 3);
+    check('relaunched run: coordinator tokens', [rr.tokens.coordinator.msgs, rr.tokens.coordinator.out], [4, 3 * 1000 + 50]);
+    check('relaunched run: coordinator $', rr.tokens.coordinator.cost, (3 * (100 * 4 + 1000 * 20) + 50 * 10) / 1e6, 1e-9);
+}
+catch {
+    console.log(`FAIL relaunched run: ${xr.stderr}`);
+    failed++;
+}
+// ---- a transcript too big to hold as one string is scanned line by line, not skipped
+const brun = join(root, '.fleet', 'big');
+mkdirSync(join(brun, 'chips'), { recursive: true });
+writeFileSync(join(brun, 'chips', P), '05\n');
+writeFileSync(join(brun, 'coordinator'), 'f6666666-0000-4000-8000-000000000016\n');
+const pad = `{"type":"x","pad":"${'x'.repeat(1e6)}"}\n`;
+const KB = 'f7777777-0000-4000-8000-000000000017';
+writeFileSync(join(projects, `${KB}.jsonl`), coordRows(`sh fleet.sh resume ${brun} --take-over`) + pad.repeat(66));
+const br = spawnSync(process.execPath, [script, brun, '--json'], { encoding: 'utf8', env, maxBuffer: 64e6 });
+try {
+    check('a transcript over 64 MB is still searched for its take-over line', JSON.parse(br.stdout).coordinator_sessions, 1);
+}
+catch {
+    console.log(`FAIL big transcript: ${br.stderr}`);
+    failed++;
+}
+rmSync(join(projects, `${KB}.jsonl`));
+// ---- a coordinator file that names no session says so
+const nrun = join(root, '.fleet', 'note');
+mkdirSync(join(nrun, 'chips'), { recursive: true });
+writeFileSync(join(nrun, 'chips', P), '05\n');
+writeFileSync(join(nrun, 'coordinator'), 'not-a-session\n');
+const nr = spawnSync(process.execPath, [script, nrun], { encoding: 'utf8', env });
+check('a coordinator file naming no session is noted', nr.stdout.includes('note: the coordinator file names "not-a-session"'), true);
 rmSync(tmp, { recursive: true, force: true });
 console.log(`${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
