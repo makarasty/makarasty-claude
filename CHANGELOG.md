@@ -1,5 +1,12 @@
 # Changelog
 
+## makarasty 1.11.1 — 2026-11-11
+
+- **What only the operator can do reaches them like a question.** A coordinator that needs the Browser pane
+  opened, a sign-in or a command run, or that spots a "your call" in a status list, now sends a push and ends
+  the turn with the desktop app's next-step box (`wrap_up`, `blocked: true`) instead of a bold line among task
+  ids that a person coming back hours later scrolls past.
+
 ## makarasty 1.11.0, makarasty-tools 1.15.0 — 2026-11-09
 
 - **Deletes need the person's own answer, item by item.** After real incidents (38 items gone on "Да, всё", a

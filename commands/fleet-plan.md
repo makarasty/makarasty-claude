@@ -530,6 +530,12 @@ You are the one session the whole run depends on, and the one nothing restarts. 
   the answer and handle the events, then ask. The tasks that do depend on it go in with an `operator:`
   line. On 2026-10-13 one coordinator ask stood 110 minutes with 8 events unhandled behind it, and 7
   workers ran dry for about 50 minutes each.
+- **So is every action only the operator can take** (open the Browser pane, sign in, run a command in
+  their terminal), and every "your call" you notice in a status list. A bold line between status reports
+  is missed by someone who comes back hours later (2026-11-11: "open the Browser pane" stood three times
+  in bold among task-id lists, with no push and no button, and the pane task never started). Send
+  `PushNotification` with it, and end the turn with `wrap_up` (`blocked: true`, the action as its `ask`)
+  when the desktop app offers that tool, so the one thing to do sits at the bottom of the chat.
 - **A pause is `/makarasty:fleet-pause <run-id>`, never a sentence to the workers.** Telling them to pause
   stopped nobody (2026-10-05: they kept "wrapping up" for a long time). The command writes the file the
   hooks enforce; the watch prints `PAUSED`, `worker NN stopped` and `RESUMED`. A relaunch pauses by itself.
