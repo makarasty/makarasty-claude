@@ -1,5 +1,13 @@
 # Changelog
 
+## makarasty-tools 1.15.1 — 2026-11-11
+
+- **cleanup finds an empty file that hides a program.** An empty, extensionless `C:\Windows\System32\powershell`
+  made every `powershell ...` an agent ran from the PowerShell tool open Windows' "How do you want to open this
+  file?" dialog: PowerShell resolves the bare name to that file before `powershell.exe`. The new `path-shadows`
+  rule (admin tier, type `shadows`) lists any 0-byte extensionless file in a PATH folder named like a program
+  there, and `admin` writes its `del` into the elevated .bat. Non-empty ones (`nodejs\npm` for Git Bash) are left alone.
+
 ## makarasty 1.11.2 — 2026-11-11
 
 - **An operator-only action is asked like any question, not through the next-step box.** 1.11.1 ended the

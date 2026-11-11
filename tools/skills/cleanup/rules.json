@@ -717,6 +717,16 @@
    ]
   },
   {
+   "id": "path-shadows",
+   "title": "Empty file hiding a program",
+   "tier": "admin",
+   "method": "none",
+   "os": "win32",
+   "type": "shadows",
+   "minMB": 0,
+   "explain": "An empty file with no extension, named like a program on PATH. PowerShell picks it before the real program and Windows asks how to open it. It is 0 bytes: nothing is lost."
+  },
+  {
    "id": "steam-games",
    "title": "Steam game",
    "tier": "owner",

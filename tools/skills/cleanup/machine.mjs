@@ -378,6 +378,18 @@ const TYPES = {
             return files.length ? [{ slug: basename(root), title: `${r.title}: ${root}`, paths: files, perPathAge: true }] : [];
         });
     },
+    // An empty file with no extension in a PATH folder, named like a program there (System32\powershell beside
+    // powershell.exe): PowerShell resolves the bare name to it first and Windows asks "How do you want to open this file?".
+    // Only empty ones: a real extensionless file on PATH (nodejs\npm, a shell script for Git Bash) is somebody's tool.
+    shadows(r) {
+        if (!WIN) return [];
+        const dirs = [...new Set((process.env.PATH ?? '').split(';').filter(Boolean))];
+        const exts = (process.env.PATHEXT || '.COM;.EXE;.BAT;.CMD').toLowerCase().split(';').filter(Boolean);
+        const names = new Map(dirs.map(d => [d, ls(d)]));
+        const progs = new Set([...names.values()].flat().map(n => n.toLowerCase()).filter(n => exts.some(e => n.endsWith(e))).map(n => n.slice(0, n.lastIndexOf('.'))));
+        return dirs.flatMap(d => names.get(d).filter(n => !n.includes('.') && progs.has(n.toLowerCase()) && lst(join(d, n))?.isFile() && lst(join(d, n)).size === 0)
+            .map(n => ({ slug: n, title: `${r.title}: ${join(d, n)}`, paths: [join(d, n)], evidence: [`empty, no extension: PowerShell runs it instead of the real ${n} and Windows asks how to open it`] })));
+    },
     bins(r, ctx) {
         return ctx.sid ? ctx.volumes.map(v => ({ slug: v.drive, title: `${r.title} ${v.drive}`, paths: [join(v.drive + sep, '$Recycle.Bin', ctx.sid)] })) : [];
     },
@@ -735,6 +747,13 @@ function selftest() {
         assert.ok(dups.length === 2 && dups.every(i => /^t-dup:same-[0-9a-z]+$/.test(i)) && dups[0] !== dups[1], `same name twice: both ids carry a path hash (${dups})`);
         assert.ok(expand('relative\\x').length === 0, 'a relative pattern matches nothing');
         assert.equal(TYPES.paths({ paths: ['%TEMP%'], within: '%LOCALAPPDATA%' }).length, 0, 'a TEMP outside LOCALAPPDATA (D:\\, a RAM disk) is not cleaned');
+        if (WIN) {
+            const sa = join(tmp, 'pa'), sb = join(tmp, 'pb');
+            put(join(sa, 'tool'), 0); put(join(sa, 'npm'), 10); put(join(sa, 'lonely'), 0); put(join(sb, 'tool.exe'), 10); put(join(sb, 'npm.cmd'), 10);
+            process.env.PATH = `${sa};${sb}`;
+            assert.deepEqual(TYPES.shadows({ title: 'x' }).flatMap(g => g.paths), [join(sa, 'tool')], 'shadows: only an empty extensionless file named like a program');
+            process.env.PATH = saved.PATH;
+        }
         put(join(local, 'unzipped', 'f'), 1024, old); // an unzip: old modified date, created now
         assert.ok(measure(join(local, 'unzipped', 'f')).newest > Date.now() - HOUR, 'a file created now is new whatever its modified date');
         const tornFile = join(tmp, 'claude', 'sessions', `${process.pid}.json`); // named by a running pid, as Claude Code names them
