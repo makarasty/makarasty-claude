@@ -395,6 +395,23 @@ export function claimsOf(c: Ctx, chip: string): string[] {
     lf(read(`${c.run}/tasks/claimed/${i}/owner`)).split('\n').includes(`chip ${chip}`));
 }
 
+// Every open claim of the run, whoever holds it: what is in flight.
+export function openClaims(c: Ctx): string[] {
+  return names(`${c.run}/tasks/claimed`, '/').filter((i) =>
+    live(i) && isDir(`${c.run}/tasks/claimed/${i}`) && !existsSync(`${c.run}/tasks/done/${i}`));
+}
+
+// `.draining`: the coordinator's context passed its mark, so nothing new is handed out while the agents in
+// flight finish. Its first line is the coordinator's session id; a marker left by an earlier coordinator
+// (a relaunch took the seat) is stale, and goes.
+export function draining(c: Ctx): boolean {
+  const m = `${c.run}/.draining`;
+  if (!existsSync(m)) return false;
+  const sid = firstLine(m);
+  if (sid && sid !== coordinatorSid(c)) { rmSync(m, { force: true }); rmSync(`${c.run}/.drained-said`, { force: true }); return false; }
+  return true;
+}
+
 // The pane walks one host claimed and has not served yet.
 export function walksOf(c: Ctx, chip: string): string[] {
   return names(`${c.run}/pane/running`).filter((w) => !existsSync(`${c.run}/pane/results/${w}.json`) &&

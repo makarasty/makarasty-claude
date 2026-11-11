@@ -371,8 +371,8 @@ turn's one `AskUserQuestion` (section 3b), never into `RULES.md` as a guess. The
 ### Opt-in: separate chats
 
 When Round 0 chose "Separate chats for browser workers, one commit at the end", or more than one live visual check must run at once
-(one chat has one live tab [M42]), offer chips for those workers.
-One `mcp__ccd_session__spawn_task` per worker, title and prompt taken verbatim from:
+(one chat has one live tab [M42]), start chips for those workers.
+One `mcp__ccd_session__start_session` per worker, title, background and prompt taken verbatim from the `CHIP NN` blocks of:
 
 ```bash
 sh "${CLAUDE_PLUGIN_ROOT}/scripts/fleet.sh" chips .fleet/<run-id> 01-02 pane --model <id> --effort <level>   # lane: pane, repo or verify; a brief worker has neither lane nor --model
@@ -382,11 +382,16 @@ sh "${CLAUDE_PLUGIN_ROOT}/scripts/fleet.sh" chips .fleet/<run-id> 03-08 repo --m
 Do not type them yourself, and run it once per lane the queue holds, in the same turn, **with disjoint
 number ranges per lane**, as above: `chips` refuses an empty, reversed or non-numeric range, and refuses a
 number already offered under a different lane, because two chips with one number are two workers with one
-identity. It ends with `STILL WITHOUT A WORKER` for every lane that has ready work and no chip yet. The title `fleet <run-id> NN` is the only reliable address later: session
-handles from `mcp__ccd_session_mgmt__list_sessions` are opaque, change between calls, and reach other
-accounts on the same machine. The prompt carries the run's absolute path, because a chip session can start
+identity. It ends with `STILL WITHOUT A WORKER` for every lane that has ready work and no chip yet. Start each
+chip with `context: "fresh"` and `use_worktree: false`; `initiation` is `"user_asked"` only when the operator's own
+message began this turn, otherwise (a watch line, an AskUserQuestion answer in a watch-started turn)
+`"own_initiative"` (a card the operator starts with a click; the app refuses a start on a turn a watch event or
+another session's message started) and you PushNotification the operator to start the cards. Keep the title `fleet <run-id> NN`: `fleet.sh` and the watch match on it. It is no
+longer the only address: `mcp__ccd_session_mgmt__list_sessions {linked:true}` returns each started session's
+`name` and `startedBy`, and `SendMessage` takes that name; other session lists are opaque, change between calls,
+and reach other accounts on the same machine. The prompt carries the run's absolute path, because a chip session can start
 in its own worktree where the gitignored `.fleet/` does not exist, and the path of the `fleet-run` that is
-actually installed. Offer chips for every worker the run needs now, never paste lines in their place.
+actually installed. Start chips for every worker the run needs now, never paste lines in their place.
 
 In pull mode the prompt carries the worker's identity **and its lane**. Without the identity a worker
 invents one, two workers pick the same number, and their findings interleave into one file that collection
@@ -401,11 +406,11 @@ line inside a claim, and `ask/NN-1.md`.
 ## 8. Arm the watch, then hand over
 
 **Invoke `/makarasty:fleet-wait <run-id> <count>` yourself, before you stop**, `<count>` being the slots
-registered in one chat, the chips offered with separate chats. Do not print it as a command
+registered in one chat, the chips started with separate chats. Do not print it as a command
 for the operator to run. Measured 2026-08-26: a planner that printed the line and stopped left seven
 finished workers sitting on disk unnoticed, because the operator assumed the planner was watching and the
 planner assumed the operator would run it. The watch waits in the shell, so arming it early costs nothing
-and it fires whether the chips are clicked in one minute or twenty.
+and it fires whether the chips are started in one minute or twenty.
 
 **Arm the loop `fleet-wait` gives you, quiet timer included, and do not write your own.** The supplied loop
 is a `while true` as well; what separates it from a hand written one is the two things a hand written one
@@ -507,7 +512,16 @@ You are the one session the whole run depends on, and the one nothing restarts. 
   shipped, repeating every `coordinator_handoff_step_k`, 100, so the second line comes at 800), and a
   `WORKER CONTEXT NN` line when a worker crosses `worker_relaunch_k` (700); `fleet.sh contexts <run>` lists
   every session's size and marks the ones `OVER`. In one chat only you cross the mark, since every subagent
-  starts fresh: stop your agents and relaunch naming no chips (`docs/RELAUNCH.md`, "One chat"). The operator may also just ask. Do not hand off by chip and
+  starts fresh. **At the first mark the run drains, it does not relaunch at once**: a relaunch stops every
+  subagent in flight, and the last four runs lost 2 or 3 agents and 100 to 150 minutes each that way (a
+  fresh coordinator cannot adopt an agent). The first `COORDINATOR CONTEXT` line says `DRAIN`: `fleet.sh next`
+  and `dispatch` hand out nothing, so start no new task; let the agents in flight finish and review their
+  reports. The watch prints `DRAINED: no task in flight, ask the relaunch question now` once no claim is open:
+  then update `STATE.md` and ask the operator the one relaunch question below (a mark crossed with nothing in
+  flight says so in its first line and asks at once). If claims are still open at the next step (800 K),
+  the line says the drain ran out: ask then anyway and tell the operator that a relaunch stops those
+  agents. On "no", end the drain as `docs/PROTOCOL.md` (`.draining`) says. Then relaunch naming no chips
+  (`docs/RELAUNCH.md`, "One chat"). The operator may also just ask, at any time. Do not hand off by chip and
   do not run `/makarasty-tools:handoff`: a chain of handoff chips re-reads the world at every hop and loses
   what was only in context, and workers with a large context were never moved at all. One controlled
   relaunch replaces the chain. A `WORKER CONTEXT` line for a queue worker is the exception: it names

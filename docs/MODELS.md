@@ -204,7 +204,7 @@ what runs. The `effort:` line is what runs in all four of those unless a call pa
 the model on each `Agent` call. What follows is for a run that chose separate worker chats.
 
 The coordinator sets each queue worker's model and effort; the operator does not [M35]. A chip starts on
-whatever the app's model menu shows at the click, so the run says what it wants and the coordinator
+whatever the app's model menu shows at the start, so the run says what it wants and the coordinator
 switches any worker that started on something else.
 
 The tools are the desktop app's session tools, deferred, so load them with ToolSearch first:
@@ -222,14 +222,14 @@ What bounds them, per the tools' own descriptions (2026-10-08):
   `whoami` call.
 - **Never this session.** No session switches itself. The operator picks the coordinator's model in the
   app's menu.
-- **The approval card.** No card for a chip this coordinator offered when the target is the coordinator's
+- **The approval card.** No card for a chip this coordinator started when the target is the coordinator's
   own model or a cheaper family, at its own effort or lower. A dearer model or effort, or a chip another
-  chat offered (a relaunch, a handoff), shows the operator one card per call.
+  chat started (a relaunch, a handoff), shows the operator one card per call.
 - **The prompt cache does not carry over.** The next turn re-reads the whole context uncached on the new
   model, so switch at the worker's start, while its context is small. A heavier task later is an `Agent`
   spawn, never a switch.
 - **Queue workers only.** A brief is one turn, which no switch reaches, and `chips` refuses `--model` for
-  one: tell the operator which model to pick in the menu before clicking a brief chip. A worker reopened
+  one: tell the operator which model to pick in the menu before starting a brief chip. A worker reopened
   in a terminal with `claude -r` is outside the app, and nothing switches it.
 
 The loop:

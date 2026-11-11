@@ -758,12 +758,12 @@ function chips(c, args) {
             if (lane === 'pane')
                 seepane = ' Keep its browser pane on screen if it asks for one.';
         }
-        out(`CHIP ${nn}\ntitle: fleet ${runid} ${nn}\ntldr: Worker ${nn} of fleet run ${runid}, ${what}. It works by itself and reports to the coordinator chat; open it.${seepane}\nprompt: ${prompt}\n\n`);
+        out(`CHIP ${nn}\ntitle: fleet ${runid} ${nn}\nbackground: Worker ${nn} of fleet run ${runid}, ${what}. Run dir: ${c.absrun}. It works by itself from the queue there and reports to the coordinator chat.${seepane}\nprompt: ${prompt}\n\n`);
     }
     if (!agents) {
-        out('Offer every CHIP above now, each as its own mcp__ccd_session__spawn_task with exactly that title, tldr and prompt.\n');
-        out('The title is the worker\'s address: fleet-wait, fleet-resume and send_message find it by that title and no other.\n');
-        out('A chip is an offer the operator can decline with one click, so offer every one of them. If a project or memory rule seems to forbid chips for fleet workers, quote that rule to the operator in this same turn, with the chips already offered; never replace chips with paste lines.\n');
+        out('Start every CHIP above now, each as its own mcp__ccd_session__start_session with exactly that title, background and prompt, context "fresh", use_worktree false. initiation "user_asked" only when the operator\'s own message began this turn; otherwise (a watch line, an AskUserQuestion answer in a watch-started turn) "own_initiative", which shows a card (the app refuses a start on a turn a watch event or another session started), then PushNotification the operator to start it.\n');
+        out('The title is the worker\'s address: fleet-wait and fleet-resume find it by that title. mcp__ccd_session_mgmt__list_sessions {linked:true} gives each started session\'s name and startedBy; send_message takes the name.\n');
+        out('A card is an offer the operator can decline with one click, so start every one of them. If a project or memory rule seems to forbid chips for fleet workers, quote that rule to the operator in this same turn, with the chips already started; never replace chips with paste lines.\n');
     }
     // Every lane the queue already holds work for needs a worker from the first minute: tasks filed at 18:34
     // waited 19 minutes on 2026-10-05 for chips that were promised "for wave 3". A `needs:` that is not a

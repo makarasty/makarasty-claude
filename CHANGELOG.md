@@ -1,5 +1,26 @@
 # Changelog
 
+## makarasty 1.12.0, makarasty-tools 1.15.2 — 2026-11-11
+
+- **Sessions start with `mcp__ccd_session__start_session`.** The desktop app dropped `spawn_task`, which
+  `relaunch`, `retire`, the planner's chip trailer, fleet-plan, fleet-resume, handoff and the docs still named.
+  A `CHIP NN` block now carries `title:`, `background:` (was `tldr:`, at least 80 characters as the tool asks)
+  and `prompt:`. `initiation "user_asked"` only on a turn the operator's own message began; a watch line, an
+  AskUserQuestion answer inside a watch-started turn and every `retire` use `own_initiative`, a card the
+  operator starts. handoff prefers `hand_off_to_session` for this chat's own unfinished task.
+- **The run drains before a coordinator relaunch.** All four runs of 2026-11-04..10 relaunched at the 700K
+  mark and stopped 2-3 subagents mid-task (a fresh coordinator cannot adopt them). Now the first crossing of
+  the mark writes `<run>/.draining`: `next` and `dispatch` hand out nothing (exit 13, not a pause), a worker
+  holding a claim still gets HOLDING, the watch prints `DRAINED` once when no claim is open, and only then is
+  the operator asked. At the next step (800K) with claims still open the ask comes anyway. The mark itself is
+  unchanged. Markers in docs/PROTOCOL.md.
+- **STALL prints once per unchanged state.** The watch repeated it every 10 minutes while only operator
+  checks were left.
+- **Pause ack for separate chats** is one `SendMessage` with `notify_when_idle` per worker instead of a
+  status read every 20 s.
+- Selftest part e expected the old context-reminder wording; CLAUDE.md says why `claude plugin test .` fails
+  `tools/hooks/gates.test.ts` (it runs under the root hooks module).
+
 ## makarasty-tools 1.15.1 — 2026-11-11
 
 - **cleanup finds an empty file that hides a program.** An empty, extensionless `C:\Windows\System32\powershell`

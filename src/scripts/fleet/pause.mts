@@ -154,7 +154,7 @@ function resume(c: Ctx, a: string[]): number {
     if (!sid) { out('coordinator-pending is still set: no session id here, so no coordinator was recorded\n'); return; }
     writeFileSync(`${run}/coordinator`, `${sid}\n`);
     recordFleetSession(c.absrun);
-    rmf(`${run}/coordinator-pending`, `${run}/.ctx-warned`, `${run}/chips/${sid}`);
+    rmf(`${run}/coordinator-pending`, `${run}/.ctx-warned`, `${run}/.draining`, `${run}/.drained-said`, `${run}/chips/${sid}`);
     out(`this session is now the coordinator of ${basename(c.absrun)}\n`);
   };
   if (!existsSync(`${run}/PAUSED`)) {
@@ -318,7 +318,7 @@ function retire(c: Ctx, a: string[]): number {
   if (existsSync(`${run}/want/${ch}`)) { mkdirSync(`${run}/want`, { recursive: true }); copyWant(c, ch, nw); }
   out(`RETIRING ${ch}: it finishes the task it holds and leaves at its next claim, its tree committed. Worker ${nw} takes lane ${lane}:\n`);
   out(chipBlocks(`${chipOut}\n`));
-  out(`Offer that chip now, as its own spawn_task, then PushNotification the operator to click 'fleet ${basename(c.absrun)} ${nw}'. A watch armed from 1.5.14's fleet-wait counts it from now on, clicked or not; one armed earlier (a saved watch.sh pinned to an older plugin) must be re-armed from the current fleet-wait first.\n`);
+  out(`Start that chip now, as its own mcp__ccd_session__start_session (title, background and prompt exactly as above, context "fresh", use_worktree false; initiation "own_initiative" (retire runs from a watch line: a start there shows a card, and "user_asked" is only for a turn the operator's own message began) and then PushNotification the operator to start the card 'fleet ${basename(c.absrun)} ${nw}'). A watch armed from 1.5.14's fleet-wait counts it from now on, started or not; one armed earlier (a saved watch.sh pinned to an older plugin) must be re-armed from the current fleet-wait first.\n`);
   if (idle()) retireIdle(nw);
   return 0;
 }
@@ -633,19 +633,19 @@ function relaunch(c: Ctx, a: string[]): number {
     out('Do these now, in this order, in this one turn:\n');
     out(`  1. Re-arm the watch for the new worker count: TaskStop the fleet-wait monitor, then arm /makarasty:fleet-wait ${runid} ${total}.\n`);
     if (!offeredNow) { out('  Nothing to offer: every replacement above has started.\n'); return 0; }
-    out('  2. Offer every CHIP above, each as its own mcp__ccd_session__spawn_task with exactly that title, tldr and prompt.\n');
-    out('  3. Tell the operator in one line: click the worker chips; nothing else to do, the run is already running.\n');
+    out('  2. Start every CHIP above, each as its own mcp__ccd_session__start_session with exactly that title, background and prompt, context "fresh", use_worktree false; initiation "user_asked" only when the operator\'s own message began this turn; otherwise (a watch line, an AskUserQuestion answer in a watch-started turn) "own_initiative", which shows a card, then PushNotification the operator to start it.\n');
+    out('  3. Tell the operator in one line: start the worker chips; nothing else to do, the run is already running.\n');
     return 0;
   }
   writeFileSync(`${run}/coordinator-pending`, '');
-  out(`CHIP coordinator\ntitle: fleet ${runid} coordinator\ntldr: Fresh coordinator of fleet run ${runid}, taking over after a relaunch. Click this one first; it reads STATE.md and resumes the run.\nprompt: You are the coordinator of fleet run ${runid}, taking over. Read ${c.absrun}/STATE.md in full, then sections 3b and 8b of the makarasty fleet-plan command (invoke /makarasty:fleet-plan only to read it if needed; do not re-run its interview or offer chips except those STATE.md lists as pending), then run \`sh ${fsh} resume ${c.absrun} --take-over\` and arm /makarasty:fleet-wait ${runid} ${total}.\n\n`);
+  out(`CHIP coordinator\ntitle: fleet ${runid} coordinator\nbackground: Fresh coordinator of fleet run ${runid}, taking over after a relaunch. Run dir: ${c.absrun}. Start this one first; it reads STATE.md and resumes the run.\nprompt: You are the coordinator of fleet run ${runid}, taking over. Read ${c.absrun}/STATE.md in full, then sections 3b and 8b of the makarasty fleet-plan command (invoke /makarasty:fleet-plan only to read it if needed; do not re-run its interview or offer chips except those STATE.md lists as pending), then run \`sh ${fsh} resume ${c.absrun} --take-over\` and arm /makarasty:fleet-wait ${runid} ${total}.\n\n`);
   if (gap) out(`STILL WITHOUT A WORKER:\n${gap}\n`);
   out(`RELAUNCH READY for ${runid}: the run stays paused until the new coordinator resumes it.\n`);
   out('Do these now, in this order, in this one turn:\n');
   out(`  1. ${c.absrun}/STATE.md is current (checked: it is newer than the pause and the handbacks). Do not read diffs or dump files to add to it.\n`);
   out('  2. Stop your own watch: TaskStop on the fleet-wait monitor, so it does not report events the new coordinator must hear.\n');
-  out('  3. Offer every CHIP above, the coordinator chip first, each as its own mcp__ccd_session__spawn_task with exactly that title, tldr and prompt.\n');
-  out('  4. Tell the operator in one line: click the coordinator chip first, then the worker chips; the run stays paused until the new coordinator resumes it.\n');
+  out('  3. Start every CHIP above, the coordinator chip first, each as its own mcp__ccd_session__start_session with exactly that title, background and prompt, context "fresh", use_worktree false; initiation "user_asked" only when the operator\'s own message began this turn; otherwise (a watch line, an AskUserQuestion answer in a watch-started turn) "own_initiative", which shows a card, then PushNotification the operator to start it.\n');
+  out('  4. Tell the operator in one line: start the coordinator chip first, then the worker chips; the run stays paused until the new coordinator resumes it.\n');
   return 0;
 }
 

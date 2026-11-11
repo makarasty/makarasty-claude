@@ -69,8 +69,8 @@ background subagent per task, each of which writes its findings to disk. You do 
 anything ([`ONECHAT.md`](ONECHAT.md) has the loop). A task that needs the browser pane runs on its own, one at
 a time, because one chat has one live tab.
 
-**Opt-in: separate chats.** If you picked separate chats in the last question, the planner instead offers
-**one chip per worker**. Click each: a new chat appears, titled `fleet <run-id> NN`, claims tasks and writes
+**Opt-in: separate chats.** If you picked separate chats in the last question, the planner instead starts
+**one chip per worker** (each a start_session card you click if the app asks you to): a new chat appears, titled `fleet <run-id> NN`, claims tasks and writes
 findings to disk. A worker that needs a browser pane asks you inside its first minute, in its own chat, and
 that is the only question a worker is ever allowed to ask you. The rest of this page says "worker" for
 either; the sidebar and background-panel glances in step 5 apply to separate chats only.

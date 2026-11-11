@@ -139,11 +139,20 @@ State: the next chat then works only from the checkout path.
 
 ### 6. Offer the chip
 
-`mcp__ccd_session__spawn_task`:
+To hand this chat's own unfinished task over, prefer `mcp__ccd_session__hand_off_to_session` (`title`,
+`remaining_plan`): it moves the task to a new session forked from this conversation, so the receiver prompt
+below is not needed. Keep `mcp__ccd_session__start_session` for a chip the receiver should start from the
+handoff file (a fresh context, a fleet coordinator, `from <chat>`). A card you started and no longer want:
+`mcp__ccd_session__dismiss_task`.
+
+`mcp__ccd_session__start_session`, with `context` "fresh", `use_worktree` false (the prompt below moves
+to the checkout itself), `initiation` "user_asked" on a turn the person's own message started and asked for
+the handoff, else "own_initiative" (a card the person starts with a click; the app refuses a start on a
+turn a watch event or another session started):
 
 - `title`: the work as a verb phrase, under 60 characters.
-- `tldr`: one or two sentences in the person's language: that it continues the chat "<title>", why now,
-  what the new chat will do.
+- `background`: at least 80 characters, in the person's language: that it continues the chat "<title>", why
+  now, what the new chat will do.
 - `prompt`: the receiver prompt below, filled in, plus the focus from the arguments, if any.
 
 > Continue work handed off from the chat '<title>' (<id>). Read <handoff file> in full before anything
@@ -175,7 +184,7 @@ there, since the existing ones carry the same titles; the one exception is a lan
 as without a worker. Name `opus` in the Model line for a fleet coordinator. A coordinator that improvises
 the launch from docs gets the chips wrong, and the project's own rules fill the gaps.
 
-Without `spawn_task` (the CLI), print that prompt in a fenced block for the person to paste into a new
+Without `start_session` (the CLI), print that prompt in a fenced block for the person to paste into a new
 chat started in the checkout, with the directory step dropped, the patch step kept, the transcript path
 in place of the chat id, and the last sentence replaced by: "If a fact is missing, read that
 transcript, or ask the person."

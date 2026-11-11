@@ -32,9 +32,9 @@ opt-in, chosen in the plan's first question round.
 spawn paid work and depend on your clicks, so no agent starts them. `fleet-pause` does not: it spends nothing,
 and a coordinator that is asked to pause has to be able to run it. `fleet-plan` does not either: a
 chat that became a coordinator by handoff, or was told "launch the fleet", could not load it and launched
-without its chip rules. Nothing it does costs money until you click a chip. The others are reachable by an
-agent that needs them, and `fleet-run` has to be: you start a worker by
-clicking its chip, and the model in that new session is what invokes `fleet-run` there.
+without its chip rules. Nothing it does costs money until a chip session starts. The others are reachable by an
+agent that needs them, and `fleet-run` has to be: a worker is started from
+its chip (`start_session`), and the model in that new session is what invokes `fleet-run` there.
 
 ## A run, start to finish
 
@@ -44,13 +44,13 @@ clicking its chip, and the model in that new session is what invokes `fleet-run`
 2. `/makarasty:fleet-wait <run-id> <slot count>` watches for what a task notification does not bring:
    the coordinator's own context, a service down, a stall. Only the coordinator can near its context limit
    (700K, asked again at 800K; auto-compaction starts a little past 900K): it asks you once, then offers one
-   fresh coordinator chip to click.
+   fresh coordinator chip.
 3. `/makarasty:fleet-collect <run-id>` commits as the pace chose, merges the findings into
    `.fleet/<run-id>/backlog.md`, and lands the run with `landed <run> <slot count>`.
 
-With separate chats (opt-in): the plan offers one chip per worker, you click them in waves and open each
+With separate chats (opt-in): the plan offers one chip per worker, they start in waves and open each
 pane worker's Browser pane, and a relaunch offers a fresh coordinator chip and fresh worker chips together;
-click the coordinator first. When only workers are over, you can choose to replace just them.
+the coordinator starts first. When only workers are over, you can choose to replace just them.
 
 ## Reference
 

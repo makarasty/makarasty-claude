@@ -16,7 +16,7 @@ Only the coordinator crosses the 700 K mark: every subagent starts fresh per tas
    "STATE.md NOT CURRENT", update `STATE.md` yourself, naming the claims whose subagent was stopped
    mid-task, then run call 2. Not a Haiku `[mech]` agent: while the run is paused the hooks hold every
    subagent of yours as `agent-<id>`, that one too.
-4. Step 4 below: `TaskStop` your watch, offer the one coordinator chip, stop. The new coordinator takes the
+4. Step 4 below: `TaskStop` your watch, start the one coordinator chip (`mcp__ccd_session__start_session`), stop. The new coordinator takes the
    seat with `resume --take-over`, re-arms the watch with the slot count, and re-spawns one subagent per
    held claim, as after a crash (`docs/ONECHAT.md`).
 
@@ -56,11 +56,11 @@ directory.
    numbered after the highest offered, in the same lanes, and one coordinator chip titled
    `fleet <run-id> coordinator`.
 4. Do what call 2 prints. `TaskStop` your own watch (two watches share `.watch-seen`, and the old one would
-   swallow the events the new coordinator needs), offer **every printed chip in one turn**, then tell the
-   operator in one line: click the coordinator chip first, then the worker chips; the run stays paused
+   swallow the events the new coordinator needs), start **every printed chip in one turn** (each its own `start_session`, the coordinator first; `initiation` `user_asked` only when the operator's own message began this turn; otherwise (a watch line, an AskUserQuestion answer in a watch-started turn) `own_initiative`, which shows a card, then PushNotification the operator to start it), then tell the
+   operator in one line: start the coordinator chip first, then the worker chips; the run stays paused
    until the new coordinator resumes it. Then stop. Do not resume the run yourself.
 **With `--keep-coordinator`** the same two calls print only the fresh worker chips, write no
-`coordinator-pending`, and **resume the run themselves at the end**: you carry on as coordinator. Offer the
+`coordinator-pending`, and **resume the run themselves at the end**: you carry on as coordinator. Start the
 chips in one turn, then re-arm the watch (`TaskStop` the old one first) with `n` = every chip ever offered,
 retired ones included (`ls <run>/offered | wc -l`), since the fresh chips raise the count.
 A worker has `pause_grace_seconds` (30), counted from its first call after the pause, to finish its step,

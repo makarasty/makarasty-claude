@@ -372,7 +372,7 @@ code('--release refuses when there are no transcripts to judge by', 2, r.code);
     check('one line per slot', 'SLOT 01 lane repo\nSLOT 02 lane repo', s.out);
     check('and one instruction line', 'spawn one background subagent per claimed task; see docs/ONECHAT.md', s.out);
     absent('and no chip prompt', 'CHIP ', s.out);
-    absent('and no spawn_task trailer', 'spawn_task', s.out);
+    absent('and no start_session trailer', 'start_session', s.out);
     truthy('a slot is recorded as offered with its lane', read(`${oc}/offered/02`).replace(/\r?\n$/, '') === 'repo', read(`${oc}/offered/02`));
     truthy('and writes no want/', !exists(`${oc}/want`));
     truthy('the asking session is recorded as the coordinator', read(`${oc}/coordinator`).trim() === 'sess-coord', read(`${oc}/coordinator`));

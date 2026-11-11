@@ -14,6 +14,7 @@
 #                                                  exit 8 = the run is paused. exit 9 = this chip was retired.
 #                                                  exit 6 = the machine is short of memory: wait as it prints.
 #                                                  exit 10 = a model switch is pending: run whoami
+#                                                  exit 13 = DRAINING before a relaunch: hold nothing new, wait as it prints
 #                                                  exit 2 = HOLDING, this chip holds a claim already (a pane
 #                                                  chip may hold one pane and one repo task); BUSY, another
 #                                                  next of this chip is claiming; or a lane it does not know
@@ -42,7 +43,7 @@
 #                                                  or a ready task in that lane nobody holds yet. exit 2 =
 #                                                  HOLDING, this chip still holds a claim. 8 paused, 9 retired
 #   fleet.sh chips   <run-dir> <NN>[-<NN>] [lane] [--model <id> [--effort <level>]]
-#                                                  coordinator: the exact spawn_task title and prompt per worker,
+#                                                  coordinator: the exact start_session title, background and prompt per worker,
 #                                                  and the model and effort each should run on (want/<NN>)
 #   fleet.sh chips   <run-dir> <NN>[-<NN>] <lane> --agents
 #                                                  one chat: register subagent slots (SLOT NN lane <lane>), no chip,

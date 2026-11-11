@@ -9,7 +9,7 @@ import { copyFileSync, existsSync, mkdirSync, statSync, writeFileSync } from 'no
 import { basename } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import type { Command, Ctx } from './lib.mjs';
-import { HERE, NEEDS, HANDBACK_OF, calint, claimsOf, lf, field, firstLine, fmValues, frontmatter, isDir, names, need, noCr, now, out, err, read, slashes, taskKind, budgetOf, wakeLoop, STOP_WHAT_YOU_STARTED } from './lib.mjs';
+import { HERE, NEEDS, HANDBACK_OF, calint, claimsOf, lf, field, firstLine, fmValues, frontmatter, isDir, names, need, noCr, now, out, err, read, slashes, taskKind, budgetOf, wakeLoop, draining, STOP_WHAT_YOU_STARTED } from './lib.mjs';
 import { claim } from './queue.mjs';
 import { ownsOf } from './planner.mjs';
 
@@ -45,6 +45,8 @@ export function dispatch(c: Ctx, chip: string, lane: string): number {
       return 8;
     }
   } else {
+    // The caller is the coordinator: next's worker wait loop is not for it (watch.mts, ctx).
+    if (draining(c)) { out('DRAINING: the run is draining before a relaunch, so dispatch starts nothing. Wait for the agents in flight to report; the watch prints DRAINED once none is left (fleet-plan, 8b).\n'); return 13; }
     const r = claim(c, chip, lane);
     if (r.code !== 0) { out(r.text.split('\n---\n')[0] ?? ''); return r.code; }
     id = r.id;

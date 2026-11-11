@@ -2,7 +2,7 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { basename } from 'node:path';
-import { HERE, RUN_FORMAT, lf, need, out, err, isDir, isFile, read, firstLine, names, field, NEEDS, HANDBACK_OF, operatorOwed, now, cal, calint, pluginVersion, loadScript, claimsOf, verifyHeld, laneGaps, registerChip, chatGone, wakeLoop, indent, cat, STOP_WHAT_YOU_STARTED, nativePath, takeLock, dropLock, closing, CLOSING_STALE_MS, afterIds, taskKind, fmValues, frontmatter, asText, noCr, chipFinished, budgetOf, refiledAs, writeWhole, walksOf } from './lib.mjs';
+import { HERE, RUN_FORMAT, lf, need, out, err, isDir, isFile, read, firstLine, names, field, NEEDS, HANDBACK_OF, operatorOwed, now, cal, calint, pluginVersion, loadScript, claimsOf, draining, verifyHeld, laneGaps, registerChip, chatGone, wakeLoop, indent, cat, STOP_WHAT_YOU_STARTED, nativePath, takeLock, dropLock, closing, CLOSING_STALE_MS, afterIds, taskKind, fmValues, frontmatter, asText, noCr, chipFinished, budgetOf, refiledAs, writeWhole, walksOf } from './lib.mjs';
 // ---- next ------------------------------------------------------------------------------------------------
 // `claim` runs `next` with its printing caught: `dispatch` shows the header only on a refusal, never the body.
 let sink = null;
@@ -111,6 +111,13 @@ function nextHeld(c, chip, lane) {
     if (openid && !idleWindow) {
         err(`HOLDING ${openid}: chip ${chip} already holds an open claim. Finish it, or hand it back, before asking for another task: next hands out nothing while you hold one.\n`);
         return 2;
+    }
+    // The coordinator's context is past its mark: the agents in flight finish, and nothing new starts (watch.mts, ctx).
+    if (draining(c)) {
+        say('DRAINING: the coordinator is past its context mark and the run is draining before a relaunch. Nothing is handed out. Nothing is wrong with you.\n');
+        say('Background this, end your turn, and call next again after it prints draining-over (this is not a pause: TaskStop nothing, run no paused):\n');
+        say(`  until [ ! -e "${c.absrun}/.draining" ] || [ -e "${c.absrun}/${chip}.retired" ] || [ -e "${c.absrun}/FINISHED" ]${chatGone()}; do sleep ${calint(c, 'clock_poll_seconds', 30)}; done; echo draining-over\n`);
+        return 13;
     }
     if (!existsSync(`${run}/RUN_FORMAT`)) {
         try {

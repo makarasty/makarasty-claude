@@ -356,7 +356,7 @@ slot with `sh "$f" paused "$r" NN`. The hooks hold every subagent of yours while
 
 **Relaunch at the 700 K mark.** Only you cross it; every subagent starts fresh. On `COORDINATOR CONTEXT`:
 ask once, and on yes stop spawning, start `fleet.sh relaunch` **naming no chips** (it pauses), `TaskStop`
-your agents, ack their slots, update `STATE.md` yourself (the pause holds every subagent), and offer the one coordinator chip
+your agents, ack their slots, update `STATE.md` yourself (the pause holds every subagent), and start the one coordinator chip (`mcp__ccd_session__start_session`)
 (`docs/RELAUNCH.md`, "One chat"). The new coordinator takes over and re-spawns per held claim, as after a
 crash.
 

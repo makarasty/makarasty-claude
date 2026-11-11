@@ -420,7 +420,8 @@ Under semver, 1.x will not break:
   floor; 7 from `next`, tasks exist but an `after:` or a held verify lane holds them; 8 from `next` or
   `drained`, the run is paused; 9 from `next` or `drained`, the worker was retired by a relaunch, or from
   `next`, the run has landed or `fleet.sh retire` asked the worker to leave; 10 from `whoami` or `next`, the session runs another model or effort than
-  `want/<chip>` and waits for the coordinator to switch it.
+  `want/<chip>` and waits for the coordinator to switch it; 13 from `next` or `dispatch`, the run is draining
+  before a coordinator relaunch and hands out nothing new.
 - **The four line shapes** a findings file may hold (a finding, `unreached`, `created`, `state_changed`)
   and the fields the schema gate enforces on each.
 - **The markers**: `.done` means finished, `.blocked` means it never saw, `.retired` means a relaunch or a

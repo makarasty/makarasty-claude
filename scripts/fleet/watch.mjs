@@ -2,10 +2,11 @@
 import { appendFileSync, existsSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename } from 'node:path';
 import { tmpdir } from 'node:os';
-import { lf, sub, out, isDir, read, firstLine, names, now, slashes, cal, calint, pluginVersion, live, claimsOf, laneGaps, cat, noCr, mtimeMs, newer, olderThanMin, chipFinished, started, recordedVersion, versionReadable, versionOlder, installedVersion, claimHolders, workerSessions, sessionCtx, coordinatorSid, recordFleetSession, coordCtx, gt, afterIds, operatorOwed, isFile } from './lib.mjs';
+import { lf, sub, out, isDir, read, firstLine, names, now, slashes, cal, calint, pluginVersion, live, claimsOf, laneGaps, cat, noCr, mtimeMs, newer, olderThanMin, chipFinished, started, recordedVersion, versionReadable, versionOlder, installedVersion, claimHolders, openClaims, workerSessions, sessionCtx, coordinatorSid, recordFleetSession, coordCtx, gt, afterIds, operatorOwed, isFile } from './lib.mjs';
 // ---- ctx and contexts ------------------------------------------------------------------------------------
 // One line per session whose context crosses its next mark, nothing otherwise; the watch calls this every
-// minute. Past either mark the coordinator asks the operator once (fleet-plan, 8b).
+// minute. At the first mark the run drains (no new task, `.draining`); the coordinator asks the operator once
+// when nothing is in flight, or at the next step (fleet-plan, 8b).
 export function ctx(c) {
     const run = c.run, absrun = c.absrun;
     const at = calint(c, 'coordinator_handoff_k', 700), step = calint(c, 'coordinator_handoff_step_k', 100);
@@ -14,13 +15,38 @@ export function ctx(c) {
     if (k) {
         if (Number(k) >= at) {
             const level = at + Math.floor((Number(k) - at) / step) * step;
+            const open = openClaims(c), ids = open.join(' ');
+            const asking = `bring ${absrun}/STATE.md up to date, then ask the operator once whether to relaunch the run with a fresh coordinator (fleet-plan, 8b). Do not hand off by chip and do not relaunch unasked.`;
             if (gt(level, cat(`${run}/.ctx-warned`, '0'))) {
+                const first = !existsSync(`${run}/.ctx-warned`);
                 writeFileSync(`${run}/.ctx-warned`, `${level}\n`);
-                out(`COORDINATOR CONTEXT ${k}K (mark ${at}K): bring ${absrun}/STATE.md up to date, then ask the operator once whether to relaunch the run with a fresh coordinator (fleet-plan, 8b). Do not hand off by chip and do not relaunch unasked. Past this size the reviews you hold start to fall out of context.\n`);
+                // The drain: from the first crossing `next` hands out nothing (queue.mts), and the relaunch waits for what is in flight.
+                if (first)
+                    writeFileSync(`${run}/.draining`, `${coordinatorSid(c)}\n`);
+                if (first && !open.length)
+                    writeFileSync(`${run}/.drained-said`, '');
+                if (first && open.length) {
+                    out(`COORDINATOR CONTEXT ${k}K (mark ${at}K): DRAIN. Start no new task: fleet.sh next now hands out nothing. Let the ${open.length} agent(s) in flight finish (${ids}) and review their reports. When no claim is open, ${asking} Past this size the reviews you hold start to fall out of context.\n`);
+                }
+                else if (open.length) {
+                    out(`COORDINATOR CONTEXT ${k}K (mark ${at}K, step ${step}K): the drain ran out, ${open.length} agent(s) are still in flight (${ids}). Ask the operator now, not later (fleet-plan, 8b): a relaunch stops those agents and their work in progress is lost. ${asking}\n`);
+                }
+                else {
+                    // Said here, so the next tick does not print DRAINED and ask a second time.
+                    if (existsSync(`${run}/.draining`))
+                        writeFileSync(`${run}/.drained-said`, '');
+                    out(`COORDINATOR CONTEXT ${k}K (mark ${at}K): no task in flight, so there is nothing to wait for: ${asking} Past this size the reviews you hold start to fall out of context.\n`);
+                }
+            }
+            else if (existsSync(`${run}/.draining`) && !existsSync(`${run}/.drained-said`) && !open.length) {
+                writeFileSync(`${run}/.drained-said`, '');
+                out('DRAINED: no task in flight, ask the relaunch question now\n');
             }
         }
         else {
             rmSync(`${run}/.ctx-warned`, { force: true });
+            rmSync(`${run}/.draining`, { force: true });
+            rmSync(`${run}/.drained-said`, { force: true });
         }
     }
     // Workers: one state file per session, so a worker is named once per mark and a reopened chip starts over.
@@ -70,7 +96,7 @@ export function ctx(c) {
         if (rp && rp !== 'none' && existsSync(`${run}/offered/${rp}`) && !started(c, rp) &&
             olderThanMin(`${run}/replaced/${chip}`, 10) && !existsSync(`${run}/replaced/${chip}.nagged`)) {
             writeFileSync(`${run}/replaced/${chip}.nagged`, '');
-            out(`REPLACEMENT ${rp} for worker ${chip} was offered over ten minutes ago and has not started: PushNotification the operator to click the chip titled 'fleet ${runid} ${rp}'.\n`);
+            out(`REPLACEMENT ${rp} for worker ${chip} was offered over ten minutes ago and has not started: PushNotification the operator to start the card titled 'fleet ${runid} ${rp}'.\n`);
         }
         if (chipFinished(c, chip))
             continue;
@@ -314,7 +340,7 @@ export function status(c) {
     if (k) {
         out(`== coordinator context: ${k}K\n`);
         if (Number(k) >= calint(c, 'coordinator_handoff_k', 700)) {
-            out('  past the mark: update STATE.md and ask the operator once about a relaunch (fleet-plan, 8b); fleet.sh contexts lists every session\n');
+            out(`  past the mark: ${existsSync(`${run}/.draining`) ? 'DRAINING, no task is handed out; ' : ''}update STATE.md and ask the operator once about a relaunch when no claim is open (fleet-plan, 8b); fleet.sh contexts lists every session\n`);
         }
     }
     return 0;

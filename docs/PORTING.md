@@ -38,8 +38,8 @@ until that tab closes.
 
 **4. A session can start another session.**
 
-Weakly held today: sessions are offered as a chip and started by a human
-click. An automatic spawn would remove the operator from the loop entirely.
+Weakly held today: sessions are started with `mcp__ccd_session__start_session`, as a card a human
+clicks (`own_initiative`) or on the human's own turn (`user_asked`). An automatic spawn would remove the operator from the loop entirely.
 
 If a harness offers real programmatic spawning, the only thing that changes is how tasks are handed out.
 The queue, the claims and the reporting stay as they are.

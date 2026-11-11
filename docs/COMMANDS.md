@@ -12,8 +12,8 @@ model that tries and tells it not to reproduce the steps by hand.
 | Command | Flag | Why |
 |---|---|---|
 | `fleet`, `fleet-design`, `fleet-redesign`, `fleet-call` | set | They spend money and depend on the operator's clicks |
-| `fleet-plan` | **not set, since 1.5.7** | A coordinator made by handoff, or told "launch the fleet", was blocked from it and launched from memory: no chips, wrong titles, a stale path (2026-10-05). It writes files and offers chips; money is spent only when the operator clicks one |
-| `fleet-run` | **not set, deliberately** | The operator starts a worker by clicking its chip; the model in that new session is what invokes `fleet-run` there |
+| `fleet-plan` | **not set, since 1.5.7** | A coordinator made by handoff, or told "launch the fleet", was blocked from it and launched from memory: no chips, wrong titles, a stale path (2026-10-05). It writes files and starts chips; money is spent only when a chip session starts, by the operator's click or answer |
+| `fleet-run` | **not set, deliberately** | A worker is started from its chip (`start_session`, by the operator's click or answer); the model in that new session is what invokes `fleet-run` there |
 | `fleet-pause` | not set | A coordinator told to "pause the fleet" in words has to be able to do it for real, and a relaunch pauses through it. It writes one marker file and spends nothing |
 | `fleet-init`, `fleet-login`, `fleet-wait`, `fleet-collect`, `fleet-resume` | not set | An agent that needs them must be able to reach them |
 

@@ -285,6 +285,19 @@ if (has('timeout')) {
   check('and ends once a second watch is armed on the run', 'watch superseded', first);
   absent('and the second does not announce it again', 'done/d1', second);
   rm(ww);
+  // A STALL prints once per unchanged disk state; after something changed and went quiet again, once more.
+  ww = watchDir('stalls', 99, 'tasks/done', 'tasks/ready', 'tasks/claimed/t1');
+  write(`${ww}/.fleet/r/tasks/claimed/t1/owner`, 'chip 01\n');
+  write(`${ww}/loop.sh`, read(`${ww}/loop.sh`).replace('quiet=600', 'quiet=3'));
+  const stallRun = execAsync('sh', ['-c', 'timeout 60 sh loop.sh > stall.out 2>&1'], { cwd: ww, env });
+  sleep(14);
+  write(`${ww}/.fleet/r/tasks/done/d1`, '');
+  await stallRun;
+  const stalls = read(`${ww}/stall.out`);
+  check('a stalled run says STALL', 'STALL: nothing on disk changed', stalls);
+  check('and a change in between is announced', 'task finished: ', stalls);
+  check('STALL prints once per unchanged state, again after a change and a new stall', '2', String(stalls.split('\n').filter((l) => l.startsWith('STALL:')).length));
+  rm(ww);
   // What an older watch marked seen, from the cwd (.fleet/r/...) or absolute, is not announced again.
   ww = watchDir('oldseen', 99, 'tasks/done', 'tasks/ready');
   write(`${ww}/.fleet/r/tasks/done/d1`, ''); write(`${ww}/.fleet/r/tasks/done/d2`, '');

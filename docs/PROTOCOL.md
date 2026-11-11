@@ -204,6 +204,12 @@ as health: `fleet-wait` now emits a stall line on a quiet interval for exactly t
   replaced/<NN>        the chip that replaced NN (`none` when its lane had nothing left), written by `retire`
                        and `relaunch`; a second `retire` reads it and offers nothing again
   coordinator          the session id of whoever arms the watch; `fleet.sh ctx` reads its context size
+  .draining            written by `ctx` when the coordinator's context first crosses `coordinator_handoff_k`
+                       (first line: the coordinator's session id): `next` (exit 13) and `dispatch` hand out nothing
+                       while it stands; a worker holding a claim still gets HOLDING. `.drained-said` marks the one
+                       DRAINED line. Both go when the coordinator's context is back under the mark, when another
+                       session holds the `coordinator` seat (the fresh coordinator's `resume --take-over`), or by
+                       hand on an operator "no": `rm <run>/.draining <run>/.drained-said`. `relaunch` itself leaves them.
   STATE.md             the coordinator's ledger, and what a fresh coordinator re-arms from: plan path, run dir,
                        worker count, chips offered by lane (one chat: slot ranges per lane and the pace line),
                        extra watched URLs, queue-open yes/no, reviews in flight, fix tasks and why, and with

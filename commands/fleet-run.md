@@ -144,6 +144,10 @@ step 1. Any other wake, a restart message included, runs `whoami` without it.
    work you cannot do. **Exit 3 means drained**: nothing left in your lane and nothing waiting. **Exit 8
    means the run is paused** and **exit 9 that you were retired** (both from `drained` too), or from
    `next`, that the run landed: section 1c. **Exit 10 means a model switch is pending**: run `whoami`.
+   **Exit 13 means DRAINING** (the coordinator is past its context mark and the run drains before a relaunch):
+   hold nothing new, run the printed wait loop in the background, end the turn, and call `next` again after it
+   prints `draining-over`. It is not a pause: do not `TaskStop` anything and do not run `fleet.sh paused`. A claim you
+   already hold is yours to finish: `next` answers it with `HOLDING` first.
    **Exit 7 means QUEUE WAITING**: tasks exist, held by an `after:`, a verify lane or an uncleared `operator:` - poll (below),
    and do not call `drained`. **Exit 2**: read its line. `HOLDING` means you still hold a claim: finish it
    or hand it back first (a pane worker may hold one pane and one `repo` task, section 1; `drained`

@@ -188,7 +188,7 @@ r = node([`${ROOT}/tools/hooks/context.mjs`], {
   input: '{"hook_event_name":"UserPromptSubmit","session_id":"s-ctx","transcript_path":"ctx.jsonl","prompt":"go on"}',
 });
 check('the context reminder says it is at 750k', 'context is at 750k tokens', r.out);
-check('and that a fleet coordinator ignores it, its marks coming from the watch', 'a fleet coordinator ignores this line; its marks come from the watch (COORDINATOR CONTEXT)', r.out);
+check('and that a fleet worker or coordinator ignores it, its marks coming from the watch', 'A fleet worker or coordinator ignores this line; its marks come from the watch (COORDINATOR CONTEXT)', r.out);
 absent('and no longer tells a coordinator to relaunch at 400K', 'use the relaunch in fleet-plan 8b instead', r.out);
 
 r = fleet(['resume', R]);
@@ -287,7 +287,7 @@ check('then resumes the run', `resume ${Rw}`, r.out);
 check('and arms the watch with every chip ever offered', 'arm /makarasty:fleet-wait r1 3', r.out);
 check('the closing steps name TaskStop', 'TaskStop', r.out);
 check('and say STATE.md was checked against the handbacks', 'newer than the pause and the handbacks', r.out);
-check('and the order to click', 'click the coordinator chip first, then the worker chips', r.out);
+check('and the order to start', 'start the coordinator chip first, then the worker chips', r.out);
 check('05 is recorded as offered', 'repo', read(`${R}/offered/05`));
 const r2 = fleet(['relaunch', R, '--wait', '0', '03']);
 check('run again, the same chip has the same replacement', 'CHIP 05', r2.out);

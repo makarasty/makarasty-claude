@@ -8,9 +8,10 @@ Watch `.fleet/<run-id>/` for workers finishing. Do the waiting in the shell, whe
 each turn costs a model turn per empty check and needs the operator to prod you between them.
 
 The loop below emits on silence as well as on progress, because a watch that fires only when a file appears
-cannot tell a busy fleet from a dead one and a stalled fleet writes no files [M17]. Every `quiet` seconds with
+cannot tell a busy fleet from a dead one and a stalled fleet writes no files [M17]. After `quiet` seconds with
 no change on disk it names each claim still outstanding and who holds it, alongside how many tasks and
-workers have landed. That line is the cue to send a status check to the worker holding a claim nobody is
+workers have landed, once: it prints again only after something changed on disk and then went quiet again
+(a run that waits only on operator-only checks is not told every ten minutes). That line is the cue to send a status check to the worker holding a claim nobody is
 advancing, which is the only thing that revives a dead session.
 
 ## One chat, the default
@@ -62,7 +63,7 @@ seen="$d"/.watch-seen; touch "$seen"; sed -i "s|^.*\.fleet/$run/||" "$seen"
 # A .waiting is keyed by its mtime, so a worker blind a second time is announced again; an older watch's
 # bare entry gets the mtime of the file it announced.
 while IFS= read -r e; do case "$e" in *.waiting) [ -e "$d/$e" ] && e="$e@$(date -r "$d/$e" +%s)";; esac; printf '%s\n' "$e"; done < "$seen" > "$seen.tmp" && mv "$seen.tmp" "$seen"
-last=$(date +%s); down=""; tick=0; ps=0; acks=""; ps0=0; pst=0; t0=$last; cr=$(printf '\r'); pl=""
+last=$(date +%s); down=""; tick=0; ps=0; acks=""; ps0=0; pst=0; t0=$last; cr=$(printf '\r'); pl=""; stall=0
 tok="$$.$t0"; echo "$tok" > "$d/.watch-owner"   # one watch per run: arming a new one ends the one before
 sf=$(grep -ls "\"sessionId\":\"${CLAUDE_CODE_SESSION_ID:-none}\"" "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sessions"/*.json 2>/dev/null | head -1)  # this chat's record; gone when it ends
 [ -n "${CLAUDE_CODE_SESSION_ID:-}" ] && echo "$CLAUDE_CODE_SESSION_ID" > "$d/coordinator"  # whoever watches, coordinates
@@ -92,12 +93,12 @@ while true; do
       case "$l" in "CLOSED CHAT SERVING"*) echo "LEFTOVER, ASK THE OPERATOR: $l";; *) echo "LEFTOVER: $l";; esac; done
   fi
   if [ -e "$d/PAUSED" ]; then   # a pause is announced once, each ack once, and the stall timer rests
-    [ $ps = 1 ] || { ps=1; acks=""; ps0=$(date +%s); pst=$ps0; last=$ps0; echo "PAUSED: $(head -1 "$d/PAUSED")"; }
+    [ $ps = 1 ] || { ps=1; acks=""; ps0=$(date +%s); pst=$ps0; last=$ps0; stall=0; echo "PAUSED: $(head -1 "$d/PAUSED")"; }
     if [ $ps0 -gt 0 ] && [ $(( $(date +%s) - ps0 )) -ge 150 ]; then ps0=0   # once: who has not stopped 150 s in
       [ -f "$FS" ] && sh "$FS" status "$d" | sed -n '/^== PAUSED/,/^== /{/^== PAUSED/p;/still working/p;}'; fi
     for a in "$d"/stopped/*; do [ -e "$a" ] || continue; w=$(basename "$a"); case " $acks " in *" $w "*) continue;; esac
-      acks="$acks $w"; last=$(date +%s); echo "worker $w stopped"; done
-  elif [ $ps = 1 ]; then ps=0; last=$(date +%s); echo "RESUMED"
+      acks="$acks $w"; last=$(date +%s); stall=0; echo "worker $w stopped"; done
+  elif [ $ps = 1 ]; then ps=0; last=$(date +%s); stall=0; echo "RESUMED"
     # A pause must not eat a budget: every deadline moves out by the pause's length.
     # shortcut: the length counts from this watch's first sight of PAUSED, so a pause that spans a re-arm shifts only the part after it; upgrade: have the pause write its start time into PAUSED.
     for dl in "$d"/tasks/claimed/*/deadline; do [ -f "$dl" ] || continue; dv=""; read -r dv < "$dl"
@@ -114,7 +115,7 @@ while true; do
   fi
   sl="|$(tr '\n' '|' < "$seen")"   # read each tick: a watch being superseded appends here too
   for f in "$d"/tasks/claimed/*/owner "$d"/tasks/done/* "$d"/ask/*.md "$d"/*.done "$d"/*.blocked "$d"/*.retired "$d"/*.waiting; do
-    [ -e "$f" ] || continue; r=${f#"$d"/}; case "$f" in *.waiting) r="$r@$(date -r "$f" +%s)";; esac; case "$sl" in *"|$r|"*) continue;; esac; echo "$r" >> "$seen"; sl="$sl$r|"; last=$(date +%s)
+    [ -e "$f" ] || continue; r=${f#"$d"/}; case "$f" in *.waiting) r="$r@$(date -r "$f" +%s)";; esac; case "$sl" in *"|$r|"*) continue;; esac; echo "$r" >> "$seen"; sl="$sl$r|"; last=$(date +%s); stall=0
     case "$f" in
       *.waiting) echo "NEEDS OPERATOR: $f -- $(cat "$f")";;
       */ask/*) echo "QUESTION FOR PLANNER: $f -- $(head -c 300 "$f")";;
@@ -126,7 +127,10 @@ while true; do
     esac
   done
   now=$(date +%s)
-  if [ $ps = 0 ] && [ $one = 0 ] && [ $((now-last)) -ge $quiet ]; then   # not in one chat: there it is information only
+  # Once per unchanged disk state: `stall` is set by the block and cleared by the next event, ack or resume,
+  # so a run that waits only on the operator is not told every `quiet` seconds.
+  if [ $ps = 0 ] && [ $one = 0 ] && [ $stall = 0 ] && [ $((now-last)) -ge $quiet ]; then   # not in one chat: there it is information only
+    stall=1
     echo "STALL: nothing on disk changed for $(( (now-last)/60 ))m"
     for c in "$d"/tasks/claimed/*/; do
       [ -d "$c" ] || continue; t=$(basename "$c"); [ -e "$d/tasks/done/$t" ] && continue
@@ -190,9 +194,12 @@ line naming worker NN means that worker is.** Each prints once per mark and per 
 transcript: yours once the loop has recorded you as the coordinator (whoever arms the watch is the
 coordinator), a worker's once it crosses `worker_relaunch_k` in `calibration.json`. **A queue worker's
 line is yours to act on at once and unasked**: run the `fleet.sh retire` it names and do what it prints
-(offer the replacement chip, PushNotification the operator to click it). The worker finishes the task it
+(offer the replacement chip, PushNotification the operator to start it). The worker finishes the task it
 holds and leaves at its next claim with its tree committed; the run does not pause and the watch counts the
-new chip by itself. `REPLACEMENT NN ... has not started` means that chip was not clicked: notify again.
+new chip by itself. `REPLACEMENT NN ... has not started` means the card titled `fleet <run> NN` was not
+started: it is an app card the operator must start (a session started from a watch-triggered turn shows a
+card, the app's `mcp__ccd_session__start_session` with initiation `own_initiative`; `user_asked` is only for
+a turn the operator's own message began), so `PushNotification` them again.
 For any `ask/` question named after `unanswered:` in `<NN>.retired`, answer it under its own id, the text after
 `ask/` without `.md` (`fleet.sh answer <run> <NN>-<n>`), and add the answer to the re-filed task's file in
 `tasks/ready/`, which is what the replacement reads. If nothing was re-filed (a worker that `next` retired
@@ -201,12 +208,19 @@ for it. `answer` refuses an id that names no question, so never answer under the
 A `pane/requests/<NN>-<n>.md` entry there is a walk the old worker asked for: a host serves it, not you,
 but its result lands in `pane/results/<NN>-<n>.json`, which only the old worker was told to read, so name
 that path in the re-filed task or the broadcast.
+**Your own line drains the run first.** Your first line says `DRAIN`: `fleet.sh next` and `dispatch` hand out
+nothing (a worker that calls `next` gets exit 13 and a wait loop that ends on `draining-over`). Start no new task;
+let the agents in flight finish and review their reports, because a relaunch stops every subagent, and a fresh
+coordinator cannot adopt one. The loop prints `DRAINED: no task in flight, ask the relaunch question now` once,
+when no claim is open: then update `STATE.md` and ask. At the next step (`coordinator_handoff_step_k`, 800 by
+default) with claims still open the line says the drain ran out: ask now, and say that the relaunch stops those
+agents. After a "no", end the drain as `docs/PROTOCOL.md` (`.draining`) says.
 **Your own line, and a brief worker's, you never act on alone**: you do not hand off by chip and you do not
 relaunch unasked. Do what `fleet-plan` section 8b says at that line: `PushNotification`, one `AskUserQuestion` with the numbers and the options (a fourth, "Replace
 workers NN only", when only workers are over), and on "yes" `fleet.sh relaunch`, run with
 `run_in_background` and in two calls: it pauses the run, hands the named workers' tasks back, asks you to
 update `STATE.md`, and on the second call prints one coordinator chip and fresh worker chips (with
-`--keep-coordinator`, only the worker chips, and you stay). Stop this watch with `TaskStop` before you offer them (and with `--keep-coordinator` re-arm it at once, `n` raised to every chip ever offered): two watches share
+`--keep-coordinator`, only the worker chips, and you stay). Stop this watch with `TaskStop` before you start them (each its own `mcp__ccd_session__start_session`, initiation `own_initiative`: the turn began from a watch line, so even the operator's AskUserQuestion answer leaves a card, and you PushNotification the operator to start it; `user_asked` only when the operator's own message began the turn) (and with `--keep-coordinator` re-arm it at once, `n` raised to every chip ever offered): two watches share
 `seen`, and the old one would report every event first and mark it seen, so the new coordinator never hears
 it. The new coordinator re-arms the watch itself. `fleet.sh contexts <run>` lists every session's context
 and marks the ones `OVER`. A coordinator that ignores the line holds the review state of the whole run in a

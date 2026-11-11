@@ -71,8 +71,11 @@ sh "$f" status "$r" | grep -A12 '^== PAUSED'
 The line reads `== PAUSED since <time>: <k> of <n> workers holding claims have stopped` and lists the
 workers that have not. A holder that has not acknowledged reads "no ack yet"; 150 seconds
 after `PAUSED` (`pause_still_working_seconds`) it reads "still working", and the watch says so too. Workers
-legitimately sleep 90 to 120 seconds, so an earlier word would send you after the wrong ones. Repeat the
-check about every 20 seconds, for at most 3 minutes, until `k` equals `n`. Each worker commits its work in progress on its task branch, stops its
+legitimately sleep 90 to 120 seconds, so an earlier word would send you after the wrong ones. In one chat
+(subagent workers) repeat the check about every 20 seconds, for at most 3 minutes, until `k` equals `n`. With
+separate worker chats do not poll: `SendMessage` each worker session (its name from `ListAgents`) with
+`notify_when_idle: true`, then read status once per idle notice until `k` equals `n`; if no notice comes in 3
+minutes, read status once and report who has not acked. Each worker commits its work in progress on its task branch, stops its
 subagents and background tasks, runs `fleet.sh paused <run> <chip>` (which writes `$r/stopped/<chip>`) and
 waits. Say how many stopped. For each worker still working after 3 minutes, name it by number and send
 one status message to the session titled `fleet <run-id> NN` with `mcp__ccd_session_mgmt__send_message`

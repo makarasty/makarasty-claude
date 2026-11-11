@@ -6,7 +6,7 @@ import { readdirSync, statSync } from 'node:fs';
 import { basename } from 'node:path';
 import {
   setup, fleet, exec, sh, node, git, has, hp, nativePath, check, absent, code, starts, truthy, skip,
-  write, read, exists, names, ls, mk, rm, touch, OLD, copyFleet, ROOT, SCRIPTS, HOOKS, POLL, CK,
+  write, read, exists, names, ls, mk, rm, touch, task, OLD, copyFleet, ROOT, SCRIPTS, HOOKS, POLL, CK,
 } from './lib.mts';
 
 const t = setup('d');
@@ -372,7 +372,7 @@ if (has('git')) {
   r = fleet(['chips', cz, '3', 'repo']);
   code('a single number is a chip, not a silent exit under set -e', 0, r.code);
   check('and the chip is printed', 'CHIP 03', r.out);
-  check('the trailer says a chip is an offer the operator can decline', 'A chip is an offer the operator can decline with one click, so offer every one of them.', r.out);
+  check('the trailer says a card is an offer the operator can decline', 'A card is an offer the operator can decline with one click, so start every one of them.', r.out);
   check('and that a rule forbidding chips is quoted, never swapped for paste lines', 'never replace chips with paste lines', r.out);
   absent('and the old precedence sentence is gone', 'does not cover them', r.out);
   absent('a repo chip does not ask for a pane on screen', 'browser pane on screen', r.out);
@@ -429,6 +429,59 @@ if (has('git')) {
   code('status exits 0 with the coordinator below the handoff mark', 0, r.code);
   check('and still prints its context', '== coordinator context: 120K', r.out);
 
+  // The drain: at the mark `next` hands out nothing, the agents in flight finish, and DRAINED prints once.
+  const dr = `${tmp}/drain`, tr = (sid: string, k: number): void => write(`${ch}/projects/p/${sid}.jsonl`,
+    `{"type":"assistant","message":{"usage":{"input_tokens":5,"cache_read_input_tokens":${k * 1000},"cache_creation_input_tokens":0}}}\n`);
+  tr('sess-dr', CK); write(`${dr}/coordinator`, 'sess-dr\n');
+  task(dr, 't1', 'repo', 10); task(dr, 't2', 'repo', 10);
+  write(`${dr}/tasks/claimed/t1/owner`, `chip 01\nclaimed ${nowIso()}\n`);
+  r = fleet(['ctx', dr], asCh);
+  check('the first mark with a task in flight says DRAIN', 'DRAIN. Start no new task', r.out);
+  check('and names the task in flight', 'finish (t1)', r.out);
+  truthy('and writes the drain marker with the coordinator in it', read(`${dr}/.draining`).startsWith('sess-dr'), read(`${dr}/.draining`));
+  r = fleet(['next', dr, '02', 'repo']);
+  check('next hands out nothing while the run drains', 'DRAINING: ', r.out);
+  code('and exits 13, its own code, not the pause one', 13, r.code);
+  truthy('it claims nothing', !exists(`${dr}/tasks/claimed/t2`), ls(`${dr}/tasks/claimed`));
+  r = fleet(['next', dr, '01', 'repo']);
+  check('a worker holding a claim during a drain gets HOLDING', 'HOLDING t1', r.out);
+  code('not DRAINING: it exits 2', 2, r.code);
+  r = fleet(['ctx', dr], asCh);
+  truthy('ctx is silent while a claim stays open', r.out === '', r.out);
+  write(`${dr}/tasks/done/t1`, '');
+  r = fleet(['ctx', dr], asCh);
+  check('DRAINED prints once no claim is open', 'DRAINED: no task in flight, ask the relaunch question now', r.out);
+  r = fleet(['ctx', dr], asCh);
+  truthy('and only once', r.out === '', r.out);
+  // The next step with a claim still open: the drain ran out.
+  const d2 = `${tmp}/drain2`;
+  tr('sess-d2', CK); write(`${d2}/coordinator`, 'sess-d2\n');
+  task(d2, 't1', 'repo', 10); write(`${d2}/tasks/claimed/t1/owner`, `chip 01\nclaimed ${nowIso()}\n`);
+  fleet(['ctx', d2], asCh);
+  tr('sess-d2', CK + 100);
+  r = fleet(['ctx', d2], asCh);
+  check('at the next step with a claim open the drain has run out', 'the drain ran out, 1 agent(s) are still in flight (t1)', r.out);
+  check('and says a relaunch stops them', 'a relaunch stops those agents', r.out);
+  // The step with no claim open asks once: the next tick does not print DRAINED as well.
+  const d3 = `${tmp}/drain3`;
+  tr('sess-d3', CK); write(`${d3}/coordinator`, 'sess-d3\n');
+  task(d3, 't1', 'repo', 10); write(`${d3}/tasks/claimed/t1/owner`, `chip 01\nclaimed ${nowIso()}\n`);
+  fleet(['ctx', d3], asCh);
+  tr('sess-d3', CK + 100); write(`${d3}/tasks/done/t1`, '');
+  r = fleet(['ctx', d3], asCh);
+  check('the step with no claim open says no task is in flight', 'no task in flight, so there is nothing to wait for', r.out);
+  r = fleet(['ctx', d3], asCh);
+  truthy('and the next tick does not print DRAINED too', r.out === '', r.out);
+  // A marker of an earlier coordinator is stale: the new seat is not refused by it.
+  write(`${d2}/.draining`, 'old-sid\n'); write(`${d2}/tasks/done/t1`, '');
+  r = fleet(['next', d2, '02', 'repo']);
+  absent('a marker left by another coordinator does not refuse next', 'DRAINING', r.out);
+  truthy('and is removed', !exists(`${d2}/.draining`));
+  // Back under the mark (a fresh coordinator): the marker goes.
+  write(`${d2}/.draining`, 'sess-d2\n'); tr('sess-d2', 120);
+  fleet(['ctx', d2], asCh);
+  truthy('under the mark the drain marker goes', !exists(`${d2}/.draining`) && !exists(`${d2}/.ctx-warned`));
+
   // A background command's output past runaway_log_gb is named once. Closed chats left 5 GB of these.
   const rl = `${tmp}/runaway`;
   copyFleet(`${rl}/scripts`);
@@ -440,7 +493,7 @@ if (has('git')) {
   check('by its file', 'sess-1/tasks/b1.output', r.out);
   r = exec('sh', [`${rl}/scripts/fleet.sh`, 'ctx', lg], rlEnv);
   truthy('and only once', r.out === '', r.out);
-  rm(rl, lg, ch);
+  rm(rl, lg, ch, dr, d2);
 }
 
 // ---- a lane that is no lane, a branch on finish, a run seen from a worktree's cwd ------------------------
