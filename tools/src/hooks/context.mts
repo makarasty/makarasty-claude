@@ -116,10 +116,11 @@ try {
   if (tokens === null) process.exit(0);
   // The hold command is collecting (gates.ts, holding): the reminder waits for the codeword, the level stays unwritten.
   if (tokens >= at) {
-    const hold = join(base, 'hold', `${sid}.md`);
-    try {
-      if (readFileSync(hold, 'utf8').replace(/^\uFEFF/, '').startsWith('collecting') && Date.now() - statSync(hold).mtimeMs < 86400000) process.exit(0);
-    } catch { }
+    for (const hold of [join(base, 'hold', sid, 'index.md'), join(base, 'hold', `${sid}.md`)]) {
+      try {
+        if (readFileSync(hold, 'utf8').replace(/^\uFEFF/, '').startsWith('collecting') && Date.now() - statSync(hold).mtimeMs < 86400000) process.exit(0);
+      } catch { }
+    }
   }
   const dir = join(base, 'context');
   const file = join(dir, String(ev.session_id).replace(/[^\w.-]/g, '_'));

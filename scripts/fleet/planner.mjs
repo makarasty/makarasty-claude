@@ -421,6 +421,97 @@ function answer(c, ids) {
     }
     return 0;
 }
+// A reversible question with a recommendation does not block the coordinator [M59]: the question is on stdin, the
+// recommended answer the rest of the arguments. It defaults at its deadline (watch.mts, operatorAsks).
+function askOperator(c, a) {
+    const [id = '', ...rec] = a;
+    const recommended = rec.join(' ').trim();
+    if (!/^[0-9A-Za-z._-]+$/.test(id) || !recommended) {
+        err('usage: fleet.sh ask-operator <run-dir> <id> <recommended answer...>   (the question on stdin)\n');
+        return 2;
+    }
+    const question = stdin().toString('utf8').trim();
+    if (!question) {
+        err('REFUSED: no question on stdin\n');
+        return 2;
+    }
+    const f = `${c.run}/ask/operator/${id}.md`;
+    if (existsSync(f)) {
+        err(`REFUSED: ${id} is filed already; pick a new id\n`);
+        return 2;
+    }
+    const min = calint(c, 'ask_default_min', 10);
+    const dl = Math.floor(Date.now() / 1000) + min * 60;
+    mkdirSync(`${c.run}/ask/operator`, { recursive: true });
+    writeFileSync(f, `recommended: ${recommended.replace(/\r?\n/g, ' ')}\ndeadline: ${dl}\nasked: ${now()}\n\n${question}\n`);
+    out(`ASKED ${id}: defaults to "${recommended.replace(/\r?\n/g, ' ')}" in ${min} min unless fleet.sh answer-operator records an answer; notify the operator now and keep working\n`);
+    return 0;
+}
+// The operator's answer to one of those, before or after the deadline.
+function answerOperator(c, a) {
+    const [id = '', ...txt] = a;
+    const body = (txt.join(' ') || stdin().toString('utf8')).trim();
+    if (!/^[0-9A-Za-z._-]+$/.test(id) || !body) {
+        err('usage: fleet.sh answer-operator <run-dir> <id> <text...>\n');
+        return 2;
+    }
+    if (!existsSync(`${c.run}/ask/operator/${id}.md`)) {
+        err(`REFUSED: no question ${id}.md in ask/operator/; nothing was answered\n`);
+        return 2;
+    }
+    mkdirSync(`${c.run}/answers/operator`, { recursive: true });
+    writeFileSync(`${c.run}/answers/operator/${id}.md`, `${body}\n`);
+    const df = `${c.run}/ask/operator/${id}.defaulted`;
+    if (!existsSync(df)) {
+        out(`ANSWERED ${id}\n`);
+        return 0;
+    }
+    // Every task filed on the default carries `depends-on-ask: <id>` (fleet-wait): they are the ones to refile or keep.
+    const built = names(`${c.run}/tasks/ready`).filter((n) => n.endsWith('.md') &&
+        (/^depends-on-ask:[ \t]*(.*)$/m.exec(read(`${c.run}/tasks/ready/${n}`))?.[1] ?? '').split(/[ ,\t\r]+/).includes(id)).map((n) => n.slice(0, -3));
+    const rec = (read(df).split('\n')[1] ?? '').replace(/\r$/, '');
+    out(`ANSWERED ${id} after its default was assumed: undo what you did on the recommendation if it differs\n`);
+    out(built.length ? `${built.join(' ')}: these were built on the default "${rec}"; refile or keep\n` : `no task carries depends-on-ask: ${id}\n`);
+    return 0;
+}
+// A mockup subject's requirements file: every operator message on it, verbatim, numbered R1..Rn (docs/DESIGN.md, "Mockup
+// rounds"). The text is on stdin. `supersedes Rn` keeps Rn in the file and marks it dropped; a message that contradicts
+// an earlier one with no `supersedes` is the operator's to settle, not the file's [M59].
+function reqAdd(c, a) {
+    const [subject = '', ...rest] = a;
+    const tag = rest[0] === 'must' || rest[0] === 'nice' ? rest.shift() : 'must';
+    const sup = rest[0] === 'supersedes' ? (rest[1] ?? '') : '';
+    if (!/^[0-9A-Za-z._-]+$/.test(subject) || (rest.length && !/^R[0-9]+$/.test(sup)) || rest.length !== (sup ? 2 : 0)) {
+        err('usage: fleet.sh req-add <run-dir> <subject> [must|nice] [supersedes Rn]   (the operator words on stdin, verbatim)\n');
+        return 2;
+    }
+    const text = stdin().toString('utf8').replace(/\r\n/g, '\n').replace(/\s+$/, '');
+    if (!text.trim()) {
+        err('REFUSED: no text on stdin\n');
+        return 2;
+    }
+    const f = `${c.run}/reports/${subject}.req.md`;
+    let cur = read(f);
+    const hdr = (r) => new RegExp(`^${r} \\d{4}-\\d\\d-\\d\\dT.*$`, 'm'); // a header, not operator text that starts "R3 "
+    if (sup) {
+        const h = hdr(sup).exec(cur);
+        if (!h) {
+            err(`REFUSED: ${f} has no ${sup} to supersede\n`);
+            return 2;
+        }
+        if (/ DROPPED by R[0-9]+$/.test(h[0])) {
+            err(`REFUSED: ${sup} is dropped already\n`);
+            return 2;
+        }
+    }
+    const n = (cur.match(/^R[0-9]+ \d{4}-\d\d-\d\dT/gm) ?? []).length + 1;
+    if (sup)
+        cur = cur.replace(hdr(sup), (h) => `${h} DROPPED by R${n}`);
+    mkdirSync(`${c.run}/reports`, { recursive: true });
+    writeFileSync(f, `${cur}${cur && !cur.endsWith('\n') ? '\n' : ''}${cur ? '\n' : ''}R${n} ${now()} ${tag}${sup ? ` supersedes ${sup}` : ''}\n${text}\n`);
+    out(`R${n} appended to ${f}\n`);
+    return 0;
+}
 // Something every worker must read, rather than an answer to one of them, read at each task boundary.
 // Every worker reads the whole file, including one that starts a day later, so each entry carries its time,
 // and an order meant for named chips does not belong here: 2026-10-06, worker 20 retired at 420K on a
@@ -781,6 +872,9 @@ export const commands = {
     file,
     cleared,
     answer: (c, a) => answer(c, a),
+    'ask-operator': (c, a) => askOperator(c, a),
+    'answer-operator': (c, a) => answerOperator(c, a),
+    'req-add': (c, a) => reqAdd(c, a),
     broadcast: (c) => broadcast(c),
     stranded,
     width: (c) => width(c),

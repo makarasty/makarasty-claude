@@ -1,5 +1,38 @@
 # Changelog
 
+## makarasty 1.15.0, makarasty-tools 1.16.0 — 2026-11-11
+
+Built from transcript evidence (M57-M59), then a review, a red team replaying hold dictation and two more
+review rounds.
+- **hold keeps every word and every item.** One folder per session, one file per item with the operator's text
+  verbatim (written with the Write tool and `hold.mjs add --from`, so a `HOLD` line, `$(...)`, quotes or a
+  `/route` in a paste reach the file unchanged), screenshots copied out of Temp at once, and an ack line that
+  shows what was stored: the heard word first, `?` on an uncertain one, `(+ to NN)` / `(= NN?)` instead of a
+  silent merge. Nothing is asked while collecting; at the codeword one question round settles the `?` words and
+  merges, unless the operator says to go at once. Each item ends `done | partial | not-done | merged | dropped`
+  with evidence, and `hold.mjs check` refuses the report while any item is open. `carry` moves unfinished items
+  into the next hold; a second hold in one session starts a fresh list. Evidence: 19 lists and ~12 sessions —
+  acks the operator could not check, mis-heard words guessed, 3 of 19 lists with statuses, the same complaints
+  three days running.
+- **Reversible questions no longer stop the run.** An open AskUserQuestion blocks the coordinator turn (M59:
+  p50 176 s, p90 1142 s, 15 relaunch asks ~4 h). A choice whose effects stay in tasks tagged `depends-on-ask`
+  is filed with `fleet.sh ask-operator`, notified, and defaults to its recommendation after `ask_default_min` 10;
+  a late answer lists the tasks built on the default. Deletes, outside actions, stopping processes, another
+  chat's code, scale, pace, mission meaning and mockup choices are still asked.
+- **Relaunch at DRAINED is a card, not a question:** nothing is in flight, so the click is the consent.
+- **status.txt** on every watch tick (done/total, in flight, ETA, PAUSED or waiting-for-card since), and
+  `eta:` in `fleet.sh status`. An optional pick-up check (a scheduled task every 15 min, consent at plan time,
+  removed at the end) messages the operator when the coordinator has died or the card waits over an hour.
+- **Disk:** `disk_floor_gb` 20 / `disk_clear_gb` 30 over the run, temp and home volumes; `next` holds new work
+  below it and names the volume; workers list the scratch folders they make, and only those are offered for
+  deletion, with the operator's yes.
+- **Mockup rounds** keep the operator's words in `reports/<subject>.req.md` (`fleet.sh req-add`, must/nice,
+  supersedes); a separate reviewer grades every variant against them; at most 3 variants.
+- **Foreign code blocking the end commit:** a policy set at plan time (`foreign=wait|fix|leave`); `fix` only
+  touches committed foreign code, never another chat's uncommitted file.
+- The separate-chat machinery moved from fleet-plan and fleet-wait into `docs/CHATS.md`, out of what a one-chat
+  coordinator loads.
+
 ## makarasty 1.14.0, makarasty-tools 1.15.5 — 2026-11-11
 
 From a review, a four-angle red team and a design consult over 1.12-1.13, plus probes [M57].

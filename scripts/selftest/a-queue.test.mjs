@@ -424,6 +424,7 @@ code('--release refuses when there are no transcripts to judge by', 2, r.code);
     truthy('the deadline is epoch seconds budget x multiplier ahead', Math.abs(Number(read(`${cd}/deadline`)) - (Date.now() / 1000 + 10 * MULT * 60)) < 120, read(`${cd}/deadline`));
     const pm = read(`${cd}/prompt.md`);
     check('prompt.md carries the rules once', 'RULE-LINE RULE-LINE', pm);
+    check('and tells the worker to list every scratch folder it makes', '/scratch.list as you make it', pm);
     check('and the Test line at twice the test seconds', 'Test: timeout 40 echo ok', pm);
     check("and the Proof line", "after -- 'exit 1'", pm);
     check('and the report path', '/reports/fx-1.md', pm);

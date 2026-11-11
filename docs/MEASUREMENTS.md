@@ -911,6 +911,9 @@ c630a8c9 (about 100 tokens on every prompt and every notification).
   the grandchild.
 - **`dismiss_task` on a card already started:** "no longer pending, so there is nothing to withdraw ... Nothing was
   changed". Harmless to call on a stale id.
+- **An AskUserQuestion answer inside a turn an automated event began:** the operator answered, and `start_session`
+  `user_asked` in that same turn was refused ("this turn runs an automated event"). A card (`own_initiative`) was
+  accepted.
 - **Task time in flight** (`scripts/fleet-analyze.mjs`): run 2026-11-10-hold-polish median 10.4 min, p90 48.1 min;
   run 2026-11-06-oxi-roadmap median 19.4 min, p90 58.9 min. A drain that waits for the claims in flight should
   expect up to about an hour; longer means a hung or dead agent.
@@ -919,6 +922,43 @@ c630a8c9 (about 100 tokens on every prompt and every notification).
   against $687.
 - **Rule produced:** `drain_cap_min` 60 (the drain asks anyway after it); fleet-analyze reads every session the
   run recorded.
+**Status:** current for 2.1.322.
+
+## M58 — Where a one-chat coordinator's context goes, per task
+**2026-11-11**, run 2026-11-10-hold-polish, plugin 1.11.0. Script: each transcript message bucketed by chars/4,
+assistant side by `output_tokens`, input side scaled per transcript (k 1.72-1.79) so buckets sum to the measured
+context growth; tasks = unique `fleet.sh finish` DONE ids.
+- **Growth per task:** 20.3K (coordinator 1, 22 tasks), 13.5K (coordinator 2, 47 tasks). Per spawn 6.1-6.5K.
+- **Top three families, 67-69% of it:** Bash call + result 5.5K / 3.2K (27% / 23%, task cards by heredoc
+  included); hand-back frame + body 4.1K / 2.7K (20%; a hand-back averages 3,067 chars, 2,153 body + 913 frame);
+  spawn plumbing (prompt + launch metadata + done envelope) 4.4K / 3.2K (21% / 24%). Thinking stays in context
+  (0.6-1.0K per task). Operator text under 1%, Monitor events about 0.1K per task.
+- **Estimate, not measured:** a slot lead per slot (dispatch → coder → reviewer → fix → finish inside one
+  subagent, escalations only) would remove about 15K of 20.3K and 10K of 13.5K, leaving the coordinator near 260K
+  after 47 tasks instead of 731K. Bucket split can be off by about 30%; retention factors are assumptions.
+- **Rule produced:** the slot-lead probe; hand-back bodies held to their cap.
+**Status:** current for plugin 1.11.0 runs.
+
+## M59 — Asks that blocked a coordinator, a failed commit, a full disk
+**2026-11-11**, Claude Code 2.1.322, desktop app, this machine; read from the session transcripts since 11-03.
+- **Asks:** 322 `AskUserQuestion` calls in 137 sessions. Time to the answer: p50 176 s, p90 1142 s; 20% waited over
+  10 min and 9% over 20 min. An open ask blocks the coordinator's turn: in session af35a90c the agents finished at
+  08:47:19 and 08:47:36 and were handled only after the 08:51:06 answer, and a watch expiry at 09:35:02 queued
+  behind a 16 min 45 s ask. The 15 relaunch asks took a median 567 s, about 4.0 h blocked in all.
+- **Push failed:** `PushNotification` returned "Mobile push not sent (Remote Control inactive)" once and "Not sent
+  — this terminal is active" once; neither reached the operator. The notify skill is the channel that lands.
+- **Commit failure:** session 53a58956 at 15:06:18: the husky pre-commit failed on 3 checks (refusals, permengine,
+  buttons) in another author's committed code pulled from origin; the Haiku commit agent reported "Commit NOT made".
+  The coordinator asked at 15:07:40 and the answer came at 15:20:21 ("если он не коммитил последние минут... можешь
+  сам починить"). design-system-hub's end commit was not made at all: the pre-commit hit another chat's file.
+- **Mockup rounds:** session 513940ca, round 2 of a redesign: the task paraphrased "одну линию" away, the worker drew
+  two bars, and the operator wrote "я просил объединить в один бар". The round's task had no verbatim copy of the
+  operator's earlier messages.
+- **Disk:** 513940ca at 19:02:46 had disk C: at 0 bytes and the tests failed with ENOSPC. 485f66a8 on 11-08 had C:
+  98% full with 29 GB free; a worker saw 6 GB, and 330 GB of it was the fleet's own test folders.
+- **Rule produced:** a reversible ask with a recommendation is written to `ask/operator/<id>.md` and defaults after
+  `ask_default_min` (10) instead of blocking; the drained relaunch is a card, not an ask; `disk_floor_gb` 20 and
+  `disk_clear_gb` 30; a mockup round carries `reports/<subject>.req.md` verbatim.
 **Status:** current for 2.1.322.
 
 ## Appendix: what a pull run spends

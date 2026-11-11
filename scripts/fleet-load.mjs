@@ -9,6 +9,7 @@
 //   node fleet-load.mjs                     one census, human readable
 //   node fleet-load.mjs --json              the same, as one JSON object, `tight` included
 //   node fleet-load.mjs --clear <GB>        exit 0 when free memory is above <GB>, 1 otherwise. Silent.
+//   node fleet-load.mjs --clear-disk <GB>   exit 0 when free disk (the least of the cwd's, temp's and home's volumes) is above <GB>, 1 otherwise. Silent.
 //   node fleet-load.mjs --leftovers [--kill]  toolchain processes whose parent is gone, and shells a closed
 //                                           chat left running; --kill ends the idle orphaned test and typecheck
 //                                           runs and those shells with everything under them, nothing else
@@ -27,6 +28,7 @@
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
+import path from 'node:path';
 const args = process.argv.slice(2);
 const flag = (n, d = null) => { const i = args.indexOf(n); return i === -1 ? d : (args[i + 1] ?? true); };
 const has = (n) => args.includes(n);
@@ -154,6 +156,21 @@ function classify(p) {
         return 'app: gpu';
     return 'app: ' + t[1];
 }
+// Free disk, the least over the cwd's volume (the checkout the fleet runs in), the temp dir's and the home dir's,
+// as machine.mjs reads a drive: statfs. The volume is named for the DISK LOW line [M59].
+function diskProbe() {
+    let best = null;
+    for (const [label, p] of [['run dir', process.cwd()], ['temp dir', os.tmpdir()], ['home dir', os.homedir()]]) {
+        try {
+            const s = fs.statfsSync(p), gb = round((s.bavail * s.bsize) / 2 ** 30);
+            if (!best || gb < best.gb)
+                best = { gb, vol: `${process.platform === 'win32' ? path.parse(path.resolve(p)).root : path.resolve(p)} (${label})` };
+        }
+        catch { /* an unreadable volume is left out */ }
+    }
+    return best;
+}
+const diskFree = () => diskProbe()?.gb ?? null;
 function census() {
     const { os, procs } = process.platform === 'win32' ? windows() : posix();
     const groups = {};
@@ -170,6 +187,8 @@ function census() {
         when: new Date().toISOString(),
         totalGB: round((os.totalKB || 0) / 1048576),
         freeGB: round((os.freeKB || 0) / 1048576),
+        diskFreeGB: diskFree(),
+        diskVolume: diskProbe()?.vol ?? null,
         commitGB: os.commitKB == null ? null : round(os.commitKB / 1048576),
         commitLimitGB: os.limitKB == null ? null : round(os.limitKB / 1048576),
         pagedGB: os.pagedKB == null ? null : round(os.pagedKB / 1048576),
@@ -468,6 +487,11 @@ if (has('--clear')) {
         process.exit(0);
     const c = census();
     process.exit(c.freeGB > want ? 0 : 1);
+}
+// --clear-disk N: the same for the disk, so next refuses below the floor [M59]. An unreadable disk passes.
+if (has('--clear-disk')) {
+    const d = diskFree();
+    process.exit(d === null || d > Number(flag('--clear-disk', 30)) ? 0 : 1);
 }
 const interval = Number(flag('--watch', 0));
 const out = flag('--out', null);

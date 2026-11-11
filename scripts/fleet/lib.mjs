@@ -1,9 +1,9 @@
 // lib.mts - what every fleet command shares: the readers, the run and its constants, claims, sessions.
 // Part of fleet.mjs; see src/scripts/fleet.mts.
-import { closeSync, existsSync, fstatSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, realpathSync, renameSync, rmSync, statSync, writeFileSync, writeSync } from 'node:fs';
+import { closeSync, existsSync, fstatSync, mkdirSync, statfsSync, openSync, readdirSync, readFileSync, readSync, realpathSync, renameSync, rmSync, statSync, writeFileSync, writeSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { dirname, resolve } from 'node:path';
-import { homedir, uptime } from 'node:os';
+import { dirname, parse, resolve } from 'node:path';
+import { homedir, tmpdir, uptime } from 'node:os';
 // 2: `finish` asks an implement or design task with a `test:` line for a recorded run of it. A run stamped 1
 // was handed out before coders were told to record one, and is not asked.
 export const RUN_FORMAT = 2;
@@ -481,6 +481,27 @@ export function loadScript() {
         return slashes(resolve(l));
     return existsSync(`${HERE}/fleet-load.mjs`) ? slashes(`${HERE}/fleet-load.mjs`) : '';
 }
+// Free space on the volume holding the path, in GB; undefined when the platform will not say (no floor then).
+export function diskFreeGB(path) {
+    try {
+        const s = statfsSync(path);
+        return (s.bavail * s.bsize) / 2 ** 30;
+    }
+    catch {
+        return undefined;
+    }
+}
+// The least free space over the volumes a run fills: the run directory's, the temp dir's and the home dir's (test
+// output, caches and worktrees land on any of them), with the volume named for the DISK LOW line [M59].
+export function diskMin(run) {
+    let best;
+    for (const [label, p] of [['run dir', run], ['temp dir', tmpdir()], ['home dir', homedir()]]) {
+        const gb = diskFreeGB(p);
+        if (gb !== undefined && (!best || gb < best.gb))
+            best = { gb, vol: `${process.platform === 'win32' ? parse(resolve(p)).root : resolve(p)} (${label})` };
+    }
+    return best;
+}
 // ---- the queue -------------------------------------------------------------------------------------------
 export const live = (id) => !id.includes('.dead-') && !id.includes('.released-');
 // The open claims of one chip.
@@ -508,7 +529,7 @@ export function draining(c) {
     return true;
 }
 // `.drained-said` is written before its line is printed, so a lost line leaves the marker: exit 13 says so.
-export const drainedNote = (c) => existsSync(`${c.run}/.drained-said`) ? 'DRAINED was announced already: ask the relaunch question now (fleet-plan, 8b)\n' : '';
+export const drainedNote = (c) => existsSync(`${c.run}/.drained-said`) ? 'DRAINED was announced already: relaunch by card now, no question (fleet-plan, 8b)\n' : '';
 // The pane walks one host claimed and has not served yet.
 export function walksOf(c, chip) {
     return names(`${c.run}/pane/running`).filter((w) => !existsSync(`${c.run}/pane/results/${w}.json`) &&

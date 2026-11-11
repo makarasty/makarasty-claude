@@ -17,7 +17,7 @@ The loop, for each free slot `NN` in lane `<lane>`. Dispatch every free slot in 
 
 1. `sh "$f" dispatch "$r" NN <lane>`. It claims, saves `before.diff`, records the before proof of a fix or
    root, sets the budget deadline and writes the spawn prompt. Exit `0`: a claim, go to 2. `3`: `drained`.
-   `7`: wait for the next notification or watch line. `6`: wait for `memory-back`. `8`: paused, spawn nothing.
+   `7`: wait for the next notification or watch line. `6`: wait for the line it prints, any `*-back` (`memory-back` or `disk-back`; `*-stuck` after 60 minutes means tell the operator and wait again). `8`: paused, spawn nothing.
    `9`: run landed, spawn nothing. `1` `PROVE FAILED`: read the line, fix the repro or the
    environment, dispatch again (the claim is kept and resumes). `2`: the slot holds a claim already
    dispatched, or its task file cannot be read (the line says which). `12`: fix the task file (`NO OWNS`,
@@ -96,7 +96,7 @@ For each free slot `NN` in lane `<lane>`:
      the heavy tab) and `RENAME THIS SESSION TO` lines: they are for a worker chat, and this chat is yours.
    - `7` waiting: tasks held by `after:`, the verify lane or an uncleared `operator:`. Spawn nothing on this
      slot; dispatch again on the next completion or watch line.
-   - `6` machine tight: background the wait line it prints, dispatch again on `memory-back`.
+   - `6` machine tight or disk low: background the wait line it prints, dispatch again on its `*-back` (`memory-back` or `disk-back`).
    - `8` paused: spawn nothing (Pause, below). `2 HOLDING`: the slot holds a dispatched claim; finish it first.
    - `9` `RUN FINISHED`: the run has landed. Spawn nothing on any slot; the rest of that line is for a worker
      chat.
@@ -275,6 +275,17 @@ that is both in `dirty-at-start` and changed by a task is the operator's call: l
 Cadence, from the pace line: **one commit at the end of the run** (the default and the cheapest), or one per
 wave; with opt-in worktrees each task commits on its own branch. Reviews read the uncommitted diff of `owns:`, so none of them waits on a commit.
 
+**A pre-commit failure that is not the run's [M59].** The commit agent does not fix, wait or retry: it returns
+the failed check names and the files they name, and stops. You apply the `foreign=` word of the `pace:` line
+(`fleet-plan`, Round 0b; default `leave`) to each file, reading its last author with `git log -1
+--format=%an,%cr -- <file>`: `wait` holds the commit and re-runs the agent when the file changes or its author has committed, for at
+most 60 minutes, then it is `leave`; `fix` applies ONLY to a blocking file that `git status --porcelain` shows
+clean (foreign code already committed, for example pulled from origin): a file shown dirty is another chat's
+uncommitted work and is never edited, whatever the word (leave it and list it); `leave` commits the run's own
+files without the failing ones (`--only`) and lists the files left and why in the end report. A file the run
+itself changed is a defect of the run: fix it, whatever the word. A `pace:` line with no `foreign=` word
+(Round 0b skipped) is `foreign=leave`; the coordinator writes it in explicitly.
+
 **End of run.** After collect, always, in this order: the end commit as written above; then, with opt-in
 worktrees, merge the branches back; then, when `FLEET.md` names a task board, move the run's cards to
 review; then report the commit sha.
@@ -301,7 +312,8 @@ Why this is cheaper, and the estimate behind it: `docs/MODELS.md`, "Pace".
 
 Your context is the run's ceiling: measured about 9 k per spawn on three coordinators before `dispatch` [M54]
 (the Agent prompt, the report, and the Bash calls around a claim), so the run's size follows from what each
-spawn costs you. Keep it low.
+spawn costs you; a coordinator grew 13.5K to 20.3K per task, two thirds of it Bash calls and results, hand-back
+bodies and spawn plumbing [M58]. Keep it low.
 
 - `dispatch` prints the header only. Never print a task body.
 - The spawn prompt is the one `PROMPT` line; `RULES.md` (and a review or red-team brief file) is pasted once into `prompt.md` by `dispatch` and marked "do not read it again" [M51].
@@ -355,14 +367,16 @@ slot with `sh "$f" paused "$r" NN`. The hooks hold every subagent of yours while
 3. Re-arm the watch. No messages to send: there are no worker chats.
 
 **Relaunch at the 700 K mark.** Only you cross it; every subagent starts fresh. `COORDINATOR CONTEXT` starts a drain: spawn nothing and let the agents in flight finish.
-Ask once, at `DRAINED`, at `DRAIN TIMED OUT` (`drain_cap_min`, 60 minutes [M57]), or when the drain ran out at the next step. On "no" run `fleet.sh undrain <run>`. On yes start `fleet.sh relaunch` **naming no chips** (it pauses), `TaskStop`
-only the agents still running then, ack their slots, update `STATE.md` yourself (the pause holds every subagent), and start the one coordinator chip (`mcp__ccd_session__start_session`)
+At `DRAINED` (nothing in flight, work left) do not ask: run `fleet.sh relaunch` **naming no chips** (it pauses) yourself,
+update `STATE.md` (the pause holds every subagent), offer the one coordinator card (`own_initiative`) and notify the
+operator once; the click is the consent [M56], and a card not started in 30 minutes gets one more notice. Ask once,
+with `AskUserQuestion`, at `DRAIN TIMED OUT` (`drain_cap_min`, 60 minutes [M57]) or when the drain ran out at the next step: those stop agents. On "no" run `fleet.sh undrain <run>`. On yes start `fleet.sh relaunch` **naming no chips**, `TaskStop`
+only the agents still running then, ack their slots, update `STATE.md` yourself, and start the one coordinator chip (`mcp__ccd_session__start_session`)
 (`docs/RELAUNCH.md`, "One chat"). The new coordinator takes over and re-spawns per held claim, as after a
 crash.
 
 ## Opt-in: separate chats, worktrees
 
 Choose separate worker chats when more than one live visual check must run at once (each chat has its own
-live tab [M42]), or when the operator chose them in Round 0. Then `fleet-plan` section 7, "Opt-in: separate
-chats", and `fleet-run` apply. Worktrees are opt-in for code tasks: `docs/WORKTREES.md`, with merges by a
+live tab [M42]), or when the operator chose them in Round 0. Then `docs/CHATS.md` and `fleet-run` apply. Worktrees are opt-in for code tasks: `docs/WORKTREES.md`, with merges by a
 Sonnet `[exec]` agent into an integration checkout (`fleet-plan` 8b). See `docs/LANES.md` for the widths.

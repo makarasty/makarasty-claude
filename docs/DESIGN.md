@@ -280,6 +280,28 @@ The caveat from `MISSIONS.md` holds here too, reversed: a proposal can satisfy e
 still be wrong for this product, because taste is the design model's judgement and the operator's call.
 The canvas is where that argument happens, and the fleet's job ends at putting the pieces on it.
 
+## Mockup rounds
+
+A mockup or redesign subject is rarely settled in one round: the operator reacts, the next round answers. What
+gets lost between rounds is their own words. In session 513940ca the round-2 task paraphrased "одну линию"
+away and the worker drew two bars; the operator wrote "я просил объединить в один бар" [M59].
+
+- **One requirements file per subject**, `reports/<subject>.req.md`: the original task items, then every operator
+  message on the subject **verbatim** (never summarised, translated or merged), each with its timestamp,
+  numbered R1..Rn in the order they came. Only `fleet.sh req-add <run> <subject> [must|nice] [supersedes Rn]` writes
+  it (the words on stdin): the coordinator calls it for every operator message on the subject and for every
+  `AskUserQuestion` answer about it, before the next round is filed. `supersedes Rn` keeps Rn in the file and marks
+  it `DROPPED by Rm`; a message that contradicts an earlier one with no `supersedes` goes to the operator, not into
+  the file as a guess.
+- **Each round's task embeds the whole file at the top**, above the instructions: the worker reads the operator's
+  words, not the planner's account of them. A dropped Rn is not a requirement.
+- **The worker returns a table, variant x Rn -> met / not met / why**: one row per variant, one column per
+  requirement, before any picture is judged. The worker's own met column is a claim: a separate reviewer
+  (`fleet-design-eye`) re-grades the table against the screenshots, and the re-graded table is the one shown.
+- **At most three variants per round.** A variant that misses a must-have is not shown: it goes back to the
+  worker, or is dropped and said so.
+- **The question to the operator shows the table** with the variants, so a miss is seen before one is chosen.
+
 ## Closing the loop: from an approved artboard to code
 
 An artboard the operator has edited and saved is a specification. Read it back with the `design`

@@ -2,7 +2,7 @@
 import { appendFileSync, existsSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename } from 'node:path';
 import { tmpdir } from 'node:os';
-import { lf, sub, out, isDir, read, firstLine, names, now, slashes, cal, calint, pluginVersion, live, claimsOf, laneGaps, cat, noCr, mtimeMs, newer, olderThanMin, chipFinished, started, recordedVersion, versionReadable, versionOlder, installedVersion, claimHolders, openClaims, draining, workerSessions, sessionCtx, coordinatorSid, recordFleetSession, coordCtx, gt, afterIds, operatorOwed, isFile } from './lib.mjs';
+import { lf, sub, out, isDir, read, firstLine, names, now, slashes, cal, calint, pluginVersion, live, claimsOf, laneGaps, cat, noCr, mtimeMs, newer, olderThanMin, chipFinished, started, recordedVersion, versionReadable, versionOlder, installedVersion, claimHolders, openClaims, draining, workerSessions, sessionCtx, coordinatorSid, recordFleetSession, coordCtx, gt, afterIds, operatorOwed, isFile, diskMin } from './lib.mjs';
 // ---- ctx and contexts ------------------------------------------------------------------------------------
 // A ready task nobody has claimed or finished: a fresh coordinator still has work to hand out.
 const unstarted = (run) => names(`${run}/tasks/ready`).some((n) => n.endsWith('.md') && !existsSync(`${run}/tasks/done/${n.slice(0, -3)}`) && !isDir(`${run}/tasks/claimed/${n.slice(0, -3)}`));
@@ -20,6 +20,8 @@ export function ctx(c) {
             const level = at + Math.floor((Number(k) - at) / step) * step;
             const open = openClaims(c), ids = open.join(' ');
             const asking = `bring ${absrun}/STATE.md up to date, then ask the operator once whether to relaunch the run with a fresh coordinator (fleet-plan, 8b). Do not hand off by chip and do not relaunch unasked.`;
+            // Nothing in flight: no agent is stopped, so the click on the coordinator card is the consent [M56] (fleet-plan, 8b).
+            const card = `bring ${absrun}/STATE.md up to date, then relaunch it yourself, no question: relaunch call 1 and 2, offer the coordinator card (own_initiative) and notify once; the click is the consent. Not started in 30 min: notify once more (docs/RELAUNCH.md, One chat). Do not hand off by chip.`;
             const dr = `${run}/.draining`;
             // draining() drops a marker of another session (a resumed coordinator); it is armed again just below.
             const on = draining(c);
@@ -45,12 +47,12 @@ export function ctx(c) {
                 else {
                     // Said here, so the next tick does not print DRAINED and ask a second time.
                     writeFileSync(`${run}/.drained-said`, '');
-                    out(unstarted(run) ? `COORDINATOR CONTEXT ${k}K (mark ${at}K): no task in flight, so there is nothing to wait for: ${asking}\n` : `COORDINATOR CONTEXT ${k}K (mark ${at}K): ${LAND}\n`);
+                    out(unstarted(run) ? `COORDINATOR CONTEXT ${k}K (mark ${at}K): no task in flight, so there is nothing to wait for: ${card}\n` : `COORDINATOR CONTEXT ${k}K (mark ${at}K): ${LAND}\n`);
                 }
             }
             else if (on && !existsSync(`${run}/.drained-said`) && !open.length) {
                 writeFileSync(`${run}/.drained-said`, '');
-                out(unstarted(run) ? 'DRAINED: no task in flight, ask the relaunch question now\n' : `DRAINED: ${LAND}\n`);
+                out(unstarted(run) ? `DRAINED: no task in flight, relaunch by card now, no question: update ${absrun}/STATE.md, run relaunch call 1 and 2, offer the coordinator card (own_initiative), notify once; the click is the consent, and not started in 30 min notify once more (fleet-plan, 8b)\n` : `DRAINED: ${LAND}\n`);
             }
             // The cap [M57]: a claim that never closes (a hung or dead agent) must not hold the run draining for ever.
             // shortcut: open claims are counted without liveness (sweep reads heartbeats, ops.mts), the cap bounds it.
@@ -104,6 +106,13 @@ export function ctx(c) {
     if (sid && coordinatorSid(c) === sid)
         recordFleetSession(absrun, sid);
     runawayLogs(c);
+    // Every tick, whatever the coordinator is doing: a status the operator or a scheduled check reads without a turn.
+    try {
+        writeStatusFile(c);
+        operatorAsks(c);
+        diskLow(c);
+    }
+    catch { /* advice only: an unreadable file ends it */ }
     const iv = installedVersion();
     const runid = basename(absrun);
     for (const chip of names(`${run}/offered`)) {
@@ -179,6 +188,95 @@ export function ctx(c) {
         out(`WORKER PLUGIN ${chip} runs makarasty ${wv}, ${iv} is installed. A worker keeps the fleet.sh path it resolved at its start, so a restart alone does not move it: after the operator restarts Claude Code, message the session titled 'fleet ${runid} ${chip}' to invoke /makarasty:fleet-run ${absrun}/ again, which resolves the installed plugin, and then run: touch ${absrun}/chips/${chip}.plugin-messaged. Its next claim records ${iv}; a claim after that mark that still records ${wv} brings a STILL ON line for the relaunch ask.\n`);
     }
     return 0;
+}
+// ---- status.txt, ask defaults, disk -----------------------------------------------------------------------
+// What tasks took, for budgets() and the ETA: minutes of work per done task and the budget each carried.
+function measured(run) {
+    const work = [], bud = [];
+    for (const id of names(`${run}/tasks/done`)) {
+        try {
+            const o = readFileSync(`${run}/tasks/claimed/${id}/owner`, 'utf8').match(/claimed (\S+)/);
+            const t = readFileSync(`${run}/tasks/ready/${id}.md`, 'utf8').match(/^budget:\s*(\d+)/m);
+            if (!o)
+                continue;
+            work.push((statSync(`${run}/tasks/done/${id}`).mtimeMs - Date.parse(o[1] ?? '')) / 60000);
+            bud.push(t ? Number(t[1]) : 25);
+        }
+        catch { /* a task without its files is not measured */ }
+    }
+    return { work, bud };
+}
+const median = (a) => { const s = [...a].sort((x, y) => x - y); return s[Math.floor(s.length / 2)] ?? 0; };
+// "N of M done, K in flight, R left, ETA ~X min"; empty for a run with no queue. ETA is ceil(R / width) x the
+// median minutes a done task took, and is left out under three measured tasks or with nothing left.
+export function statusLine(c) {
+    const run = c.run;
+    const ids = names(`${run}/tasks/ready`).filter((n) => n.endsWith('.md')).map((n) => n.slice(0, -3));
+    if (!ids.length)
+        return '';
+    const done = ids.filter((i) => existsSync(`${run}/tasks/done/${i}`)).length;
+    const flight = openClaims(c).length;
+    const left = Math.max(0, ids.length - done - flight);
+    let s = `${done} of ${ids.length} done, ${flight} in flight, ${left} left`;
+    const { work } = measured(run);
+    if (left > 0 && work.length >= 3) {
+        // one chat: the registered slots; separate chats: the chips not finished
+        const width = Math.max(1, isDir(`${run}/slots`) ? names(`${run}/slots`).length : names(`${run}/offered`).filter((n) => !chipFinished(c, n)).length);
+        s += `, ETA ~${Math.ceil(left / width) * Math.max(1, Math.round(median(work)))} min`;
+    }
+    return s;
+}
+// Written on EVERY tick, tasks or none: its age is the "is the watch alive" test of the pick-up scheduled task, and its
+// second line carries a state the counts hide, a pause or a coordinator card nobody has started [M59].
+function writeStatusFile(c) {
+    const lines = [statusLine(c) || 'no tasks yet'];
+    const stamp = (f) => { const m = mtimeMs(f); if (Number.isNaN(m))
+        return 'unknown'; const d = new Date(m), p = (n) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; };
+    if (existsSync(`${c.run}/PAUSED`))
+        lines.push(`PAUSED since ${firstLine(`${c.run}/PAUSED`).split(' ')[0]}`);
+    if (existsSync(`${c.run}/coordinator-pending`))
+        lines.push(`waiting for the coordinator card since ${stamp(`${c.run}/coordinator-pending`)}`);
+    writeFileSync(`${c.run}/status.txt`, lines.join('\n') + '\n');
+}
+// A question the coordinator filed with a recommendation (fleet.sh ask-operator) and nobody answered by its
+// deadline: said once, kept in <id>.defaulted for fleet-collect, and appended under `assumed:` in STATE.md [M59].
+function operatorAsks(c) {
+    const dir = `${c.run}/ask/operator`;
+    for (const f of names(dir)) {
+        if (!f.endsWith('.md'))
+            continue;
+        const id = f.slice(0, -3);
+        if (existsSync(`${c.run}/answers/operator/${f}`) || existsSync(`${dir}/${id}.defaulted`))
+            continue;
+        const text = read(`${dir}/${f}`);
+        const dl = Number(/^deadline:[ \t]*(\d+)/m.exec(text)?.[1] ?? NaN);
+        if (!(dl <= Math.floor(Date.now() / 1000)))
+            continue;
+        const rec = noCr(/^recommended:[ \t]*(.*)$/m.exec(text)?.[1] ?? '').trim();
+        writeFileSync(`${dir}/${id}.defaulted`, `${now()}\n${rec}\n`);
+        const st = `${c.run}/STATE.md`;
+        if (existsSync(st))
+            appendFileSync(st, `${read(st).endsWith('\n') ? '' : '\n'}assumed: ${id} (${now()}): ${rec}\n`);
+        out(`ASK DEFAULTED ${id}: ${rec}\n`);
+    }
+}
+// Free disk under the floor: said once per crossing, and again only after it was back above the clear mark.
+function diskLow(c) {
+    const low = diskMin(c.absrun);
+    if (!low)
+        return;
+    const free = low.gb;
+    const mark = `${c.run}/.disk-low-said`;
+    if (existsSync(mark)) {
+        if (free > Number(cal(c, 'disk_clear_gb', '30')))
+            rmSync(mark, { force: true });
+        return;
+    }
+    const floor = Number(cal(c, 'disk_floor_gb', '20'));
+    if (free >= floor)
+        return;
+    writeFileSync(mark, '');
+    out(`DISK LOW ${free.toFixed(1)} GB on ${low.vol}: next hands out no task until it is above ${cal(c, 'disk_clear_gb', '30')} GB. Tell the operator in one line (notify). List the biggest folders named in <run>/scratch.list with their sizes and ask the operator (AskUserQuestion) before deleting any; never delete a folder that is not listed [M59].\n`);
 }
 // A background command's output that has grown past runaway_log_gb, named once per file. 2026-10-08:
 // interactive python loops in closed chats had written 5 GB of tasks/*.output, which nothing reported.
@@ -259,6 +357,9 @@ export function status(c) {
         if (runmin > maxmin)
             out('  PAST THE CEILING: continuing is a decision now. Land what exists or raise it in calibration.json.\n');
     }
+    const eta = statusLine(c);
+    if (eta)
+        out(`eta: ${eta}\n`);
     // A pause first: nothing below moves while it stands.
     if (existsSync(`${run}/PAUSED`)) {
         const hold = claimHolders(c);
@@ -284,10 +385,13 @@ export function status(c) {
         const cl = owner === undefined ? '?' : sub(lf(owner).split('\n').filter((l) => l.startsWith('claimed ')).map((l) => `${l.slice(8)}\n`).join(''));
         out(`  ${id}  ${o}  claimed ${cl}  beat ${hb}${hb === cl ? ' NEVER-BEAT' : ''}\n`);
     }
-    // Workers held on memory hold no claim, so nothing else here would show them.
+    // Workers held on memory or disk hold no claim, so nothing else here would show them; the marker's second word says why.
     const tight = isDir(`${run}/tight`) ? names(`${run}/tight`) : [];
-    if (tight.length)
-        out(`== held on memory: ${tight.map((t) => `${t} `).join('')}\n`);
+    for (const why of ['memory', 'disk']) {
+        const held = tight.filter((t) => (firstLine(`${run}/tight/${t}`).split(' ')[1] ?? 'memory') === why);
+        if (held.length)
+            out(`== held on ${why}: ${held.map((t) => `${t} `).join('')}\n`);
+    }
     out('== markers\n');
     const mk = names(run).filter((n) => /\.(done|blocked|retired|waiting)$/.test(n));
     out(mk.length ? mk.map((m) => `  ${m}\n`).join('') : '  none\n');
@@ -357,7 +461,7 @@ export function status(c) {
     if (k) {
         out(`== coordinator context: ${k}K\n`);
         if (Number(k) >= calint(c, 'coordinator_handoff_k', 700)) {
-            out(`  past the mark: ${existsSync(`${run}/.draining`) ? 'DRAINING, no task is handed out; ' : ''}update STATE.md and ask the operator once about a relaunch when no claim is open (fleet-plan, 8b); fleet.sh contexts lists every session\n`);
+            out(`  past the mark: ${existsSync(`${run}/.draining`) ? 'DRAINING, no task is handed out; ' : ''}update STATE.md and, when no claim is open, relaunch by card without asking (fleet-plan, 8b); with claims still open at the next step ask once; fleet.sh contexts lists every session\n`);
         }
     }
     return 0;
@@ -466,22 +570,10 @@ function queueShape(run) {
 // Budgets against what tasks actually took: the 2026-10-05 build ran a median of four minutes against
 // budgets of 45 to 150, so no abort clock could ever fire.
 function budgets(run) {
-    const work = [], bud = [];
-    for (const id of readdirSync(`${run}/tasks/done`)) {
-        try {
-            const o = readFileSync(`${run}/tasks/claimed/${id}/owner`, 'utf8').match(/claimed (\S+)/);
-            const t = readFileSync(`${run}/tasks/ready/${id}.md`, 'utf8').match(/^budget:\s*(\d+)/m);
-            if (!o)
-                continue;
-            work.push((statSync(`${run}/tasks/done/${id}`).mtimeMs - Date.parse(o[1] ?? '')) / 60000);
-            bud.push(t ? Number(t[1]) : 25);
-        }
-        catch { /* a task without its files is not measured */ }
-    }
+    const { work, bud } = measured(run);
     if (work.length < 3)
         return;
-    const med = (a) => { const s = [...a].sort((x, y) => x - y); return s[Math.floor(s.length / 2)] ?? 0; };
-    const w = med(work), b = med(bud);
+    const w = median(work), b = median(bud);
     out('== budgets\n');
     out(`  ${work.length} tasks done: median ${Math.round(w)} min of work against a median budget of ${b} min\n`);
     if (w * 4 < b)

@@ -79,6 +79,12 @@ which one this mission wants and let the operator run it. A `critique` mission i
 verify one, with the "Critique" section of `docs/DESIGN.md` - and nothing else from that file - supplying
 what the task carries: the screens and their states, the token file, and the assertion lines.
 
+**Mockup rounds** (a design subject the operator reacts to more than once): keep `reports/<subject>.req.md` with
+every operator message on the subject verbatim and timestamped, ids R1..Rn, and the original task items, appended only by `fleet.sh req-add` (you call it for each operator message on the subject and for each `AskUserQuestion` answer about it; `supersedes Rn` drops an earlier one, a contradiction with no `supersedes` goes to the operator); every
+round's task embeds it at the top, never a paraphrase; the worker returns a table variant x Rn -> met / not met /
+why, which `fleet-design-eye` re-grades against the screenshots (the worker does not grade itself), three variants at most, and a variant missing a must-have is not shown. The question to the operator shows
+the table (`docs/DESIGN.md`, "Mockup rounds" [M59]).
+
 Count the independent slices the axis produces. **In one chat, the default, the lanes are slot widths**:
 the pane lane is 1, because one chat has one live tab [M42]; the repo lane is `fleet.sh width`; the verify
 lane is one task. File every verify task and every `needs: pane` task `after:` the code tasks of its wave,
@@ -150,6 +156,32 @@ economy=max isolation=onechat commits=end` (the other three: `isolation=onechat 
 to the draft: the queue's size and the overnight warning, the models and efforts per step, the review
 rounds, the commit cadence, chats or subagents, worktrees or `owns:` (`docs/MODELS.md`, "Pace";
 `docs/ONECHAT.md`). Width is never a question: it is `fleet.sh width`.
+
+**Round 0b, two optional items, one more `AskUserQuestion` straight after (the tool takes four questions, so
+they cannot ride in the first); skip it for Small scale, where the defaults stand, and then write `foreign=leave`
+into the pace line yourself (never leave the word out):**
+
+5. **Another chat's code blocks the commit**: "Wait, at most 60 min, then leave it (Recommended)" / "Fix it, only
+   code that is already committed (not another chat's open work)" / "Leave the files and list them". Stored in the
+   pace line as `foreign=wait|fix|leave`. `fix` never touches a file `git status --porcelain` shows dirty;
+   `docs/ONECHAT.md`, "Commits", says how it is applied.
+6. **If this chat dies** (a restart, a crash), a check that messages the operator. The options say what it costs:
+   "No (Recommended)" / "Yes: one short scheduled run every 15 minutes while this run lasts, removed automatically
+   at the end". On yes, create ONE desktop scheduled task: read the schema of
+   `mcp__scheduled-tasks__create_scheduled_task` with `ToolSearch` first, then create it to run every 15 minutes
+   with this instruction: "Run dir `<absolute run dir>`. If `FINISHED` exists there, remove this scheduled task
+   and stop. Otherwise, when `coordinator-pending` exists, judge only its age and alarm when it is older
+   than 60 minutes (ignore `status.txt`: the old watch was stopped at the relaunch); when it does not exist, alarm
+   when `status.txt` was last written more than 20 minutes ago. Alarm at most once per 2 hours: if
+   `.pickup-notified` there is newer than 2 hours, do nothing; else touch it, append one line to
+   `.pickup-alerts`, and send one notify line (the `/makarasty-tools:notify` channels): when
+   `coordinator-pending` exists, `fleet <run-id>: start the card titled "fleet <run-id> coordinator"`; else
+   `fleet <run-id> looks stopped: open the coordinator chat and run /makarasty:fleet-resume`. After the 12th line in
+   `.pickup-alerts`, remove this scheduled task. Never start or resume anything: the operator does." The watch
+   rewrites `status.txt` on every tick (`docs/PROTOCOL.md`, layout), so a stale one means the coordinator's watch is
+   dead. Write `pickup: <task id>` in `STATE.md`: `fleet-collect` removes the task at the end, with a one-line report
+   (the operator consented when they created it). Tell the operator once that "Failed to authenticate" or a 401 in
+   that chat is a sign-in problem: a re-login fixes it, `fleet-resume` does not.
 
 ### Later rounds: plan content
 
@@ -370,39 +402,9 @@ turn's one `AskUserQuestion` (section 3b), never into `RULES.md` as a guess. The
 
 ### Opt-in: separate chats
 
-When Round 0 chose "Separate chats for browser workers, one commit at the end", or more than one live visual check must run at once
-(one chat has one live tab [M42]), start chips for those workers.
-One `mcp__ccd_session__start_session` per worker, title, background and prompt taken verbatim from the `CHIP NN` blocks of:
-
-```bash
-sh "${CLAUDE_PLUGIN_ROOT}/scripts/fleet.sh" chips .fleet/<run-id> 01-02 pane --model <id> --effort <level>   # lane: pane, repo or verify; a brief worker has neither lane nor --model
-sh "${CLAUDE_PLUGIN_ROOT}/scripts/fleet.sh" chips .fleet/<run-id> 03-08 repo --model <id> --effort <level>
-```
-
-Do not type them yourself, and run it once per lane the queue holds, in the same turn, **with disjoint
-number ranges per lane**, as above: `chips` refuses an empty, reversed or non-numeric range, and refuses a
-number already offered under a different lane, because two chips with one number are two workers with one
-identity. It ends with `STILL WITHOUT A WORKER` for every lane that has ready work and no chip yet. Start each
-chip with `context: "fresh"` and `use_worktree: false`; `initiation` is `"user_asked"` only when the operator's own
-message began this turn, otherwise (a watch line, an AskUserQuestion answer in a watch-started turn)
-`"own_initiative"` (a card the operator starts with a click; the app refuses a start on a turn a watch event or
-another session's message started) and you PushNotification the operator to start the cards. Keep the title `fleet <run-id> NN`: `fleet.sh` and the watch match on it. It is no
-longer the only address: `mcp__ccd_session_mgmt__list_sessions {linked:true}` returns each session this chat started, with its
-`name` and `startedBy`, and `SendMessage` takes that name; `{linked:true}` is only this chat's own. A fleet chat this chat did not start (after a relaunch) is found by a title
-match on the unfiltered list, `limit` raised until its oldest row predates the run; the list changes between calls
-and reaches other accounts on the same machine, so match `fleet <run-id> NN` exactly. The prompt carries the run's absolute path, because a chip session can start
-in its own worktree where the gitignored `.fleet/` does not exist, and the path of the `fleet-run` that is
-actually installed. Start chips for every worker the run needs now, never paste lines in their place.
-
-In pull mode the prompt carries the worker's identity **and its lane**. Without the identity a worker
-invents one, two workers pick the same number, and their findings interleave into one file that collection
-reads as a single worker. Without the lane a paneless worker claims a browser task and pays a reclaim. Give
-`pane` for the workers whose panes the operator will open and `repo` for the rest; the lane is then the third
-argument to every claim the worker makes. Do not write the lane rule into the prompt as prose - 2026-08-31
-did, in nine of fourteen prompts, and a rule retyped per run is one somebody eventually types differently.
-
-The chip number is the worker id everywhere after that: `NN.jsonl`, `NN.notes.md`, `NN.done`, the `owner`
-line inside a claim, and `ask/NN-1.md`.
+Separate chats are opt-in: when Round 0 chose "Separate chats for browser workers, one commit at the end", or more
+than one live visual check must run at once [M42], read `docs/CHATS.md`, "Start the chips", before you register a
+slot or offer a chip. Without that choice, none of it applies.
 
 ## 8. Arm the watch, then hand over
 
@@ -474,7 +476,7 @@ You are the one session the whole run depends on, and the one nothing restarts. 
 - **Back from a crash in one chat, your subagents died with you**: `git status`, attribute partial edits by
   `owns:`, re-spawn per held claim, never discard (`docs/ONECHAT.md`, "Pause, crash, relaunch").
   With separate chats: **back from a restart, wake the workers before reading `status`.** A restart stops every chat and leaves
-  the claims on disk looking alive: `fleet-wait`, "After a restart, wake every worker before you re-arm".
+  the claims on disk looking alive: `docs/CHATS.md`, "After a restart, wake every worker before you re-arm".
   An expiry notice is not a restart.
 - **Read `status` for what holds the run, and act in that turn.** A `== bottlenecks` line that waits on the
   operator is a question to ask now; when they have done it, `fleet.sh cleared <run> <id>` lets `next` hand
@@ -517,24 +519,37 @@ You are the one session the whole run depends on, and the one nothing restarts. 
   subagent in flight, and the last four runs lost 2 or 3 agents and 100 to 150 minutes each that way (a
   fresh coordinator cannot adopt an agent). The first `COORDINATOR CONTEXT` line says `DRAIN`: `fleet.sh next`
   and `dispatch` hand out nothing, so start no new task; let the agents in flight finish and review their
-  reports. The watch prints `DRAINED: no task in flight, ask the relaunch question now` once no claim is open:
-  then update `STATE.md` and ask the operator the one relaunch question below (a mark crossed with nothing in
-  flight says so in its first line and asks at once). If claims are still open at the next step (800 K),
-  the line says the drain ran out: ask then anyway and tell the operator that a relaunch stops those
-  agents. A `DRAIN TIMED OUT` line (a claim open past `drain_cap_min`, 60 minutes [M57]: a hung or dead agent?) is the same ask, now. On "no", run `fleet.sh undrain <run>` (never `rm` the marker): the drain starts again at the next step. Then relaunch naming no chips
+  reports. The watch prints `DRAINED: no task in flight, relaunch by card now, no question` once no claim is
+  open, and work is left: **no agent is stopped, so you do not ask**. Update `STATE.md`, run relaunch call 1 and
+  2 yourself, offer the coordinator card (`own_initiative`) and notify the operator once (`/makarasty-tools:notify`);
+  the click on the card is the consent [M56], and a card not started within 30 minutes gets one more notice
+  (`docs/RELAUNCH.md`, "One chat"). A mark crossed with nothing in flight says so in its first line and does the
+  same at once. If claims are still open at the next step (800 K),
+  the line says the drain ran out: ask then, with `AskUserQuestion`, and tell the operator that a relaunch stops those
+  agents. A `DRAIN TIMED OUT` line (a claim open past `drain_cap_min`, 60 minutes [M57]: a hung or dead agent?) is the same ask, now: both stop agents. On "no", run `fleet.sh undrain <run>` (never `rm` the marker): the drain starts again at the next step. Then relaunch naming no chips
   (`docs/RELAUNCH.md`, "One chat"). The operator may also just ask, at any time. Do not hand off by chip and
   do not run `/makarasty-tools:handoff`: a chain of handoff chips re-reads the world at every hop and loses
   what was only in context, and workers with a large context were never moved at all. One controlled
   relaunch replaces the chain. A `WORKER CONTEXT` line for a queue worker is the exception: it names
   `fleet.sh retire`, which you run unasked (`fleet-wait`); for a brief worker it points at this same single
   ask. **The procedure is in `docs/RELAUNCH.md`: read it when the mark comes**, before
-  you ask: one notification, one `AskUserQuestion`, `fleet.sh relaunch` in two calls, then the chips, then `detach_session` on the fresh coordinator (or `clear_session` "self" when detach is refused): a started session stays linked and wakes you at every turn it ends [M56].
+  you act: at `DRAINED` one notification, no question; when agents are stopped, one notification and one `AskUserQuestion`; then `fleet.sh relaunch` in two calls, then the chips, then `detach_session` on the fresh coordinator (or `clear_session` "self" when detach is refused): a started session stays linked and wakes you at every turn it ends [M56].
 - **The broadcast is for every worker, including one that starts a day later.** Never put an order for
   named chips in it, above all a retire order: it reads as a standing rule (2026-10-06: worker 20 retired at
   420 K on "workers 01-05 retire, your context is past 400K", written eighteen hours before it started).
   Replace workers with `relaunch`. A worker that stops for context below `worker_relaunch_k` (700) did not
   run out: message it by title to carry on.
-- **Every question to the operator is an `AskUserQuestion`, never a line in your reply.** A question typed
+- **Every question to the operator is an `AskUserQuestion` or an `ask-operator` file, never a line in your reply.**
+  Three classes [M59] (`docs/PROTOCOL.md`, "Three classes of question"). Class 1 is always an `AskUserQuestion`, with
+  no default: a delete, anything sent outside this machine, stopping processes, editing another chat's code, and
+  scale, pace, what the mission means and a choice between mockups. Money is none of it: a reserved action is never
+  asked at all (`docs/PROTOCOL.md`). A real fork with no recommendation is an `AskUserQuestion` too. A **reversible
+  question you have a recommendation for** is not asked
+  blocking: `fleet.sh ask-operator <run> <id> <recommended answer>` (the question on stdin), notify with
+  `/makarasty-tools:notify` (`PushNotification` when that skill is absent), and keep working. The watch prints
+  `ASK DEFAULTED <id>: <recommendation>` after `ask_default_min` (10) and writes it under `assumed:` in `STATE.md`: act
+  on it then. `fleet.sh answer-operator <run> <id> <text>` records an answer that comes first or late (undo
+  what the default did). `fleet-collect` reports them as "Assumed for you, undo if wrong". A question typed
   into the chat scrolls away under the next event and waits unseen (2026-10-06: "do we load the demo data
   on sandbox and start pane workers?" sat in the text between two merges). Before asking, put everything
   that does not depend on the answer in motion (reviews and merges in background agents, chips offered),

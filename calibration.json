@@ -1,5 +1,5 @@
 {
-  "_readme": "Numbers the scripts read, so a planning decision never depends on a constant retyped into prose. Most were measured, and docs/MEASUREMENTS.md says where; some were chosen rather than measured, and _provenance says which (max_run_minutes, min_path_segments, pane_walk_lease_minutes, memory_floor_gb, memory_clear_gb, worker_relaunch_k, pause_grace_seconds, pause_still_working_seconds). Edit this file to calibrate a different machine or a different application, and re-measure with scripts/fleet-load.mjs and scripts/fleet-retro.mjs rather than guessing. fleet.sh reads the copy beside its own checkout (../calibration.json from scripts/), so edit the copy you actually run. Values fleet.sh uses in shell arithmetic must be whole numbers of at least 1; anything else is reported and replaced by the built-in default.",
+  "_readme": "Numbers the scripts read, so a planning decision never depends on a constant retyped into prose. Most were measured, and docs/MEASUREMENTS.md says where; some were chosen rather than measured, and _provenance says which (max_run_minutes, min_path_segments, pane_walk_lease_minutes, memory_floor_gb, memory_clear_gb, disk_floor_gb, disk_clear_gb, worker_relaunch_k, pause_grace_seconds, pause_still_working_seconds). Edit this file to calibrate a different machine or a different application, and re-measure with scripts/fleet-load.mjs and scripts/fleet-retro.mjs rather than guessing. fleet.sh reads the copy beside its own checkout (../calibration.json from scripts/), so edit the copy you actually run. Values fleet.sh uses in shell arithmetic must be whole numbers of at least 1; anything else is reported and replaced by the built-in default.",
   "repo_tasks_per_worker": 3,
   "repo_worker_ceiling": 12,
   "operator_reserve_gb": 2,
@@ -19,6 +19,9 @@
   "pause_still_working_seconds": 150,
   "runaway_log_gb": 1,
   "drain_cap_min": 60,
+  "ask_default_min": 10,
+  "disk_floor_gb": 20,
+  "disk_clear_gb": 30,
   "_provenance": {
     "repo_tasks_per_worker": "M16 - measured throughput 2.87 and 4.25 tasks per hour per worker on repo-heavy runs",
     "repo_worker_ceiling": "M21 - a session with no pane is ~330 MB, so the ceiling is attention rather than memory",
@@ -30,6 +33,9 @@
     "coordinator_handoff_step_k": "How often the warning repeats past the mark, for the coordinator and for a worker. Chosen.",
     "worker_relaunch_k": "operator, 2026-10-06: the same mark as the coordinator, 700 K, for the same reason (auto-compaction starts a little past 900 K). A repo worker grows 20-30 k per task worked inline and four were compacted near their thirtieth [M30] (2026-10-12: a median 54 k, 130 k at the 90th percentile [M41]); M39 costed a 450 K mark and the operator kept 700 K, because a relaunch loses what only the context held and needs a click; [M41] keeps it and enforces DELEGATE instead; the coordinator then retires a queue worker unasked (fleet.sh retire, 1.5.14), and asks the operator once before relaunching a brief or older worker. fleet.sh ctx and contexts read it.",
     "drain_cap_min": "M57 - a task in flight took a median 10.4 and 19.4 min, p90 48.1 and 58.9 min on two runs; a drain still holding a claim after an hour is a hung or dead agent, so ctx asks the operator then. Read by fleet.sh ctx.",
+    "ask_default_min": "M59 - 322 asks since 11-03 waited p50 176 s, p90 1142 s, 20% over 10 min; a reversible question with a recommendation therefore defaults after 10 minutes instead of blocking the coordinator (fleet.sh ask-operator). Read by fleet.sh ask-operator.",
+    "disk_floor_gb": "M59 - session 513940ca at 19:02:46 hit C: at 0 bytes and its tests failed with ENOSPC; session 485f66a8 on 11-08 had C: 98% full with 29 GB free, a worker saw 6 GB and 330 GB was the fleet's own test folders. Free disk below this and fleet.sh next hands out no task, like the memory floor. Chosen, not derived. Read by fleet.sh next and ctx.",
+    "disk_clear_gb": "M59 - and it starts again only above this; the gap is hysteresis, as for the memory marks. Chosen rather than measured. Read by fleet.sh next and ctx.",
     "pause_grace_seconds": "The operator chose it: a paused worker gets this long from its first tool call after the pause to finish the step in hand before the hooks hold it to git, fleet.sh and the wake loop; a worker that never calls is held at four times this long after the PAUSED timestamp. Not a measurement. Read by hooks/run-dir.mjs.",
     "pause_still_working_seconds": "Chosen: a worker holding a claim with no ack this long after PAUSED is named \"still working\" by fleet.sh status, so the coordinator can message it by title; before that it is \"no ack yet\". Long enough for a worker in the middle of a 90-120 s sleep or a build to reach its next call.",
     "runaway_log_gb": "Chosen after 2026-10-08, when closed chats had left 5 GB of tasks/*.output from interactive python loops: a background command that has written this much output is a loop, not a build. fleet.sh ctx names the file once, for the coordinator to stop its writer.",

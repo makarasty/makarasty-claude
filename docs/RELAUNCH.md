@@ -4,11 +4,11 @@
 
 Only the coordinator crosses the 700 K mark: every subagent starts fresh per task, so there is no
 `WORKER CONTEXT` line and no worker to replace. `COORDINATOR CONTEXT` starts a drain (`fleet.sh next` and `dispatch` hand out nothing; let the agents in flight
-finish). Ask at `DRAINED`, at `DRAIN TIMED OUT` (a claim open past `drain_cap_min`, 60 minutes [M57]), when
-the drain ran out at the next step, or when the operator asks:
+finish). **At `DRAINED` (nothing in flight, work left) you do not ask**: no agent is stopped, so steps 2 to 4 run at once and the click on the coordinator card is the consent [M56]. **Ask** (step 1) only at `DRAIN TIMED OUT` (a claim open past `drain_cap_min`, 60 minutes [M57]) or when
+the drain ran out at the next step: both stop agents. When the operator asks for a relaunch, that is the consent too.
 
-1. Steps 1 and 2 below: `PushNotification`, then one `AskUserQuestion` with your number and the options
-   "Relaunch now (recommended)" and "Not now". On "Not now" run `fleet.sh undrain <run>`.
+1. Only when agents are still in flight: `PushNotification`, then one `AskUserQuestion` with your number and the options
+   "Relaunch now (recommended)" and "Not now", and say that the relaunch stops those agents. On "Not now" run `fleet.sh undrain <run>`.
 2. On yes: stop spawning, and start call 1 of step 3 below in the background, **naming no chips**: it
    pauses the run, and the claims stay held for the new coordinator.
 3. While it waits for acks: `TaskStop` every subagent still running (after a drain, usually none) and every clock you backgrounded (a clock ends only
@@ -22,6 +22,11 @@ the drain ran out at the next step, or when the operator asks:
    seat with `resume --take-over` (refused with SEAT TAKEN when another coordinator holds it), detaches itself
    (`detach_session` "self" [M56]; your detach is the backup), re-arms the watch with the slot count, and re-spawns one subagent per
    held claim, as after a crash (`docs/ONECHAT.md`).
+5. **At `DRAINED` the card is the whole ask.** Offer it as `own_initiative` (step 4 says why), notify once with
+   `/makarasty-tools:notify` (arm plainly: the message goes out when this turn ends; `PushNotification` when the
+   skill is absent), and background one shell wait that ends itself:
+   `for i in $(seq 180); do [ -e "<run>/coordinator-pending" ] || { echo started; exit 0; }; sleep 10; done; echo NOT-STARTED-30-MIN`.
+   On `NOT-STARTED-30-MIN` notify once more, then end the turn; on `started` do nothing more. Never a third notice.
 
 ## Opt-in: separate chats
 
@@ -62,7 +67,7 @@ directory.
    swallow the events the new coordinator needs), start **every printed chip in one turn** (each its own `start_session`, the coordinator first, `context` "fresh" with the `STATE.md` brief, never "fork": it would carry the 700K over), then tell the
    operator in one line: start the coordinator chip first, then the worker chips; the run stays paused
    until the new coordinator resumes it. Do not resume the run yourself. Who starts the chip [M56]:
-   - `initiation` `user_asked` works only on a turn the operator's own message began (or a
+   - Where a card is started (here and at a retire), follow the start rule `fleet.sh relaunch` prints: it is built from the live probes and wins over this paragraph, which only explains it. `initiation` `user_asked` works only on a turn the operator's own message began (or a
      `<side-sessions-event>` turn right after one). On a turn a watch event began it is refused, an
      AskUserQuestion answer received inside such a turn included. So try `user_asked` when the operator's own
      message began this turn; otherwise, or when the call is refused, start it as `own_initiative` (a card)

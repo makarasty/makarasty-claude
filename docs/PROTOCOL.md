@@ -55,6 +55,32 @@ means). For anything else take the recommended option, say in one line what you 
 under open questions in `STATE.md`), and keep working; the operator corrects it when they next look. When
 you do ask, put everything that does not depend on the answer in motion first.
 
+**Three classes of question from the planner [M59].** An open `AskUserQuestion` blocks the coordinator's turn
+and the watch with it: 322 asks waited a median 176 s, 20% over 10 minutes, and a relaunch ask a median 567 s.
+So the class decides how a question is asked.
+
+1. **Irreversible, or the operator's by kind**: a delete, anything sent outside this machine, stopping processes,
+   editing another chat's code, and scale, pace, what the mission means and a choice between mockups. These are
+   always an `AskUserQuestion`, as above, with no default. Money is not in this class: a reserved action is
+   never asked at all (see below: reserved wins).
+2. **Reversible, you have a recommendation, and the effects stay inside tasks tagged `depends-on-ask: <id>`**: do
+   not block. When acting on the default would reach anything else (a file the run does not refile, a commit,
+   a message), it is class 1. `fleet.sh ask-operator <run> <id>
+   <recommended answer>` (the question on stdin) writes `ask/operator/<id>.md` (`recommended:`, `deadline:` in epoch
+   seconds = now + `ask_default_min`, 10 in `calibration.json` [M59], `asked:`, then the question); notify the
+   operator with `/makarasty-tools:notify` (`PushNotification` when that skill is absent) and keep working. The
+   watch (`fleet.sh ctx`) prints `ASK DEFAULTED <id>: <recommendation>` once at the deadline, writes
+   `ask/operator/<id>.defaulted` and appends `assumed: <id> (<time>): <recommendation>` to `STATE.md`.
+   When you act on `ASK DEFAULTED <id>`, every task you file on that default carries `depends-on-ask: <id>` in its
+   front matter (several ids: separated by commas). `fleet.sh answer-operator <run> <id> <text>` records the
+   operator's answer, before the deadline (the question never defaults) or after it: then it prints the ids of the
+   tasks that carry `<id>` and "these were built on the default <rec>; refile or keep". `fleet-collect` lists every
+   `.defaulted` file in its report under "Assumed for you, undo if wrong".
+3. **A real fork with no recommendation**: `AskUserQuestion`.
+
+The relaunch at `DRAINED` is none of these: nothing is in flight, so it is a card and a notification, and the
+click is the consent (`docs/RELAUNCH.md`). The drain that ran out and `DRAIN TIMED OUT` stop agents: class 1.
+
 **A question about a reserved action is not asked at all.** Sending a message to a real person, a vendor
 call that costs money, a production write, deleting stored data: none of those become permitted by an
 answer, so there is nothing to wait for. Record the step as unreached with the reason and take the next
@@ -218,6 +244,28 @@ as health: `fleet-wait` now emits a stall line on a quiet interval for exactly t
                        the drain with `fleet.sh undrain <run>`, never by `rm`: it removes the three markers and
                        writes `.undrained` with the current level, so `ctx` drains again at the next step
                        (`coordinator_handoff_step_k`) and not before. `.undrained` goes with the others. `relaunch` itself leaves them.
+  status.txt           rewritten on EVERY watch tick, with no tasks too (`no tasks yet`): `N of M done, K in flight, R left,
+                       ETA ~X min` (the ETA is ceil(R / width) x the median minutes a done task took, left out under
+                       three measured tasks or with nothing left); `fleet.sh status` prints that line as `eta:`. A
+                       second line carries the run state: `PAUSED since <time>` while `PAUSED` stands, `waiting for the
+                       coordinator card since <time>` while `coordinator-pending` stands. Its age is the "is the
+                       coordinator's watch alive" test of a scheduled check (`fleet-plan`, Round 0b)
+  .pickup-notified, .pickup-alerts   the pick-up scheduled task's own files (`fleet-plan`, Round 0b): the mtime of the
+                       first is its last message (at most one per 2 hours), one line per message appended to the second
+                       (the task removes itself after 12)
+  scratch.list         one absolute folder per line, appended by a worker for every folder it creates outside the
+                       checkout; at DISK LOW the coordinator offers only these to the operator
+  tight/<chip>         `<time> memory|disk`: worker held by `next` (exit 6); `status` shows `== held on memory` or
+                       `== held on disk`. Gone when the worker claims again
+  ask/operator/<id>.md   a reversible question for the operator with the coordinator's recommendation and a
+                       deadline, written by `fleet.sh ask-operator` (see "Three classes of question" above);
+                       `<id>.defaulted` (the time, then the recommendation) is written once by the watch when the
+                       deadline passed unanswered; `answers/operator/<id>.md` is the operator's answer
+  .disk-low-said       marks the one `DISK LOW <free> GB on <volume>` line of a crossing below `disk_floor_gb` (20 [M59]);
+                       the free figure is the least over the run dir's volume, `os.tmpdir()` and `os.homedir()`.
+                       Goes when free disk is back above `disk_clear_gb` (30). `next` refuses (exit 6) the same way,
+                       and while the mark stands its line is the clear mark, not the floor. Its wait ends after 60 min
+                       with `disk-stuck` (`memory-stuck` for memory): notify the operator, wait again
   cards                written by the coordinator at a relaunch: one `<task_id> <title>` line per `own_initiative` card it started;
                        the "запусти" fallback reads it to `dismiss_task` a card nobody started. Reset by the first call of the next relaunch, removed at FINISHED
   STATE.md             the coordinator's ledger, and what a fresh coordinator re-arms from: plan path, run dir,
@@ -233,6 +281,10 @@ as health: `fleet-wait` now emits a stall line on a quiet interval for exactly t
                        dispatched; `review.md` beside it is the reviewer's, for a code task
   tasks/claimed/<id>/coded         written by `coded` when the coder finished: an implement or design task waiting
                        on it by `after:` may start before its review
+  reports/<subject>.req.md   a mockup or redesign subject's requirements: every operator message on it verbatim,
+                       each under a header `Rn <time> must|nice [supersedes Rm]`, appended only by `fleet.sh req-add`;
+                       a superseded header gains ` DROPPED by Rn` and stays. Each round's task embeds it at the top
+                       (`docs/DESIGN.md`, "Mockup rounds" [M59])
   reports/<id>.md      a subagent's full report (`<id>.review.md` for a review); its reply is 3 lines
 ```
 
@@ -406,6 +458,8 @@ repro: npm test -- egress-timeout   # fix and root tasks. One shell command that
                        # `prove after` run. No script reads it. `fixqueue` writes it when the finding's `repro`
                        # is a one-line command, and leaves it empty for steps or prose (they stay in the body);
                        # `cluster` writes a root's from its members' (below). Empty: the coordinator fills it in
+depends-on-ask: q1     # optional: the id of an `ask-operator` question whose default this task is built on; `answer-operator`
+                       # names these tasks when the answer comes late. No script holds the task for it
 after: task-02-primitives   # optional, one id or several: `after: t01, t02` or `after: [t01, t02]`. `next` holds
                        # this task until those are done. Done is the done marker, not the coordinator's merge: see `base` below
 base: integration      # optional, code tasks, opt-in worktrees only (one chat edits the shared checkout: use `owns:`

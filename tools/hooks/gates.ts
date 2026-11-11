@@ -130,11 +130,14 @@ async function fleetLive($: Dollar, dir: string, sid: string): Promise<boolean> 
 // The hold command is collecting (its list file, makarasty/hold/<session>.md, starts with `collecting`): the person is
 // dictating one item per message and the reminder waits for the codeword. A list untouched for a day no longer counts.
 async function holding($: Dollar, dir: string, sid: string): Promise<boolean> {
-  const f = `${dir}/hold/${sid}.md`
-  try {
-    // PowerShell 5.1 writes a BOM
-    return (await $.fs.read(f)).replace(/^\uFEFF/, '').startsWith('collecting') && (await $.clock.now()) - (await $.fs.stat(f)).mtimeMs < 86400000
-  } catch { return false }
+  // The list is hold/<session>/index.md (skills/hold/hold.mjs) or the older single file hold/<session>.md.
+  for (const f of [`${dir}/hold/${sid}/index.md`, `${dir}/hold/${sid}.md`]) {
+    try {
+      // PowerShell 5.1 writes a BOM
+      if ((await $.fs.read(f)).replace(/^\uFEFF/, '').startsWith('collecting') && (await $.clock.now()) - (await $.fs.stat(f)).mtimeMs < 86400000) return true
+    } catch { /* no such list */ }
+  }
+  return false
 }
 
 async function remind($: Dollar, e: { prompt: string; session_id: string; transcript_path: string }): Promise<string | undefined> {

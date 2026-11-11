@@ -12,6 +12,12 @@ import { HERE, RUN_FORMAT, lf, need, out, err, isDir, isFile, read, firstLine, n
 let sink: string[] | null = null;
 let claimedId = '';
 const say = (s: string | Uint8Array): void => { if (sink) sink.push(typeof s === 'string' ? s : Buffer.from(s).toString('utf8')); else out(s); };
+// The wait a held worker backgrounds: until the condition holds, then `<kind>-back`; after 60 minutes `<kind>-stuck`, so the
+// operator hears of a box that never frees up instead of a worker waiting for ever [M59].
+function waitLoop(cond: string, kind: string): string {
+  return `t0=$(date +%s); until ${cond}; do [ $(( $(date +%s) - t0 )) -ge 3600 ] && { echo "${kind}-stuck: waited 60 min; notify the operator in one line (/makarasty-tools:notify), then wait again"; exit 0; }; sleep 60; done; echo ${kind}-back`;
+}
+
 export function claim(c: Ctx, chip: string, lane: string): { code: number; text: string; id: string } {
   sink = []; claimedId = '';
   try { const code = next(c, chip, lane); return { code, text: sink.join(''), id: claimedId }; } finally { sink = null; }
@@ -115,13 +121,13 @@ function nextHeld(c: Ctx, chip: string, lane: string): number {
     const clear = cal(c, 'memory_clear_gb', '4');
     if (spawnSync(process.execPath, [loader, '--clear', floor], { stdio: 'ignore' }).status !== 0) {
       mkdirSync(`${run}/tight`, { recursive: true });
-      writeFileSync(`${run}/tight/${chip}`, `${now()}\n`);
+      writeFileSync(`${run}/tight/${chip}`, `${now()} memory\n`);
       const j = spawnSync(process.execPath, [loader, '--json'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).stdout || '';
       let free = '';
       for (const line of j.split('\n')) { const m = /.*"freeGB":([0-9.]*)/.exec(line); if (m) free = m[1] ?? ''; }
       say(`MACHINE TIGHT: ${free || 'unknown'} GB free, floor ${floor} GB. Nothing is wrong with you; the box is full.\n`);
       say('Background this and wait. Do NOT write .done, and do not end this turn without it running:\n');
-      say(`  [ -e "${c.absrun}/FINISHED" ] && { echo run-finished; exit 0; }; until node "${loader}" --clear ${clear} >/dev/null 2>&1${chatGone()}; do sleep 60; done; echo memory-back\n`);
+      say(`  [ -e "${c.absrun}/FINISHED" ] && { echo run-finished; exit 0; }; ${waitLoop(`node "${loader}" --clear ${clear} >/dev/null 2>&1${chatGone()}`, 'memory')}\n`);
       say('Then claim again. While you wait, give back what your browser holds: a tab keeps its renderer until\n');
       say('it is closed, and a reload returns none of it [M34]. tabs_create, tabs_select the new tab, then\n');
       say('tabs_close the heavy one. Keep one tab open: the last one closing closes the pane, and only the\n');
@@ -129,6 +135,21 @@ function nextHeld(c: Ctx, chip: string, lane: string): number {
       return 6;
     }
     rmSync(`${run}/tight/${chip}`, { force: true });
+    // The same refusal for the disk [M59]: a full volume fails every test with ENOSPC and no worker can tell why.
+    // While the watch has said DISK LOW the line is the clear mark, not the floor: a disk hovering at the floor does not flap.
+    const dfloor = cal(c, 'disk_floor_gb', '20'), dclear = cal(c, 'disk_clear_gb', '30'), said = existsSync(`${run}/.disk-low-said`);
+    if (spawnSync(process.execPath, [loader, '--clear-disk', said ? dclear : dfloor], { stdio: 'ignore' }).status !== 0) {
+      mkdirSync(`${run}/tight`, { recursive: true });
+      writeFileSync(`${run}/tight/${chip}`, `${now()} disk\n`);
+      const j = spawnSync(process.execPath, [loader, '--json'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).stdout || '';
+      let free = '', vol = '';
+      for (const line of j.split('\n')) { const m = /.*"diskFreeGB":([0-9.]*)/.exec(line); if (m) free = m[1] ?? ''; const v = /"diskVolume":"((?:[^"\\]|\\.)*)"/.exec(line); if (v) vol = (v[1] ?? '').replace(/\\(.)/g, '$1'); }
+      say(`DISK LOW: ${free || 'unknown'} GB free${vol ? ` on ${vol}` : ''}, ${said ? `waiting for ${dclear} GB (clear mark)` : `floor ${dfloor} GB`}. Nothing is wrong with you; the disk is full.\n`);
+      say('Background this and wait. Do NOT write .done, and do not end this turn without it running:\n');
+      say(`  [ -e "${c.absrun}/FINISHED" ] && { echo run-finished; exit 0; }; ${waitLoop(`node "${loader}" --clear-disk ${dclear} >/dev/null 2>&1${chatGone()}`, 'disk')}\n`);
+      say('Then claim again. Free nothing yourself: a folder you did not make is for the operator to delete.\n');
+      return 6;
+    }
   }
 
   let waiting = 0, drainBlocked = false;

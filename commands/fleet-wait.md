@@ -18,7 +18,7 @@ advancing, which is the only thing that revives a dead session.
 
 Arm the same loop with `n` = the slots registered (`docs/ONECHAT.md`). A subagent's completion arrives as
 its own task notification, not through this loop; the loop stays armed for `COORDINATOR CONTEXT`, `SERVICE
-DOWN`, `LEFTOVER`, `budget-elapsed-<id>`, the pause lines and `run complete`. A run dir with a `slots`
+DOWN`, `DISK LOW`, `ASK DEFAULTED`, `LEFTOVER`, `budget-elapsed-<id>`, the pause lines and `run complete`. A run dir with a `slots`
 directory is one chat, and there the loop prints nothing for `task finished`, `worker finished queue` (a
 `.done` line) or the `STALL` block: the first two are your own `finish` and `drained` writes, and `STALL` is
 information only, since the loop counts claims, done markers, `ask/` and slot markers as progress, never
@@ -163,7 +163,9 @@ done
 Run it with `Monitor`, `timeout_ms: 1800000`, the most a monitor can be given. A fleet run outlasts that,
 so **re-arm the same loop on every expiry notice, and when it prints `watch expired: re-arm it`**, until it
 prints `run complete` or `run landed`. A watch
-that is not re-armed dies silently at thirty minutes and the run never collects. `seen` persists
+that is not re-armed dies silently at thirty minutes and the run never collects. **A coordinator turn that did not
+start from the watch's own output after a long gap is a restart, not a continuation**: the chat was closed or
+crashed and the watch died with it. Run `/makarasty:fleet-resume` before anything else. `seen` persists
 across re-arms, so nothing already reported is reported twice. A run has one watch: arming a new one
 makes the one before print `watch superseded` within ten seconds and end. That line is not an expiry; do
 not re-arm on it. Two watches at once used to announce events twice or lose them, by how their ticks fell.
@@ -177,46 +179,22 @@ serves something (a dev server, an `http.server`; the line lists its pids leaves
 their word end its pids one at a time, children first - `taskkill /PID <n> /F` on Windows (`//PID <n> //F` from Git Bash), never `/T`, which
 follows reused pids; `kill <n>` elsewhere.
 
-**A `WORKER MODEL NN` line means worker NN stopped itself at `whoami` and waits for you.** Make the calls
-it names in that turn: `docs/MODELS.md`, "Switching a worker", steps 4 and 5. `WORKER MODEL NN DID NOT TAKE`
-is step 5's failed switch.
-
-**A `WORKER PLUGIN NN` line means worker NN last claimed on an older makarasty than the one installed.** A
-worker keeps the `fleet.sh` path it resolved at its start, so a restart alone does not move it. Ask the
-operator once to restart Claude Code, then message the worker as the line says and `touch` the mark it
-names: invoking `fleet-run` again resolves the installed plugin, and its next claim records the new version. `WORKER PLUGIN NN STILL ON` is a
-worker that claimed and kept the old one: it goes into the one relaunch ask below ("Replace workers NN only"),
-with the fresh chips offered by you. A saved watch pinned to the old plugin's path is re-armed from this file
-after the restart.
+**`WORKER MODEL NN` and `WORKER PLUGIN NN` lines** are for separate chats (a switch the worker waits for, an older plugin): `docs/CHATS.md`, "Worker lines".
 
 **`COORDINATOR CONTEXT <n>K` means you, the session reading this, are getting full, and a `WORKER CONTEXT`
 line naming worker NN means that worker is.** Each prints once per mark and per session, from its
 transcript: yours once the loop has recorded you as the coordinator (whoever arms the watch is the
-coordinator), a worker's once it crosses `worker_relaunch_k` in `calibration.json`. **A queue worker's
-line is yours to act on at once and unasked**: run the `fleet.sh retire` it names and do what it prints
-(offer the replacement chip, PushNotification the operator to start it). The worker finishes the task it
-holds and leaves at its next claim with its tree committed; the run does not pause and the watch counts the
-new chip by itself. `REPLACEMENT NN ... has not started` means the card titled `fleet <run> NN` was not
-started: it is an app card the operator must start (a session started from a watch-triggered turn shows a
-card, the app's `mcp__ccd_session__start_session` with initiation `own_initiative`; `user_asked` is only for
-a turn the operator's own message began), so `PushNotification` them again.
-For any `ask/` question named after `unanswered:` in `<NN>.retired`, answer it under its own id, the text after
-`ask/` without `.md` (`fleet.sh answer <run> <NN>-<n>`), and add the answer to the re-filed task's file in
-`tasks/ready/`, which is what the replacement reads. If nothing was re-filed (a worker that `next` retired
-held no claim), put the answer in a broadcast naming the replacement chip's lane, or in the next task you file
-for it. `answer` refuses an id that names no question, so never answer under the replacement's number.
-A `pane/requests/<NN>-<n>.md` entry there is a walk the old worker asked for: a host serves it, not you,
-but its result lands in `pane/results/<NN>-<n>.json`, which only the old worker was told to read, so name
-that path in the re-filed task or the broadcast.
+coordinator), a worker's once it crosses `worker_relaunch_k` in `calibration.json`. A `WORKER CONTEXT` line, and `REPLACEMENT NN ... has not started`, are for separate chats: `docs/CHATS.md`,
+"Worker lines" (a queue worker's line is yours to act on at once and unasked).
 **Your own line drains the run first.** Your first line says `DRAIN`: `fleet.sh next` and `dispatch` hand out
 nothing (a worker that calls `next` gets exit 13 and a wait loop that ends on `draining-over`). Start no new task;
 let the agents in flight finish and review their reports, because a relaunch stops every subagent, and a fresh
-coordinator cannot adopt one. The loop prints `DRAINED: no task in flight, ask the relaunch question now` once,
-when no claim is open: then update `STATE.md` and ask. At the next step (`coordinator_handoff_step_k`, 800 by
-default) with claims still open the line says the drain ran out: ask now, and say that the relaunch stops those
+coordinator cannot adopt one. The loop prints `DRAINED: no task in flight, relaunch by card now, no question` once,
+when no claim is open and work is left: no agent is stopped, so do not ask: update `STATE.md`, relaunch as `docs/RELAUNCH.md` says (call 1 and 2, the coordinator card as `own_initiative`, one notice, a second after 30 minutes unstarted); the click is the consent [M56]. At the next step (`coordinator_handoff_step_k`, 800 by
+default) with claims still open the line says the drain ran out: ask now, with `AskUserQuestion`, and say that the relaunch stops those
 agents. A `DRAIN TIMED OUT` line (a claim open past `drain_cap_min`, 60 minutes [M57]) is the same ask, now. After a "no", run `fleet.sh undrain <run>`.
 **Your own line, and a brief worker's, you never act on alone**: you do not hand off by chip and you do not
-relaunch unasked. Do what `fleet-plan` section 8b says at that line: `PushNotification`, one `AskUserQuestion` with the numbers and the options (a fourth, "Replace
+relaunch without the operator's consent (the click on a coordinator card at `DRAINED`, an answer otherwise). Do what `fleet-plan` section 8b says at that line: at `DRAINED` the card; otherwise `PushNotification`, one `AskUserQuestion` with the numbers and the options (a fourth, "Replace
 workers NN only", when only workers are over), and on "yes" `fleet.sh relaunch`, run with
 `run_in_background` and in two calls: it pauses the run, hands the named workers' tasks back, asks you to
 update `STATE.md`, and on the second call prints one coordinator chip and fresh worker chips (with
@@ -253,6 +231,23 @@ is what is missing when the counts stop moving and no claim is held.
 on `FLEET.md`'s `Services` line names how; when it says `operator`, tell the operator in one line, with `PushNotification`, naming the
 service and what stops working without it. Measured 2026-10-05: the functions emulator died at 16:47 and
 again at 19:08, a run was live both times, and the operator noticed it in their own terminal.
+
+**`DISK LOW <n> GB on <volume>` means free disk fell under `disk_floor_gb` (20 [M59])** on the least free of the run
+dir's volume, the temp dir's and the home dir's, the one named: `fleet.sh next` hands out nothing (exit 6, `DISK LOW`)
+until it is above `disk_clear_gb` (30), and while the line stands it uses 30, not 20. It prints once per crossing. Tell
+the operator in one line with `/makarasty-tools:notify`. Then list the biggest folders named in `<run>/scratch.list`
+(workers append every folder they create there) with their sizes, and ask the operator with `AskUserQuestion` (class 1)
+before deleting any; never delete a folder that is not listed. Work that does not write to disk goes on. A worker's
+wait line ends `disk-back` (or `memory-back`), or `disk-stuck` after 60 minutes: notify the operator then.
+
+**`ASK DEFAULTED <id>: <recommendation>`** is a question you filed with `fleet.sh ask-operator` that nobody answered in
+`ask_default_min` (10) minutes: act on the recommendation now, and file every task you build on it with
+`depends-on-ask: <id>` (a late `answer-operator` names them). It is already under `assumed:` in `STATE.md` and
+`fleet-collect` reports it (`docs/PROTOCOL.md`, "Three classes of question").
+
+The watch also rewrites `<run>/status.txt` (`N of M done, K in flight, R left, ETA ~X min`, then `PAUSED since` or
+`waiting for the coordinator card since` when either stands) on every tick, with no event, tasks or none;
+`fleet.sh status` prints the counts as `eta:`.
 
 **A claim is tracked but not announced.** It is entered in `seen`, which resets the quiet timer, and it
 shows up by name in the stall report, but it does not wake you on its own. A claim needs nothing from the
@@ -296,19 +291,10 @@ look the same from the run directory — no file changes in either — so the ne
 ## After a restart, wake every worker before you re-arm
 
 In one chat there are no workers to wake: your subagents died with your turn. Follow `docs/ONECHAT.md`,
-"Pause, crash, relaunch", then re-arm. The rest of this section is for opt-in separate chats.
+"Pause, crash, relaunch", then re-arm.
 
-A Claude Code restart ends the turn of every session on the machine: your watch, and every worker's loop
-with it. Claim files and heartbeats survive it, so `status` reads like a working run while nothing works
-[M35].
-
-**An expiry notice is not a restart: on one, re-arm and nothing else.** A restart is a turn that did not
-start from the watch - the app's own "The app was quit while you were working. Please continue from where
-you left off.", the operator writing "продолжи" or "continue", or saying the machine restarted - while
-your watch task is missing from your task list and never printed `run complete` or `run landed`. On that,
-run `/makarasty:fleet-resume <run-id>` before you read `status`: its step 0 wakes every worker the app still
-lists, and its step 5 re-arms this watch. Done when it has reported which workers were woken, reopened and
-written off, and you have told the operator that pane workers want their panes on screen again.
+The rest, a restart with separate chats (what to run before you read `status`, and how an expiry notice differs), is in
+`docs/CHATS.md`, "After a restart, wake every worker before you re-arm".
 
 ## The watch must end
 

@@ -193,7 +193,7 @@ if (has('git')) {
 
   // A floor no machine can meet: the refusal must fire whatever this box happens to have free. The copy
   // has no calibration.json of its own, so the one written beside its scripts/ is the whole file.
-  write(`${mt}/calibration.json`, JSON.stringify({ memory_floor_gb: 99999, memory_clear_gb: 99999 }, null, 2));
+  write(`${mt}/calibration.json`, JSON.stringify({ memory_floor_gb: 99999, memory_clear_gb: 99999, disk_floor_gb: 0, disk_clear_gb: 0 }, null, 2));
   let r = tight(['next', 'r', '07', 'repo']);
   code('a claim is refused when the machine has no memory left', 6, r.code);
   check('and the worker is told the box is full, not that it did something wrong', 'MACHINE TIGHT', r.out);
@@ -203,10 +203,37 @@ if (has('git')) {
   check('and it is told the one thing it can do while waiting', 'give back what your browser holds', r.out);
   check('and to keep one tab, so the pane stays open', 'Keep one tab open', r.out);
   truthy('the held worker is on disk where status can find it', exists(`${mt}/r/tight/07`), 'no marker');
+  check('and the marker says why, memory', 'memory', read(`${mt}/r/tight/07`));
+  check('so status shows it as held on memory', '== held on memory: 07', tight(['status', 'r']).out);
+  check('the wait ends itself after 60 minutes with a line to notify', 'memory-stuck: waited 60 min', r.out);
   truthy('and nothing was claimed', !exists(`${mt}/r/tasks/claimed/t1`), 'claimed anyway');
 
   // Floor back to a number any machine meets: the same call must now hand the task out and clear the mark.
-  write(`${mt}/calibration.json`, JSON.stringify({ memory_floor_gb: 0, memory_clear_gb: 0 }, null, 2));
+  // The disk has its own floor [M59]: the same exit code and wording style, and a line from the watch once.
+  write(`${mt}/calibration.json`, JSON.stringify({ memory_floor_gb: 0, memory_clear_gb: 0, disk_floor_gb: 99999, disk_clear_gb: 99999 }, null, 2));
+  r = tight(['next', 'r', '07', 'repo']);
+  code('a claim is refused when the disk has no room left', 6, r.code);
+  check('and the worker is told the disk is full', 'DISK LOW', r.out);
+  check('with a wait that ends on the disk coming back', '--clear-disk 99999', r.out);
+  check('and after 60 minutes on a line to notify the operator', 'disk-stuck: waited 60 min', r.out);
+  check('the line names the volume', ' GB free on ', r.out);
+  check('the marker says why, disk', 'disk', read(`${mt}/r/tight/07`));
+  check('and status shows it as held on disk, not memory', '== held on disk: 07', tight(['status', 'r']).out);
+  truthy('and nothing was claimed', !exists(`${mt}/r/tasks/claimed/t1`), 'claimed anyway');
+  r = tight(['ctx', 'r']);
+  check('the watch prints DISK LOW with the free figure', 'DISK LOW ', r.out);
+  check('and the volume it measured', ' GB on ', r.out);
+  check('and the scratch list to offer the operator', 'scratch.list', r.out);
+  r = tight(['ctx', 'r']);
+  truthy('once per crossing', r.out === '', r.out);
+  // Under a said DISK LOW the line is the clear mark: a floor of 0 would pass, the mark of 99999 does not.
+  write(`${mt}/calibration.json`, JSON.stringify({ memory_floor_gb: 0, memory_clear_gb: 0, disk_floor_gb: 0, disk_clear_gb: 99999 }, null, 2));
+  r = tight(['next', 'r', '07', 'repo']);
+  code('while DISK LOW is said, next still refuses above the floor and under the clear mark', 6, r.code);
+  check('and the refusal names the clear mark it waits for, not the floor', 'waiting for 99999 GB (clear mark)', r.out);
+  write(`${mt}/calibration.json`, JSON.stringify({ memory_floor_gb: 0, memory_clear_gb: 0, disk_floor_gb: 0, disk_clear_gb: 0 }, null, 2));
+  r = tight(['ctx', 'r']);
+  truthy('back above the clear mark it says nothing and re-arms', r.out === '' && !exists(`${mt}/r/.disk-low-said`), r.out);
   r = tight(['next', 'r', '07', 'repo']);
   code('and with room again the same call claims', 0, r.code);
   truthy('and the held mark is cleared', !exists(`${mt}/r/tight/07`), 'still there');
@@ -215,6 +242,120 @@ if (has('git')) {
   r = exec('sh', ['scripts/fleet.sh', 'drained', 'r', '07'], { cwd: mt });
   check('a drained worker is asked for its pane back', 'GIVE YOUR BROWSER MEMORY BACK', r.out);
   rm(mt);
+}
+
+// ---- status.txt, and a question that defaults instead of blocking ----------------------------------------
+
+{
+  const sr = `${tmp}/statusfile`;
+  for (const id of ['t1', 't2', 't3', 't4', 't5']) task(sr, id, 'repo', 10);
+  for (const id of ['t1', 't2', 't3']) { write(`${sr}/tasks/claimed/${id}/owner`, `chip 01\nclaimed ${nowIso(600000)}\n`); write(`${sr}/tasks/done/${id}`, ''); }
+  write(`${sr}/tasks/claimed/t4/owner`, `chip 01\nclaimed ${nowIso()}\n`);
+  mk(`${sr}/slots`); write(`${sr}/slots/01`, ''); write(`${sr}/slots/02`, '');
+  let r = fleet(['ctx', sr]);
+  truthy('ctx prints nothing for it', r.out === '', r.out);
+  check('every tick writes status.txt with the counts and an ETA', '3 of 5 done, 1 in flight, 1 left, ETA ~10 min', read(`${sr}/status.txt`));
+  r = fleet(['status', sr]);
+  check('status carries the same line as eta:', 'eta: 3 of 5 done, 1 in flight, 1 left, ETA ~10 min', r.out);
+  write(`${sr}/tasks/done/t4`, ''); write(`${sr}/tasks/done/t5`, '');
+  fleet(['ctx', sr]);
+  check('with nothing left there is no ETA', '5 of 5 done, 0 in flight, 0 left\n', read(`${sr}/status.txt`));
+  const sn = `${tmp}/statusfile2`;
+  task(sn, 'a1', 'repo', 10); task(sn, 'a2', 'repo', 10);
+  fleet(['ctx', sn]);
+  check('under three finished tasks the ETA is left out', '0 of 2 done, 0 in flight, 2 left\n', read(`${sn}/status.txt`));
+
+  // A heartbeat on every tick, tasks or none, and the run state a count hides [M59].
+  const sb = `${tmp}/statusbeat`;
+  mk(sb);
+  fleet(['ctx', sb]);
+  check('a run with no tasks still gets a status.txt heartbeat', 'no tasks yet\n', read(`${sb}/status.txt`));
+  write(`${sb}/PAUSED`, '2026-11-11T01:00:00+03:00 operator\n');
+  fleet(['ctx', sb]);
+  check('a pause is on its second line', 'PAUSED since 2026-11-11T01:00:00+03:00', read(`${sb}/status.txt`));
+  rm(`${sb}/PAUSED`);
+  write(`${sb}/coordinator-pending`, '');
+  fleet(['ctx', sb]);
+  check('a coordinator card nobody started is named with its time', 'waiting for the coordinator card since 20', read(`${sb}/status.txt`));
+  // The date is the file's own, not today's: a card started before midnight reads that day.
+  touch(`${sb}/coordinator-pending`, new Date(2020, 0, 1, 23, 58));
+  fleet(['ctx', sb]);
+  check("and its date is the file's, not today's", 'since 2020-01-01 23:58', read(`${sb}/status.txt`));
+  rm(`${sb}/coordinator-pending`);
+  fleet(['ctx', sb]);
+  absent('and the state line goes when it is over', 'waiting', read(`${sb}/status.txt`));
+  rm(sb);
+
+  // ask-operator: filed with a deadline, defaults once, answered in time stays quiet.
+  const ao = `${tmp}/askop`;
+  task(ao, 't1', 'repo', 10); write(`${ao}/STATE.md`, '# state');
+  r = fleet(['ask-operator', ao, 'q1', 'Use', 'the', 'cache'], { input: 'Keep the cache or drop it?\n' });
+  code('ask-operator files a question', 0, r.code);
+  check('and says it defaults', 'defaults to "Use the cache" in 10 min', r.out);
+  const qf = `${ao}/ask/operator/q1.md`;
+  const dl = Number(/^deadline: (\d+)/m.exec(read(qf))?.[1]);
+  truthy('its deadline is now plus ask_default_min', Math.abs(dl - (Date.now() / 1000 + 600)) < 30, String(dl));
+  check('it keeps the question', 'Keep the cache or drop it?', read(qf));
+  r = fleet(['ctx', ao]);
+  truthy('before the deadline the watch is silent', r.out === '', r.out);
+  r = fleet(['ask-operator', ao, 'q1', 'x'], { input: 'again\n' });
+  code('the same id is refused', 2, r.code);
+  write(qf, read(qf).replace(/^deadline: \d+/m, `deadline: ${Math.floor(Date.now() / 1000) - 5}`));
+  r = fleet(['ctx', ao]);
+  check('at the deadline the recommendation is printed once', 'ASK DEFAULTED q1: Use the cache', r.out);
+  check('and it is appended under assumed: in STATE.md', 'assumed: q1 (', read(`${ao}/STATE.md`));
+  check('and the STATE.md line keeps the recommendation', '): Use the cache', read(`${ao}/STATE.md`));
+  r = fleet(['ctx', ao]);
+  truthy('and only once', r.out === '', r.out);
+  write(`${ao}/tasks/ready/t2.md`, '---\ntask-id: t2\nkind: fix\nneeds: repo\nbudget: 5\ndepends-on-ask: q1\n---\n\n# built on the default\n');
+  write(`${ao}/tasks/ready/t3.md`, '---\ntask-id: t3\nkind: fix\nneeds: repo\nbudget: 5\ndepends-on-ask: q9, q1\n---\n\n# two defaults\n');
+  write(`${ao}/tasks/ready/t4.md`, '---\ntask-id: t4\nkind: fix\nneeds: repo\nbudget: 5\ndepends-on-ask: q10\n---\n\n# another default\n');
+  r = fleet(['answer-operator', ao, 'q1', 'drop', 'it']);
+  check('a late answer is recorded and says to undo', 'after its default was assumed', r.out);
+  check('and names the tasks built on the default', 't2 t3: these were built on the default "Use the cache"; refile or keep', r.out);
+  absent('and not a task that carries another id', 't4', r.out);
+  r = fleet(['ask-operator', ao, 'q2', 'yes'], { input: 'ok?\n' });
+  r = fleet(['answer-operator', ao, 'q2', 'no']);
+  check('an answer in time is recorded', 'ANSWERED q2', r.out);
+  check('in answers/operator', 'no', read(`${ao}/answers/operator/q2.md`));
+  const q2 = `${ao}/ask/operator/q2.md`;
+  write(q2, read(q2).replace(/^deadline: \d+/m, `deadline: ${Math.floor(Date.now() / 1000) - 5}`));
+  r = fleet(['ctx', ao]);
+  truthy('an answered question never defaults', r.out === '', r.out);
+  r = fleet(['answer-operator', ao, 'nope', 'x']);
+  code('an answer to a question that was never asked is refused', 2, r.code);
+  r = fleet(['status', ao]);
+  absent('and the operator folder is not listed as an unanswered planner question', 'operator', r.out.split('== questions without answers')[1]?.split('== ')[0] ?? '');
+  rm(sr, sn, ao);
+}
+
+// ---- req-add: a mockup subject's requirements, the operator's words verbatim --------------------------------
+
+{
+  const rq = `${tmp}/reqadd`;
+  mk(rq);
+  let r = fleet(['req-add', rq, 'pricing', 'must'], { input: 'Merge it into ONE bar, not two.\n' });
+  code('req-add appends the first message', 0, r.code);
+  check('as R1', 'R1 appended', r.out);
+  const f = `${rq}/reports/pricing.req.md`;
+  check('with its time and tag', ' must\nMerge it into ONE bar, not two.', read(f));
+  r = fleet(['req-add', rq, 'pricing'], { input: 'R9 starts a line of the operator text\nsecond line\n' });
+  check('the tag defaults to must and the next number is R2', 'R2 appended', r.out);
+  r = fleet(['req-add', rq, 'pricing', 'nice', 'supersedes', 'R1'], { input: 'Two bars are fine after all.\n' });
+  check('a supersede is R3', 'R3 appended', r.out);
+  check('its header names what it supersedes', ' nice supersedes R1\nTwo bars are fine after all.', read(f));
+  check('the superseded one stays, marked dropped', /^R1 .* must DROPPED by R3$/m.test(read(f)) ? 'ok' : read(f), 'ok');
+  check('and its words are still there', 'Merge it into ONE bar, not two.', read(f));
+  check('operator text that looks like a header is not counted', 'R9 starts a line of the operator text\nsecond line', read(f));
+  r = fleet(['req-add', rq, 'pricing', 'supersedes', 'R1'], { input: 'again\n' });
+  code('superseding a dropped one is refused', 2, r.code);
+  r = fleet(['req-add', rq, 'pricing', 'supersedes', 'R7'], { input: 'again\n' });
+  code('superseding one that does not exist is refused', 2, r.code);
+  r = fleet(['req-add', rq, 'pricing'], { input: '  \n' });
+  code('an empty message is refused', 2, r.code);
+  r = fleet(['req-add', rq, '../x'], { input: 'x\n' });
+  code('a subject that is a path is refused', 2, r.code);
+  rm(rq);
 }
 
 // ---- the hook that refuses the whole machine -------------------------------------------------------------
@@ -450,7 +591,9 @@ if (has('git')) {
   truthy('ctx is silent while a claim stays open', r.out === '', r.out);
   write(`${dr}/tasks/done/t1`, '');
   r = fleet(['ctx', dr], asCh);
-  check('DRAINED prints once no claim is open', 'DRAINED: no task in flight, ask the relaunch question now', r.out);
+  check('DRAINED prints once no claim is open', 'DRAINED: no task in flight, relaunch by card now, no question', r.out);
+  check('and names the card, the click as consent and the second notice', 'the click is the consent, and not started in 30 min notify once more', r.out);
+  absent('and does not ask the operator', 'ask the relaunch question', r.out);
   r = fleet(['ctx', dr], asCh);
   truthy('and only once', r.out === '', r.out);
   // The next step with a claim still open: the drain ran out.
@@ -587,12 +730,12 @@ if (has('git')) {
   // A lost DRAINED line: the exit-13 text says it was announced.
   write(`${dr}/.draining`, 'sess-dr\n'); write(`${dr}/.drained-said`, '');
   r = fleet(['next', dr, '02', 'repo']);
-  check('exit 13 repeats that DRAINED was announced', 'DRAINED was announced already: ask the relaunch question now', r.out);
+  check('exit 13 repeats that DRAINED was announced', 'DRAINED was announced already: relaunch by card now, no question', r.out);
 
   // A background command's output past runaway_log_gb is named once. Closed chats left 5 GB of these.
   const rl = `${tmp}/runaway`;
   copyFleet(`${rl}/scripts`);
-  write(`${rl}/calibration.json`, '{\n  "runaway_log_gb": 0.000001\n}\n');
+  write(`${rl}/calibration.json`, '{\n  "runaway_log_gb": 0.000001,\n  "disk_floor_gb": 0,\n  "disk_clear_gb": 0\n}\n');
   write(`${rl}/tmp/claude/proj/sess-1/tasks/b1.output`, Buffer.alloc(4096));
   const rlEnv = { env: { TMPDIR: `${rl}/tmp`, TEMP: `${rl}/tmp`, TMP: `${rl}/tmp`, CLAUDE_CONFIG_DIR: ch } };
   r = exec('sh', [`${rl}/scripts/fleet.sh`, 'ctx', lg], rlEnv);

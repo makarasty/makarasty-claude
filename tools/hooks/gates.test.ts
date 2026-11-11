@@ -16,6 +16,7 @@ type World = {
   fleet?: string
   fleetAge?: number
   hold?: string
+  holdIndex?: string
   holdAge?: number
   env?: Record<string, string>
   run?: 'hang' | 'fail'
@@ -40,10 +41,12 @@ function world(on: On, o: World = {}) {
     if (plain(e.path) === '/cfg/makarasty/context/s1' && o.level !== undefined) return { value: o.level }
     if (plain(e.path) === '/cfg/makarasty/fleet-sessions/s1' && o.fleet !== undefined) return { value: `${o.fleet}\nmore` }
     if (plain(e.path) === '/cfg/makarasty/hold/s1.md' && o.hold !== undefined) return { value: o.hold }
+    if (plain(e.path) === '/cfg/makarasty/hold/s1/index.md' && o.holdIndex !== undefined) return { value: o.holdIndex }
     return { deny: 'ENOENT' }
   })
   on('fs.stat', async (_$, e) => {
     if (plain(e.path) === '/cfg/makarasty/hold/s1.md' && o.hold !== undefined) return { value: { ...entry, mtimeMs: 10 * DAY - (o.holdAge ?? 1000) } }
+    if (plain(e.path) === '/cfg/makarasty/hold/s1/index.md' && o.holdIndex !== undefined) return { value: { ...entry, mtimeMs: 10 * DAY - (o.holdAge ?? 1000) } }
     if (plain(e.path) === '/cfg/makarasty/fleet-sessions/s1') return { value: { ...entry, mtimeMs: 10 * DAY - (o.fleetAge ?? 1000) } }
     if (plain(e.path) === o.fleet) return { value: { ...entry, kind: 'dir' as const } }
     return { deny: 'ENOENT' }
@@ -261,6 +264,18 @@ test('a hold list PowerShell wrote, with a BOM, still counts as collecting', asy
   const w = world(on, { tokens: 800000, hold: '\uFEFFcollecting абрикос\n' })
   expect((await $.classic.UserPromptSubmit(prompt())).additionalContext).toBeUndefined()
   expect(w.writes).toEqual({})
+})
+
+test('a collecting hold in the folder layout (hold/<session>/index.md) gets none either', async ($, on) => {
+  const w = world(on, { tokens: 800000, holdIndex: 'collecting абрикос\n01 | open | отступ | \n' })
+  expect((await $.classic.UserPromptSubmit(prompt())).additionalContext).toBeUndefined()
+  expect(w.writes).toEqual({})
+})
+
+test('a released folder-layout hold does not exempt', async ($, on) => {
+  const w = world(on, { tokens: 800000, holdIndex: 'released абрикос\n01 | done | отступ | \n' })
+  expect((await $.classic.UserPromptSubmit(prompt())).additionalContext).toEqual([reminder(800000)])
+  expect(w.writes['/cfg/makarasty/context/s1']).toBe('700000')
 })
 
 test('a released hold list does not exempt', async ($, on) => {

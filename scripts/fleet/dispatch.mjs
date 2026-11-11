@@ -151,6 +151,7 @@ export function dispatch(c, chip, lane) {
         ...(testProof ? [`Test proof, after your change: node "${gate}" prove "${ar}" ${id} after -- ${sq(`timeout ${S} ${test}`)}   (instead of running Test bare; no before; a hit limit is reported, never retried)`] : []),
         `Findings: sh "${fsh}" find "${ar}" ${chip}, one JSON finding on stdin; it files, it is no probe. Heartbeat: sh "${fsh}" beat "${ar}" ${chip} ${id}.`,
         'Never next, finish, drained, commit, git add -A, stash, checkout --, switch.',
+        `Scratch: every folder you create outside the checkout (temp output, caches, copies) is one line appended to ${ar}/scratch.list as you make it; at DISK LOW the coordinator offers only those to the operator.`,
         `Write your full report (files changed, test result, what is left) to ${ar}/reports/${id}.md. Reply with at most 3 lines and 400 characters; the last line is DONE, DONE_WITH_CONCERNS: <one line> or BLOCKED: <one line>.`,
     ].join('\n') + '\n');
     const one = (k) => fmValues(fm, k)[0] || '-';

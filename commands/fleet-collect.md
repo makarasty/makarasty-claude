@@ -1,7 +1,7 @@
 ---
 description: Merge a fleet run's findings into one ranked backlog. Use after a run's workers have finished, or when asked what a run found.
 argument-hint: <run-id>
-allowed-tools: Bash, Read, Write, Glob, Grep, Agent, PushNotification, TaskStop, mcp__ccd_session_mgmt__set_session_title
+allowed-tools: Bash, Read, Write, Glob, Grep, Agent, PushNotification, TaskStop, ToolSearch, mcp__ccd_session_mgmt__set_session_title
 ---
 
 The `docs/*` and `scripts/*` files named below live in this plugin's own directory,
@@ -121,7 +121,9 @@ These are one act, done once, when the run is **genuinely** finished. In one cha
 the done tasks' `tasks/claimed/<id>/files` lists minus `dirty-at-start`. Those paths are relative to the
 git top, not to the folder holding `.fleet`, so it runs `git -C "$(git rev-parse --show-toplevel)" add --`
 on the new paths only and then `git -C "<top>" commit --only -m <msg> -- <paths>`, so the operator's staged
-work stays out; never `-A` (`docs/ONECHAT.md`, "Commits"). The finished state can
+work stays out; never `-A` (`docs/ONECHAT.md`, "Commits"). When the commit fails a pre-commit check on a
+file that is not the run's, the agent returns the failed check names and files and stops: you apply the
+`foreign=` policy of the `pace:` line (`docs/ONECHAT.md`, "Commits": `fix` only for a file `git status --porcelain` shows clean, a dirty one is left and listed, `wait` ends after 60 minutes in `leave`); none set means `leave`. The finished state can
 be checked, and the script checks it:
 
 ```bash
@@ -170,6 +172,11 @@ on disk before one is sent.
    Measured 2026-08-31 across the workers: 52 abort clocks nobody stopped, 703 minutes of session life and
    108 model turns spent after the work was over, and an operator who could not tell whether the fleet had
    stopped.
+   **The pick-up check goes with it**: when `STATE.md` records a scheduled task for this run (fleet-plan, pace
+   round: "If this chat dies"), delete it with the scheduled-tasks tool (`mcp__scheduled-tasks__*`, read the
+   schema with `ToolSearch`), with no question: the operator agreed to its removal when they created it ("removed
+   automatically at the end"). Report it in one line: `removed the pick-up check <task id>`. Left alone it would
+   run every 15 minutes for a run that has ended (it also expires by itself once `FINISHED` exists).
 4. **Rename this session** to `fleet <run-id> - FINISHED <n>f/<b>b`, if the host offers a session-title
    tool (`mcp__ccd_session_mgmt__set_session_title` here, `self`). The sidebar is the only surface visible
    from a chat the operator is not sitting in, and with separate chats every worker has renamed itself the same way.
@@ -254,7 +261,11 @@ set aside section, and `backlog.md` exists.
 The banner from `fleet.sh summary`, then the set aside counts and the top three findings by severity under
 it, then **Rulings I made**: the judgement calls made without asking (a refuted claim, a handback, a tier
 bump, a defect filed as a fix task), each as what and why, so the operator can overturn one. They are the
-`ruling:` lines in `STATE.md` (`docs/ONECHAT.md`, loop step 4); none made, none listed. Nothing else: this
+`ruling:` lines in `STATE.md` (`docs/ONECHAT.md`, loop step 4); none made, none listed. Then **Assumed for
+you, undo if wrong**: every `ask/operator/*.defaulted` file (`ls <run>/ask/operator/*.defaulted`; the `assumed:`
+lines in `STATE.md` say the same), each as the question's first line, the recommendation taken and the time; an
+answer in `answers/operator/` that came after the default is marked "answered late: check it". None, none
+listed [M59]. Nothing else: this
 is the last message of the run, and a wall of prose gets the one table that matters scrolled past. Fixing
 is a separate session's job, and in most projects a fix ships with a reproduction that failed before it.
 

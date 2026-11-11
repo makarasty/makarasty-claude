@@ -579,7 +579,7 @@ function handback(c, chip, o = out) {
     // Its questions and the walks it asked for stay unanswered under its number: the coordinator reads them here.
     const asks = openAsks(c, chip);
     if (asks)
-        o(`  unanswered:${asks} - their answers go to the replacement (fleet-wait.md)\n`);
+        o(`  unanswered:${asks} - their answers go to the replacement (docs/CHATS.md)\n`);
     writeFileSync(`${run}/${chip}.retired`, `retired ${now()}${asks ? `, unanswered:${asks}` : ''}\n`);
     // The hooks hold a retired chip after the pause lifts, and find the run through this marker.
     mkdirSync(pausedRoot(), { recursive: true });

@@ -32,6 +32,12 @@
 #   fleet.sh find    <run-dir> <chip>              read one JSON finding on stdin, validate, append
 #   fleet.sh ask     <run-dir> <chip>              worker: read a question on stdin, file it, print the path
 #   fleet.sh answer  <run-dir> <id> [id...]        planner: one answer on stdin, filed under every id it settles
+#   fleet.sh ask-operator <run-dir> <id> <recommended...>  coordinator: a reversible question for the operator, on stdin, with
+#                                                  your recommended answer; it defaults at ask_default_min (10) and the watch
+#                                                  prints ASK DEFAULTED <id>. Never blocks you [M59]
+#   fleet.sh answer-operator <run-dir> <id> <text...>  the operator's answer to one of those, before or after the deadline
+#   fleet.sh req-add <run-dir> <subject> [must|nice] [supersedes Rn]  coordinator: append one operator message on a mockup subject,
+#                                                  verbatim from stdin, as the next Rn in reports/<subject>.req.md
 #   fleet.sh broadcast <run-dir>                   planner: append something every worker reads at its next boundary
 #   fleet.sh file    <run-dir> <task-id> [path|-]  planner: file one task (stdin by default), checked: UTF-8,
 #                                                  frontmatter, lane, task-id, no duplicate id. FILED or REFUSED
