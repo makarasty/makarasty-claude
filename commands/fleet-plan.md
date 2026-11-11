@@ -533,9 +533,11 @@ You are the one session the whole run depends on, and the one nothing restarts. 
 - **So is every action only the operator can take** (open the Browser pane, sign in, run a command in
   their terminal), and every "your call" you notice in a status list. A bold line between status reports
   is missed by someone who comes back hours later (2026-11-11: "open the Browser pane" stood three times
-  in bold among task-id lists, with no push and no button, and the pane task never started). Send
-  `PushNotification` with it, and end the turn with `wrap_up` (`blocked: true`, the action as its `ask`)
-  when the desktop app offers that tool, so the one thing to do sits at the bottom of the chat.
+  in bold among task-id lists, with no push and no button, and the pane task never started). Ask it the
+  way the bullet above says, in full: work not depending on it in motion first, one `PushNotification`,
+  one `AskUserQuestion`, a line under open questions in `STATE.md` (a wake that finds it there does not
+  push again). Never through `wrap_up` while the run is live: it ends the turn, and a turn that ends with
+  nothing pending leaves the run dead (`docs/PROTOCOL.md`, "never end a turn without something pending").
 - **A pause is `/makarasty:fleet-pause <run-id>`, never a sentence to the workers.** Telling them to pause
   stopped nobody (2026-10-05: they kept "wrapping up" for a long time). The command writes the file the
   hooks enforce; the watch prints `PAUSED`, `worker NN stopped` and `RESUMED`. A relaunch pauses by itself.

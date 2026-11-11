@@ -1,5 +1,12 @@
 # Changelog
 
+## makarasty 1.11.2 — 2026-11-11
+
+- **An operator-only action is asked like any question, not through the next-step box.** 1.11.1 ended the
+  coordinator's turn with `wrap_up` for it, which leaves a live run with nothing pending; it now follows the
+  question rule in full: work in motion first, one push, one `AskUserQuestion`, recorded in `STATE.md` so a
+  later wake does not push again.
+
 ## makarasty 1.11.1 — 2026-11-11
 
 - **What only the operator can do reaches them like a question.** A coordinator that needs the Browser pane
