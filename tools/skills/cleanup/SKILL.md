@@ -59,6 +59,15 @@ parents of the live sessions' `cwd`s and the git repos one level below them.
   ancestor chain reaches a live `claude` or `Claude.exe`, an interactive shell or terminal, or an IDE
   (Cursor, VS Code) is its owner's, not a leak. A parent counts only if it was created before the child
   (PIDs get reused). No `PPID=1` orphan test: Git Bash breaks parent links on Windows.
+- Residents with a live parent (the census lists only orphans, and the desktop app keeps a finished chat's
+  processes alive): `node "${CLAUDE_SKILL_DIR}/residents.mjs"` (6 s, read only; `--all` adds KEEP rows). It finds
+  `tsc --watch`, `tsc --lsp`, vite and other dev servers, headless automation browsers and `heavy.mjs` wrappers, names
+  the owner chat by the parent chain, and sorts: CANDIDATE (owner chat ended or idle 120 min, tree used no CPU in a 3 s
+  sample, nobody connected to its port, at least 10 min old), ASK (started from a terminal or IDE, or owner not found:
+  the operator's, so only named), KEEP (live chat, CPU, a connection, a live chat in the same repo). The full `scan`
+  lists CANDIDATE and ASK too, as `idle-residents` items (owner tier, no method: `apply` skips them). Memory is
+  private working set and commit: Windows trims an idle process's working set, so read both. Ending one is a yes
+  from the operator, then step 4's `taskkill /PID <n> /F` per pid, leaves first.
 - Top ten: `Get-CimInstance Win32_Process | Sort WorkingSetSize -Desc | Select -First 10
   ProcessId,ParentProcessId,Name,WorkingSetSize,CommandLine`, each with its parent chain, so a server the
   operator started from their terminal reads as theirs.
@@ -69,7 +78,7 @@ merged into `origin/HEAD` (not into whatever the main checkout is on), with unpu
 files named; folders under `<repo>/.claude/worktrees/` that git does not list; a worktree living inside a
 session's scratch folder.
 
-**Call 3, Bash, in the background**: `node "${CLAUDE_SKILL_DIR}/machine.mjs" scan` (about a minute; read
+**Call 3, Bash, in the background**: `node "${CLAUDE_SKILL_DIR}/machine.mjs" scan` (about 2 minutes, up to 3 with `--json`; read
 only; a 10-minute timeout; wait for it before the report). A timeout or empty output is reported as it is,
 not retried. A non-zero exit prints why: the process list could not be read, PowerShell is in Constrained
 Language Mode, another apply holds the lock, or a rules file is malformed (its path and rule are named).
@@ -104,8 +113,9 @@ Done when each area has a list or says "nothing found".
 
 ## 2. Picks
 
-Per item: what it is, size or memory, age, why it is nobody's, the command, and what breaks if that is
-wrong. Rank by what it frees. Hundreds of folders of one kind are one pick with one generated command.
+Per item: what it is and which program or tool made it, size or memory, age, why it is nobody's, the
+command, what breaks if that is wrong, and your recommendation (remove or keep, with the reason): a name alone
+leaves the person unable to decide. Rank by what it frees. Hundreds of folders of one kind are one pick with one generated command.
 Commands that remove folders unlink every junction and symlink inside first, at any depth, then delete:
 `find "<dir>" -type l -exec rm {} + && rm -rf "<dir>"` in Git Bash (`rm` on a link removes only the link).
 Measured [M45]: `rm -rf`, `rmdir /s` and PS 5.1 `Remove-Item -Recurse -Force` unlink a link left in place and
@@ -176,6 +186,8 @@ before it; `apply` refuses an id the steps below did not grant:
    exactly that label and "Нет" (the label alone: the grant needs one answer line equal to it, nothing added).
 5. `node "${CLAUDE_SKILL_DIR}/../lib/confirm.mjs" grant cleanup`. Act only on the ids after `GRANTED:`, name what
    was `NOT GRANTED`; nothing granted, nothing deleted.
+
+A git checkout (a `.git` file or folder at the top or within three levels) in temp or Downloads is never offered: it is kept with a hint to use `/makarasty-tools:prune`. A one-path item's id ends in a hash of its path, so consent never moves to another file of the same name.
 
 A grant lasts 30 minutes and one `apply` per id. A group item (scratch, temp, crash dumps) is whatever matches
 when `apply` runs, so when more than an hour has passed since the scan, scan again (the steps start over) and

@@ -1,5 +1,5 @@
 {
- "about": "Places where junk collects, read by machine.mjs. Order matters: a path claimed by an earlier rule is skipped by later ones. Fields: id, title, tier (safe | close-app | admin | owner), method (delete | vendor | recycle | uninstall | none), os (process.platform), type (paths | versions | scratch | builds | gradle | steam | uninstall | loose | bins | command), paths (%VAR%, ~, * within one segment), children + exclude + each, parents + match + keep | keepIn, names, running (regex on the process name, or cmd:<regex> on its command line), minAgeHours (newest touch inside, modified or created, must be older), ageBy (\"modified\" ignores creation times, for files a tool rewrites in place), requires (versions: a file that must sit in the parent), within (paths: kept only inside this folder), heldByApp (each: held while the app the folder is named after runs), minMB, vendor, lose, explain, bat. A machine's own rules go in ~/.claude/makarasty/cleanup-rules.json with the same shape.",
+ "about": "Places where junk collects, read by machine.mjs. Order matters: a path claimed by an earlier rule is skipped by later ones. Fields: id, title, tier (safe | close-app | admin | owner), method (delete | vendor | recycle | uninstall | none), os (process.platform), type (paths | versions | scratch | builds | gradle | steam | uninstall | loose | bins | residents | command), paths (%VAR%, ~, * within one segment), children + exclude + each, parents + match + keep | keepIn, names, running (regex on the process name, or cmd:<regex> on its command line), minAgeHours (newest touch inside, modified or created, must be older), ageBy (\"modified\" ignores creation times, for files a tool rewrites in place), requires (versions: a file that must sit in the parent), within (paths: kept only inside this folder), keepRepos (a candidate with a .git at its top or within 3 levels is kept: a git checkout goes through prune), heldByApp (each: held while the app the folder is named after runs), minMB, vendor, lose, explain, bat. A machine's own rules go in ~/.claude/makarasty/cleanup-rules.json with the same shape.",
  "rules": [
   {
    "id": "claude-scratch",
@@ -9,9 +9,10 @@
    "os": "win32",
    "type": "scratch",
    "paths": [
-    "%TEMP%\\claude\\C--*\\*"
+    "%TEMP%\\claude\\*\\*"
    ],
    "minAgeHours": 24,
+   "keepRepos": true,
    "lose": "the task outputs and pasted screenshots of chats that have ended; if you resume one later, they are gone (folders a handoff or hold note names are kept)"
   },
   {
@@ -282,7 +283,8 @@
     "node-compile-cache"
    ],
    "minAgeHours": 48,
-   "lose": "nothing a running program uses; files in use stay",
+   "keepRepos": true,
+   "lose": "nothing a running program uses; files in use stay (a git checkout is never listed: use /makarasty-tools:prune)",
    "within": "%LOCALAPPDATA%"
   },
   {
@@ -769,6 +771,7 @@
    ],
    "minMB": 200,
    "minAgeHours": 168,
+   "keepRepos": true,
    "lose": "it goes to the Recycle Bin while it fits; a portable app or game keeps its settings and saves inside"
   },
   {
@@ -784,6 +787,7 @@
    ],
    "minMB": 1024,
    "minAgeHours": 168,
+   "keepRepos": true,
    "lose": "it goes to the Recycle Bin and can be restored from there"
   },
   {
@@ -805,6 +809,16 @@
    "type": "bins",
    "minMB": 100,
    "lose": "empty it in Explorer when you are sure: nothing in it can be restored after"
+  },
+  {
+   "id": "idle-residents",
+   "title": "Long-running dev process",
+   "tier": "owner",
+   "method": "none",
+   "os": "win32",
+   "type": "residents",
+   "minMB": 20,
+   "lose": "a watcher or dev server ends with its tree: the next edit is not rebuilt until it is started again. Listed only; after your yes the chat ends the pids one by one, leaves first, with taskkill /PID <n> /F"
   },
   {
    "id": "claude-transcripts",

@@ -28,6 +28,7 @@ import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 import { makePlan, check } from '../lib/confirm.mjs';
 import { chats } from '../lib/live.mjs';
+import { scan as scanResidents, LIMITS as RESIDENT_LIMITS } from './residents.mjs';
 
 const WIN = process.platform === 'win32';
 const HOUR = 3600e3, DAY = 24 * HOUR, MB = 1 << 20, GB = 1 << 30;
@@ -239,6 +240,9 @@ function projects(ctx) {
     return { roots: [...roots.values()], repos };
 }
 
+// A git checkout: a .git file (worktree) or folder at the top, or within three levels below. Its uncommitted work is not junk.
+const holdsGit = (p, depth = 3) => !!lst(join(p, '.git')) || (depth > 0 && ls(p).some(n => lst(join(p, n))?.isDirectory() && holdsGit(join(p, n), depth - 1)));
+const REPO = 'a git checkout: use /makarasty-tools:prune';
 const git = (cwd, args) => spawnSync('git', ['-C', cwd, ...args], { encoding: 'utf8', timeout: 60e3, maxBuffer: 64 << 20 });
 
 // ---- rule types: each returns candidate groups {slug?, title?, paths, ...} ---------------------------------------
@@ -395,6 +399,19 @@ const TYPES = {
         return ctx.sid ? ctx.volumes.map(v => ({ slug: v.drive, title: `${r.title} ${v.drive}`, paths: [join(v.drive + sep, '$Recycle.Bin', ctx.sid)] })) : [];
     },
     command() { return [{ paths: [], preset: true, bytes: null }]; },
+    // Watchers, dev servers and automation browsers whose chat is done, or that nobody owns: residents.mjs reads and judges
+    // (a terminal's or an unknown owner is asked, a live chat, CPU use or a connection keeps it). Listed only, method none:
+    // ending one is the operator's yes and a taskkill by pid from the chat, never this script.
+    residents(r) {
+        if (!WIN) return [];
+        return scanResidents().filter(x => x.verdict !== 'KEEP' && x.mb >= (r.minMB ?? RESIDENT_LIMITS.minMb)).map(x => ({
+            slug: `${x.kind}-${x.pid}`, title: `${x.verdict === 'CANDIDATE' ? 'Left running by a finished chat' : 'Running, owner to confirm'}: ${x.kind}${x.has.length ? ` + ${x.has.join(', ')}` : ''} (pid ${x.pid})`,
+            paths: [], preset: true, bytes: x.mb * MB, newest: 0,
+            evidence: [`${x.mb} MB private working set, ${x.commitMb} MB commit, ${x.ageMin ?? '?'} min old, ${x.cpuMs} ms CPU in the sample, ${x.ports.length ? `port ${x.ports.join(',')} with ${x.conns} connection(s)` : 'no port'}`,
+                `owner: ${x.owner.kind === 'chat' ? `chat ${x.owner.id.slice(0, 8)} "${x.owner.title}" (${x.owner.state}${x.owner.idleMin != null ? `, idle ${x.owner.idleMin} min` : ''})` : x.owner.kind === 'terminal' ? `terminal ${x.owner.name} pid ${x.owner.pid}` : 'not found'}`,
+                ...x.why, `command: ${x.cmd}`, `pids, leaves first: ${x.pids.join(' ')}`],
+        }));
+    },
 };
 
 export function loadRules(extra) {
@@ -454,7 +471,7 @@ export function evaluate(rules, ctx) {
             const held = [], parts = [];
             for (const p of c.paths.filter(lst)) {
                 if (!c.preset && claimed.some(k => inside(p, k))) continue;
-                const why = acts && forbidden(p) ? 'a top folder: never acted on' : holdOf(p, ctx);
+                const why = (acts && forbidden(p) ? 'a top folder: never acted on' : holdOf(p, ctx)) ?? (acts && rule.keepRepos && holdsGit(p) ? REPO : null);
                 if (why && !c.preset) { held.push({ path: p, why }); continue; }
                 if (c.preset) { parts.push({ path: p, bytes: 0, newest: 0, links: 0, held: why }); continue; }
                 const m = measure(p, ctx.now, rule.ageBy !== "modified");
@@ -479,12 +496,13 @@ export function evaluate(rules, ctx) {
             // Same name twice (three Claude profiles, "Setup (1).exe" and "setup-1.exe"): every one of them gets a hash of
             // its path, so an id never moves to another path between scan and apply; it can only stop being found.
             let id = c.slug === undefined ? rule.id : `${rule.id}:${slug(c.slug)}`;
-            if (c.slug !== undefined && groups.filter(g => g.slug !== undefined && slug(g.slug) === slug(c.slug)).length > 1 || ids.has(id)) id = `${id}-${hash(norm(c.paths[0] ?? c.title ?? ''))}`;
+            const byPath = rule.each || (c.method ?? rule.method) === 'recycle'; // a one-path item: its id names that path, never another file of the same slug that turns up before apply
+            if (c.slug !== undefined && (byPath || groups.filter(g => g.slug !== undefined && slug(g.slug) === slug(c.slug)).length > 1) || ids.has(id)) id = `${id}-${hash(norm(c.paths[0] ?? c.title ?? ''))}`;
             ids.add(id);
             items.push({ id, rule: rule.id, title: c.title ?? rule.title, tier: rule.tier, method: c.method ?? rule.method, vendor: rule.vendor,
                 paths: parts.map(x => x.path), parts, bytes: denied ? null : bytes, newest, held, blockers: [...new Set(blockers)],
                 evidence: [...(c.evidence ?? []), ...(denied ? ['size not readable without admin'] : [])], lose: c.lose ?? rule.lose, explain: rule.explain,
-                uninstall: c.uninstall, atomic: !!c.atomic, running: rule.running, app: c.app, scratch: rule.type === 'scratch', bat: rule.shipped ? rule.bat : undefined, birth: rule.ageBy !== "modified", minAgeHours: c.minAgeHours ?? rule.minAgeHours ?? 0 });
+                uninstall: c.uninstall, atomic: !!c.atomic, running: rule.running, app: c.app, scratch: rule.type === 'scratch', keepRepos: !!rule.keepRepos, bat: rule.shipped ? rule.bat : undefined, birth: rule.ageBy !== "modified", minAgeHours: c.minAgeHours ?? rule.minAgeHours ?? 0 });
             if (!c.preset) claimed.push(...parts.map(x => x.path));
         }
     }
@@ -573,6 +591,7 @@ function applyLocked(ids, rules, ctx) {
         ctx.sessions = sessions(ctx); // a chat opened or resumed since the scan
         const why = p => forbidden(p.path) ? 'a top folder' : holdOf(p.path, ctx)
             ?? (it.scratch && ctx.sessions.some(s => s.live && !s.id) ? 'a session file did not read, so every scratch folder is held' : null)
+            ?? (it.keepRepos && holdsGit(p.path) ? REPO : null)
             ?? (it.minAgeHours && measure(p.path, Date.now(), it.birth).newest > Date.now() - it.minAgeHours * HOUR ? 'written to since the scan' : null);
         if ((it.method === 'vendor' && it.vendor) || it.atomic) {
             const w = it.parts.map(why).find(Boolean);
@@ -631,8 +650,10 @@ const drives = (total = false) => Object.fromEntries((WIN ? (VOLS.length ? VOLS 
 }));
 
 // Writes the .bat for admin items; the person runs it elevated. English text: the console shows Cyrillic as ???.
-export function admin(ids, rules, ctx = gather()) {
-    const { items } = evaluate(rules, ctx);
+export function admin(ids, rules, ctx) {
+    // The scan takes minutes: an id whose rule is no admin rule cannot match, so with none left there is no scan at all.
+    const known = new Set(rules.filter(r => r.tier === 'admin' && !r.off).map(r => r.id));
+    const { items } = ids.some(id => known.has(id.split(':')[0])) ? evaluate(rules, ctx ?? gather()) : { items: [] };
     const esc = s => String(s).replace(/%/g, '%%').replace(/[&|<>^()]/g, '^$&'); // in a .bat a % is doubled, not careted
     const L = ['@echo off', 'chcp 65001 >nul', 'net session >nul 2>&1 || (echo Right-click this file and choose "Run as administrator". & pause & exit /b 1)'];
     const done = [], held = [];
@@ -667,7 +688,7 @@ function show(s) {
         for (const i of list) {
             L.push(`  ${(i.n ? i.n + '.' : '').padStart(4)} ${i.id.padEnd(w)} ${gb(i.bytes).padStart(9)} ${ago(i.newest).padStart(5)}  ${i.title}  [${i.method === 'vendor' ? i.vendor : i.method}]`);
             const pad = `       ${''.padEnd(w)}   `;
-            if (i.paths.length <= 10) L.push(...i.paths.map(p => pad + p)); else L.push(`${pad}${i.paths.length} paths, e.g. ${i.paths[0]} (--json lists all)`);
+            if (i.paths.length <= 10) L.push(...i.paths.map(p => pad + p)); else L.push(`${pad}includes ${i.paths.length} paths and deletes all of them, e.g. ${i.paths[0]} (--json lists all)`);
             if (i.uninstall) L.push(`${pad}uninstaller: ${i.uninstall}`);
             for (const e of [...i.evidence, ...(i.lose ? [`lose: ${i.lose}`] : [])]) L.push(`       ${''.padEnd(w)}   ${e}`);
             for (const b of i.blockers) L.push(`       ${''.padEnd(w)}   HELD: ${b}`);
@@ -700,6 +721,14 @@ function selftest() {
         put(join(local, 'cache', 'blob'), 2048);
         put(join(local, 'brave', 'Cache', 'f'));
         put(join(local, 'vend', 'f'));
+        const H = '0123456789abcdef'; // the current scratch layout: Temp\claude\<16 hex>\<session uuid>
+        put(join(temp, 'claude', H, U(1), 'a')); // live
+        put(join(temp, 'claude', H, U(5), 'a'), 4096); // ended, old
+        put(join(temp, 'wt', '.git'), 20); put(join(temp, 'wt', 'f')); // a worktree: .git is a file
+        put(join(temp, 'deep', 'a', 'b', '.git', 'HEAD')); put(join(temp, 'deep', 'a', 'f')); // a clone two levels down
+        put(join(temp, 'junk', 'f'));
+        put(join(temp, 'claude', H, U(6), 'proj', '.git', 'HEAD')); // an ended chat's scratch holding a clone
+        put(join(local, 'dl', 'Setup (1).exe'));
         mkdirSync(join(local, 'fut'), { recursive: true });
         // measure() also reads creation times, which utimes cannot set: backdate every file and folder made so far.
         if (!WIN) { console.log('machine.mjs selftest: Windows only for now (it backdates creation times through PowerShell)'); return; }
@@ -720,12 +749,13 @@ function selftest() {
         ctx.sessions = sessions(ctx);
         assert.equal(ctx.sessions[0].live, true, 'own pid with no procStart is live');
         const rules = [
-            { id: 't-scratch', title: 's', tier: 'safe', method: 'delete', type: 'scratch', paths: ['%TEMP%\\claude\\C--*\\*'], minAgeHours: 24, minMB: 0 },
+            { id: 't-scratch', title: 's', tier: 'safe', method: 'delete', type: 'scratch', paths: ['%TEMP%\\claude\\*\\*'], minAgeHours: 24, minMB: 0, keepRepos: true },
             { id: 't-ver', title: 'v', tier: 'safe', method: 'delete', type: 'versions', parents: ['%LOCALAPPDATA%\\App'], match: '^app-(\\d.*)$', minMB: 0 },
             { id: 't-hash', title: 'h', tier: 'safe', method: 'delete', type: 'versions', parents: ['%LOCALAPPDATA%\\Hash'], match: '^([0-9a-f]{10})$', keepIn: 'bin\\code', minMB: 0 },
             { id: 't-cache', title: 'c', tier: 'safe', method: 'delete', paths: ['%LOCALAPPDATA%\\cach*'], minMB: 0 },
             { id: 't-fut', title: 'f', tier: 'safe', method: 'delete', paths: ['%LOCALAPPDATA%\\fut'], minAgeHours: 24, minMB: 0 },
             { id: 't-brave', title: 'b', tier: 'close-app', method: 'delete', paths: ['%LOCALAPPDATA%\\brave\\*'], running: ['^brave\\.exe$'], minMB: 0 },
+            { id: 't-temp', title: 't', tier: 'safe', method: 'delete', paths: ['%TEMP%'], children: true, exclude: ['claude'], keepRepos: true, minAgeHours: 48, minMB: 0 },
             { id: 't-none', title: 'n', tier: 'safe', method: 'delete', paths: ['%NO_SUCH_VAR%\\x'] },
             { id: 't-alias', title: 'a', tier: 'safe', method: 'delete', paths: ['%LOCALAPPDATA%\\*\\Cache'], minMB: 0 },
             { id: 't-dup', title: 'd', tier: 'safe', method: 'delete', each: true, paths: ['%LOCALAPPDATA%\\d*\\same'], minMB: 0 },
@@ -733,7 +763,16 @@ function selftest() {
             { id: 't-notool', title: 'nt', tier: 'safe', method: 'vendor', vendor: 'no-such-tool-x1 clean', paths: ['%LOCALAPPDATA%\\Hash\\bin'], minMB: 0 },
         ];
         const s = evaluate(rules, ctx), by = Object.fromEntries(s.items.map(i => [i.id, i]));
-        assert.deepEqual(by['t-scratch'].paths, [join(temp, 'claude', 'C--p', U(2))], 'scratch: only the ended, old, non-empty chat');
+        assert.deepEqual([...by['t-scratch'].paths].sort(), [join(temp, 'claude', 'C--p', U(2)), join(temp, 'claude', H, U(5))].sort(), 'scratch: only the ended, old, non-empty chats, in the old and the current layout (a live chat\'s uuid dir in the new layout is held)');
+        assert.ok(!by['t-scratch'].paths.some(p => p.includes(U(6))) && by['t-scratch'].held.some(h => h.path.includes(U(6)) && /prune/.test(h.why)), 'scratch: an ended chat\'s folder holding a .git is kept');
+        assert.deepEqual(by['t-temp'].paths, [join(temp, 'junk')], 'temp: a worktree (.git file) and a clone two levels down are kept, not offered');
+        assert.ok(by['t-temp'].held.length === 2 && by['t-temp'].held.every(h => /prune/.test(h.why)), 'temp: the kept checkouts say use prune');
+        assert.equal(evaluate([{ ...rules.find(r => r.id === 't-temp'), keepRepos: false }], ctx).items[0].paths.length, 3, 'without keepRepos the same temp offers the checkouts');
+        const dl = { id: 't-dl', title: 'dl', tier: 'owner', method: 'recycle', each: true, children: true, paths: ['%LOCALAPPDATA%\\dl'], minMB: 0 };
+        const dl1 = evaluate([dl], ctx).items[0].id;
+        rmSync(join(local, 'dl', 'Setup (1).exe')); put(join(local, 'dl', 'setup-1.exe'));
+        const dl2 = evaluate([dl], ctx).items[0].id;
+        assert.ok(/^t-dl:setup-1-exe-[0-9a-z]+$/.test(dl1) && dl1 !== dl2, `a one-path item's id carries its path hash, so a same-slug file is never the consented one (${dl1} vs ${dl2})`);
         assert.deepEqual(by['t-ver:app'].paths, [join(local, 'App', 'app-1.9.0')], 'versions: 1.10.0 is newest by number, 1.2.9 is in use');
         assert.deepEqual(by['t-hash:hash'].paths, [join(local, 'Hash', 'aaaaaaaaaa')], 'versions: keepIn names the current build');
         assert.equal(by['t-cache'].bytes, 2048, 'size skips what a junction points at');
@@ -778,12 +817,15 @@ function selftest() {
         // The shipped catalog: every pattern starts at ~, a %VAR% or a drive, and holds no control character (a \r or \v
         // a shell made of "\registry" or "\v3-cache"), and every running regex compiles.
         for (const r of loadRules()) {
+            if (['claude-scratch', 'temp-old', 'downloads-big', 'videos-big'].includes(r.id)) assert.ok(r.keepRepos, `rules.json ${r.id}: a glob that can hold a checkout needs keepRepos`);
             for (const p of [...(r.paths ?? []), ...(r.parents ?? [])]) assert.ok(/^(~[\\/]|%[^%]+%([\\/]|$)|[A-Za-z]:[\\/]|\/)/.test(p) && !/[\x00-\x1f]/.test(p), `rules.json ${r.id}: bad path ${JSON.stringify(p)}`);
             for (const x of r.running ?? []) new RegExp(x.replace(/^cmd:/, ''));
         }
+        const res = loadRules().find(r => r.id === 'idle-residents');
+        assert.ok(res && res.method === 'none' && res.tier === 'owner' && res.type === 'residents', 'idle-residents lists processes only: it must never carry a method that acts');
         assert.ok(holdOf(join(local, 'cache'), { ...ctx, sessions: [], procs: prep([{ pid: 7, name: 'bash.exe', cmd: `bash /${local[0].toLowerCase()}/${local.slice(3).replaceAll('\\', '/')}/cache/watch.sh` }]) }), 'a Git Bash /c/... path holds its folder');
         mkdirSync(join(tmp, 'claude', 'makarasty', 'hold'), { recursive: true });
-        writeFileSync(join(tmp, 'claude', 'makarasty', 'hold', 'n.md'), `see ${join(temp, 'claude', 'C--p', U(2), 'images', '1.png')}`);
+        writeFileSync(join(tmp, 'claude', 'makarasty', 'hold', 'n.md'), `see ${join(temp, 'claude', 'C--p', U(2), 'images', '1.png')} and ${join(temp, 'claude', H, U(5), 'x.png')}`);
         assert.ok(!evaluate([rules[0]], ctx).items.length, 'a scratch folder a hold note cites is kept');
         rmSync(join(tmp, 'claude', 'makarasty', 'hold', 'n.md'));
         assert.equal(running({ running: ['cmd:pnpm'] }, prep([{ pid: 9, name: 'bash.exe', cmd: 'bash -c "node machine.mjs apply pnpm-store"' }])).length, 0, 'the shell that runs apply is not a hold');
@@ -794,10 +836,13 @@ function selftest() {
         for (const s of ['MsiExec.exe /X{1} /qb-', 'x.exe --silent=true', 'x.exe --mode=unattended', 'unins000.exe /VERYSILENT']) assert.ok(SILENT.test(s), `silent: ${s}`);
         assert.ok(!SILENT.test('"C:\\Program Files\\App\\unins000.exe"') && !SILENT.test('MsiExec.exe /X{4391AF95}'), 'an interactive uninstaller is not silent');
 
-        const a = apply(['t-scratch', 't-cache', 't-brave', 't-gone', 't-vendor', 't-notool'], rules, ctx);
+        const a = apply(['t-scratch', 't-cache', 't-brave', 't-gone', 't-vendor', 't-notool', 't-temp'], rules, ctx);
         const o = Object.fromEntries(a.rows.map(r => [r.id, r]));
         assert.equal(o['t-scratch'].outcome, 'deleted');
         assert.ok(!existsSync(join(temp, 'claude', 'C--p', U(2))) && existsSync(join(temp, 'claude', 'C--p', U(1))), 'live scratch survives');
+        assert.ok(existsSync(join(temp, 'claude', H, U(6), 'proj', '.git', 'HEAD')), 'scratch with a clone survives apply');
+        assert.ok(existsSync(join(temp, 'claude', H, U(1))) && !existsSync(join(temp, 'claude', H, U(5))), 'new layout: live chat\'s dir survives, the ended one goes');
+        assert.ok(!existsSync(join(temp, 'junk')) && existsSync(join(temp, 'wt', 'f')) && existsSync(join(temp, 'deep', 'a', 'b', '.git', 'HEAD')), 'apply deletes the plain temp entry and keeps the checkouts');
         assert.equal(o['t-cache'].outcome, 'deleted');
         assert.ok(existsSync(join(outside, 'keep.txt')), 'deleting a folder leaves the junction target intact');
         assert.equal(o['t-brave'].outcome, 'skipped');
@@ -805,7 +850,7 @@ function selftest() {
         assert.equal(o['t-gone'].outcome, 'skipped');
         assert.ok(o['t-vendor'].outcome === 'unchanged' && existsSync(join(local, 'vend', 'f')), 'a vendor clean that removed nothing is not followed by a delete');
         assert.ok(o['t-notool'].outcome === 'skipped' && /not installed/.test(o['t-notool'].notes.join()) && existsSync(join(local, 'Hash', 'bin', 'code')), 'a vendor rule whose tool is missing is held and deletes nothing');
-        assert.equal(read(join(tmp, 'claude', 'makarasty', 'cleanup-log.jsonl')).trim().split('\n').length, 6, 'every outcome is logged');
+        assert.equal(read(join(tmp, 'claude', 'makarasty', 'cleanup-log.jsonl')).trim().split('\n').length, 7, 'every outcome is logged');
 
         if (WIN) {
             const c2 = { ...ctx, volumes: [{ drive: tmp.slice(0, 2), maxMB: 1, nuke: 0 }], sid: 'S-1-selftest' };
@@ -815,6 +860,10 @@ function selftest() {
             assert.match(recycleOne({ path: join(outside, 'keep.txt'), bytes: 1, links: 0 }, { ...c2, volumes: [{ ...c2.volumes[0], maxMB: 1e6 }] }).why, /OneDrive/, 'nothing inside OneDrive goes through the local bin');
             assert.match(recycleOne({ path: outside, bytes: 1, links: 0 }, { ...c2, volumes: [{ ...c2.volumes[0], nuke: 1 }] }).why, /off or unknown/);
         }
+        const adm = [{ id: 't-adm', title: 'a', tier: 'admin', method: 'delete', paths: ['%LOCALAPPDATA%\\vend'], minMB: 0 }], t0 = Date.now();
+        const none = admin(['no-such-rule'], adm); // no ctx: it must not gather (a process list and a scan) for an id no admin rule owns
+        assert.ok(Date.now() - t0 < 3000 && !none.ids.length && none.missing.join() === 'no-such-rule', 'admin: an unknown id is rejected before any scan');
+        assert.deepEqual(admin(['t-adm'], adm, ctx).ids, ['t-adm'], 'admin: a known admin id still gets its .bat lines');
         console.log(`machine.mjs selftest done (${process.platform}, node ${process.version})`);
     } finally {
         for (const k of Object.keys(process.env)) if (!(k in saved)) delete process.env[k];
