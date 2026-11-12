@@ -72,15 +72,24 @@ worktree", "без вопросов") decide the route and are not asked again.
 ## On the codeword
 
 1. `hold.mjs release`, read `index.md` and each `NN.md`, list every item once. No items: say so, stop.
-2. **Ask once**, unless the person said to execute at once: one AskUserQuestion with every `?` word, every
-   proposed merge (the merged item stays, marked `merged→NN`) and every item lacking a route, the
-   recommended option first. Add the route (fix here, or a fleet for a long list) and, as a multi-select,
-   the improvements the groups make cheap. Nothing to ask: skip it.
+2. **Say what done means, per item.** For every item, `hold.mjs means NN '<one line per sub-ask>'` (add
+   `--visual` when the person judges it on a screen). It sits beside the quote, never in place of it; the
+   closing table is reconciled against it, so a sub-ask nobody wrote down is a sub-ask nobody finishes.
+   A breadth word ("все", "везде", "глобально", "по всем") or an unclear object ("что это за штука?"): count
+   the scope first (a Haiku sweep, `model: "haiku"`), `hold.mjs scope NN <n> <N>`, and ask. An item without
+   either is not asked: its means line is the plan.
+   **Ask once**, unless the person said to execute at once: one AskUserQuestion with every breadth item as
+   "N of N as listed / ask per item" (the count in the text), every unclear object and `?` word, every proposed
+   merge (the merged item stays, marked `merged→NN`) and every item lacking a route, the recommended option
+   first. Add the route (fix here, or a fleet for a long list) and, as a multi-select, the improvements the
+   groups make cheap. Nothing to ask: skip it. A repeat (`back=<id>/NN` from `add`, shown `came back:` in the
+   table) gets its old `NN.md` and evidence read by the fixer: the first fix did not hold.
 3. **Group by cause**, not by screen: items sharing a component, a style token or a layout primitive are one
    group, fixed in the shared piece, then every user of it checked. A short read-only look at the code is
    fine to name the shared piece. Show a short plan by group.
 4. **Route.** A fleet: write the groups into the folder's `index.md` as the mission and run
-   `/makarasty:fleet-plan` with its path. Here: steps 5-7.
+   `/makarasty:fleet-plan` with its path; every task it files names its items (`hold: 03, 07`), carries the
+   quote and the `img/` paths, and `hold.mjs cover <run dir>` must pass before the first claim. Here: steps 5-7.
 5. **Reuse what the project has**: its own button, popup, table, skeleton and spacing primitives; no new
    global style overrides.
 6. **Fan out**: one subagent per group (groups sharing a file run in one agent), `model: "sonnet"`,
@@ -91,16 +100,25 @@ worktree", "без вопросов") decide the route and are not asked again.
    item also tries empty, long and error data. The look goes to a `makarasty:fleet-scenario` agent
    (`model: "sonnet"`, `effort: "high"`) after `/makarasty:fleet-login`, in every theme; without a pane a
    visual fix is reported as not checked. To show the person, `/makarasty-tools:proof`.
-8. Write each verdict: `hold.mjs status NN done|partial|not-done|merged→NN '<evidence>'`. Evidence goes in single quotes (a `;` inside splits the command) and is an
+8. Write each verdict: `hold.mjs status NN done|partial|not-done|unseen|merged→NN '<evidence>'`. Evidence goes in single quotes (a `;` inside splits the command) and is an
    existing path (`file:line`) or three words or more; `partial` reads `<done part>; left: <rest>`.
+   A screen item (it has `img:` or `--visual`) is `done` only with an "after" screenshot saved as
+   `<dir>/img/NN-after.<ext>` and judged by a separate agent (`makarasty:fleet-design-eye` or
+   `fleet-scenario`, never the worker that fixed it) given his quote, his `img/` shot and the after-shot; the
+   evidence names both: `'<what changed>; img/NN-after.png judge: <agent>'`. No look, or no pane: `unseen`.
+   A breadth item is `done` only when `scope` reads N of N. A "later", a compromise or a decision the
+   coordinator made for the person is `partial ... left:` or `not-done`, never prose.
 
 ## Report
 
-Not given until `hold.mjs check` exits 0. Then one line per item, in the person's language: status and why;
-what was not looked at; one line offering `/makarasty-tools:finish`. Folders holding only a `collecting`
-line: `hold.mjs clean`.
+Not given until `hold.mjs check` exits 0. Print `hold.mjs table` first: his numbers, not the task count;
+unfinished and repeated rows in full, done rows as one line. Then ONE AskUserQuestion that lists every number
+on the `ask:` line (partial, not-done, unseen, plus anything left or deferred) as "fix now / carry to the next
+hold (`hold.mjs carry`) / leave", the item's quote in the question text; a long list goes in one question
+with "all fix now / all carry / go one by one". Say what was not looked at and offer
+`/makarasty-tools:finish`. Folders holding only a `collecting` line: `hold.mjs clean`.
 
 ## Done when
 
-`check` passes: every item is final with its evidence, every fix made in the shared place with its users
+`check` passes: every item is final with its evidence and a `means:` line, every fix made in the shared place with its users
 checked, the index reads `released`, and the not-looked-at list is stated.

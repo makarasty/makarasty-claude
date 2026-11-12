@@ -462,6 +462,8 @@ repro: npm test -- egress-timeout   # fix and root tasks. One shell command that
                        # `cluster` writes a root's from its members' (below). Empty: the coordinator fills it in
 depends-on-ask: q1     # optional: the id of an `ask-operator` question whose default this task is built on; `answer-operator`
                        # names these tasks when the answer comes late. No script holds the task for it
+hold: 03, 07           # optional: the items of a hold list (makarasty/hold/<id>/NN.md) this task serves, as the person numbered them.
+                       # `hold.mjs cover <run>` (makarasty-tools) exits 1 while a live item is named by no task; `fleet.sh` ignores the key
 after: task-02-primitives   # optional, one id or several: `after: t01, t02` or `after: [t01, t02]`. `next` holds
                        # this task until those are done. Done is the done marker, not the coordinator's merge: see `base` below
 base: integration      # optional, code tasks, opt-in worktrees only (one chat edits the shared checkout: use `owns:`

@@ -323,6 +323,17 @@ yet. When the queue is in, count `tasks/ready/` against the plan. Measured 2026-
 script ran after a failed `&&`, two tasks were never filed and nothing said so, and a cp1252 character
 broke a third.
 
+**A mission that is a hold list (`makarasty/hold/<id>/`, the path came from the hold skill) keeps its items.**
+Each task header carries `hold: 03, 07` (the item numbers it serves, as the person numbered them) and the body
+carries the paths of those `NN.md` files and their `img/NN-*` screenshots: the verbatim quote and the picture,
+never your retelling, since workers that got a retelling fixed another object or a narrower scope. Add the
+`means:` lines of those items as the task's assertions, and for a screen item a last step: save the after-shot as
+`<dir>/img/NN-after.<ext>` (the worker does not judge it; a separate `fleet-design-eye` or `fleet-scenario`
+agent does, per the hold skill). Before the first claim or chip run
+`node "<tools plugin>/skills/hold/hold.mjs" --dir <hold dir> cover <run dir>`: while it exits 1 the run does not
+start; file a task for each item it lists, or ask the person to drop it. Fix tasks that a review files have no
+`hold:` line and need none.
+
 **A task that waits on the operator says so: `operator: <what they must do>`** - a permission, a
 credential, production access, a decision only they can make. File it with that line rather than leaving
 it, or the tasks behind it, out of the queue. Ask every such task in the launch turn, in one

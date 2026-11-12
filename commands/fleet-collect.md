@@ -260,6 +260,12 @@ set aside section, and `backlog.md` exists.
 
 ## Report
 
+A run from a hold list (tasks carry `hold: NN`) ends with the person's items, not the task count. Set each
+item's status from its tasks' results with `hold.mjs status` (`unseen` when no agent looked at a screen item;
+`partial ... left:` for a narrowed one, a "file later" or a trade-off you accepted: file the follow-up as a task
+now or list it), make `hold.mjs check` pass, and print `hold.mjs table` before anything else. Every number on
+its `ask:` line goes into the one closing question as fix now / carry / leave (hold skill, Report). Then:
+
 The banner from `fleet.sh summary`, then the set aside counts and the top three findings by severity under
 it, then **Rulings I made**: the judgement calls made without asking (a refuted claim, a handback, a tier
 bump, a defect filed as a fix task), each as what and why, so the operator can overturn one. They are the

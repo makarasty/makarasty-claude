@@ -11,7 +11,12 @@
 //   dir                                  print the folder
 //   add [--from FILE]                    FILE (else stdin): optional header lines `where:` `reading:` `flag:` `img:`,
 //                                        a `---` line, then the person's text. Prints `NN chars=.. img=ok/seen ..`
-//   status NN <st> <evidence...>         st = open done partial not-done dropped merged->NN (evidence after `--` may start with --)
+//   status NN <st> <evidence...>         st = open done partial not-done unseen dropped merged->NN (evidence after `--` may start with --).
+//                                        An item with `img:` or `visual: yes` is `done` only when the evidence names its img/NN-after.<ext> and `judge: <who>`; else `unseen`
+//   means NN <text> [--visual]           add a `means:` line (what done means, one per sub-ask); every non-dropped item needs one before check passes. --visual marks a screen item
+//   scope NN <n> <of>                    a breadth item ("all", "everywhere") touched n of `of`; `done` is refused while n < of
+//   table                                the closing table: non-done rows in full, done rows as one line, `ask:` lists every unfinished item
+//   cover <run dir>                      exit 1 and list the items no task under <run dir>/tasks names with a `hold: NN` line
 //   edit NN --from FILE                  replace the text, keep the old one in the file as `previous`
 //   drop NN <reason>                     the person removed the item (status dropped)
 //   check                                exit 1 and list every item or stray file that is not final
@@ -36,7 +41,7 @@ const lines = (s) => s.split('\n').filter((l) => l !== '');
 const fwd = (p) => p.replaceAll('\\', '/'); // a backslash path breaks in a Git Bash command line
 const one = (s) => String(s).replace(/\s+/g, ' ').trim();
 const DAY = 86400000;
-const FINAL = /^(done|partial|not-done|dropped|merged→\d+)$/;
+const FINAL = /^(done|partial|not-done|unseen|dropped|merged→\d+)$/;
 const root = join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'makarasty', 'hold');
 // Git Bash rewrites an argument that starts with / (see lib/msys.mjs). Undone for text; --from, --dir and --sid stay as given.
 
@@ -49,6 +54,7 @@ function parse(args) {
     if (raw) pos.push(a);
     else if (a === '--') raw = true;
     else if (a === '--all') opt.all = true;
+    else if (a === '--visual') opt.visual = true;
     else if (a.startsWith('--')) {
       const k = a.slice(2), v = ['from', 'dir', 'sid'].includes(k) ? args[++i] : unmsys(args[++i]);
       if (v === undefined) die(`${a} needs a value`);
@@ -165,6 +171,22 @@ function copyImgs(dir, nn, text, extra, k0 = 0) {
   return { out, seen: all.length, copied: got.size, missed };
 }
 
+// An earlier done item of this project with the same `where:` is a repeat: flagged, never merged.
+function backOf(dir, where) {
+  const pj = join(dir, 'project.txt');
+  if (!where || !existsSync(pj) || !existsSync(root)) return;
+  const proj = read(pj).trim(), w = one(where).toLowerCase();
+  for (const e of readdirSync(root)) {
+    const p = join(root, e);
+    if (resolve(p) === resolve(dir) || !existsSync(indexOf(p)) || !existsSync(join(p, 'project.txt')) || read(join(p, 'project.txt')).trim() !== proj) continue;
+    for (const i of items(p)) {
+      if (i.status !== 'done' || !existsSync(join(p, `${i.nn}.md`))) continue;
+      const m = /^where: (.*)$/m.exec(read(join(p, `${i.nn}.md`)));
+      if (m && one(m[1]).toLowerCase() === w) return `${e}/${i.nn}`;
+    }
+  }
+}
+
 function add(dir, opt) {
   const x = readInput(opt);
   ensureIndex(dir);
@@ -177,32 +199,50 @@ function add(dir, opt) {
   const im = copyImgs(dir, nn, x.text, x.img);
   const head = [`# ${nn}`, `time: ${new Date().toISOString()}`, 'status: open'];
   if (x.where) head.push(`where: ${one(x.where)}`);
+  const back = backOf(dir, x.where);
+  if (back) head.push(`back: ${back}`);
   head.push(...im.out);
   if (x.reading) head.push(`reading (the chat's, not the person's): ${one(x.reading)}`);
   writeFileSync(join(dir, `${nn}.md`), `${head.join('\n')}\n\n${quote(x.text)}\n`);
   appendFileSync(indexOf(dir), `${fmt({ nn, status: 'open', title: title(x.reading ?? x.text.split('\n').find((l) => l.trim()) ?? ''), flags: x.flag.join(', ').replaceAll('|', '/') })}\n`);
   if (opt.from && resolve(opt.from).startsWith(resolve(dir, 'inbox'))) rmSync(opt.from, { force: true });
-  console.log(`${nn} chars=${x.text.length} img=${im.copied}/${im.seen}${im.missed.length ? ` missed: ${im.missed.join(', ')}` : ''} where=${x.where ? one(x.where) : '-'}${dup ? ` dup=${dup.nn}` : ''}`);
+  console.log(`${nn} chars=${x.text.length} img=${im.copied}/${im.seen}${im.missed.length ? ` missed: ${im.missed.join(', ')}` : ''} where=${x.where ? one(x.where) : '-'}${dup ? ` dup=${dup.nn}` : ''}${back ? ` back=${back}` : ''}`);
 }
 
 // ---- status and its evidence ----
-function evidenceOk(st, ev) {
+// What an item file says about itself: its `means:` lines, whether it is a screen item, its breadth count.
+// New rules (means, after-shot, scope) apply only to holds made after they shipped: init drops this marker.
+const strict = (dir) => existsSync(join(dir, 'rules2'));
+function meta(dir, nn) {
+  const f = join(dir, `${nn}.md`), b = existsSync(f) ? read(f) : '', sc = /^scope: (\d+) of (\d+)$/m.exec(b);
+  return { means: [...b.matchAll(/^means: (.*\S.*)$/gm)].map((m) => m[1]), visual: /^visual: yes$/m.test(b) || /^img: /m.test(b), scope: sc && [+sc[1], +sc[2]] };
+}
+// `done` of a screen item needs a look: its after-shot exists and a judge other than the worker is named.
+const bare = (t) => t.replace(/^["'(]|["'),.;]$/g, '');
+// The shot may be written img/NN-after.png, with the hold dir in front, or with backslashes.
+const afterOk = (dir, nn, ev) => ev.split(' ').map((t) => bare(t).replaceAll('\\', '/')).some((t) => { const m = new RegExp(`(?:^|/)(img/${nn}-after\\.\\w+)$`).exec(t); return m && existsSync(join(dir, m[1])); }) && /judge:\s*(?!(?:none|no|n\/a|self|-)(?:\s|$))\S/i.test(ev);
+function evidenceOk(st, ev, c) {
   ev = one(ev);
   if (st === 'dropped') return ev !== '';
+  if (st === 'done' && c && strict(c.dir)) {
+    if (c.scope && c.scope[0] < c.scope[1]) return false;
+    if (c.visual && !afterOk(c.dir, c.nn, ev)) return false;
+  }
   if (st === 'partial' && !/(left|осталось):\s*\S/i.test(ev)) return false;
   const path = ev.split(' ').some((t) => { const p = t.replace(/:\d+(?:[-,]\d+)*$/, '').replace(/^["'(]|["'),.;]$/g, ''); return /[\\/.]/.test(p) && existsSync(p); });
   return path || ev.split(' ').length >= 3;
 }
-const WHY = { partial: 'partial needs "<what is done>; left: <what is not>"', dropped: 'dropped needs the reason' };
+const WHY = { partial: 'partial needs "<what is done>; left: <what is not>"', dropped: 'dropped needs the reason', done: 'a screen item (img: or visual: yes) is done only with its img/NN-after.<ext> in the evidence plus "judge: <other agent>", else unseen; a breadth item (scope: n of N) only when n = N' };
 function status(dir, nn, st, ev, force = false) {
   nn = pad(+nn);
   st = st.replace('->', '→').replace(/^merged-(\d+)$/, 'merged→$1');
   const m = /^merged→(\d+)$/.exec(st);
   if (m) st = `merged→${pad(+m[1])}`;
-  if (st !== 'open' && !FINAL.test(st)) die(`"${st}" is not open, done, partial, not-done, dropped or merged→NN`);
+  if (st !== 'open' && !FINAL.test(st)) die(`"${st}" is not open, done, partial, not-done, unseen, dropped or merged→NN`);
   if (m && !existsSync(join(dir, `${pad(+m[1])}.md`))) die(`merged target ${pad(+m[1])} does not exist`);
   if (m && pad(+m[1]) === nn) die('an item cannot merge into itself');
-  if (!force && st !== 'open' && !m && !evidenceOk(st, ev)) die(`${st} needs evidence: an existing path (file:line) or at least three words${WHY[st] ? `; ${WHY[st]}` : ''}`);
+  if (m && strict(dir) && meta(dir, nn).visual && !meta(dir, pad(+m[1])).visual) die('a screen item cannot merge into a text item: nobody looks at it; give it its own status');
+  if (!force && st !== 'open' && !m && !evidenceOk(st, ev, { dir, nn, ...meta(dir, nn) })) die(`${st} needs evidence: an existing path (file:line) or at least three words${WHY[st] ? `; ${WHY[st]}` : ''}`);
   const its = items(dir), it = its.find((i) => i.nn === nn);
   if (!it) die(`no item ${nn}`);
   it.status = st;
@@ -223,8 +263,10 @@ function problems(dir) {
     else if (i.status.startsWith('merged')) {
       const t = by[i.status.split('→')[1]];
       if (!t) bad.push(`${i.nn} merges into a missing item: ${i.title}`);
+      else if (strict(dir) && meta(dir, i.nn).visual && !meta(dir, t.nn).visual) bad.push(`${i.nn} is a screen item merged into the text item ${t.nn}: nobody looks at it`);
       else if (!FINAL.test(t.status) || t.status.startsWith('merged')) bad.push(`${i.nn} merges into ${t.nn}, which is ${t.status} (a merge needs a final, unmerged target): ${i.title}`);
-    } else if (!evidenceOk(i.status, m[2] ?? '')) bad.push(`${tag} (evidence missing or too thin${WHY[i.status] ? `; ${WHY[i.status]}` : ''})`);
+    } else if (!evidenceOk(i.status, m[2] ?? '', { dir, nn: i.nn, ...meta(dir, i.nn) })) bad.push(`${tag} (evidence missing or too thin${WHY[i.status] ? `; ${WHY[i.status]}` : ''})`);
+    else if (strict(dir) && /^(done|partial|unseen)$/.test(i.status) && !meta(dir, i.nn).means.length) bad.push(`${tag} (no means: line; say what done means: hold.mjs means ${i.nn} '<text>')`);
   }
   for (const n of files(dir)) if (!by[n]) strays.push(`${n}.md is not in index.md`);
   const open = firstLine(dir).startsWith('released') ? [] : [`index.md still reads "${firstLine(dir)}": run release`];
@@ -238,6 +280,51 @@ function check(dir) {
   if (open.length) console.log(open.join('\n'));
   if (all.length || strays.length || open.length) { console.log(`${bad.length} of ${its.length} items not final`); process.exit(1); }
   console.log(`ok, ${its.length} items final`);
+}
+
+function means(dir, nn, text, visual) {
+  nn = pad(+nn);
+  const f = join(dir, `${nn}.md`);
+  if (!existsSync(f)) die(`no item ${nn}`);
+  if (!one(text)) die('means needs the text');
+  const add = [`means: ${one(text)}`, ...(visual && !meta(dir, nn).visual ? ['visual: yes'] : [])].join('\n');
+  const b = read(f);
+  if (!/^status:/m.test(b)) die(`${nn}.md has no status line`);
+  writeFileSync(f, b.replace(/^status:.*$/m, (m) => `${m}\n${add}`));
+}
+function scope(dir, nn, n, of) {
+  nn = pad(+nn);
+  const f = join(dir, `${nn}.md`);
+  if (!existsSync(f)) die(`no item ${nn}`);
+  if (!/^\d+$/.test(n) || !/^[1-9]\d*$/.test(of) || +n > +of) die('scope needs <n> <of> with n <= of, both counted, not guessed');
+  const b = read(f), line = `scope: ${+n} of ${+of}`;
+  if (!/^status:/m.test(b)) die(`${nn}.md has no status line`);
+  writeFileSync(f, /^scope:.*$/m.test(b) ? b.replace(/^scope:.*$/m, line) : b.replace(/^status:.*$/m, (m) => `${m}\n${line}`));
+}
+
+// The closing table, by the person's numbers: non-done rows and repeats in full, done rows as one line.
+function table(dir) {
+  const done = [], rows = [], ask = [];
+  for (const i of items(dir)) {
+    const f = join(dir, `${i.nn}.md`), b = existsSync(f) ? read(f) : '', m = /^status: (\S+)(?: \| (.*))?$/m.exec(b), st = m?.[1] ?? i.status;
+    const back = /^back: (.*)$/m.exec(b)?.[1], q = existsSync(f) ? title(textOf(f)) : i.title;
+    if (st === 'done' && !back) { done.push(i.nn); continue; }
+    rows.push(`${i.nn} | ${st} | ${q} | ${m?.[2] ?? '-'}${back ? ` | came back: ${back}` : ''}`);
+    if (!/^(done|dropped|merged)/.test(st)) ask.push(i.nn);
+  }
+  console.log([...rows, `done: ${done.join(' ') || '-'}`, `ask: ${ask.join(' ') || '-'}`].join('\n'));
+}
+
+const walk = (d) => readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(d, e.name)) : e.name.endsWith('.md') ? [join(d, e.name)] : []));
+// Every live item must be named by a `hold: NN[, NN]` line of some task file; the fleet does not start otherwise.
+function cover(dir, run) {
+  const t = join(resolve(run), 'tasks');
+  if (!existsSync(t)) die(`no ${t}`);
+  const named = new Set();
+  for (const f of walk(t)) for (const m of read(f).matchAll(/^hold:[ \t]*([^#\n]*)/gm)) for (const n of m[1].match(/\d+/g) ?? []) named.add(pad(+n));
+  const miss = items(dir).filter((i) => !/^(dropped|merged)/.test(i.status) && !named.has(i.nn));
+  if (miss.length) { console.log(`no task names these items (add a hold: line, or ask to drop them):\n${miss.map((i) => `${i.nn} ${i.title}`).join('\n')}`); process.exit(1); }
+  console.log(`ok, ${items(dir).length} items covered`);
 }
 
 function release(dir, opt) {
@@ -275,7 +362,7 @@ function carry(dir, src, all) {
   ensureIndex(dir, firstLine(from).split(' ')[1] ?? 'абрикос');
   const tag = basename(from);
   if (files(dir).some((n) => new RegExp(`^carried: ${tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/`, 'm').test(read(join(dir, `${n}.md`))))) die(`already carried from ${tag}`);
-  const rank = { 'not-done': 0, partial: 1, open: 2 };
+  const rank = { 'not-done': 0, partial: 1, unseen: 1, open: 2 };
   const old = items(from).filter((i) => all || rank[i.status] !== undefined);
   old.sort((a, b) => (rank[a.status] ?? 3) - (rank[b.status] ?? 3) || +a.nn - +b.nn);
   const map = [];
@@ -319,7 +406,7 @@ function clean() {
     let dead = false, at = p;
     if (st.isFile()) dead = e.endsWith('.md') && lone(p);
     else {
-      const names = readdirSync(p).filter((x) => !(['img', 'inbox'].includes(x) && readdirSync(join(p, x)).length === 0) && x !== 'project.txt');
+      const names = readdirSync(p).filter((x) => !(['img', 'inbox'].includes(x) && readdirSync(join(p, x)).length === 0) && x !== 'project.txt' && x !== 'rules2');
       dead = names.length === 1 && names[0] === 'index.md' && lone(join(p, 'index.md'));
       at = join(p, 'index.md');
     }
@@ -336,6 +423,7 @@ switch (verb) {
     // shortcut: minute resolution, a second archive in the same minute gets a -2 suffix only once; upgrade if holds are released that fast
     if (existsSync(indexOf(d)) && firstLine(d).startsWith('released')) { const t = new Date(), s = `${t.getFullYear()}${pad(t.getMonth() + 1)}${pad(t.getDate())}-${pad(t.getHours())}${pad(t.getMinutes())}`; renameSync(d, existsSync(`${d}-${s}`) ? `${d}-${s}-2` : `${d}-${s}`); }
     ensureIndex(d, pos[0]); mkdirSync(join(d, 'inbox'), { recursive: true });
+    if (!existsSync(join(d, 'rules2')) && items(d).length === 0) writeFileSync(join(d, 'rules2'), '');
     if (!existsSync(join(d, 'project.txt'))) writeFileSync(join(d, 'project.txt'), `${process.cwd()}\n`);
     console.log(fwd(d)); break; }
   case 'dir': console.log(fwd(dirFor(opt))); break;
@@ -344,9 +432,13 @@ switch (verb) {
   case 'edit': need(1); edit(dirFor(opt), pos[0], opt); break;
   case 'drop': need(2); status(dirFor(opt), pos[0], 'dropped', pos.slice(1).join(' ')); break;
   case 'check': check(dirFor(opt)); break;
+  case 'means': need(2); means(dirFor(opt), pos[0], pos.slice(1).join(' '), opt.visual); break;
+  case 'scope': need(3); scope(dirFor(opt), pos[0], pos[1], pos[2]); break;
+  case 'table': table(dirFor(opt)); break;
+  case 'cover': need(1); cover(dirFor(opt), pos[0]); break;
   case 'release': release(dirFor(opt), opt); break;
   case 'carry': need(1); carry(dirFor(opt), pos[0], opt.all); break;
   case 'last': last(opt); break;
   case 'clean': clean(); break;
-  default: die('verbs: init dir add status edit drop check release carry last clean');
+  default: die('verbs: init dir add status edit drop means scope table cover check release carry last clean');
 }

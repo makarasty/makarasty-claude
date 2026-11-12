@@ -14,7 +14,10 @@ mkdirSync(tmp, { recursive: true });
 let pass = 0, fail = 0;
 const envFor = (env) => { const e = { ...process.env, CLAUDE_CONFIG_DIR: cfg, ...env }; for (const k of Object.keys(e)) if (e[k] === undefined) delete e[k]; return e; };
 const base = { CLAUDE_CODE_SESSION_ID: undefined, CLAUDE_SESSION_ID: undefined, MSYSTEM: undefined }; // the Git Bash undo is tested on its own
+// Old checks predate `means:`: a status call first gives the item a plain one, so they test what they tested.
 const run = (args, input = '', env = {}) => {
+  const k = args.indexOf('status'), sid = args[args.indexOf('--sid') + 1];
+  if (k >= 0 && sid && args[k + 1] && existsSync(join(env.CLAUDE_CONFIG_DIR ?? cfg, 'makarasty', 'hold', sid, `${String(+args[k + 1]).padStart(2, '0')}.md`)) && !/^means:/m.test(read(join(env.CLAUDE_CONFIG_DIR ?? cfg, 'makarasty', 'hold', sid, `${String(+args[k + 1]).padStart(2, '0')}.md`)))) run(['--sid', sid, 'means', args[k + 1], 'plain test means'], '', env);
   const r = spawnSync(process.execPath, [hold, ...args], { input, encoding: 'utf8', env: envFor({ ...base, ...env }) });
   return { out: r.stdout.replace(/\n+$/, ''), err: r.stderr, code: r.status ?? 128 };
 };
@@ -89,7 +92,10 @@ r = H('m', ['check']);
 t('check fails and lists open items', r.code === 1 && r.out.includes('01 open') && r.out.includes('02 open'), r.out);
 t('an unknown status is refused', H('m', ['status', '01', 'fixed', 'one two three']).code === 1);
 t('done with thin evidence (one word that is no path) is refused', H('m', ['status', '01', 'done', 'src/nope.css:12']).code === 1);
-t('done with three words is accepted', H('m', ['status', '01', 'done', 'fixed', 'in', 'the shared table style']).code === 0);
+t('a screen item (it has img:) is not done on words alone', H('m', ['status', '01', 'done', 'fixed', 'in', 'the shared table style']).code === 1);
+png(join(D('m'), 'img', '01-after.png'));
+t('a screen item is not done with an after-shot but no judge', H('m', ['status', '01', 'done', 'img/01-after.png fixed it']).code === 1);
+t('a screen item is done with its after-shot and a judge', H('m', ['status', '01', 'done', 'fixed in the shared table style; img/01-after.png judge: opus-eye']).code === 0);
 t('done with an existing path (file:line) is accepted', H('m', ['status', '02', 'done', `${hold}:12`]).code === 0);
 t('partial without a "left:" part is refused', H('m', ['status', '04', 'partial', 'header is done, footer is not']).code === 1);
 t('partial with "left:" is accepted', H('m', ['status', '04', 'partial', 'header done; left: footer']).code === 0);
@@ -98,7 +104,7 @@ t('merge into a missing item is refused', H('m', ['status', '05', 'merged→09']
 t('merge into itself is refused', H('m', ['status', '05', 'merged→05']).code === 1);
 t('merged->N is stored padded as merged→0N', H('m', ['status', '05', 'merged->2']).code === 0 && read(join(D('m'), 'index.md')).includes('05 | merged→02 |'), read(join(D('m'), 'index.md')));
 t('check passes when all are final and the index is released', H('m', ['check']).code === 0, H('m', ['check']).out);
-t('status lands in the item file and the index', /^status: done \| fixed in the shared table style$/m.test(read(join(D('m'), '01.md'))) && /^01 \| done \|/m.test(read(join(D('m'), 'index.md'))));
+t('status lands in the item file and the index', /^status: done \| fixed in the shared table style; img\/01-after\.png judge: opus-eye$/m.test(read(join(D('m'), '01.md'))) && /^01 \| done \|/m.test(read(join(D('m'), 'index.md'))));
 r = (writeFileSync(join(D('m'), '09.md'), '# 09\n'), H('m', ['check']));
 t('a stray item file is listed under strays, apart from the items', r.code === 1 && r.out.includes('strays:\n09.md is not in index.md') && !/^09 /m.test(r.out), r.out);
 rmSync(join(D('m'), '09.md'));
@@ -235,6 +241,66 @@ t('no temp index file is left behind', !readdirSync(D('msys')).some((f) => f.end
 H('paths', ['init']);
 let t0 = Date.now(); r = H('paths', ['add'], '/a.png '.repeat(4000));
 t('a paste naming 4000 image paths is recorded in seconds, not minutes (a budget of file checks)', r.code === 0 && Date.now() - t0 < 5000, `${Date.now() - t0} ms ${r.err}`);
+
+// 10b. closing table, means, scope, cover, came back
+console.log('table, means, scope, cover, back');
+{
+  const P = (sid) => writeFileSync(join(D(sid), 'project.txt'), 'proj1\n');
+  H('tb1', ['init']); P('tb1');
+  H('tb1', ['add'], 'where: /orders\n---\nвсе таблицы без паддинга');
+  H('tb1', ['add'], 'вторая мелочь');
+  H('tb1', ['add'], 'третья мелочь');
+  H('tb1', ['release']);
+  const runDir = join(tmp, 'run1'); mkdirSync(join(runDir, 'tasks', 'ready'), { recursive: true });
+  writeFileSync(join(runDir, 'tasks', 'ready', 't1.md'), '---\ntask-id: t1\n---\nhold: 01, 03\n');
+  r = H('tb1', ['cover', runDir]);
+  t('cover refuses while an item has no task and names it', r.code === 1 && r.out.includes('02 ') && !r.out.includes('03 '), r.out);
+  writeFileSync(join(runDir, 'tasks', 'ready', 't2.md'), 'hold: 2\n');
+  t('cover passes once every item is named', H('tb1', ['cover', runDir]).code === 0);
+  H('tb1', ['drop', '3', 'человек убрал']);
+  spawnSync(process.execPath, [hold, '--sid', 'tb1', 'status', '02', 'done', 'fixed in the shared place'], { env: envFor(base) }); // bypasses run(), which adds a means
+  t('check wants a means: line for a done item', H('tb1', ['check']).out.includes('no means:'), H('tb1', ['check']).out);
+  H('tb1', ['means', '2', 'second thing fixed in the shared place']);
+  t('means is stored beside the status', /^means: second thing fixed/m.test(read(join(D('tb1'), '02.md'))));
+  H('tb1', ['means', '1', 'every table has padding', '--visual']);
+  t('--visual marks the item as a screen item', /^visual: yes$/m.test(read(join(D('tb1'), '01.md'))));
+  t('scope refuses n > of and non-counts', H('tb1', ['scope', '1', '5', '4']).code === 1 && H('tb1', ['scope', '1', 'x', '4']).code === 1);
+  H('tb1', ['scope', '1', '2', '14']);
+  t('scope is stored as "n of N"', /^scope: 2 of 14$/m.test(read(join(D('tb1'), '01.md'))));
+  png(join(D('tb1'), 'img', '01-after.png'));
+  t('a 2 of 14 item is not done even with after-shot and judge', H('tb1', ['status', '01', 'done', 'img/01-after.png judge: opus-eye all fixed']).code === 1);
+  t('it can be partial with left:', H('tb1', ['status', '01', 'partial', 'two done; left: 12 tables']).code === 0);
+  H('tb1', ['scope', '1', '14', '14']);
+  t('14 of 14 plus after-shot and judge is done', H('tb1', ['status', '01', 'done', 'img/01-after.png judge: opus-eye all fixed']).code === 0);
+  H('tb1', ['status', '01', 'unseen', 'code changed, screen not opened']);
+  t('unseen is a final status', H('tb1', ['check']).code === 0, H('tb1', ['check']).out);
+  r = H('tb1', ['table']);
+  t('table shows unseen in full, done as one line, and asks about the unseen', r.out.includes('01 | unseen |') && r.out.includes('done: 02') && r.out.includes('ask: 01'), r.out);
+  // came back: same project, same where, an earlier done item
+  H('tb2', ['init']); P('tb2');
+  r = H('tb2', ['add'], 'where: /orders\n---\nопять таблица кривая');
+  t('a where equal to an earlier done item of the project prints back=', r.out.includes('back=tb1/') === false, r.out); // 01 is unseen now: not a repeat
+  H('tb1', ['status', '01', 'done', 'img/01-after.png judge: opus-eye all fixed']);
+  H('tb3', ['init']); P('tb3');
+  r = H('tb3', ['add'], 'where: /ORDERS\n---\nвернулось');
+  t('after the earlier item is done the repeat is flagged, case ignored', r.out.endsWith('back=tb1/01') && /^back: tb1\/01$/m.test(read(join(D('tb3'), '01.md'))), r.out);
+  H('tb3', ['means', '1', 'x y z']); H('tb3', ['release']); H('tb3', ['status', '01', 'not-done', 'not yet fixed here']);
+  t('table shows the repeat in full with its mark', H('tb3', ['table']).out.includes('came back: tb1/01'));
+  writeFileSync(join(runDir, 'tasks', 'ready', 't3.md'), 'hold: [01]   # items\n');
+  t('cover reads the list form and a trailing comment', H('tb1', ['cover', runDir]).code === 0 && (rmSync(join(runDir, 'tasks', 'ready', 't1.md')), H('tb1', ['cover', runDir]).code === 0));
+  H('tb5', ['init']); H('tb5', ['add'], 'x'); H('tb5', ['means', '1', 'one thing', '--visual']); png(join(D('tb5'), 'img', '01-after.png'));
+  t('an after-shot given with the hold dir in front or backslashes is found; judge: none is not a judge',
+    H('tb5', ['status', '01', 'done', `${F(D('tb5'))}/img/01-after.png judge: none`]).code === 1 && H('tb5', ['status', '01', 'done', `${D('tb5')}\\img\\01-after.png judge: opus-eye`]).code === 0);
+  H('tb5', ['add'], 'text item'); H('tb5', ['means', '2', 'y z']); H('tb5', ['status', '02', 'done', 'fixed in the shared place']);
+  H('tb5', ['add'], 'screen two'); H('tb5', ['means', '3', 'screen ok', '--visual']);
+  t('a screen item cannot merge into a text item', H('tb5', ['status', '03', 'merged→02']).code === 1);
+  H('tb5', ['status', '03', 'unseen', 'code changed, screen not opened']); H('tb6', ['init']);
+  t('carry takes an unseen item', H('tb6', ['carry', 'tb5']).out.startsWith('carried 1 of 3'), H('tb6', ['carry', 'tb5']).out);
+  mkdirSync(join(D('old1'), 'img'), { recursive: true }); writeFileSync(join(D('old1'), 'index.md'), 'released x\n01 | done | t |\n'); writeFileSync(join(D('old1'), '01.md'), '# 01\nstatus: done | fixed in the old way\n\n> t\n');
+  t('a hold made before these rules (no rules2 marker) still passes check without means', H('old1', ['check']).code === 0, H('old1', ['check']).out);
+  H('tb4', ['init']); writeFileSync(join(D('tb4'), 'project.txt'), 'other\n');
+  t('another project is never a repeat', !H('tb4', ['add'], 'where: /orders\n---\nx').out.includes('back='));
+}
 
 // 11. bad use
 t('an unknown verb exits 1', run(['nope']).code === 1);

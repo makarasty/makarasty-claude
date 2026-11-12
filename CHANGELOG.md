@@ -1,5 +1,23 @@
 # Changelog
 
+## makarasty 1.18.4 — 2026-11-12
+
+- **fleet-plan, fleet-collect: a hold list keeps its items through a run.** In five traced holds (151 items) 31-41%
+  ended unfinished although every item had a task: tasks were narrower than his words, his screenshots never
+  reached workers, and runs closed on a task count. fleet-plan now gives each task a `hold: NN` line, the verbatim
+  quote and the `img/` paths, and does not start the run while `hold.mjs cover` lists an item with no task;
+  fleet-collect ends such a run with the per-item table and one question for every unfinished number.
+
+## makarasty-tools 1.19.19 — 2026-11-12
+
+- **hold: closing table, done-means, look before done, repeats.** `table` prints his numbers with status and
+  evidence (done rows as one line, `ask:` = every unfinished number, each goes into one fix/carry/leave question).
+  `means NN` records what done means per item (`check` needs it on done/partial/unseen). A screen item is `done`
+  only with `img/NN-after.<ext>` and `judge: <other agent>` in the evidence, else the new final status `unseen`.
+  `scope NN n N` blocks `done` while n < N (breadth words: count first, ask on "N of N"). `add` marks a repeat
+  (`back: <id>/NN`, same project and `where:` as an earlier done item). `cover <run dir>` backs fleet-plan.
+  Selftest 101 checks; holds made before these rules (no `rules2` marker) keep the old check. Source of the numbers: the 5-session loss trace, 2026-11-12.
+
 ## makarasty-tools 1.19.18 — 2026-11-12
 
 - **inbox: a started session's question is asked in the inbox:** 1.19.11 refused re-asking an AskUserQuestion of a
