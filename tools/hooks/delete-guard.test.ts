@@ -351,3 +351,10 @@ test('Monitor is a shell: its command is read like Bash', async () => {
   expect(await denial('rm -rf ..', 'Monitor', WIN)).toContain('delete-guard')
   expect(await denial('rm -rf dist', 'Monitor', WIN)).toBeNull()
 })
+
+// Review round 3: Git Bash's cmd //c, cmd /k, and Windows PowerShell's positional command.
+test('cmd //c, cmd /k and a positional powershell command are read as the inner command line', () => {
+  expect(['cmd //c "rd /s /q .."', 'cmd //c rd //s //q ..', 'cmd /k "rd /s /q .."', 'powershell Remove-Item -Recurse -Force ..', 'powershell "Remove-Item -Recurse -Force .."',
+    'pwsh -NoProfile Remove-Item -Recurse -Force ..', 'powershell -Com "Remove-Item -Recurse -Force .."'].filter((c) => !check(c, 'Bash', WIN))).toEqual([])
+  expect(['cmd //c "rd /s /q dist"', 'cmd //c rd //s //q dist', 'powershell Remove-Item -Recurse -Force dist', 'powershell -File clean.ps1', 'powershell Get-ChildItem ..'].filter((c) => check(c, 'Bash', WIN))).toEqual([])
+})

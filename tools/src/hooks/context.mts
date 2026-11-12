@@ -90,7 +90,7 @@ try {
   // the command, an imperative, or the word nearly alone; a prompt that merely mentions it still gets
   // the reminder. A miss only defers the reminder by one prompt.
   const p = String(ev.prompt || '').trim();
-  const word = '(hand-?\\s?off|хенд-?\\s?офф)';
+  const word = '(hand-?\\s?of{1,2}|х[еэ]нд-?\\s?оф{1,2})';
   if (
     /^\/(makarasty-tools:)?handoff\b/i.test(p) ||
     new RegExp(`^(сделай|давай|do|make)\\s.{0,40}${word}`, 'i').test(p) ||

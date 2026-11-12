@@ -34,7 +34,8 @@ const clip = (s, n) => { s = String(s ?? '').replace(/\s+/g, ' ').trim(); return
 const MASKED = '‹masked›';
 const SECRETS = [
     [/\bBearer\s+\S+/gi, `Bearer ${MASKED}`],
-    [/([a-z][a-z0-9+.-]*:\/\/)[^\s/@:]+:[^\s/@]+@/gi, `$1${MASKED}@`],
+    // the scheme starts a word: unanchored this was quadratic (40k chars 2.4 s; 1 MB never returned)
+    [/(?<![a-z0-9+.-])([a-z][a-z0-9+.-]*:\/\/)[^\s/@:]+:[^\s/@]+@/gi, `$1${MASKED}@`],
     [/(password|passwd|пароль|token|secret|api[_-]?key|x-api-key)(["']?\s*[:=]\s*)["']?[^\s"']+/gi, `$1$2${MASKED}`],
     [/(?<![A-Za-z0-9])sk-[A-Za-z0-9_-]{16,}/g, MASKED],
     [/(?<![A-Za-z0-9])(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})/g, MASKED],
@@ -387,6 +388,7 @@ async function selftest() {
         for (const s of ['sk-abcdefghijklmnopqrstuv', 'ghp_' + 'a'.repeat(24), 'github_pat_' + 'a'.repeat(24), 'xoxb-1234567890-abc', 'AKIAABCDEFGHIJKLMNOP', 'eyJhbGciOi.eyJzdWIiOiIx.SflKxwRJSMeKKF2QT4', 'Bearer abc.def',
             'api_key=zzz', 'x-api-key: zzz', 'token: zzz', 'пароль: zzz', 'secret=zzz', 'passwd: zzz', 'a'.repeat(32), 'aB3'.repeat(12)]) assert.ok(mask(`x ${s} y`).includes('‹masked›') && !/zzz/.test(mask(s)), 'not masked: ' + s);
         assert.equal(mask('risk-assessment-framework src/components/features/authentication/x.ts'), 'risk-assessment-framework src/components/features/authentication/x.ts');
+        { const t = Date.now(); mask('x'.repeat(200000)); mask('a.b+'.repeat(50000)); assert.ok(Date.now() - t < 1000, `mask is linear: 400k chars took ${Date.now() - t} ms`); }
         console.log('chats.mjs selftest done');
     } finally { rmSync(root, { recursive: true, force: true }); }
 }

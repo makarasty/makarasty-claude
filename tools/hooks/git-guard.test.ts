@@ -444,3 +444,54 @@ test('Monitor is a shell: its command is read like Bash', () => {
   expect(denial('git reset --hard', false, 'Monitor')).toContain('git reset')
   expect(denial('git status', false, 'Monitor')).toBeNull()
 })
+
+// Review round 3.
+test('a PowerShell here-string commit message is text: an apostrophe in it does not un-pair the pipe scan', () => {
+  expect(check("git commit -m @'\nfix: it's why git push | tail hid errors\n'@", 'PowerShell')).toBeNull()
+  expect(check("git commit -m @\"\nfix: it's why git push | tail hid errors\n\"@", 'PowerShell')).toBeNull()
+  expect(check("git commit -m @'\nfix: it's why\n'@ | tail", 'PowerShell')).toContain('piping')
+  expect(check("git push | tail", 'PowerShell')).toContain('piping')
+})
+
+test('cmd //c (Git Bash) and cmd /k run their text as a command line', () => {
+  expect(['cmd //c git stash', 'cmd //c "git stash"', 'cmd /k git stash', 'cmd //k "git reset --hard"'].filter((c) => !check(c))).toEqual([])
+  expect(['cmd //c git status', 'cmd /k "git log"'].filter((c) => check(c))).toEqual([])
+})
+
+test('Windows PowerShell runs a bare first word as the command; -Com and other -Command prefixes too', () => {
+  expect(['powershell git stash', 'powershell "git reset --hard"', 'powershell -Com "git stash"', 'pwsh -NoProfile git stash', 'powershell.exe -NoProfile -ExecutionPolicy Bypass git stash',
+    'powershell -Comm git clean -fd'].filter((c) => !check(c))).toEqual([])
+  expect(['powershell git status', 'powershell -File x.ps1', 'powershell -NoProfile -Command "git log"', 'powershell "git stash list"'].filter((c) => check(c))).toEqual([])
+})
+
+test('adds and commits of the whole tree by pathspec are sweeps: *, :(top), commit ., commit -- ., commit :/', () => {
+  expect(['git add *', "git add '*'", 'git add ":(top)"', 'git add ":(top)."', 'git commit -m x .', 'git commit -m x -- .', 'git commit -m x :/', 'git commit . -m x'].filter((c) => !check(c))).toEqual([])
+  expect(['git add src/*', "git add '*.ts'", 'git add a.ts b.ts', 'git commit -m .', 'git commit -m x', 'git commit -m x -- src/a.ts', 'git commit -F msg.txt', 'git commit -m "a b" --author "x <y>"'].filter((c) => check(c))).toEqual([])
+  expect(check('git add *', 'Bash', { cwd: 'C:/wtmerge' })).toBeNull()
+})
+
+test('husky switched off for one command is a skipped hook, like --no-verify', () => {
+  expect(['HUSKY=0 git commit -m x', 'HUSKY_SKIP_HOOKS=1 git commit -m x', 'FOO=1 HUSKY=0 git push', 'git -c core.hooksPath=nohooks commit -m x'].filter((c) => !check(c))).toEqual([])
+  expect(['HUSKY=1 git commit -m x', 'HUSKY_SKIP_HOOKS=0 git commit -m x', 'HUSKY=0 npm test'].filter((c) => check(c))).toEqual([])
+})
+
+test('a heredoc scan over 160 KB of openers stays fast and still cuts a real heredoc body', () => {
+  const t = Date.now()
+  for (const c of ['git stash list ' + 'a<<b '.repeat(32000), 'git stash list\n' + 'x<<y\n'.repeat(32000)]) check(c)
+  expect(Date.now() - t).toBeLessThan(4000)
+  expect(check("git commit -F - <<'EOF'\ngit stash\nEOF")).toBeNull()
+  expect(check('git commit -m "a <<b"\ngit stash')).toContain('stash')
+})
+
+test('add -A with a pathspec file is scoped; a bare git init never makes a tree private, only the temp dir does', () => {
+  const W = { cwd: 'C:/Users/dev/proj', tmp: ['C:\Users\dev\AppData\Local\Temp'] }
+  expect(['git add -A --pathspec-from-file=$L', 'git add -A -- docs frontend/src server/src shared', 'cd /tmp/scratch && git init && git add -A', 'git init -q /tmp/z && cd /tmp/z && git add -A'].filter((c) => check(c, 'Bash', W))).toEqual([])
+  expect(['git add -A', 'git init -q && git add -A', 'cd $S && git init -q && git add -A', 'cd .. && git init && git add -A', 'cd C:/x/other && git init && git add -A', '(cd x && git init) && git add -A',
+    'git -C .. init && cd .. && git add -A', 'cd ..; git init -q; git commit -am wip', 'git add -A -- .', 'git add -A src .'].filter((c) => !check(c, 'Bash', W))).toEqual([])
+  expect(check('Set-Location ..; git init; git add -A', 'PowerShell', W)).not.toBeNull()
+})
+
+test('a pathspec list of excludes only is the whole tree: add -A ":!x", ":(exclude)x", add . ":!x", commit -m x ":^y"', () => {
+  expect(["git add -A ':!x'", "git add -A ':(exclude)x'", "git add . ':!x'", "git add ':!x'", "git add ':^x' ':!y'", "git add -A ':(glob,exclude)x'", "git commit -m x ':!y'"].filter((c) => !check(c))).toEqual([])
+  expect(["git add -A ':!x' src", "git add src ':!src/a.ts'", "git add ':(top)src'", "git commit -m x src ':!src/a.ts'"].filter((c) => check(c))).toEqual([])
+})

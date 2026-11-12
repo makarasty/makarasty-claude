@@ -96,7 +96,7 @@
 //
 // NOTIFY_DRY_RUN=<file> appends what would be sent to that file instead of sending. The self-test uses it.
 
-import { readFileSync, writeFileSync, appendFileSync, mkdirSync, rmSync, readdirSync, statSync, renameSync } from 'node:fs';
+import { readFileSync, writeFileSync, appendFileSync, mkdirSync, rmSync, readdirSync, statSync, renameSync, openSync, readSync, fstatSync, closeSync, existsSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { homedir, hostname } from 'node:os';
 import { randomBytes } from 'node:crypto';
@@ -326,8 +326,18 @@ const send = (text: string, excerpt?: string, kind?: Kind) => sendWith(config(),
 // Finishes that were written but never delivered, sent now. The wizard saving a channel and a reopened
 // chat both call this. A marker whose send is still running (done written, no unsent yet) is another
 // hook's job: it is skipped for a minute, after which its hook is past its 20 s timeout and dead. own is
-// the reopened chat's own marker, which no other hook can be sending.
+// the reopened chat's own marker, which no other hook can be sending. Two chats reopened at once both flush:
+// each marker is claimed by a rename first, so only one of them sends it (8 of 8 runs sent everything twice
+// before). A claim left by a killed hook goes back after a minute; the claim time is in its name, since a
+// rename keeps the marker's old mtime.
 async function flushUnsent(cfg: Config, own?: string) {
+  let all: string[] = []; try { all = readdirSync(markerDir); } catch { return 0; }
+  for (const f of all) {
+    const c = /^(.*\.json)\.flushing-(\d+)$/.exec(f);
+    if (!c || Date.now() - Number(c[2]) < 60e3) continue;
+    try { if (!existsSync(join(markerDir, c[1]!))) renameSync(join(markerDir, f), join(markerDir, c[1]!)); else rmSync(join(markerDir, f), { force: true }); } catch { /* taken meanwhile */ }
+  }
+  const putBack = (claim: string, file: string) => { try { if (!existsSync(file)) renameSync(claim, file); else rmSync(claim, { force: true }); } catch { /* gone meanwhile */ } };
   let files: string[] = []; try { files = readdirSync(markerDir).filter((f) => f.endsWith('.json')); } catch { return 0; }
   let n = 0;
   for (const f of files) {
@@ -335,10 +345,12 @@ async function flushUnsent(cfg: Config, own?: string) {
     const m = readJSON<Marker>(file);
     if (!m?.done) continue;
     if (file !== own && !m.unsent && Date.now() - Date.parse(m.done) < 60e3) continue;
+    const claim = `${file}.flushing-${Date.now()}`;
+    try { renameSync(file, claim); } catch { continue; } // another chat claimed it
+    if (readJSON<Marker>(claim)?.armed !== m.armed) { putBack(claim, file); continue; } // re-armed meanwhile
     const r = await sendWith(cfg, `${m.text}\n(finished at ${m.done}; this could not be delivered at the time)`, false, m.excerpt, 'done');
-    if (!r.sent.length) continue;
-    n++;
-    if (still(file, m)) rmSync(file, { force: true });
+    if (r.sent.length) { n++; rmSync(claim, { force: true }); }
+    else putBack(claim, file); // a newer arming that took the name wins; this finish then stays undelivered
   }
   return n;
 }
@@ -375,7 +387,18 @@ function prune() {
 // The END of the message: that is where a reply puts its verdict.
 const tail = (s: string, n = 500) => { const t = s.replace(/\s+/g, ' ').trim(); return t.length > n ? '...' + t.slice(-n) : t; };
 const textOf = (c: unknown): string => (Array.isArray(c) ? c.filter((b) => b?.type === 'text').map((b) => b.text).join('\n') : typeof c === 'string' ? c : '');
-const transcript = (file: string) => { try { return readFileSync(file, 'utf8').split('\n'); } catch { return []; } };
+// Only the last 8 MB: both readers walk back from the end, and a whole 600 MB transcript does not fit a
+// string (ERR_STRING_TOO_LONG) and took 17 s of the hook's 20. The first, cut line fails JSON.parse and is skipped.
+const TAIL = 8 * 1024 * 1024;
+const transcript = (file: string) => {
+  let fd: number | undefined;
+  try {
+    fd = openSync(file, 'r');
+    const size = fstatSync(fd).size, n = Math.min(size, TAIL), buf = Buffer.alloc(n);
+    readSync(fd, buf, 0, n, size - n);
+    return buf.toString('utf8').split('\n');
+  } catch { return []; } finally { if (fd !== undefined) closeSync(fd); }
+};
 
 // The transcript is the fallback when the event carries no last_assistant_message. It is written
 // asynchronously, so it may lag; the field is preferred.
@@ -620,7 +643,10 @@ async function main() {
     has('--arm');
     prune();
     const next = has('--next');
-    const label = args.join(' ').trim();
+    // Git Bash rewrites a label that starts with / (`/deploy` -> `C:/Program Files/Git/deploy`), quoted or not.
+    const gitRoot = process.env.MSYSTEM ? (process.env.EXEPATH || process.env.SHELL || '').replaceAll('\\', '/').replace(/\/(usr\/)?bin(\/[^/]*\.exe)?$/i, '') : '';
+    const raw = args.join(' ').trim();
+    const label = gitRoot && raw.toLowerCase().startsWith(`${gitRoot.toLowerCase()}/`) ? raw.slice(gitRoot.length) : raw;
     // This process runs in the ARMING chat's directory. For another chat that is the wrong project, so the
     // cwd is left out and the hook takes the one in that chat's own events.
     writeJSON(file, { armed: now(), label, ...(other ? {} : { cwd: process.cwd() }), ...(next ? { pending: true } : {}) });

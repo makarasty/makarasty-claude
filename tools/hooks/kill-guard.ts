@@ -69,12 +69,43 @@ function heredocs(cmd: string, nested: [string, string][]): string {
   return out.join('\n')
 }
 
+// The text where a substitution can still run: the body of a single-quoted string is inert in Bash and in PowerShell
+// (a backtick there is text, or PowerShell's escape). An unclosed quote hides nothing.
+function live(s: string, ps: boolean): string {
+  const esc = ps ? '`' : '\\'
+  let out = '', q = ''
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i]!
+    if (c === esc) { out += s.slice(i, i + 2); i++ }
+    else if (q) { if (c === q) q = ''; out += c }
+    else if (c === "'") { const e = s.indexOf("'", i + 1); if (e < 0) { out += s.slice(i); break } out += "''"; i = e }
+    else { if (c === '"') q = c; out += c }
+  }
+  return out
+}
+
+// Where the command of a `powershell`/`pwsh` line starts in its arguments: after -c/-Command (any prefix) or, Windows PowerShell's
+// positional form, at the first word past its own options. -File and -EncodedCommand run no readable text.
+function psStart(args: string[]): number {
+  for (let k = 0; k < args.length; k++) {
+    const a = args[k]!
+    if (/^-c(o(m(m(a(nd?)?)?)?)?)?$/i.test(a)) return k + 1
+    if (/^-(f(ile)?|e(c|nc\w*))$/i.test(a)) return -1
+    if (!a.startsWith('-')) return k
+    if (/^-(ex\w*|ep|w\w*|i\w*|o\w*|v\w*|conf\w*)$/i.test(a)) k++
+  }
+  return -1
+}
+
 export function check(cmd: string, tool = 'Bash', depth = 0): string | null {
   if (depth > 4) return null
   const lits: string[] = [], nested: [string, string][] = []
+  const ps = tool === 'PowerShell'
+  // A PowerShell single-quoted here-string (`@'..'@`) is text; `@".."@` still runs its `$(..)`, and in Bash `@'` is a quote after @.
   let text = heredocs(cmd, nested)
-  for (const m of text.matchAll(/\$\(([^()]*)\)|[<>]\(([^()]*)\)|`([^`]*)`/g)) nested.push([m[1] ?? m[2] ?? m[3]!, tool])
-  text = text.replace(/@'[\s\S]*?'@|@"[\s\S]*?"@/g, ' ').replace(/'([^']*)'|"((?:[^"\\]|\\.)*)"/g, (_, a?: string, b?: string) => `\u0001${lits.push(a ?? b ?? '') - 1}\u0001`)
+  if (ps) text = text.replace(/@'[\s\S]*?'@/g, ' ')
+  for (const m of live(text, ps).matchAll(ps ? /\$\(([^()]*)\)|[<>]\(([^()]*)\)/g : /\$\(([^()]*)\)|[<>]\(([^()]*)\)|`([^`]*)`/g)) nested.push([m[1] ?? m[2] ?? m[3]!, tool])
+  text = text.replace(/'([^']*)'|"((?:[^"\\]|\\.)*)"/g, (_, a?: string, b?: string) => `\u0001${lits.push(a ?? b ?? '') - 1}\u0001`)
     .replace(/\d*[<>]+&?\s*[^\s;&|()<>]+/g, ' ')
   const unq = (w: string): string => w.replace(/\u0001(\d+)\u0001/g, (_, n) => lits[+n]!)
   // The command word of one statement and its arguments, past wrappers (`sudo -u root`, `timeout -s KILL 5`, `VAR=x`).
@@ -98,8 +129,8 @@ export function check(cmd: string, tool = 'Bash', depth = 0): string | null {
         const { head, args } = parse(stmt)
         if (/^(eval|iex|invoke-expression)$/.test(head)) nested.push([args.join(' '), tool])
         else if (SHELL.test(head)) {
-          const f = args.findIndex((w) => SHELL_CMD.test(w))
-          if (f >= 0) nested.push([args.slice(f + 1).join(' '), /^(pwsh|powershell)$/.test(head) ? 'PowerShell' : 'Bash'])
+          const win = /^(pwsh|powershell)$/.test(head), f = win ? psStart(args) : args.findIndex((w) => SHELL_CMD.test(w)) + 1
+          if (f > 0 || (win && f === 0)) nested.push([args.slice(f).join(' '), win ? 'PowerShell' : 'Bash'])
         } else if (head === 'taskkill') {
           // By PID, or filtered on a PID, is fine; a name (/IM, or a /FI on anything but PID) is not.
           const pid = args.some((w) => /^[/-]{1,2}pid$/i.test(w))
@@ -108,7 +139,8 @@ export function check(cmd: string, tool = 'Bash', depth = 0): string | null {
           if (args.some((w) => /^[/-]{1,2}t$/i.test(w))) return TREE
         } else if (head === 'pkill' || head === 'killall') return `${head}: ${WHY}`
         else if (head === 'stop-process' || head === 'spps' || (head === 'kill' && tool === 'PowerShell')) {
-          if (args.some((w) => /^-n(a(m(e)?)?)?(:|$)/i.test(w))) return `Stop-Process -Name: ${WHY}`
+          // -ProcessName is -Name's alias.
+          if (args.some((w) => /^-(n(a(m(e)?)?)?|pr(o(c(e(s(s(n(a(m(e)?)?)?)?)?)?)?)?)?)(:|$)/i.test(w))) return `Stop-Process -Name: ${WHY}`
           const feeders = stages.slice(0, i).map((s) => parse(s.split(/[{}]/)[0]!))
           // Fed by a Get-Process that names no Id, the pipeline chose the processes by name, whatever -Id says after it.
           // ... unless a later stage narrows it to one Id (`| Where-Object { $_.Id -eq 4242 } |`).
@@ -118,7 +150,7 @@ export function check(cmd: string, tool = 'Bash', depth = 0): string | null {
           if (i > 0 && !args.some((w) => ID.test(w)) && !/-id\b|\.id\b|owningprocess/i.test(unq(stages.slice(0, i).join('|')))) return `<pipeline> | Stop-Process: ${WHY}`
           const sub = /-id[:\s]+\$?\(+\s*(?:get-process|gps)\b([^)]*)/i.exec(whole)
           if (sub && !/-id\b/i.test(sub[1]!)) return `Stop-Process -Id (Get-Process <name>).Id: ${WHY}`
-        } else if (head === 'kill' && (/\b(pgrep|pidof)\b/.test(whole) || (/\b(ps|tasklist)\b/.test(whole) && /\b(grep|findstr|awk)\b/.test(whole)))) return `kill with a PID looked up by name: ${WHY}`
+        } else if (head === 'kill' && (/\b(pgrep|pidof)\b/.test(whole) || (/\b(ps|tasklist)\b/.test(whole) && /\b(grep|findstr|awk)\b/.test(whole)) || /\bps\s[^|;&)]*-C\b/.test(whole))) return `kill with a PID looked up by name: ${WHY}`
       }
     }
   }

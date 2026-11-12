@@ -56,17 +56,43 @@ function guard(sec) {
   t.unref();
 }
 const alive = (pid) => { try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; } };
+// A lock is stale when its scan is dead, or older than twice the scan's own time limit (a hard kill leaves the file and
+// Windows reuses pids). Content is "pid start ttlMs", linked into place whole so a reader never sees it empty.
+export function lockStale(txt, mtimeMs, now, isAlive = alive) {
+  const [pid, start, ttl] = String(txt).trim().split(/\s+/).map(Number);
+  if (!pid) return now - mtimeMs > 10000; // empty or garbage: a writer may be mid-write, so only an old one is stale
+  if (now - (start || mtimeMs) > (ttl || 30 * 60000)) return true;
+  return !isAlive(pid);
+}
+// Takes the lock file judged stale while its text was `txt`: renamed to a name of ours and read; if it is not what was judged,
+// another scan linked its own lock in between, so it goes back (a link never overwrites) and nothing is stolen.
+// shortcut: for that moment the owner's lock is missing; a third scan in that instant could take it.
+export function stealLock(lock, txt) {
+  const mine = `${lock}.${process.pid}.${Date.now()}.stale`;
+  try { fs.renameSync(lock, mine); } catch (e) { if (e.code === 'ENOENT') return true; throw e; }
+  let same = false;
+  try { same = fs.readFileSync(mine, 'utf8') === txt; } catch {}
+  if (!same) try { fs.linkSync(mine, lock); } catch {}
+  fs.rmSync(mine, { force: true });
+  return same;
+}
 function takeLock() {
   fs.mkdirSync(OUT_ROOT, { recursive: true });
-  for (let i = 0; i < 2; i++) {
-    try { fs.writeFileSync(LOCK, String(process.pid), { flag: 'wx' }); lockHeld = true; process.on('exit', releaseLock); return; }
-    catch (e) {
-      if (e.code !== 'EEXIST') throw e;
-      const pid = Number(fs.readFileSync(LOCK, 'utf8'));
-      if (pid && alive(pid)) die(`another tune scan is running (pid ${pid}); wait for it to finish`, 3);
-      fs.rmSync(LOCK, { force: true }); // stale lock of a dead scan
+  const tmp = `${LOCK}.${process.pid}.tmp`;
+  const ttl = HARD_END === Infinity ? 30 * 60000 : 2 * (HARD_END - Date.now());
+  fs.writeFileSync(tmp, `${process.pid} ${Date.now()} ${Math.round(ttl)}`);
+  try {
+    for (let i = 0; i < 2; i++) {
+      try { fs.linkSync(tmp, LOCK); lockHeld = true; process.on('exit', releaseLock); return; }
+      catch (e) {
+        if (e.code !== 'EEXIST') throw e;
+        let txt = '', m = 0;
+        try { txt = fs.readFileSync(LOCK, 'utf8'); m = fs.statSync(LOCK).mtimeMs; } catch { continue; }
+        if (!lockStale(txt, m, Date.now())) die(`another tune scan is running (pid ${Number(txt.trim().split(/\s+/)[0]) || '?'}); wait for it to finish`, 3);
+        if (!stealLock(LOCK, txt)) die('another tune scan took the lock just now; wait for it to finish', 3); // stale lock of a dead or overdue scan
+      }
     }
-  }
+  } finally { fs.rmSync(tmp, { force: true }); }
   die('could not take the scan lock', 3);
 }
 function releaseLock() { if (lockHeld) { lockHeld = false; try { fs.rmSync(LOCK, { force: true }); } catch {} } }

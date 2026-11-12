@@ -34,6 +34,10 @@ Run these again only after something changed them.
 The files this chat changed, or the ones the user named; "commit what is staged" means
 `git diff --cached --name-only`. A changed file this chat cannot explain is someone else's: leave it and
 name it, or ask about all such files in one question. Never `git add -A`, `git add .` or `git commit -a`.
+A file this chat changed that also holds hunks it cannot explain (another chat edited it too): read its
+`git diff`; commit it only when every hunk is this chat's, else leave it and name it, since committing it
+puts the other chat's half-done lines in this commit. Run git as `git -c core.quotepath=false` so a
+Cyrillic or spaced file name prints as itself, not as octal escapes `git add` cannot match.
 
 ## Default branch
 

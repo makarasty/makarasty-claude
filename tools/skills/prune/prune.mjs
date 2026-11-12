@@ -20,7 +20,7 @@
 // `empty` deletes only what has a record, and unlinks every symlink and junction before a recursive delete:
 // `git worktree remove` and recursive deletes follow a junction and empty its target [docs/MEASUREMENTS.md M32, M45].
 import { spawn, spawnSync } from 'node:child_process';
-import { appendFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, renameSync, rmdirSync, rmSync, statSync, symlinkSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, renameSync, rmdirSync, rmSync, statSync, symlinkSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -196,6 +196,17 @@ function changes(wt) {
     return un.length ? plural(un.length, 'untracked file') : null;
 }
 
+// Git-ignored files the tree holds that are not regenerable build output (.env, a local config): neither `status` nor
+// ls-files shows them, trash moves them and `empty` deletes them. A link (a node_modules junction) is not data.
+// shortcut: "regenerable" is a fixed list of folder names, not a judgement; upgrade if a tree keeps data in one of them.
+const REGEN = new Set(['node_modules', 'dist', 'build', 'target', '.next', '.nuxt', '__pycache__', '.cache', 'coverage', '.turbo', '.parcel-cache', '.pytest_cache']);
+function ignoredFiles(wt) {
+    const st = run(['status', '--porcelain=v1', '-z', '--ignored', '--untracked-files=normal'], wt);
+    if (st.code) return [`(git status --ignored failed: ${st.err.split('\n')[0] || 'exit ' + st.code})`];
+    return st.out.split('\0').filter(e => e.startsWith('!! ')).map(e => e.slice(3))
+        .filter(p => !p.replace(/\/$/, '').split('/').some(c => REGEN.has(c)) && !lstatSync(join(wt, p), { throwIfNoEntry: false })?.isSymbolicLink());
+}
+
 // A listed worktree (the main one too) inside p: moving p would carry it, its uncommitted work with it.
 const heldIn = (p, paths) => paths.find(q => inside(q, p));
 const worktreePaths = c => [...worktrees(c.cwd).map(w => w.path), ...admins(c.common).map(a => a.path)];
@@ -267,6 +278,8 @@ export function cmdScan(repo, strict = false) {
             else v('keep', `${w.branch ? 'branch ' + w.branch : 'detached HEAD'} has ${ahead(w.sha)}`);
             continue;
         }
+        const ign = ignoredFiles(w.path);
+        if (ign.length) { it.ignored = ign.slice(0, 20); v('ask', `holds ${plural(ign.length, 'git-ignored file')} no status shows (${ign.slice(0, 3).join(', ')}${ign.length > 3 ? ', ...' : ''}); trash moves them (restore brings them back), empty deletes them for good`); continue; }
         if (Date.now() - touched(w.path) < DAY) { v('ask', 'files changed in the last 24 h: a chat may still use it'); continue; }
         if (Date.now() - chatTouched(w.path) < 2 * HOUR) { v('ask', 'a Claude chat in it was active in the last 2 h: a chat may still use it'); continue; }
         v('trash', `clean, ${w.branch ? 'branch ' + w.branch : 'detached HEAD'} is in ${def.label}`);
@@ -334,7 +347,7 @@ function checked(c, r) {
     if (r.branch != null && (typeof r.branch !== 'string' || run(['check-ref-format', 'refs/heads/' + r.branch], c.cwd).code)) bad(`branch name ${JSON.stringify(r.branch)} is not valid`);
     return r;
 }
-function writeIdx(f, recs) { writeFileSync(f + '.tmp', recs.map(r => JSON.stringify(r) + '\n').join('')); renameSync(f + '.tmp', f); }
+function writeIdx(f, recs) { const t = `${f}.${process.pid}.tmp`; writeFileSync(t, recs.map(r => JSON.stringify(r) + '\n').join('')); renameSync(t, f); } // per-pid: two runs never share the tmp file
 export const globalIndex = () => join(process.platform === 'win32'
     ? process.env.LOCALAPPDATA || join(homedir(), 'AppData', 'Local')
     : process.env.XDG_DATA_HOME || join(homedir(), '.local', 'share'), 'makarasty', 'trash-index.jsonl');
@@ -357,15 +370,30 @@ function newId(c) {
     return `${stamp}-${k}`;
 }
 
+// Takes the lock file p, judged dead while its text was `raw`. The file is renamed to a name of ours and read: if it is not
+// what was judged, another run created its own lock in between, so it goes back (a link never overwrites) and nothing is stolen.
+// shortcut: for that moment the owner's lock is missing; a third run in that instant could take it. Fine for person-started commands.
+function stealLock(p, raw) {
+    const mine = `${p}.${process.pid}.${Date.now()}.stale`;
+    try { renameSync(p, mine); } catch (e) { if (e.code === 'ENOENT') return true; throw e; } // gone already: free to take
+    const same = text(mine) === raw;
+    if (!same) try { linkSync(mine, p); } catch { /* a third run took it meanwhile: leave that one */ }
+    rmSync(mine, { force: true });
+    return same;
+}
+const pidAlive = pid => { try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; } };
 // Two chats pruning one repo at once would each rewrite index.jsonl; the second one waits for a retry instead.
+// A lock is stolen only when its pid is dead (or it is older than any real run, a reused pid): a slow run is not "stale".
 function withLock(c, fn) {
     mkdirSync(c.trash, { recursive: true });
     const p = join(c.trash, '.lock');
-    try { writeFileSync(p, String(process.pid), { flag: 'wx' }); } catch {
-        if (Date.now() - statSync(p).mtimeMs < 10 * 60e3) throw new Refusal(`another prune is working on this repo (${p}); try again in a minute`);
-        writeFileSync(p, String(process.pid)); // a lock older than ten minutes is from a run that died
+    for (let i = 0; ; i++) {
+        try { writeFileSync(p, String(process.pid), { flag: 'wx' }); break; } catch (e) { if (e.code !== 'EEXIST') throw e; }
+        const raw = text(p) ?? '', pid = +raw || 0, age = Date.now() - (lstatSync(p, { throwIfNoEntry: false })?.mtimeMs ?? 0);
+        if (i > 1 || (pid > 0 ? pidAlive(pid) && age < 6 * HOUR : age < 60e3)) throw new Refusal(`another prune is working on this repo (${p}${pid > 0 ? `, pid ${pid}` : ''}); try again in a minute, or delete that file if none runs`);
+        if (!stealLock(p, raw)) throw new Refusal(`another prune is working on this repo (${p}); try again in a minute`);
     }
-    try { return fn(); } finally { rmSync(p, { force: true }); }
+    try { return fn(); } finally { if (text(p) === String(process.pid)) rmSync(p, { force: true }); }
 }
 const rmEmpty = d => { try { rmdirSync(d); } catch { } };
 
@@ -413,7 +441,7 @@ function trashWorktree(c, it) {
         const why = e.code === 'EXDEV' ? 'it is on another volume than the repo' : /^(EBUSY|EPERM|EACCES)$/.test(e.code) ? 'a process holds a file or the folder open' : e.message;
         throw new Error(`could not move it (${e.code}: ${why}); left in place, nothing deleted`);
     }
-    return record(c, { id, kind: 'worktree', name: it.name, sha, from: it.path, to, ref, branch: it.branch });
+    return record(c, { id, kind: 'worktree', name: it.name, sha, from: it.path, to, ref, branch: it.branch, ignored: it.ignored });
 }
 
 // gate(ids) runs inside the lock on exactly the ids to act on (the person's grant, see confirm.mjs); false acts on nothing and returns null.
@@ -465,20 +493,22 @@ function restoreWorktree(c, r, recs, notes) {
     renameSync(r.to, r.from);
     rmEmpty(dirname(r.to));
     const gone = [r.id];
-    let head = r.sha;
+    let head = r.sha, detach = false;
     if (r.branch) {
         const live = worktrees(c.cwd).some(w => w.branch === r.branch && key(w.path) !== key(r.from));
         if (run(['rev-parse', '-q', '--verify', 'refs/heads/' + r.branch], c.cwd).code) {
             if (br) { restoreBranch(c, br); gone.push(br.id); notes.push(`branch ${r.branch} came back with it (${br.id})`); }
             else git(['update-ref', 'refs/heads/' + r.branch, r.sha, ''], c.cwd);
         } else if (git(['rev-parse', 'refs/heads/' + r.branch], c.cwd) !== r.sha) notes.push(`branch ${r.branch} moved while trashed; the tree shows that as changes`);
-        if (live) notes.push(`branch ${r.branch} is checked out elsewhere now; the worktree is detached at ${r.sha.slice(0, 9)}`);
+        if (live) notes.push(`branch ${r.branch} is checked out elsewhere now; the worktree is detached at ${r.sha.slice(0, 9)}`), detach = true;
         else head = 'ref: refs/heads/' + r.branch;
     }
     const admin = join(c.common, 'worktrees', r.name), gd = text(join(admin, 'gitdir'));
     if (gd && key(dirname(isAbsolute(gd) ? gd : resolve(admin, gd))) === key(r.from)) {
         git(['worktree', 'repair', r.from], c.cwd);
         run(['worktree', 'unlock', r.from], c.cwd);
+        // The admin HEAD still says `ref: refs/heads/<branch>`: both trees would stand on it. Detach for real, files untouched.
+        if (detach) git(['update-ref', '--no-deref', 'HEAD', r.sha], r.from);
     } else {
         // git's metadata was pruned meanwhile (someone unlocked and pruned). `git worktree add` refuses an existing
         // folder, so this writes what `git worktree add --no-checkout` would: <common>/worktrees/<name>/ with gitdir
@@ -771,6 +801,42 @@ function selftest() {
         writeFileSync(idx2, good);
         cmdRestore(rp, gid);
         assert.ok(existsSync(join(rp, '.git', 'worktrees', 'r2-gone', 'gitdir')), 'a good line still restores');
+        // 5: a branch name taken by another worktree since: the restored tree really is detached, not on the branch.
+        const w5 = join(tmp, 'r5'); g(rp, 'worktree', 'add', '-q', '-b', 'feat5', w5, 'main'); backdate(w5);
+        const t6 = cmdTrash(rp, ['w:r5'], false); assert.equal(t6.done[0]?.kind, 'worktree', JSON.stringify(t6.failed));
+        g(rp, 'switch', '-q', '--ignore-other-worktrees', 'feat5'); // the main checkout takes the branch name
+        const r6 = cmdRestore(rp, t6.done[0].id);
+        assert.match(r6.notes.join(' '), /detached at/);
+        assert.equal(run(['symbolic-ref', '-q', 'HEAD'], w5).code, 1, 'restore: the tree is detached, as the note says');
+        g(rp, 'switch', '-q', 'main');
+        // 6: a tree holding a git-ignored .env is asked about with the file named, never trashed by --safe; the trash record names it.
+        appendFileSync(join(rp, '.git', 'info', 'exclude'), '.env\n');
+        const w6 = add('r6-env'); writeFileSync(join(w6, '.env'), 'SECRET=1\n'); backdate(w6);
+        const s6 = cmdScan(rp).items.find(i => i.id === 'w:r6-env');
+        assert.ok(s6.verdict === 'ask' && /\.env/.test(s6.reason), `ignored file: ask, named (${s6.verdict}: ${s6.reason})`);
+        assert.ok(!cmdTrash(rp, [], true).done.some(r => r.name === 'r6-env'), '--safe leaves it');
+        const t7 = cmdTrash(rp, ['w:r6-env'], false);
+        assert.deepEqual(t7.done[0].ignored, ['.env'], 'the trash record names the ignored file');
+        assert.equal(cmdList(rp).find(r => r.id === t7.done[0].id).ignored[0], '.env');
+        cmdRestore(rp, t7.done[0].id);
+        assert.ok(existsSync(join(w6, '.env')), 'restore brings the ignored file back');
+        // 7: a lock of a live pid is never stolen, even old; a dead pid's is; the index tmp name is per pid.
+        const lockf = join(rp, '.git', 'makarasty-trash', '.lock'), longAgo = (Date.now() - 11 * 60e3) / 1000;
+        writeFileSync(lockf, String(process.pid)); utimesSync(lockf, longAgo, longAgo);
+        assert.throws(() => cmdEmpty(rp, ['x'], undefined), /another prune/, 'a live pid holds the lock whatever its age');
+        assert.equal(text(lockf), String(process.pid), 'and the lock is left as it was');
+        writeFileSync(lockf, String(spawnSync(process.execPath, ['-e', '0']).pid)); utimesSync(lockf, longAgo, longAgo);
+        assert.equal(cmdEmpty(rp, ['x'], undefined).failed.length, 1, 'a dead pid\'s lock is taken over');
+        assert.ok(!existsSync(lockf), 'and released');
+        // the steal: a lock that changed since it was judged dead is a live run's, and stays
+        writeFileSync(lockf, String(process.pid));
+        assert.equal(stealLock(lockf, '99999999'), false, 'a lock that is not what was judged dead is not stolen');
+        assert.equal(text(lockf), String(process.pid), 'and it is back, unchanged');
+        assert.equal(readdirSync(join(rp, '.git', 'makarasty-trash')).filter(n => n.endsWith('.stale')).length, 0, 'no .stale left');
+        assert.equal(stealLock(lockf, String(process.pid)), true, 'the lock that was judged is taken');
+        assert.ok(!existsSync(lockf));
+        mkdirSync(join(tmp, 'idx.jsonl.tmp')); writeIdx(join(tmp, 'idx.jsonl'), []); // the old shared name would be this directory
+        assert.ok(existsSync(join(tmp, 'idx.jsonl')), 'writeIdx does not use a shared .tmp name');
         console.log(`prune.mjs selftest done (${process.platform}, ${g(tmp, '--version')})`);
     } finally {
         stop();
@@ -835,7 +901,7 @@ function main(argv) {
     if (cmd === 'list') {
         const rows = cmdList(repo, all);
         const plan = number('prune-empty', rows, r => ({ id: r.id, what: `${r.kind} ${r.kind === 'branch' ? r.name : r.from}`, bytes: null, how: 'forever' }), all ? 'all' : home());
-        return say(rows, () => rows.length ? rows.map((r, i) => `${(r.n ? r.n + '.' : '').padStart(4)} ${all ? r.repo + '  ' : ''}${r.id}  ${ago(Date.parse(r.at)).padStart(3)}  ${r.kind.padEnd(13)} ${r.kind === 'branch' ? r.name : r.from}${plan[i].held ? `  held: ${plan[i].held}` : ''}`) : ['the trash is empty']);
+        return say(rows, () => rows.length ? rows.map((r, i) => `${(r.n ? r.n + '.' : '').padStart(4)} ${all ? r.repo + '  ' : ''}${r.id}  ${ago(Date.parse(r.at)).padStart(3)}  ${r.kind.padEnd(13)} ${r.kind === 'branch' ? r.name : r.from}${r.ignored?.length ? `  (git-ignored: ${r.ignored.slice(0, 3).join(', ')})` : ''}${plan[i].held ? `  held: ${plan[i].held}` : ''}`) : ['the trash is empty']);
     }
     if (cmd === 'restore') {
         if (args.length !== 1) throw new Refusal('restore takes one trash id (see: list)');

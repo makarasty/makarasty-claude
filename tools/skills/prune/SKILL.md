@@ -22,7 +22,10 @@ Each entry comes back with `restore <id>`, a week or a month later.
    - `ask`: upstream gone with commits not in the default branch (the reason says when they look
      squash-merged); a worktree touched in the last 24 h or with a Claude chat active in it in the last
      2 h, since a chat may still use it; a branch made in the last 24 h; a worktree whose folder is gone
-     and whose commit exists nowhere else (once trashed, a trash ref keeps that commit until `empty`).
+     and whose commit exists nowhere else (once trashed, a trash ref keeps that commit until `empty`); a clean
+     worktree that holds git-ignored files `status` does not show (`.env`, a local config; a `node_modules`
+     junction or build output does not count): the reason names them, `trash` moves them (`restore` brings them back),
+     `empty` deletes them for good, so the person picks it knowing the files.
    - `keep`: unique work; changed or untracked files, whatever `status.showUntrackedFiles` or a
      submodule's `ignore` says; files marked assume-unchanged or skip-worktree (an edit there does not
      show in `git status`); a worktree that holds another worktree inside it; a locked worktree; a branch

@@ -6,10 +6,12 @@
 //   node scrub.mjs --selftest
 //
 // Scope (each when it exists), under --root or ${CLAUDE_CONFIG_DIR:-~/.claude}: projects/**/*.jsonl (subagents too),
-// projects/**/tool-results/*, history.jsonl, paste-cache/**, file-history/**, todos/**, makarasty/handoff/**, debug/**, shell-snapshots/**; plus the Desktop app session folders
+// projects/**/tool-results/*, history.jsonl, paste-cache/**, todos/**, makarasty/handoff/**, debug/**, shell-snapshots/**; plus the Desktop app session folders
 // (claude-code-sessions/**/*.json, local-agent-mode-sessions/**) of every %LOCALAPPDATA%\Claude-Profiles\* profile
 // and of the default Desktop data dir. Reported, never touched: settings*.json*, .claude.json, ~/.codex, ~/.gemini,
-// ~/.copilot, ~/.config/github-copilot.
+// ~/.copilot, ~/.config/github-copilot, and file-history/** (/rewind checkpoints: masking one would write asterisks into the
+// person's real file on a rewind). Skill folders under local-agent-mode-sessions are installed docs, not chats: skipped.
+// With --root, only that folder is read: no Desktop profiles, no home files.
 //
 // Files are read as latin1, so one char is one byte: a replacement keeps every byte offset, the file size and any
 // invalid UTF-8 exactly, and '*' never needs JSON escaping. Safety for --apply, per file: a .jsonl line is changed only
@@ -50,10 +52,10 @@ const PATTERNS = [
     ['google', /AIza[0-9A-Za-z_-]{35}/g, { keep: 4, left: 1, right: 1 }],
     ['telegram', /\d{8,10}:[A-Za-z0-9_-]{35}/g, { left: 1, right: 1 }],
     ['stripe', /(?:sk_(?:live|test)|rk_live)_\w{16,}/g, { keep: 4, left: 1 }],
-    ['jwt', /eyJ[\w-]{10,}\.eyJ[\w-]{10,}\.[\w-]{10,}/g, { keep: 4, left: 1 }],
-    ['private-key', /-----BEGIN [A-Z ]*PRIVATE KEY-----([\s\S]*?)-----END [A-Z ]*PRIVATE KEY-----/gd, { group: 1, pem: 1 }],
+    ['jwt', /(?:(?<![A-Za-z0-9+/_-])|(?<=\\(?:[nrt]|u[0-9A-Fa-f]{4})))eyJ[\w-]{10,}\.eyJ[\w-]{10,}\.[\w-]{10,}/g, { keep: 4, left: 1 }],
+    ['private-key', /-----BEGIN [A-Z ]*PRIVATE KEY-----((?:(?!-----BEGIN )[\s\S])*?)-----END [A-Z ]*PRIVATE KEY-----/gd, { group: 1, pem: 1 }],
     ['bearer', /\b[Bb]earer[ \t]+([A-Za-z0-9._~+/=-]{20,})/gd, { group: 1, digit: 1 }],
-    ['url-password', /\b[a-z][a-z0-9+.-]*:\/\/[^\s/@:"'\\]+:([^\x00-\x20\x7f-\xff/@"'\\]+)@/gid, { group: 1, words: 1 }],
+    ['url-password', /(?<![a-z0-9+.-])[a-z][a-z0-9+.-]*:\/\/[^\s/@:"'\\]+:([^\x00-\x20\x7f-\xff/@"'\\]+)@/gid, { group: 1, words: 1 }],
     ['keyword', new RegExp(String.raw`(?:password|passwd|pwd|${RU}|secret|api[_-]?key|x-api-key|token)${SP}${Q}${SP}[:=]${SP}${Q}(${VAL}{6,})`, 'gid'), { group: 1, code: 1, words: 1 }],
 ];
 export const KINDS = [...new Set(PATTERNS.map(p => p[0]))];
@@ -92,7 +94,10 @@ export function findHits(s) {
         let m;
         while ((m = re.exec(s))) {
             const [st, en] = o.group ? m.indices[o.group] : [m.index, m.index + m[0].length];
-            if ((o.left && !okLeft(s, m.index)) || (o.right && !okRight(s, en))) { re.lastIndex = m.index + 1; continue; }
+            if ((o.left && !okLeft(s, m.index)) || (o.right && !okRight(s, en))) {
+                // A rejected match made only of boundary chars: every start inside it follows one of them and is rejected too, so skip it (else a run of such matches is quadratic).
+                re.lastIndex = o.left && /^[A-Za-z0-9+/_-]+$/.test(m[0]) && !okLeft(s, m.index) ? en : m.index + 1; continue;
+            }
             if (placeholder(s.slice(st, en), o) || hits.some(h => st < h.end && en > h.start)) continue;
             hits.push({ kind, start: st, end: en, keep: o.keep ?? 0, pem: !!o.pem });
         }
@@ -218,24 +223,25 @@ const desktopRoots = (home, env) => {
     r.push(join(home, 'Library', 'Application Support', 'Claude'), join(home, '.config', 'Claude'));
     return r;
 };
-function* scope(cfg, home, env) {
+function* scope(cfg, home, env, only) {
     for (const p of walk(join(cfg, 'projects'), n => /\.jsonl(\.scrub-tmp)?$/.test(n))) yield [/[\\/]subagents[\\/]/.test(p) ? 'subagents' : 'projects', p];
     // Large tool outputs a transcript points at live beside it as text files: an .env cat lands there too.
     for (const p of walk(join(cfg, 'projects'), n => /\.(txt|md|json|log)(\.scrub-tmp)?$/.test(n))) if (/[\\/]tool-results[\\/]/.test(p)) yield ['tool-results', p];
     for (const n of ['history.jsonl', 'history.jsonl.scrub-tmp']) if (existsSync(join(cfg, n))) yield ['history', join(cfg, n)];
-    for (const [loc, d] of [['paste-cache', 'paste-cache'], ['file-history', 'file-history'], ['todos', 'todos'], ['handoff', join('makarasty', 'handoff')], ['debug', 'debug'], ['shell-snapshots', 'shell-snapshots']]) {
+    for (const [loc, d] of [['paste-cache', 'paste-cache'], ['todos', 'todos'], ['handoff', join('makarasty', 'handoff')], ['debug', 'debug'], ['shell-snapshots', 'shell-snapshots']]) {
         for (const p of walk(join(cfg, d))) yield [loc, p];
     }
-    for (const r of desktopRoots(home, env)) {
+    for (const r of only ? [] : desktopRoots(home, env)) {
         for (const p of walk(join(r, 'claude-code-sessions'), n => /\.json(\.scrub-tmp)?$/.test(n))) yield ['desktop', p];
-        for (const p of walk(join(r, 'local-agent-mode-sessions'))) yield ['desktop-agent', p];
+        for (const p of walk(join(r, 'local-agent-mode-sessions'))) if (!/[\\/]skills[\\/]/i.test(p)) yield ['desktop-agent', p];
     }
 }
-function* elsewhere(cfg, home) {
-    for (const p of new Set([join(home, '.claude.json'), join(cfg, '.claude.json')])) if (existsSync(p)) yield ['.claude.json', p];
+function* elsewhere(cfg, home, only) {
+    for (const p of walk(join(cfg, 'file-history'))) yield ['file-history', p]; // reported, never changed: see the header
+    for (const p of new Set(only ? [join(cfg, '.claude.json')] : [join(home, '.claude.json'), join(cfg, '.claude.json')])) if (existsSync(p)) yield ['.claude.json', p];
     let top = []; try { top = readdirSync(cfg); } catch {}
     for (const n of top) if (/^settings.*\.json/.test(n) && statSync(join(cfg, n)).isFile()) yield ['settings', join(cfg, n)];
-    for (const d of ['.codex', '.gemini', '.copilot', join('.config', 'github-copilot')]) for (const p of walk(join(home, d))) yield [d, p];
+    for (const d of only ? [] : ['.codex', '.gemini', '.copilot', join('.config', 'github-copilot')]) for (const p of walk(join(home, d))) yield [d, p];
 }
 
 async function processFile(R, loc, p, { apply, minAgeMs, now, hook, report }) {
@@ -282,14 +288,14 @@ async function processFile(R, loc, p, { apply, minAgeMs, now, hook, report }) {
     }
 }
 
-export async function run({ cfg, home = homedir(), env = process.env, apply = false, minAgeMs = 600000, hook = {} }) {
+export async function run({ cfg, home = homedir(), env = process.env, apply = false, minAgeMs = 600000, hook = {}, only = false }) {
     const t0 = Date.now();
     const R = { mode: apply ? 'apply' : 'dry-run', cfg, minAgeMs, scanned: 0, bytes: 0, totals: {}, byLoc: {}, files: [], left: 0,
         scrubbed: 0, done: 0, live: [], big: [], busy: [], changed: [], failed: [], binary: 0, tmpLeft: [], elsewhere: [], elsewhereLoc: {}, unreadable: [] };
     const o = { apply, minAgeMs, now: Date.now(), hook };
-    for (const [loc, p] of scope(cfg, home, env)) await processFile(R, loc, p, o);
+    for (const [loc, p] of scope(cfg, home, env, only)) await processFile(R, loc, p, o);
     const before = { scanned: R.scanned, bytes: R.bytes };
-    for (const [loc, p] of elsewhere(cfg, home)) await processFile(R, loc, p, { ...o, apply: false, report: true });
+    for (const [loc, p] of elsewhere(cfg, home, only)) await processFile(R, loc, p, { ...o, apply: false, report: true });
     R.elsewhereScanned = R.scanned - before.scanned; R.elsewhereBytes = R.bytes - before.bytes;
     Object.assign(R, before);
     R.ms = Date.now() - t0;
@@ -315,6 +321,8 @@ export function render(R, home = homedir()) {
         [R.changed, 'changed-during-scrub, left as it was'], [R.failed, 'failed'], [R.tmpLeft, "leftover .scrub-tmp"], [R.unreadable, "elsewhere, could not be read"]];
     for (const [list, what] of other) if (list.length) { L.push('', `## ${what}: ${list.length}`); for (const p of list) L.push(`- ${tilde(p)}`); }
     if (R.binary) L.push('', `binary files skipped: ${R.binary}`);
+    const rw = Object.values(R.elsewhereLoc['file-history']?.kinds ?? {}).reduce((a, b) => a + b, 0);
+    if (rw) L.push('', `${rw} secret(s) in rewind checkpoints (file-history) left alone: masking them would put asterisks into your real file on a /rewind`);
     L.push('', `## elsewhere, not touched (${R.elsewhereScanned} files, ${gb(R.elsewhereBytes)}): ${R.elsewhere.length ? '' : 'none found'}`);
     for (const f of R.elsewhere) L.push(`- ${tilde(f.file)}: ${kinds(f.kinds)}`);
     return L.join('\n');
@@ -380,6 +388,8 @@ function build(root) {
     put('busy', 'cfg/projects/p/busy.jsonl', U(txt(k('github'))) + '\n');
     put('busyTmp', 'cfg/projects/p/busy.jsonl.scrub-tmp', 'OTHER');
     put('live', 'cfg/projects/p/live.jsonl', U(txt(k('github'))) + '\n');
+    put('skill', 'lad/Claude-Profiles/dev/local-agent-mode-sessions/x/skills/pdf/REFERENCE.md', 'qpdf --password=' + 'secret123abcd ' + txt(k('google')) + '\n');
+    put('agent', 'lad/Claude-Profiles/dev/local-agent-mode-sessions/x/audit.jsonl', U(txt(k('github'))) + '\n');
     put('cj', 'home/.claude.json', JSON.stringify({ k: txt(k('anthropic')) }));
     put('codex', 'home/.codex/history.jsonl', U(txt(k('github'))) + '\n');
     const old = new Date(Date.now() - 864e5);
@@ -389,7 +399,7 @@ function build(root) {
 
 const nls = s => s.split('\n').length;
 const eq = (a, b) => JSON.stringify(Object.entries(a).sort()) === JSON.stringify(Object.entries(b).sort());
-const EXPECT = { anthropic: 4, openai: 1, github: 4, slack: 3, aws: 2, google: 5, telegram: 1, stripe: 1, jwt: 1, bearer: 1, 'url-password': 1, keyword: 4, 'private-key': 2 };
+const EXPECT = { anthropic: 4, openai: 1, github: 5, slack: 3, aws: 2, google: 4, telegram: 1, stripe: 1, jwt: 1, bearer: 1, 'url-password': 1, keyword: 4, 'private-key': 2 };
 
 // Every assertion of the selftest; returns the failed ones instead of throwing, so a broken guard can be shown red.
 async function scenario() {
@@ -402,8 +412,12 @@ async function scenario() {
         ok(eq(dry.totals, EXPECT), 'dry-run totals ' + JSON.stringify(dry.totals));
         ok(dry.left === 2, 'dry-run left ' + dry.left);
         ok(dry.live.length === 1 && dry.live[0] === F.live, 'live file reported as skipped-live');
-        ok(dry.elsewhere.length === 2 && dry.elsewhereLoc['.claude.json']?.kinds.anthropic === 1 && dry.elsewhereLoc['.codex']?.kinds.github === 1, 'elsewhere counted');
+        ok(dry.elsewhere.length === 3 && dry.elsewhereLoc['file-history']?.kinds.google === 1 && dry.elsewhereLoc['.claude.json']?.kinds.anthropic === 1 && dry.elsewhereLoc['.codex']?.kinds.github === 1, 'elsewhere counted');
         ok(dry.binary === 1, 'binary skipped');
+        ok(/1 secret\(s\) in rewind checkpoints \(file-history\) left alone/.test(render(dry, B.home)), 'the dry run says rewind checkpoints are left alone');
+        const only = await run({ ...B, only: true });
+        ok(!('desktop' in only.byLoc) && !('desktop-agent' in only.byLoc) && only.elsewhereLoc['.codex'] === undefined && only.elsewhereLoc['.claude.json'] === undefined && only.scanned < dry.scanned, 'only: no Desktop profile, no home files');
+        ok(!dry.files.some(f => f.file === F.skill) && dry.files.some(f => f.file === F.agent), 'a skill doc under local-agent-mode-sessions is not scanned, a chat file there is');
         const shown = JSON.stringify(dry) + render(dry, B.home);
         for (const e of KEYS) ok(!shown.includes(e[2].slice(0, 6)), 'dry run printed a value of ' + e[0]);
         ok(/github L1 ghp_…/.test(shown) && /keyword L2(?! )/.test(shown), 'samples: prefix and line, no value');
@@ -412,8 +426,8 @@ async function scenario() {
         const ap = await run({ ...B, apply: true });
         ok(ap.scrubbed === 10 && ap.failed.length === 0, `scrubbed ${ap.scrubbed}, failed ${ap.failed.join('; ')}`);
         ok(ap.busy.length === 1 && readFileSync(F.busyTmp, 'latin1') === 'OTHER' && readFileSync(F.busy, 'latin1') === snap.busy.s, 'busy file and its .scrub-tmp left as they were');
-        for (const n of ['live', 'bin', 'cj', 'codex']) ok(readFileSync(F[n], 'latin1') === snap[n].s, n + ' must not change');
-        for (const n of ['s1', 's2', 'crlf', 'sub', 'hist', 'paste', 'fh', 'todo', 'handoff', 'desk']) {
+        for (const n of ['live', 'bin', 'cj', 'codex', 'fh', 'skill']) ok(readFileSync(F[n], 'latin1') === snap[n].s, n + ' must not change');
+        for (const n of ['s1', 's2', 'crlf', 'sub', 'hist', 'paste', 'todo', 'handoff', 'desk', 'agent']) {
             const s = readFileSync(F[n], 'latin1'), o = snap[n].s;
             ok(s !== o, n + ' unchanged');
             ok(s.length === o.length && nls(s) === nls(o), n + ' size or line count changed');
@@ -460,6 +474,10 @@ async function selftest() {
         const r = spawnSync(process.execPath, [fileURLToPath(import.meta.url), ...a], { encoding: 'utf8' });
         if (r.status !== code) { fail++; console.log(`FAIL: ${a.join(' ')} exit ${r.status}`); }
     }
+    // 400k chars shaped to hit a quadratic regex (found: url-password 22 s on 120 KB): each must finish under 1 s
+    const N = 4e5, A = 'a'.repeat(30), nasty = { 'a-': 'a-'.repeat(N / 2), eyJ: 'eyJ'.repeat(N / 3), begin: '-----BEGIN PRIVATE KEY-----'.repeat(N / 27 | 0),
+        'x+sk-ant': 'x' + ('sk-ant-' + A).repeat(N / 37 | 0), 'x+xox': 'x' + ('xoxb-' + A).repeat(N / 35 | 0), 'x+stripe': 'x' + ('sk_live_' + A).repeat(N / 38 | 0) };
+    for (const [n, str] of Object.entries(nasty)) { const t = Date.now(); findHits(str); if (Date.now() - t > 1000) { fail++; console.log(`FAIL: findHits on 400k of ${n} took ${Date.now() - t} ms`); } }
     for (const [v, ms] of [['10m', 6e5], ['0', 0], ['30s', 3e4], ['2h', 72e5], ['5', 3e5], ['x', null]]) if (parseAge(v) !== ms) { fail++; console.log('FAIL: parseAge ' + v); }
     console.log(fail ? `scrub.mjs selftest FAILED (${fail})` : 'scrub.mjs selftest done');
     process.exitCode = fail ? 1 : 0;
@@ -477,7 +495,7 @@ async function main(argv) {
     if (minAgeMs == null) { console.error(`--min-age needs a duration like 10m, 30s, 2h; got "${flag('--min-age') ?? ''}"`); process.exit(2); }
     if (argv.includes('--root') && !flag('--root')) { console.error('--root needs a directory'); process.exit(2); }
     const cfg = resolve(flag('--root') ?? process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude'));
-    const R = await run({ cfg, apply: argv.includes('--apply'), minAgeMs });
+    const R = await run({ cfg, apply: argv.includes('--apply'), minAgeMs, only: argv.includes('--root') });
     console.log(argv.includes('--json') ? JSON.stringify(R, null, 1) : render(R));
     if (R.failed.length && R.mode === 'apply') process.exitCode = 1;
 }

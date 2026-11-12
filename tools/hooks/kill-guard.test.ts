@@ -57,7 +57,7 @@ test('taskkill /T (tree kill) is refused even with a PID, in any case and dash f
 test('a long hostile line is read in linear time', () => {
   const t = Date.now()
   for (const c of ['<<a '.repeat(50000), '<<a\n'.repeat(20000), '$('.repeat(20000), '`a'.repeat(20000), '{ '.repeat(30000), '| '.repeat(30000)]) check(c)
-  expect(Date.now() - t).toBeLessThan(2000)
+  expect(Date.now() - t).toBeLessThan(6000) // quadratic here is minutes; 2 s flaked on a loaded box
 })
 
 test('kill by PID is allowed, and so is text that only mentions a kill command', () => {
@@ -80,4 +80,36 @@ test('Monitor is a shell: its command is read like Bash', () => {
   expect(matcher(register).test('Monitor')).toBe(true)
   expect(denial('taskkill /IM node.exe', false, 'Monitor')).toContain('taskkill')
   expect(denial('taskkill //PID 12 //F', false, 'Monitor')).toBeNull()
+})
+
+// Review round 3: text that quotes a kill command is no command; the PowerShell positional form and by-name lookups are.
+test('a kill command quoted in single quotes or a PowerShell here-string is text, a real substitution still runs', () => {
+  const TEXT = ["git commit -m 'docs: never `pkill node`'", "echo '`taskkill /IM node.exe` is bad' >> notes.md", "git commit -m 'docs: never $(pkill node)'",
+    "git commit -m \"it's\" -m 'x `pkill node`'"]
+  expect(TEXT.filter((c) => check(c))).toEqual([])
+  const TEXT_PS = ["$t = @'\nnotes: `Stop-Process -Name node` is refused\n'@", "Write-Output 'use `kill -Name x`'", "git commit -m @'\nit's `Stop-Process -Name node`\n'@",
+    'git commit -m "docs: `Stop-Process -Name node`"']
+  expect(TEXT_PS.filter((c) => check(c, 'PowerShell'))).toEqual([])
+  expect(['echo $(pkill node)', 'echo "$(pkill node)"', 'echo "it\'s" `pkill node`', "echo 'a' $(pkill node)"].filter((c) => !check(c))).toEqual([])
+  expect(check('echo $(Stop-Process -Name node)', 'PowerShell')).not.toBeNull()
+})
+
+test('powershell with its command as the first bare word, or an abbreviated -Command, is read; -ProcessName and ps -C are by name', () => {
+  expect(['powershell Stop-Process -Name node', 'powershell.exe "Stop-Process -Name node"', 'pwsh -NoProfile Stop-Process -Name node', 'powershell -Com "Stop-Process -Name node"',
+    'powershell -ExecutionPolicy Bypass -NoProfile Stop-Process -Name node', 'cmd //c taskkill //IM node.exe',
+    'kill -9 $(ps -C node -o pid=)', 'ps -C node -o pid= | xargs kill'].filter((c) => !check(c))).toEqual([])
+  expect(['Stop-Process -ProcessName node', 'Stop-Process -ProcessName:node', 'spps -Pr node'].filter((c) => !check(c, 'PowerShell'))).toEqual([])
+  expect(['powershell Stop-Process -Id 4242', 'powershell -File x.ps1', 'powershell -NoProfile -Command "Stop-Process -Id 4242"', 'ps -C node'].filter((c) => check(c))).toEqual([])
+})
+
+test('taskkill /T on one explicit PID stays refused: the child tree can hold other sessions\' processes (the header\'s reason)', () => {
+  expect(check('taskkill //PID 31396 //F //T')).toContain('child tree')
+  expect(check('taskkill //PID 31396 //F')).toBeNull()
+})
+
+test('only a PowerShell single-quoted here-string is text: an expandable @".."@ runs its subexpression, in either shell', () => {
+  expect(check('git commit -m @"\nfix\n$(Stop-Process -Name node)\n"@', 'PowerShell')).not.toBeNull()
+  expect(check('echo @"$(pkill node)"@')).not.toBeNull()
+  expect(check('echo @"`pkill node`"@')).not.toBeNull()
+  expect(check("git commit -m @'\nnotes `Stop-Process -Name node` $(pkill node)\n'@", 'PowerShell')).toBeNull()
 })

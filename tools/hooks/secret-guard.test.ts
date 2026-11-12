@@ -208,3 +208,12 @@ test('Git Bash and WSL spellings of a drive path count as inside the project, or
   // The cwd itself in Git Bash spelling.
   expect(check('C:\\Users\\dev\\proj\\a.ts', one(tok), { cwd: '/c/Users/dev/proj', safe: [] })).not.toBeNull()
 })
+
+test('test folder names count below the project root only: a session folder named specs does not relax the markers', () => {
+  const tok = 'gh' + 'p_' + 'abcdef' + R.slice(6, 36)
+  const under = (cwd: string): Env => ({ cwd, safe: [] })
+  expect(check('C:/Users/dev/proj/src/config.ts', one(tok), under('C:/Users/dev/proj'))).toContain('GitHub token')
+  expect(check('C:/Users/dev/specs/proj/src/config.ts', one(tok), under('C:/Users/dev/specs/proj'))).toContain('GitHub token')
+  expect(check('C:/Users/dev/tests/proj/src/config.ts', one(tok), under('C:/Users/dev/tests/proj'))).toContain('GitHub token')
+  expect(check('C:/Users/dev/specs/proj/tests/config.ts', one(tok), under('C:/Users/dev/specs/proj'))).toBeNull()
+})

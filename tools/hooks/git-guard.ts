@@ -107,7 +107,11 @@ const skipsConfig = (s: string): boolean => {
     || (new RegExp(`^(${ci('commit')}|${ci('tag')})${ci('.gpgsign')}$`).test(k) && /^(false|no|off|0|\u0003)$/i.test(v))
 }
 // A pathspec that means the whole tree: `.`, `./`, `:/`, `:/.`.
-const ALLPATH = /^(\.\/?|:\/\.?|:)$/
+// `*` stages the whole top folder (the shell expands it, or git matches it); `:(top)` is the root by magic.
+const ALLPATH = /^(\.\/?|:\/\.?|:|\*|:\((?:top|glob|literal|icase)(?:,[^)]*)?\)(?:\.\/?|\*)?)$/
+// A pathspec that only excludes (`:!x`, `:^x`, `:(exclude)x`) takes everything else: a list made of excludes alone is the whole tree.
+const EXCL = /^:(?:[!^]|\((?:[^)]*,)?exclude(?:,[^)]*)?\))/
+const wholeTree = (ops: string[]): boolean => ops.some((o) => ALLPATH.test(o)) || (ops.length > 0 && ops.every((o) => EXCL.test(o)))
 // A folder in one spelling: lower case, `/c/x` as `c:/x`.
 // A scratch index: a value that is not empty, not the repo's own `index` file and not computed (`$(git rev-parse --git-path index)`).
 const SCRATCH = (v: string): boolean => v.replace(/[\s.'"]+$/, '').length > 0 && !/^\$null$/i.test(v) && !/\$\(|`|\$\{/.test(v) && !/(^|[\\/])index$/i.test(v.replace(/[\s.'"]+$/, ''))
@@ -139,10 +143,11 @@ const RULES: Rule[] = [
   // Staging or committing "everything" takes the files of every session that shares the tree. `add -A src/` is scoped.
   // -A/-u alone sweep; with paths they are scoped, unless one path is the whole tree (`add -A src .`).
   [(s) => /^add\b/.test(s) && !new RegExp(`\\s(-[a-zA-Z]*n[a-zA-Z]*|${opt('dry-run')})(\\s|$)`).test(s)
-    && (operands(s).some((o) => ALLPATH.test(o)) || (new RegExp(`\\s${opt('all', 'update')}`).test(s) || hasShort(s, 'A', '', '') || hasShort(s, 'u', '', '')) && operands(s).length === 0),
+    && (wholeTree(operands(s)) || (new RegExp(`\\s${opt('all', 'update')}`).test(s) || hasShort(s, 'A', '', '') || hasShort(s, 'u', '', '')) && operands(s).length === 0 && !/\s--pathspec-from-file(=|\s|$)/.test(s)), // a pathspec file names its own paths
     "git add -A / -u / --all / . stages every session's uncommitted files, not only yours: git add your own paths by name", 'sweep'],
-  [(s) => /^commit\b/.test(s) && !new RegExp(`\\s${opt('dry-run')}`).test(s) && (new RegExp(`\\s${opt('all')}`).test(flagsOf(s)) || hasShort(s, 'a', 'mFCctU', 'uS')),
-    "git commit -a commits every session's modified files, not only yours: git add your own paths by name, then commit", 'tree'],
+  [(s) => /^commit\b/.test(s) && !new RegExp(`\\s${opt('dry-run')}`).test(s) && (new RegExp(`\\s${opt('all')}`).test(flagsOf(s)) || hasShort(s, 'a', 'mFCctU', 'uS')
+    || wholeTree(operands(noValues(s, '-m', '--message', '-F', '--file', '-C', '--reuse-message', '-c', '--reedit-message', '-t', '--template', '--author', '--date', '--cleanup', '--trailer', '--fixup', '--squash')))),
+    "git commit -a / commit . commits every session's modified files, not only yours: git add your own paths by name, then commit", 'tree'],
   // --only or your own paths keep other sessions' STAGED files out of the amend; that HEAD is still your commit is the commit skill's check.
   [(s) => /^commit\b/.test(s) && new RegExp(`\\s${opt('amend')}`).test(flagsOf(s)) && ((t) => (!new RegExp(`\\s${opt('only')}`).test(flagsOf(s)) && !hasShort(s, 'o', 'mFCctU', 'uS') && t === null)
     || (t ?? []).some((p) => ALLPATH.test(p) || p === '*'))(/\s--\s+\S/.test(s) ? s.split(/\s--\s+/).slice(1).join(' ').split(' ') : null),
@@ -202,7 +207,19 @@ const VIA_GUARDED = /^(stash|reset|worktree|push|filter-branch|reflog|update-ref
 const ENV_CONFIG = /^(\$env:)?GIT_CONFIG_(PARAMETERS|COUNT|KEY_\d+|VALUE_\d+)=/
 const GIT = /(^|[\\/])git(\.exe)?$/i
 // The flag after which a shell takes its command line: bash -c / -lc, powershell -Command, cmd /c.
-const SHELL_CMD = /^-\w*c$|^-command$|^\/c$/i
+const SHELL_CMD = /^-\w*c$|^-command$|^\/{1,2}[ck]$/i
+const WINPS = /(^|[\\/])(pwsh|powershell)(\.exe)?$/i
+// Windows PowerShell runs the first word past its own options as the command (`powershell git stash`); -c/-Command, any prefix, takes the
+// rest. Returns where the command starts in `w`, or -1 (-File, -EncodedCommand: nothing readable).
+const psStart = (w: string[], from: number): number => {
+  for (let k = from; k < w.length; k++) {
+    if (/^-c(o(m(m(a(nd?)?)?)?)?)?$/i.test(w[k]!)) return k + 1
+    if (/^-(f(ile)?|e(c|nc\w*))$/i.test(w[k]!)) return -1
+    if (!w[k]!.startsWith('-')) return k
+    if (/^-(ex\w*|ep|w\w*|i\w*|o\w*|v\w*|conf\w*)$/i.test(w[k]!)) k++
+  }
+  return -1
+}
 const MARK = /^\u0001(\d+)\u0001$/
 // Redirections (2>&1, > /dev/null, &>f, *> $null, < f) are not part of the command.
 const REDIR = /[\d*]*(?:>>?|<)&?\s*[^\s;&|()<>]+|&>>?\s*[^\s;&|()<>]+/g
@@ -256,6 +273,55 @@ function lex(src: string, lits: string[], nested: string[], ps: boolean): string
   return out
 }
 
+// Whether the end of `s` is inside an open quote: a ' inside "..." or a " inside '...' does not count.
+function inQuote(s: string): boolean {
+  let q = ''
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i]!
+    if (q === '"' && c === '\\') i++
+    else if (q) { if (c === q) q = '' }
+    else if (c === '"' || c === "'") q = c
+  }
+  return q !== ''
+}
+
+// Heredoc bodies, cut from `cmd`. One fed to a shell's own stdin (`bash <<EOF`, flags only, or `cat <<EOF | bash`) is code and goes to
+// `nested`; one fed to a script (`sh x.sh <<EOF`) or any other command (commit messages) is that command's text and is dropped. Only the body
+// goes: the rest of the opening line (`<<EOF && git push`) is still a command line. A `<<` inside quotes or `$(( ))` is no heredoc, and one
+// with no terminator line leaves its lines as commands. Linear: each line is read once, at most 20 openers per line and a scan budget in
+// total (a regex over 160 KB of `a<<b` took 17 s, past the hook's time limit, and the guard was skipped).
+// shortcut: a pipe into a wrapper (`| sudo bash`, `| xargs`) is not read as a shell; upgrade if that bites.
+function heredocs(cmd: string, nested: string[]): string {
+  const lines = cmd.split('\n'), out: string[] = []
+  let budget = 100000
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!
+    let n = 0, p = i + 1, from = 0, text = ''
+    for (const m of line.matchAll(/(?<!<)<<-?[ \t]*['"]?(\w+)['"]?/g)) {
+      if (++n > 20) break
+      const head = line.slice(0, m.index)
+      if (inQuote(head) || head.lastIndexOf('((') > head.lastIndexOf('))')) continue
+      const tag = m[1]!
+      let j = p
+      while (j < lines.length && budget-- > 0) {
+        const t = lines[j]!.trim()
+        if (t.startsWith(tag) && !/\w/.test(t[tag.length] ?? '')) break
+        j++
+      }
+      if (j >= lines.length || budget <= 0) continue
+      const before = line.slice(Math.max(0, m.index - 80), m.index), rest = line.slice(m.index + m[0].length, m.index + m[0].length + 200)
+      const SH = '(?:ba|z|da|k)?sh(?:\\.exe)?'
+      if (new RegExp(`(?:^|[\\s;&|(/\\\\])${SH}(?:[ \\t]+-[\\w-]+)*[ \\t]*$`).test(before)
+        || new RegExp(`^[^;&|]*\\|\\s*(?:\\S*[\\\\/])?${SH}(?:\\s+-[\\w-]+)*\\s*(?:$|[;&|])`).test(rest)) nested.push(lines.slice(p, j).join('\n'))
+      text += line.slice(from, m.index) + ' '; from = m.index + m[0].length // only a real heredoc's opener goes
+      p = j + 1
+    }
+    out.push(text + line.slice(from))
+    i = p - 1
+  }
+  return out.join('\n')
+}
+
 // A git subcommand line, and the variable that stood in for git when one did.
 type Sub = { sub: string; via?: string; dir: string; idx?: boolean }
 // `cwd` is the tree a command runs in until a `cd`, `pushd` or `Set-Location` before it moves it.
@@ -270,12 +336,7 @@ function subcommands(cmd: string, ps: boolean, depth = 0, cwd = ''): Sub[] {
   // (`sh x.sh <<EOF`) or any other command (commit messages) is that command's text. Only the body goes: the rest
   // of the opening line (`<<EOF && git push`) is still a command line.
   // shortcut: a pipe into a wrapper (`| sudo bash`, `| xargs`) is not read as a shell; upgrade if that bites.
-  const SH = '(?:ba|z|da|k)?sh(?:\\.exe)?'
-  let text = cmd.replace(/(?<!<)<<-?\s*['"]?(\w+)['"]?([^\n]*)(?:\n([\s\S]*?))?\n\s*\1\b/g, (_, tag, rest: string, body = '', at: number, all: string) => {
-    if (new RegExp(`(?:^|[\\s;&|(/\\\\])${SH}(?:[ \\t]+-[\\w-]+)*[ \\t]*$`).test(all.slice(0, at))
-      || new RegExp(`^[^;&|]*\\|\\s*(?:\\S*[\\\\/])?${SH}(?:\\s+-[\\w-]+)*\\s*(?:$|[;&|])`).test(rest)) nested.push(body)
-    return ' ' + rest
-  })
+  let text = heredocs(cmd, nested)
   if (ps) text = text.replace(/@'[\s\S]*?'@|@"[\s\S]*?"@/g, ' ') // PowerShell here-strings; in Bash `@'` is a quote after @
   // A here-string (`bash <<< "git stash"`) becomes one \u0004-led word, read below as a shell's stdin or dropped.
   const cleaned = lex(text, lits, nested, ps)
@@ -346,7 +407,8 @@ function subcommands(cmd: string, ps: boolean, depth = 0, cwd = ''): Sub[] {
     }
     // bash -c "..." / eval "..." / iex "...": the string is a command line of its own.
     // Unquoted (`cmd /c git stash`), the rest of the line is that command, its quoted words put back in quotes.
-    const flag = /^(eval|iex|invoke-expression)$/i.test(head) ? at : SHELL.test(head) ? words.findIndex((w, k) => k > at && SHELL_CMD.test(w)) : -1
+    const flag = /^(eval|iex|invoke-expression)$/i.test(head) ? at
+      : WINPS.test(head) ? ((s) => s < 0 ? -1 : s - 1)(psStart(words.map(unq), at + 1)) : SHELL.test(head) ? words.findIndex((w, k) => k > at && SHELL_CMD.test(w)) : -1
     if (flag >= 0) handOn(words.slice(flag + 1))
     // find -exec / -execdir runs the words after it, up to `\;` or `+`, once per file.
     const exec = words.findIndex((w, k) => k > at && /^-exec(dir)?$/.test(w))
@@ -359,6 +421,8 @@ function subcommands(cmd: string, ps: boolean, depth = 0, cwd = ''): Sub[] {
     let dir = cur
     if (words.slice(0, at).some((w) => /^GIT_(DIR|WORK_TREE)=/.test(w))) dir = '?'
     if (!via && words.slice(0, at).some((w) => ENV_CONFIG.test(w))) out.push({ sub: '-c env', dir })
+    // HUSKY=0 (or the old HUSKY_SKIP_HOOKS=1) turns the repo's husky hooks off for this one command, as --no-verify does.
+    if (!via && words.slice(0, at).some((w) => /^(HUSKY=(0|false)|HUSKY_SKIP_HOOKS=[^0\s]\S*)$/i.test(unq(w)))) out.push({ sub: '-c hooks', dir })
     // A scratch index (`GIT_INDEX_FILE=x git add -A`) is not the tree's index: add -A there stages nobody's files.
     const idx = idxPs || lastIdx(words.slice(0, at).map(unq))
     let i = at + 1
@@ -400,7 +464,8 @@ export function check(cmd: string, tool = 'Bash', where: Where = {}): string | n
   const subs = subcommands(cmd, tool === 'PowerShell', 0, where.cwd ?? '')
   // A pipe hides git's exit code: a failed hook looks like success. Read from the raw text (the lexer splits pipes), quoted text blanked.
   // Heredoc bodies are message text, not commands: dropped first, as subcommands() does.
-  const raw = cmd.replace(/(?<!<)<<-?\s*['"]?(\w+)['"]?([^\n]*)(?:\n([\s\S]*?))?\n\s*\1\b/g, (_, _t, rest: string) => ' ' + rest)
+  const hd = heredocs(cmd, [])
+  const raw = (tool === 'PowerShell' ? hd.replace(/@'[\s\S]*?'@|@"[\s\S]*?"@/g, ' ') : hd)
     .replace(/'[^']*'|"(?:[^"\\]|\\.)*"/g, '""').replace(REDIR, ' ')
   // The git subcommand of one pipe stage: the first non-option word after git, skipping -C <dir> and -c k=v.
   const stageSub = (p: string): string => {

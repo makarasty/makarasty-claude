@@ -1,0 +1,35 @@
+A one-chat run after it landed. Real listing of a scratch run made with
+`sh scripts/fleet.sh file / chips --agents / next / find / finish / drained / merge / render / landed`
+on 2026-11-11 (two repo slots, two tasks, one finding). The shape of every file is in docs/PROTOCOL.md,
+"Directory layout"; this is only what one small run leaves behind.
+
+.fleet/2026-11-11-logging-sweep/
+  RUN_FORMAT                     "2": the layout's major version; an older fleet.sh refuses a newer run
+  coordinator                    session id of the chat that runs the watch
+  slots/01, slots/02             one chat: the subagent slots `chips ... --agents` registered
+  offered/01, offered/02         the lane each slot was registered for
+  tasks/ready/t01-log-scan.md    the task as filed (it stays here; the claim is the directory below)
+  tasks/ready/t02-env-dump.md
+  tasks/claimed/t01-log-scan/
+    owner                        "chip 01" and the claim time
+    heartbeat
+  tasks/claimed/t02-env-dump/
+    owner
+    heartbeat
+  tasks/done/t01-log-scan        written by `finish`; its clock sees it and exits
+  tasks/done/t02-env-dump
+  01.jsonl                       findings, one JSON line each, only through `fleet.sh find`
+  01.done, 02.done               written by `drained` when the queue is closed and empty
+  backlog.jsonl                  `merge`: findings deduped and ranked
+  backlog.md, skipped.md         `render`: the readable backlog (see backlog.md beside this file)
+  unreached.jsonl                areas nobody reached; never counted as clean
+  skipped.jsonl
+  FINISHED                       written by `landed`: the run ended
+
+The finding in 01.jsonl, as the gate stored it (`when` and `chip` are stamped by `find`):
+
+{"area":"app.js","severity":"major","observed":"logs token","repro":"node app.js","evidence":"app.js:1","mechanism":"console.log of the env var","mechanism_status":"established","conditions":"any","when":"2026-11-11T21:30:56.785Z","chip":"01"}
+
+Not in this run, and present in bigger ones: ask/ and answers/ (worker questions), PAUSED and stopped/<NN>
+(a pause), STATE.md and RULES.md (the coordinator's state and the rules every spawn reads), decisions.jsonl,
+clusters.jsonl, <NN>.notes.md, <NN>.blocked, <NN>.retired, want/<NN>, replaced/<NN>.

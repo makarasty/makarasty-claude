@@ -6,8 +6,8 @@ allowed-tools: Bash(node:*), Read
 
 A script does the scan and the rewrite; the chat shows its counts, asks once, and reports.
 The script is `"${CLAUDE_SKILL_DIR}/scrub.mjs"`; spell the full path in every command, shell variables do not survive between calls. It covers the transcripts (projects, subagents, history, paste-cache,
-file-history, todos, handoff, the Desktop app session folders). Settings files, `~/.claude.json` and the
-Codex, Gemini and Copilot folders are only counted, never changed.
+todos, handoff, the Desktop app session folders; not the installed skill folders there). Settings files, `~/.claude.json`, the
+Codex, Gemini and Copilot folders and `file-history` (the /rewind checkpoints: masking one would put asterisks into the person's real file on a rewind) are only counted, never changed; say how many secrets sit in the checkpoints. With `--root <dir>` only that folder is read.
 
 ## Flow
 

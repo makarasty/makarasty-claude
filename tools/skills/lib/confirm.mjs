@@ -16,7 +16,7 @@
 // The calling script (machine.mjs, prune.mjs) runs check(tool, ids, {scope}) before it deletes: only ids granted in the last 30 minutes
 // pass, once each. Without CLAUDE_CODE_SESSION_ID (a person at their own terminal) check passes: that person is the consent.
 // State: ${CLAUDE_CONFIG_DIR || ~/.claude}/makarasty/confirm/<session id>.<tool>.json
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, readSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -77,12 +77,24 @@ function transcriptOf(o) {
     return null;
 }
 
+// The last TAIL bytes of the transcript, from the first whole line: the answer asked for a moment ago is at the end, and a
+// whole-file read fails past 512 MB ("Cannot create a string longer than 0x1fffffe8 characters").
+// shortcut: an answer more than TAIL bytes from the end is not seen (a grant is 30 minutes old at most); raise TAIL if chats write that much in that time.
+const TAIL = 16 << 20;
+function tailOf(f, tail = TAIL) {
+    const size = statSync(f).size;
+    if (size <= tail) return readFileSync(f, 'utf8');
+    const fd = openSync(f, 'r'), b = Buffer.alloc(tail);
+    try { readSync(fd, b, 0, tail, size - tail); } finally { closeSync(fd); }
+    return b.subarray(b.indexOf(10) + 1).toString('utf8'); // the cut first line goes
+}
+
 // The last answer the person gave after time T (ms): an AskUserQuestion answer or a typed message. Null when none.
 function answerAfter(T, o) {
     const f = transcriptOf(o);
     if (!f) return null;
     let last = null;
-    for (const line of readFileSync(f, 'utf8').split('\n')) {
+    for (const line of tailOf(f, o.tail).split('\n')) {
         if (!line.trim()) continue;
         let r;
         try { r = JSON.parse(line); } catch { continue; }
@@ -198,6 +210,8 @@ export function grant(tool, o = {}) {
 
 // Called by the script that deletes, with the ids it is about to act on. Throws unless the person granted every one.
 export function check(tool, ids, o = {}) { // o.scope: the scope this run acts under, a string or a list of them
+    // Unset: a person at their own terminal. Set but empty is what a model types to skip the check: refused.
+    if (!o.sid && process.env.CLAUDE_CODE_SESSION_ID === '') throw new Error('not confirmed by the person: CLAUDE_CODE_SESSION_ID is set but empty. Do not act');
     if (!o.sid && !process.env.CLAUDE_CODE_SESSION_ID) return;
     if (!ids.length) return;
     const p = load(tool, o), want = [].concat(o.scope ?? ''), fresh = p && nowOf(o) - p.grantedAt <= TTL, ok = new Set(fresh ? p.granted : []);
@@ -270,6 +284,14 @@ function selftest() {
         assert.throws(() => check('x', ['b'], o()), /not confirmed by the person: b.*confirm\.mjs grant/);
         check('x', ['a'], o());
         assert.throws(() => check('x', ['a'], o()), /not confirmed.*a/, 'a grant is used once');
+        // a transcript longer than the tail: the answer at its end is still read (tail 4 KB, 40 KB of earlier lines)
+        const big = join(tmp, 'big.jsonl'), ob = () => ({ ...o(), transcript: big, tail: 4096 });
+        t += 10e3; makePlan('x', items, ob());
+        writeFileSync(big, JSON.stringify({ type: 'assistant', pad: 'é'.repeat(20e3) }) + '\n' + JSON.stringify({ type: 'user', isSidechain: false, timestamp: new Date(t + 1e3).toISOString(), toolUseResult: { answers: { 'Что?': '1,3' } }, message: { role: 'user', content: [{ type: 'tool_result' }] } }) + '\n');
+        t += 2e3;
+        assert.equal(select('x', ob()).code, 0, 'an answer at the end of a transcript longer than the tail is read');
+        process.env.CLAUDE_CODE_SESSION_ID = '';
+        assert.throws(() => check('x', ['b'], { ...o(), sid: undefined }), /set but empty/, 'an empty session id is no way round the grant');
         delete process.env.CLAUDE_CODE_SESSION_ID;
         r = go('Delete forever: 2\nRemove, undoable: 1, 3'); assert.equal(r.code, 0); assert.match(r.out, /^GRANTED: b\nNOT GRANTED: a$/); // "1, 3" is no label for 1
         r = go('Delete forever: 2 и Remove, undoable: 1'); assert.equal(r.code, 2, 'two labels on one line are no label');

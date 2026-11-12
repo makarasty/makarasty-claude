@@ -15,7 +15,7 @@
 // A plain runner, not node:test: the cases lean on the state the cases above them left (the marker, the
 // sink, the config), in order, the way the sh version this replaces did.
 import { spawn, spawnSync } from 'node:child_process';
-import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 // Forward slashes everywhere: sh and node both take C:/x, and a backslash path pasted into a sh command
@@ -181,6 +181,29 @@ if (exists(marker))
     bad('and consumes the marker');
 else
     ok('and consumes the marker');
+node([n, '--arm', 'the', 'claim']);
+hook('{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"claimed"}', { NOTIFY_DRY_RUN: nowhere });
+ago(marker, 7200); // an unsent marker is old, and a rename keeps its mtime
+const fresh = `${marker}.flushing-${Date.now()}`;
+renameSync(marker, fresh);
+node([n, '--arm', '--session', 's3', 'third']);
+hook('{"hook_event_name":"Stop","session_id":"s3","last_assistant_message":"third done"}', { NOTIFY_DRY_RUN: nowhere });
+hook('{"hook_event_name":"SessionStart","session_id":"s3","source":"resume"}');
+count("another chat's flush sends its own message and leaves a marker claimed seconds ago alone", 8);
+if (exists(fresh))
+    ok('the fresh claim stays with the chat sending it');
+else
+    bad('the fresh claim stays with the chat sending it');
+const stale = `${marker}.flushing-${Date.now() - 120e3}`;
+renameSync(fresh, stale);
+node([n, '--arm', '--session', 's2', 'other']);
+hook('{"hook_event_name":"Stop","session_id":"s2","last_assistant_message":"other done"}', { NOTIFY_DRY_RUN: nowhere });
+hook('{"hook_event_name":"SessionStart","session_id":"s2","source":"resume"}');
+count('a claim a killed hook left over a minute ago goes back and is sent with the next flush', 10);
+if (exists(marker) || exists(stale) || exists(`${tmp}/makarasty/notify/s2.json`))
+    bad('and nothing is left of either');
+else
+    ok('and nothing is left of either');
 section('the chat dies before it finishes');
 node([n, '--arm', 'the', 'migration']);
 hook('{"hook_event_name":"StopFailure","session_id":"s1","error":"rate_limit"}');
@@ -192,7 +215,7 @@ else
 out = hook('{"hook_event_name":"SessionStart","session_id":"s1","source":"resume","seconds_since_last_response":5400}').out;
 check('a resume before the finish tells the chat to check its work', 'check whether the task it was on is already complete', out);
 check('and how long it was gone', '90 minutes', out);
-count('and sends nothing itself', 8);
+count('and sends nothing itself', 11);
 hook('{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"The migration had already run; nothing left to do."}');
 check('the finish after a reopen says so', 'reopened after an interruption', last());
 section('elapsed time, and the ntfy priority and tags per kind');
@@ -413,6 +436,19 @@ else
 appendFileSync(wt, '{"type":"assistant","message":{"content":[{"type":"text","text":"Released task-1. Done."}]}}\n');
 hook(`{"hook_event_name":"Stop","session_id":"s1","stop_hook_active":true,"transcript_path":"${wt}","last_assistant_message":"Released task-1. Done."}`);
 count('the Stop that really ends that turn sends', b + 1);
+node([n, '--arm', 'the', 'job']);
+const b2 = lines();
+const big = `${tmp}/big.jsonl`, filler = `{"type":"progress","data":"${'x'.repeat(1000)}"}\n`;
+writeFileSync(big, '{"type":"user","message":{"role":"user","content":"take task 1"}}\n' + filler.repeat(10 * 1024) + [
+    '{"type":"assistant","message":{"content":[{"type":"text","text":"Stopping here."}]}}',
+    '{"type":"user","message":{"role":"user","content":"Stop hook feedback:\\n[guard]: You still hold task-1"}}',
+].join('\n') + '\n');
+hook(`{"hook_event_name":"Stop","session_id":"s1","stop_hook_active":false,"transcript_path":"${big}","last_assistant_message":"Stopping here."}`);
+count('a blocked Stop at the end of a 10 MB transcript is still seen (only the tail is read)', b2);
+node([n, '--disarm']);
+out = node([n, '--arm', 'C:/Program Files/Git/deploy', 'на', 'прод'], { env: { MSYSTEM: 'MINGW64', EXEPATH: 'C:\\Program Files\\Git\\bin' } }).out;
+check('a /label Git Bash turned into a Program Files path is stored as typed', '"/deploy на прод"', out);
+node([n, '--disarm']);
 node([n, '--arm', '--next', 'later']);
 out = hook('{"hook_event_name":"SessionStart","session_id":"s1","source":"resume"}').out;
 if (out === '')

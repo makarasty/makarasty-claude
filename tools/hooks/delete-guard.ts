@@ -40,7 +40,18 @@ const SHELL = /(^|[\\/])((ba|z|da|k)?sh|pwsh|powershell|cmd|su)(\.exe)?$/i
 const WINSH = /(^|[\\/])(pwsh|powershell|cmd)(\.exe)?$/i
 const WRAPPER = /^(env|command|sudo|nohup|time|exec|builtin|nice|xargs|timeout|watch|coproc|ionice|stdbuf|setsid|wsl(\.exe)?|doas|runuser|flock|taskset|strace|chronic|busybox|npx|bunx|pnpx|pnpm|yarn)$/
 // bash -c / -lc, powershell -Command (and its prefixes), cmd /c; -EncodedCommand carries base64 UTF-16.
-const SHELL_CMD = /^(-\w*c|-c(o(m(m(a(nd?)?)?)?)?)?|\/[ck])$/i
+const SHELL_CMD = /^(-\w*c|-c(o(m(m(a(nd?)?)?)?)?)?|\/{1,2}[ck])$/i // `cmd //c` is Git Bash's spelling of cmd /c
+// Windows PowerShell runs the first word past its own options as the command (`powershell Remove-Item -Recurse -Force ..`); -c/-Command, any
+// prefix, takes the rest. Returns where the command starts in `w`, or -1 (-File, -EncodedCommand: read apart).
+const psStart = (w: string[]): number => {
+  for (let k = 0; k < w.length; k++) {
+    if (/^-c(o(m(m(a(nd?)?)?)?)?)?$/i.test(w[k]!)) return k + 1
+    if (/^-(f(ile)?|e(c|nc\w*))$/i.test(w[k]!)) return -1
+    if (!w[k]!.startsWith('-')) return k
+    if (/^-(ex\w*|ep|w\w*|i\w*|o\w*|v\w*|conf\w*)$/i.test(w[k]!)) k++
+  }
+  return -1
+}
 const ENCODED = /^-e(c|nc[a-z]*)$/i
 // Node's rimraf and del-cli (and trash) delete recursively without a flag; they unlink links, as rm does.
 const NODE_DEL = new Set(['rimraf', 'del-cli', 'trash'])
@@ -263,8 +274,8 @@ function command(w: string[], ps: boolean, out: Cmd[], depth: number): void {
   if (b === 'nix-shell') { const r = rest.findIndex((y) => /^--(run|command)$/.test(y)); if (r >= 0 && rest[r + 1]) nest(rest[r + 1]!, ps, out, depth + 1) }
   if (SHELL.test(head)) {
     const inner = WINSH.test(head)
-    const f = rest.findIndex((y) => SHELL_CMD.test(y))
-    if (f >= 0 && rest[f + 1] !== undefined) nest(inner ? rest.slice(f + 1).join(' ') : rest[f + 1]!, inner, out, depth + 1)
+    const f = /(^|[\\/])(pwsh|powershell)(\.exe)?$/i.test(head) ? psStart(rest) : ((k) => k < 0 ? -1 : k + 1)(rest.findIndex((y) => SHELL_CMD.test(y)))
+    if (f >= 0 && rest[f] !== undefined) nest(inner ? rest.slice(f).join(' ') : rest[f]!, inner, out, depth + 1)
     const e = rest.findIndex((y) => ENCODED.test(y))
     if (e >= 0 && rest[e + 1] !== undefined) nest(decode(rest[e + 1]!), true, out, depth + 1)
   } else if (/^(eval|iex|invoke-expression)$/.test(b)) lex(rest.join(' '), ps, out, depth + 1)
@@ -447,7 +458,7 @@ function removal(c: Cmd): { rec: boolean; paths: string[]; narrowed: boolean } {
           'errorvariable', 'warningvariable', 'informationvariable', 'outvariable', 'outbuffer', 'pipelinevariable', 'credential', 'stream'].some((l) => l.startsWith(n)))) i++
       continue
     }
-    if (!ended && CMD_SWITCH.has(c.name) && /^\/[a-z?](\/[a-z?])*$/i.test(a)) { if (/\/s/i.test(a)) rec = true; continue }
+    if (!ended && CMD_SWITCH.has(c.name) && /^\/{1,2}[a-z?](\/{1,2}[a-z?])*$/i.test(a)) { if (/\/s/i.test(a)) rec = true; continue }
     paths.push(...(psy ? a.split(',') : [a]))
   }
   return { rec: rec && !dry, paths, narrowed }

@@ -9,7 +9,7 @@ import path from 'node:path';
 import {
   parsePrices, findAnalyze, priceOf, costOf, verdict, keyOf, linkTasks, parseU0, parseLog, rng, selectCandidates,
   checkArms, parseArms, tally, parseRoleTable, diffTables, median, CORRECTION_RE,
-  resolveModel, planEstimate, sealMap, cloneDestProblem,
+  resolveModel, planEstimate, sealMap, cloneDestProblem, lockStale, stealLock,
 } from './tune.mjs';
 
 const SRC = `const PRICES = {
@@ -167,4 +167,28 @@ test('cloneDestProblem: inside the source repo, through a junction, existing, mi
     if (fs.existsSync(link)) fs.unlinkSync(link); // the link only, never what it points to
     fs.rmSync(base, { recursive: true, force: true });
   }
+});
+
+test('lock: stale when dead or overdue (pid reuse), never when empty and fresh', () => {
+  const now = 1e12, yes = () => true, no = () => false;
+  assert.equal(lockStale(`5 ${now - 1000} 60000`, now, now, yes), false, 'live and young');
+  assert.equal(lockStale(`5 ${now - 1000} 60000`, now, now, no), true, 'dead pid');
+  assert.equal(lockStale(`5 ${now - 200000} 60000`, now, now, yes), true, 'pid alive (reused) but older than its ttl');
+  assert.equal(lockStale(`5 ${now - 3e6}`, now, now, yes), true, 'no ttl: 30 min default');
+  assert.equal(lockStale('', now - 100, now, no), false, 'empty read mid-write is not stale');
+  assert.equal(lockStale('', now - 60000, now, no), true, 'empty and old is a crash leftover');
+  assert.equal(lockStale('77', now, now, yes), false, 'old plain-pid format still read');
+});
+
+test('lock: a lock that changed since it was judged stale is not stolen', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tune-lock-')), lock = path.join(dir, 'scan.lock');
+  try {
+    fs.writeFileSync(lock, '222 1 60000');
+    assert.equal(stealLock(lock, '111 1 60000'), false, 'another scan created its own lock after the judgement');
+    assert.equal(fs.readFileSync(lock, 'utf8'), '222 1 60000', 'and it is back, unchanged');
+    assert.deepEqual(fs.readdirSync(dir), ['scan.lock'], 'no .stale left');
+    assert.equal(stealLock(lock, '222 1 60000'), true, 'the lock that was judged is taken');
+    assert.equal(fs.existsSync(lock), false);
+    assert.equal(stealLock(lock, 'x'), true, 'already gone: free to take');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });

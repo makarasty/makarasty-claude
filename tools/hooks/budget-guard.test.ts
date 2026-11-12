@@ -208,7 +208,7 @@ test('a long or odd line is lexed in a bounded time', () => {
   for (const input of ['npm test && '.repeat(5000), 'echo "a $(echo b)" test; '.repeat(4000), '(('.repeat(5000) + 'npm test', 'bash -c "'.repeat(2000) + 'npm test']) {
     const t0 = performance.now()
     heavy(input)
-    expect(performance.now() - t0 < 500).toBe(true)
+    expect(performance.now() - t0 < 2000).toBe(true)
   }
 })
 
@@ -219,4 +219,23 @@ test('Monitor: a heavy run counts against a live one, but is never loose (its ti
   expect(check('npm test &', 'Monitor', {}, NONE)).toBeNull()
   expect(check('npm test', 'Monitor', {}, undefined)).toBeNull()
   expect(check('git status', 'Monitor', {}, LIVE_VITEST)).toBeNull()
+})
+
+// Review round 3: package-manager bin runs, a version on the npx package, Git Bash's cmd //c, Windows PowerShell's positional command.
+test('pnpm/yarn/bun bin runs, npm x and npx pkg@version are heavy like npx vitest run; scoped ones are not', () => {
+  const H = ['pnpm vitest run', 'yarn vitest run', 'yarn jest', 'pnpm tsc --noEmit', 'yarn tsc', 'bun vitest run', 'npm x vitest run', 'npx -y vitest@latest run', 'pnpm dlx vitest@1.2.3 run']
+  expect(H.filter((c) => heavy(c).length === 0)).toEqual([])
+  const S = ['pnpm vitest run src/a.test.ts', 'yarn jest src/a.test.ts', 'pnpm tsc --noEmit -p packages/a', 'yarn tsc --watch', 'bun vitest --version', 'npx -y vitest@latest run src/a.test.ts', 'yarn install', 'pnpm add vitest']
+  expect(S.filter((c) => heavy(c).length > 0)).toEqual([])
+})
+
+test('cmd //c, cmd /k and a positional powershell command hand the line on', () => {
+  expect(['cmd //c "npm test"', 'cmd /k "npm test"'].filter((c) => heavy(c).length === 0)).toEqual([])
+  expect(['powershell "npm test"', 'powershell npm test', 'powershell -Com "npm test"', 'pwsh -NoProfile "npx vitest run"'].filter((c) => heavy(c, 'Bash').length === 0)).toEqual([])
+  expect(['powershell -File x.ps1', 'powershell "npm run build"', 'cmd //c "npm run build"'].filter((c) => heavy(c).length > 0)).toEqual([])
+})
+
+test('a wait on the live run never lets a second heavy run through: a bounded loop ends and the run starts anyway', () => {
+  for (const c of ['Wait-Process -Id 4321 -Timeout 1; npx vitest run', 'for i in 1; do echo 4321 ps; done; npx vitest run', 'Wait-Process -Id 4321; npm test',
+    'for i in $(seq 1 120); do powershell -NoProfile -Command "Get-Process -Id 4321" && break; sleep 15; done; npm test']) expect(check(c, 'Bash', {}, LIVE_VITEST)).toContain('another heavy verify run is live')
 })

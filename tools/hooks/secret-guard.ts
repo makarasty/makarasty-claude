@@ -107,7 +107,8 @@ export type Env = { cwd: string; safe: string[] }
 export function check(path: string, text: string, env: Env, old = ''): string | null {
   const p = segs(path, env.cwd)
   const name = path.replace(/\\/g, '/').split('/').pop() ?? ''
-  const inTests = p.slice(0, -1).some((s) => TEST_DIR.test(s)) || /\.(test|spec)\./i.test(name)
+  // Test folders count below the project root only: a session folder `C:/Users/dev/specs/proj` is no test folder.
+  const inTests = p.slice(segs(env.cwd, env.cwd).length, -1).some((s) => TEST_DIR.test(s)) || /\.(test|spec)\./i.test(name)
   const hit = find(text, inTests, old)
   if (!hit) return null
   if (!under(segs(env.cwd, env.cwd), p) || env.safe.some((s) => s && under(segs(s, env.cwd), p))) return null

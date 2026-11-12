@@ -11,7 +11,7 @@ reading the text.
 ## 1. Run the script
 
 ```bash
-node "${CLAUDE_SKILL_DIR}/chats.mjs" --cwd <project path> --self ${CLAUDE_SESSION_ID} [--days N] [--limit N]
+node "${CLAUDE_SKILL_DIR}/chats.mjs" --cwd "<project path>" --self ${CLAUDE_SESSION_ID} [--days N] [--limit N]
 ```
 
 `<project path>` is this chat's working directory unless the person named another project. Days come

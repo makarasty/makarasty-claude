@@ -13,7 +13,7 @@ const cfg = join(tmp, 'cfg'), root = join(cfg, 'makarasty', 'hold');
 mkdirSync(tmp, { recursive: true });
 let pass = 0, fail = 0;
 const envFor = (env) => { const e = { ...process.env, CLAUDE_CONFIG_DIR: cfg, ...env }; for (const k of Object.keys(e)) if (e[k] === undefined) delete e[k]; return e; };
-const base = { CLAUDE_CODE_SESSION_ID: undefined, CLAUDE_SESSION_ID: undefined };
+const base = { CLAUDE_CODE_SESSION_ID: undefined, CLAUDE_SESSION_ID: undefined, MSYSTEM: undefined }; // the Git Bash undo is tested on its own
 const run = (args, input = '', env = {}) => {
   const r = spawnSync(process.execPath, [hold, ...args], { input, encoding: 'utf8', env: envFor({ ...base, ...env }) });
   return { out: r.stdout.replace(/\n+$/, ''), err: r.stderr, code: r.status ?? 128 };
@@ -162,6 +162,19 @@ utimesSync(join(d2('ls'), 'index.md'), ago0(2), ago0(2));
 R2('lu', ['init']);
 t('last skips a newer finished folder and names the older unfinished one', R2('lu', ['last']).out.startsWith(F(d2('ls'))), R2('lu', ['last']).out);
 
+// a live chat's folder is not "earlier": last skips it (its session file names a running pid)
+R2('lv', ['init']); R2('lv', ['add'], 'идёт в другом чате');
+R2('lw', ['init']);
+t('last names lv while no live chat owns it', R2('lw', ['last']).out.startsWith(F(d2('lv'))), R2('lw', ['last']).out);
+mkdirSync(join(tmp, 'cfg2', 'sessions'), { recursive: true });
+writeFileSync(join(tmp, 'cfg2', 'sessions', `${process.pid}.json`), JSON.stringify({ pid: process.pid, sessionId: 'lv', cwd: tmp }));
+t('last skips a folder whose chat is live', !R2('lw', ['last']).out.includes('/lv'), R2('lw', ['last']).out);
+mkdirSync(join(tmp, 'cfg2', 'projects', 'p'), { recursive: true });
+writeFileSync(join(tmp, 'cfg2', 'projects', 'p', 'lv.jsonl'), JSON.stringify({ type: 'user', timestamp: ago0(5).toISOString(), message: { content: 'x' } }) + '\n');
+t('and one whose chat is open but idle for hours (its process still runs)', !R2('lw', ['last']).out.includes('/lv'), R2('lw', ['last']).out);
+rmSync(join(tmp, 'cfg2', 'sessions'), { recursive: true, force: true });
+rmSync(join(tmp, 'cfg2', 'projects'), { recursive: true, force: true });
+
 // 7b. a second hold in one session after release starts fresh; the first is archived
 console.log('second hold');
 H('rr', ['init', 'слово']); H('rr', ['add'], 'первый пункт'); H('rr', ['release']);
@@ -199,7 +212,31 @@ const nums = await Promise.all(adds);
 const texts = nums.map((n) => quoted(join(D('par'), `${n}.md`)));
 t('eight simultaneous adds get eight distinct numbers and keep their own text', new Set(nums).size === 8 && new Set(texts).size === 8 && texts.every((x) => /^item \d$/.test(x)), nums.join(','));
 
-// 10. bad use
+// 10. Git Bash path conversion, a killed add, a long title
+console.log('windows and crashes');
+const gitEnv = { MSYSTEM: 'MINGW64', EXEPATH: 'C:\\Program Files\\Git\\bin' };
+const G = (sid, args, input) => run(['--sid', sid, ...args], input, gitEnv);
+quick('msys', ['first item text here']);
+G('msys', ['drop', '01', 'C:/Program Files/Git/settings/profile больше не нужен']);
+t('a /route Git Bash turned into C:/Program Files/Git/route is stored as /route', /status: dropped \| \/settings\/profile больше/.test(read(join(D('msys'), '01.md'))), read(join(D('msys'), '01.md')));
+G('msys', ['add', '--where', 'C:/Program Files/Git/settings'], 'second');
+t('--where gets the same undo', /^where: \/settings$/m.test(read(join(D('msys'), '02.md'))), read(join(D('msys'), '02.md')));
+H('msys', ['drop', '02', 'C:/Program Files/Git/x without Git Bash']);
+t('without MSYSTEM nothing is rewritten', /\| C:\/Program Files\/Git\/x/.test(read(join(D('msys'), '02.md'))), read(join(D('msys'), '02.md')));
+writeFileSync(join(D('msys'), '03.md'), ''); utimesSync(join(D('msys'), '03.md'), ago(0.1), ago(0.1));
+H('msys', ['release']);
+r = H('msys', ['check']);
+t('an empty NN.md left by a killed add is not a stray once a minute old', r.code === 0 && !/strays/.test(r.out), r.out);
+writeFileSync(join(D('msys'), '04.md'), '');
+t('a fresh empty NN.md (an add in progress) still counts', H('msys', ['check']).code === 1);
+quick('emoji', ['😀'.repeat(70)]);
+t('a title cut at 60 keeps whole emoji', !read(join(D('emoji'), 'index.md')).includes('\uFFFD'), read(join(D('emoji'), 'index.md')));
+t('no temp index file is left behind', !readdirSync(D('msys')).some((f) => f.endsWith('.tmp')));
+H('paths', ['init']);
+let t0 = Date.now(); r = H('paths', ['add'], '/a.png '.repeat(4000));
+t('a paste naming 4000 image paths is recorded in seconds, not minutes (a budget of file checks)', r.code === 0 && Date.now() - t0 < 5000, `${Date.now() - t0} ms ${r.err}`);
+
+// 11. bad use
 t('an unknown verb exits 1', run(['nope']).code === 1);
 t('a missing argument exits 1', H('m', ['status']).code === 1);
 

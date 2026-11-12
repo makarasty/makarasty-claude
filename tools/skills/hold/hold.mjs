@@ -24,6 +24,8 @@
 import { appendFileSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, extname, join, resolve } from 'node:path';
 import { homedir } from 'node:os';
+import { unmsys } from '../lib/msys.mjs';
+import { chats } from '../lib/live.mjs';
 
 const argv = process.argv.slice(2);
 
@@ -36,18 +38,19 @@ const one = (s) => String(s).replace(/\s+/g, ' ').trim();
 const DAY = 86400000;
 const FINAL = /^(done|partial|not-done|dropped|merged→\d+)$/;
 const root = join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'makarasty', 'hold');
+// Git Bash rewrites an argument that starts with / (see lib/msys.mjs). Undone for text; --from, --dir and --sid stay as given.
 
 // Positionals and --key value pairs; --all is a switch, --flag and --img repeat, a bare -- ends the options.
 function parse(args) {
   const pos = [], opt = { flag: [], img: [] };
   let raw = false;
   for (let i = 0; i < args.length; i++) {
-    const a = args[i];
+    const a = unmsys(args[i]);
     if (raw) pos.push(a);
     else if (a === '--') raw = true;
     else if (a === '--all') opt.all = true;
     else if (a.startsWith('--')) {
-      const k = a.slice(2), v = args[++i];
+      const k = a.slice(2), v = ['from', 'dir', 'sid'].includes(k) ? args[++i] : unmsys(args[++i]);
       if (v === undefined) die(`${a} needs a value`);
       if (k === 'flag' || k === 'img') opt[k].push(v); else opt[k] = v;
     } else pos.push(a);
@@ -78,14 +81,17 @@ function items(dir) {
   });
 }
 const firstLine = (dir) => read(indexOf(dir)).split('\n')[0];
-const writeIndex = (dir, first, its) => writeFileSync(indexOf(dir), [first, ...its.map(fmt)].join('\n') + '\n');
-const files = (dir) => readdirSync(dir).flatMap((f) => /^\d+\.md$/.test(f) ? [f.slice(0, -3)] : []);
+// Temp file plus rename: a kill mid-write leaves the old index, never a torn one.
+const writeIndex = (dir, first, its) => { const t = `${indexOf(dir)}.${process.pid}.tmp`; writeFileSync(t, [first, ...its.map(fmt)].join('\n') + '\n'); renameSync(t, indexOf(dir)); };
+// An empty NN.md older than a minute is a number add reserved and never filled (killed in between): not an item.
+const reservedDead = (dir, n) => { try { const s = statSync(join(dir, `${n}.md`)); return s.size === 0 && Date.now() - s.mtimeMs > 60000; } catch { return false; } };
+const files = (dir) => readdirSync(dir).flatMap((f) => /^\d+\.md$/.test(f) && !reservedDead(dir, f.slice(0, -3)) ? [f.slice(0, -3)] : []);
 const nextNn = (dir) => Math.max(0, ...items(dir).map((i) => +i.nn), ...files(dir).map(Number)) + 1;
 const stdin = () => { try { return readFileSync(0, 'utf8'); } catch { return ''; } };
 const quote = (t) => t.split('\n').map((l) => (l === '' ? '>' : `> ${l}`)).join('\n');
 const unquote = (l) => l.replace(/^> ?/, '');
 // The short title: cut on a word boundary, a bar cannot break the index line.
-const title = (s) => { s = one(s).replaceAll('|', '/'); if (s.length <= 60) return s; const k = s.lastIndexOf(' ', 60); return `${s.slice(0, k > 20 ? k : 60)}…`; };
+const title = (s) => { const c = [...one(s).replaceAll('|', '/')]; if (c.length <= 60) return c.join(''); const k = c.lastIndexOf(' ', 60); return `${c.slice(0, k > 20 ? k : 60).join('')}…`; }; // code points: an emoji is never cut in half
 // The person's text of an item file: the first quote block, up to a `previous` section.
 function textOf(file) {
   const L = read(file).split('\n'), q = L.findIndex((l) => /^>( |$)/.test(l));
@@ -124,16 +130,19 @@ const isFile = (p) => { try { return statSync(p).isFile(); } catch { return fals
 const found = (p) => [p, p.replace(/^\/([A-Za-z])\//, '$1:/')].find(isFile);
 // Paths in the text: from each start, the growing prefixes up to an image extension (spaces and parentheses
 // belong to a path); the first that exists wins, else the shortest is a miss.
+// A budget of file checks per text: 2000 `/a.png` in one paste made 170k stats and took 11 s; a real report
+// names a handful of screenshots.
 function imagesIn(text) {
   const seen = [];
+  let budget = 400;
   for (const line of text.split('\n')) {
     const ends = [...line.matchAll(EXT)].map((m) => m.index + m[0].length);
     let from = 0;
     for (const m of line.matchAll(START)) {
       if (m.index < from) continue;
-      const cands = ends.filter((e) => e > m.index && e - m.index < 300);
+      const cands = ends.filter((e) => e > m.index && e - m.index < 300).slice(0, 12);
       if (!cands.length) continue;
-      const hit = cands.find((e) => found(line.slice(m.index, e)));
+      const hit = cands.find((e) => budget-- > 0 && found(line.slice(m.index, e)));
       const e = hit ?? cands[0];
       seen.push(line.slice(m.index, e));
       from = e;
@@ -294,7 +303,8 @@ function last(opt) {
   const cur = dirFor(opt, true), proj = existsSync(join(cur, 'project.txt')) ? read(join(cur, 'project.txt')).trim() : process.cwd();
   if (!existsSync(root)) return;
   const unfinished = (p) => { const { bad, open } = problems(p); return bad.length || open.length; };
-  const c = readdirSync(root).map((e) => join(root, e)).filter((p) => resolve(p) !== resolve(cur) && existsSync(indexOf(p)) && existsSync(join(p, 'project.txt')) && read(join(p, 'project.txt')).trim() === proj)
+  const liveIds = new Set(chats().filter((x) => (x.state === 'live' || x.state === 'idle') && x.id).map((x) => x.id)); // another open chat's hold (live, or idle with its process up) is not "earlier"
+  const c = readdirSync(root).map((e) => join(root, e)).filter((p) => resolve(p) !== resolve(cur) && !liveIds.has(basename(p)) && existsSync(indexOf(p)) && existsSync(join(p, 'project.txt')) && read(join(p, 'project.txt')).trim() === proj)
     .filter((p) => items(p).length && unfinished(p)).sort((a, b) => statSync(indexOf(b)).mtimeMs - statSync(indexOf(a)).mtimeMs)[0];
   if (c) console.log(`${fwd(c)} (${problems(c).bad.length} items not final)`);
 }
