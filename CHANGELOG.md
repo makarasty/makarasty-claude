@@ -1,5 +1,14 @@
 # Changelog
 
+## makarasty-tools 1.19.20 — 2026-11-12
+
+- **inbox: the coordinator's rules from 11-12 live in the skill.** A question already answered (here, in its chat,
+  a profile standing answer, a decision for a set) is answered from that answer; a hold echo, a question to a chat's
+  own reviewer or a recap ending in "?" is not the person's (`done`, one line, no answer). The asking chat's link
+  goes right above each ask; a step only he can do names the exact action. A refused card start is proposed as a
+  card here. Started sessions get model and effort by kind of work (this chat on the top model). "How long": a
+  table chat | what is left | rough time, marked as an estimate. SKILL.md 12782 -> 13876 bytes.
+
 ## makarasty 1.18.5 — 2026-11-12
 
 - **fleet-plan asks a standing question once:** Round 0b's two questions (another chat's code blocks the commit; a

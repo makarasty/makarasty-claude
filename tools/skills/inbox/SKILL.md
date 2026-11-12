@@ -48,6 +48,11 @@ one line and restart it. A watchdog missing from the task list means this chat r
    why it asks, what each option does. Use the item's "Plainly" line when it has one; otherwise write it from
    its context, and copy its "Open the chat" link line as it stands (one click opens that chat). Never add facts the
    item does not hold.
+   Not asked again: an item the person already answered (here, in its own chat, or by a standing answer in the
+   profile; a decision made for a set, "commit all of today's plugin work", covers later items of that set) is
+   answered from that answer, named in the report. Not the person's: a hold chat's echo, a question a chat put to its
+   own reviewer or subagent, a recap sentence that merely ends in "?": answer nothing (an answer lands in that chat
+   as the person's message), `inbox.mjs done <id>`, one line saying what it is.
 3. Every item, a session this chat started included (the person does not see that session's dialog here: on 11-12
    he answered one in its own chat after this chat only pointed at it), is asked here:
    Ask in AskUserQuestion with `metadata: {"source": "inbox:<id>,<id>"}` naming the items of that call (the flag keeps
@@ -59,9 +64,10 @@ one line and restart it. A watchdog missing from the task list means this chat r
    - a box ("end-of-turn yes/no"): its question, its button labels as options;
    - a card: start or decline, both labels in the person's language;
    - a step only the person can do, in an item or in this chat's own report (restart an app and look, sign in, click
-     in another app, check something by eye): one question with the outcomes as options ("done, it works" / "done,
-     still broken" / "not now", in the person's language), never only in the text, where it gets missed.
-   The header is the project name, cut to 12 characters. Typed free text is an answer too and goes as typed.
+     in another app, check something by eye): one question with the exact action and the outcomes as options
+     ("done, it works" / "done, still broken" / "not now", in the person's language), never only in the text.
+   Right above each call, in the text, the asking chat's "Open the chat" link: the dialog cannot hold one, and the
+   step often happens in that chat. The header is the project name, cut to 12 characters. Typed free text is an answer too and goes as typed.
 4. Write each answer:
    - ask item: `inbox.mjs answer <id>` with a JSON map of every one of its questions on stdin:
      `inbox.mjs answer <id> <<'EOF'` / `{"<question exactly>": "<label or the person's text>"}` / `EOF`
@@ -70,8 +76,9 @@ one line and restart it. A watchdog missing from the task list means this chat r
    - card, start: `inbox.mjs show <id>` for its brief, start it with `start_session` (`initiation`
      "user_asked", `cwd` the item's folder, `prompt` its brief, `background` its background or the brief's goal), then
      `detach_session` on the new session so it does not wake this chat, then `inbox.mjs answer <id> "Started from
-     the inbox"` (the card's chat then withdraws its own card). A refused start: say why in one line and answer nothing,
-     so the card stays in its chat. Decline: `inbox.mjs answer <id> "Declined"`.
+     the inbox"` (the card's chat then withdraws its own card). A refused start (a turn the plugin or a message began
+     cannot start one): say why in one line, propose it as a card here instead, and answer nothing, so the card
+     stays in its chat. Decline: `inbox.mjs answer <id> "Declined"`.
    "already answered", or an answer reading "[answered in its own chat]", means the person answered in that chat
    meanwhile: write nothing for it and say so in one line.
 5. Report in a few lines: what went where, and what is still waiting. Run `inbox.mjs list` once more right before
@@ -93,7 +100,9 @@ Messages reach chats of other accounts too: a fleet coordinator on another accou
   2. A chat of that project running there (`inbox.mjs chats <project> --live`): send it the task with `SendMessage`
      (its name from `ListAgents`), the person's words quoted, and ask it to file it in its own queue or offer a card.
      None, on this account: `start_session` (`user_asked`, `cwd` the project) with a brief that says what done looks
-     like; its turns then report here, and the plugin switches its finish reports on. Work sent with `SendMessage`
+     like, its `model` and `effort` set (judgement, design, diagnosis: the top model; execution: Sonnet, high
+     effort; mechanical: Haiku; a started session is never above this chat, so this chat runs on the top
+     model); its turns then report here, and the plugin switches its finish reports on. Work sent with `SendMessage`
      to a running chat: `inbox.mjs report on <its app id>` (`track` with the app id does it too). None, on another account: ask any idle chat there to offer a card with the
      brief (a turn a message began may offer a card, never start a session [M63]), bring that window up with
      `inbox.mjs open <its app id>` and tell the person the one click.
@@ -101,7 +110,8 @@ Messages reach chats of other accounts too: a fleet coordinator on another accou
 - **Status** ("что с задачами"): `inbox.mjs tasks`, plus `list_events` for a chat whose last note is old. Then
   `inbox.mjs followed`: a chat in its "busy, not followed" part that is not this one and not tracked gets one line,
   "<title> (<project>) работает без отчётов: следить?", all such chats in one AskUserQuestion with multiSelect, never
-  followed without the person's pick.
+  followed without the person's pick. Asked how long it will run: a table "chat | what is left | rough time",
+  marked as an estimate.
 - **Night** ("поставь всё на паузу", "иду спать"): every chat `ListAgents` shows busy, and every tracked chat not
   done, gets one message: «Оператор выключает компьютер на ночь: доведи текущий шаг до безопасной точки, запиши, где
   остановился, ничего нового не начинай и ответь одной строкой. Если ты координатор флита: поставь флит на паузу.»
