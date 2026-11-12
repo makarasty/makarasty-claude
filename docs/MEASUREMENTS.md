@@ -1049,6 +1049,10 @@ with a dev mod.
   In the morning the same app did show a started session's dialog in the inbox chat (above). So: sometimes, likely
   only while the parent chat is idle; the transcript does not record what the app draws, so the condition is not
   proven. The inbox asks every item itself since 1.19.18; a second copy the app draws closes with it.
+- **A long turn hides new items (11-12):** the inbox chat's own AskUserQuestion stayed open 16:56:29-17:55:28 UTC,
+  one turn; items came in at 17:15:52, 17:25:55 (account dev2) and 17:42:56, none announced (no wake mid-turn, the
+  watchdog quiet while busy); the turn ended 17:55:48 and the person typed at 17:55:57, inside the 15 s tick. The
+  "last wake 61 min ago" in `status` was right: the prompts that came meanwhile were the app's session notes.
 - **Not measured:** whether a plugin-submitted box answer counts as approval for a delete or a push.
 - **Rule produced:** finish reports (makarasty-tools 1.19.14) wake the inbox chat at 5 min quiet or 15 min from the
   first. makarasty-tools inbox (1.17.0): an ask answered from the inbox goes back as the dialog's own

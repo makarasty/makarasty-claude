@@ -281,3 +281,21 @@ test('a card filed this turn hides neither the turn prose question nor its finis
   await $.turn.complete(turn('Дальше.', { turnId: 'k4' })) // no prompt.submit set an origin: not a scheduled turn
   expect(w.reports().map((r) => r.id)).toContain('chatA~turn-k4')
 })
+
+// 2026-11-12: the inbox chat's own dialog stayed open an hour (one turn), three items came in meanwhile, and the person
+// typed his next prompt 9 s after answering, before the next tick: none of them was shown to him.
+test('items that came in during a long turn of the inbox chat wake it the moment the turn ends, once', async ($, on) => {
+  const w = world(on, { self: 'inbox', session: 'inbox' })
+  const now = 10_000_000 // the mock clock's start
+  await $.prompt.submit({ text: 'hi' } as never) // starts the timer
+  await $.turn.start({ text: 'x', turnId: 'dialog' } as never)
+  for (const id of ['chatB~t1', 'chatC~t2']) w.disk.set(`${R}/items/${id}.json`, JSON.stringify({ id, kind: 'ask', at: now, session: id.split('~')[0], cwd: 'C:/work/oxi-yapper', chat: 'c', account: 'acc2', questions: [{ question: `${id}?`, options: [] }] }))
+  for (let i = 0; i < 240; i++) await w.clock.advance(15000) // an hour in the dialog
+  expect(w.submitted.filter((s) => s.startsWith('Inbox:'))).toEqual([])
+  await $.turn.complete(turn('ok', { turnId: 'dialog' }))
+  await w.until(() => w.submitted.some((s) => s.startsWith('Inbox:')), 'woken at the end of the turn, no tick needed')
+  await w.clock.advance(15000)
+  const wakes = w.submitted.filter((s) => s.startsWith('Inbox:'))
+  expect(wakes).toHaveLength(1)
+  expect(wakes[0]).toContain('Inbox: 2 new items')
+})

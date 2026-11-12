@@ -1,5 +1,15 @@
 # Changelog
 
+## makarasty-tools 1.19.22 — 2026-11-12
+
+- **inbox: a long turn of the inbox chat no longer hides new questions:** its own dialog stayed open from 16:56 to
+  17:55 UTC (one turn); three items came in meanwhile, one of them from another account (oxi-yapper, dev2), and none
+  woke it, since no wake is sent mid-turn (1.19.15) and the watchdog stays quiet while the inbox chat is busy
+  (1.19.14). The person answered the dialog and typed 9 s later, before the next 15 s tick, so he never saw them.
+  The account played no part: the items were all in the one inbox folder. Now the inbox chat's turn end wakes it at
+  once with what is still open (one wake at a time, so the tick cannot send it twice). Test in
+  `tools/hooks/inbox-reports.test.ts` (it fails without the change).
+
 ## makarasty-tools 1.19.21 — 2026-11-12
 
 Fixes from the review and red team of the day's work (two review rounds on the fixes).

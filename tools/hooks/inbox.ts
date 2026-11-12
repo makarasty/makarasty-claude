@@ -182,7 +182,13 @@ export const register: Register = (on) => {
     await startInboxTimer($).catch(() => undefined)
     if (e.agentId) return r
     const me = await inboxSelf($).catch(() => undefined)
-    if (me) { await $.fs.write(`${me.root}/turn`, `idle ${await $.clock.now()}`).catch(() => undefined); return r }
+    if (me) {
+      await $.fs.write(`${me.root}/turn`, `idle ${await $.clock.now()}`).catch(() => undefined)
+      // At once, not at the next tick: items that came in while this turn ran (2026-11-12: a dialog here stayed open an
+      // hour, three items arrived, and the person typed his next prompt 9 s after it closed, before any tick) [M63].
+      void wakeOnce($, me).catch(() => undefined)
+      return r
+    }
     if (e.isAborted || (e.reason !== 'answer' && e.reason !== 'error')) return r
     const a = await active($).catch(() => undefined)
     if (!a || (await holding($, a).catch(() => false))) return r
@@ -375,6 +381,13 @@ export function proseQuestion(answer: string): string | undefined {
   return q && /\p{L}{2,}/u.test(q) && q.length > 3 ? q.slice(0, 400) : undefined
 }
 
+// One wake at a time: the tick and a turn's end may both call it, and two would announce and submit the same items.
+let waking: Promise<void> | undefined
+function wakeOnce($: D, me: { root: string; session: string }): Promise<void> {
+  waking ??= wake($, me).finally(() => { waking = undefined })
+  return waking
+}
+
 // The inbox chat itself: wake it once per new item from another chat, so nothing waits for the person to ask. The
 // prompt is English on purpose: the inbox chat answers him in his own language, and the plugin serves other people too.
 async function wake($: D, me: { root: string; session: string }): Promise<void> {
@@ -402,7 +415,7 @@ export async function tick($: D): Promise<void> {
   const me = await inboxSelf($)
   if (me) {
     await $.fs.write(`${me.root}/beat`, String(await $.clock.now())).catch(() => undefined) // the watchdog's sign the timer runs
-    return wake($, me)
+    return wakeOnce($, me)
   }
   const a = await active($)
   if (!a) return
