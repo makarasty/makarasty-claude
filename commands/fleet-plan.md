@@ -162,6 +162,13 @@ rounds, the commit cadence, chats or subagents, worktrees or `owns:` (`docs/MODE
 they cannot ride in the first); skip it for Small scale, where the defaults stand, and then write `foreign=leave`
 into the pace line yourself (never leave the word out):**
 
+These two are the person's standing policy, not this run's. One their profile already answers (the session text
+carries `profile.md`, lines `Fleet foreign code: wait|fix|leave` and `Fleet crash watch: no|yes`) is not asked:
+take its value and name it in one line. Each question asked says in its text that the answer is kept for every
+later run; once answered, append that line to `<config>/makarasty/profile.md` (create it if missing) and say so
+in one line. Seen 2026-11-12: the same two questions, asked by the darkkitty fleet on 11-11 and answered,
+came back from the LifeLines fleet the next day, and the operator asked why he had to answer them again.
+
 5. **Another chat's code blocks the commit**: "Wait, at most 60 min, then leave it (Recommended)" / "Fix it, only
    code that is already committed (not another chat's open work)" / "Leave the files and list them". Stored in the
    pace line as `foreign=wait|fix|leave`. `fix` never touches a file `git status --porcelain` shows dirty;

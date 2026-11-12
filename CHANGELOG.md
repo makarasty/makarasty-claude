@@ -1,5 +1,14 @@
 # Changelog
 
+## makarasty 1.18.5 — 2026-11-12
+
+- **fleet-plan asks a standing question once:** Round 0b's two questions (another chat's code blocks the commit; a
+  check that messages the operator if the chat dies) are the person's policy, not one run's. The darkkitty fleet
+  asked them on 11-11 and he answered; the LifeLines fleet asked them again on 11-12 ("я уже отвечал на этот
+  вопрос"). Now a question the profile answers (`Fleet foreign code: ...`, `Fleet crash watch: ...` in
+  `profile.md`, which every session already gets) is not asked, its value is named in one line; a question asked
+  says the answer is kept, and the answer is appended to `profile.md`. `commands/fleet-plan.md`.
+
 ## makarasty 1.18.4 — 2026-11-12
 
 - **fleet-plan, fleet-collect: a hold list keeps its items through a run.** In five traced holds (151 items) 31-41%
