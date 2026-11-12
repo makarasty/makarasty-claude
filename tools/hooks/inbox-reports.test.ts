@@ -24,7 +24,13 @@ function world(on: On, o: { self?: string; session?: string } = {}) {
     const names = [...disk.keys()].filter((k) => k.startsWith(dir) && !k.slice(dir.length).includes('/')).map((k) => k.slice(dir.length))
     return names.length ? { value: names.map((name) => ({ name, kind: 'file' as const, size: 1, mtimeMs: 0, isLink: false })) } : { deny: 'ENOENT' }
   })
-  on('process.run', () => ({ value: { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }))
+  // The CLI's `done`, played on the same disk: it closes an item only if nothing answered it yet.
+  on('process.run', (_$, e) => {
+    const [, , cmd, id, ...rest] = e.argv as string[]
+    const ans = `${R}/answers/${id}.json`
+    if (cmd === 'done' && !disk.has(ans)) disk.set(ans, JSON.stringify({ id, at: 0, by: 'chat', ...(rest.length ? { choice: rest.join(' ') } : {}) }))
+    return { value: { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+  })
   on('tool.call', (_$, e) => (e.tool === 'mcp__ccd_session__start_session'
     ? { result: 'Started session "Деплой" (local_12345678-aaaa-bbbb-cccc-1234567890ab) in C:/work/x' }
     : { result: 'Shown in the next-step box.' }))
@@ -179,4 +185,51 @@ test('the inbox chat gets no wake while its turn runs, and none for items answer
   expect(wake[0]).toContain('Inbox: 1 new item')
   expect(wake[0]).toContain('chatD~t3?')
   expect(wake[0]).not.toContain('chatE')
+})
+
+// 2026-11-12, 46 inbox items of 20 chats: three times a chat asked its box again (the same decision, 80-100% the same
+// words) and the person answered both copies. Different questions of one chat overlapped 50% at most.
+const box = (ask: string, id: string) => ({ tool: 'mcp__ccd_turn__wrap_up', recap: 'r', ask, actions: [{ label: 'Да' }], tool_use_id: id }) as never
+const ASK1 = 'Закоммитить инбокс 1.19.14 вместе с незакоммиченной работой других чатов в этих файлах?'
+const ASK2 = 'Закоммитить инбокс 1.19.14–1.19.15 вместе с незакоммиченной работой других чатов в этих файлах?'
+
+test('a box asked again closes its earlier open copy, kept on disk; a box on another topic stays open', async ($, on) => {
+  const w = world(on)
+  await $.turn.start({ text: 'a', turnId: 'a' } as never)
+  await $.tool.call(box('Какая сенса верная: 1.8 или 1.3?', 'b0'))
+  await $.tool.call(box(ASK1, 'b1'))
+  await $.turn.complete(turn('ok', { turnId: 'a' }))
+  await w.clock.advance(60000)
+  await $.turn.start({ text: 'b', turnId: 'b' } as never)
+  await $.tool.call(box(ASK2, 'b2'))
+  await $.turn.complete(turn('ok', { turnId: 'b' }))
+  const answer = (id: string) => (w.disk.has(`${R}/answers/${id}.json`) ? JSON.parse(w.disk.get(`${R}/answers/${id}.json`)!) : undefined)
+  expect(answer('chatA~b1')).toMatchObject({ by: 'chat', choice: '[superseded: the chat asked it again]' })
+  expect(w.items().map((i) => i.id).sort()).toEqual(['chatA~b0', 'chatA~b1', 'chatA~b2'])
+  expect(answer('chatA~b0')).toBeUndefined()
+  expect(answer('chatA~b2')).toBeUndefined()
+  // Run B and run C share half their words: different runs, both stay.
+  await $.tool.call(box('Запустить прогон B (slot leads)?', 'r1'))
+  await w.clock.advance(60000)
+  await $.tool.call(box('Запустить прогон C (проверка /compact)?', 'r2'))
+  expect(answer('chatA~r1')).toBeUndefined()
+})
+
+test('a box asked again while the inbox answer to it waits in the queue is not filed a second time', async ($, on) => {
+  const w = world(on)
+  await $.turn.start({ text: 'a', turnId: 'a' } as never)
+  await $.tool.call(box(ASK1, 'q1'))
+  await $.turn.complete(turn('ok', { turnId: 'a' }))
+  await w.clock.advance(60000)
+  await $.turn.start({ text: 'b', turnId: 'b' } as never) // a long turn: the person answers the box from the inbox meanwhile
+  await w.clock.advance(60000)
+  w.disk.set(`${R}/answers/chatA~q1.json`, JSON.stringify({ id: 'chatA~q1', at: 10_000_000 + 120000, by: 'inbox', choice: 'Да' }))
+  await $.tool.call(box(ASK2, 'q2'))
+  expect(w.items().map((i) => i.id)).toEqual(['chatA~q1'])
+  // Answered before this turn began: the chat has read it and asks anew, so the new box is filed.
+  await $.turn.complete(turn('ok', { turnId: 'b' }))
+  await w.clock.advance(15000) // the queued answer entered as turn c
+  await $.turn.start({ text: 'c', turnId: 'c' } as never)
+  await $.tool.call(box(ASK2, 'q3'))
+  expect(w.items().map((i) => i.id).sort()).toEqual(['chatA~q1', 'chatA~q3'])
 })

@@ -1,5 +1,15 @@
 # Changelog
 
+## makarasty-tools 1.19.17 — 2026-11-12
+
+- **inbox: a box asked again is asked once:** in 46 items of 20 chats (2026-11-12) a chat asked its end-of-turn box
+  again three times, the same decision in 80-100% the same words, and the person answered both copies. When a chat's
+  new box shares 70% or more of its words with one it asked before: an earlier box still open is closed as
+  superseded (its file stays, so the history does); one already answered from the inbox during this turn, whose
+  answer is still queued for the chat, keeps the new box out of the inbox. Questions on other topics (50% at most
+  that day, "run B" and "run C" exactly 50%) stay open; AskUserQuestion items and cards are untouched.
+  `tools/hooks/inbox.ts`, tests in `tools/hooks/inbox-reports.test.ts`.
+
 ## makarasty-tools 1.19.16 — 2026-11-12
 
 - **inbox: follow and mute a chat:** the coordinator takes in a chat the person names ("там запущен чат, хочу от него

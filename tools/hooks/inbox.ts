@@ -86,6 +86,7 @@ let turnOrigin: string | undefined
 // The main turn is running. The inbox chat sends no wake then: a prompt queued mid-turn enters only after it, by when
 // the person has often answered its items (2026-11-12: "3 new items" woke it, all three answered, list "nothing pending").
 let inTurn = false
+let turnStartedAt: number | undefined
 // Called from router.ts's session.start too (one unmatched hook per event and module): it runs again when the plugin
 // reloads (an update), which drops this timer, so the inbox chat is not left without its wake.
 export async function startInboxTimer($: D): Promise<void> {
@@ -142,7 +143,7 @@ export const register: Register = (on) => {
     if (!input.ask?.trim() || r.isError || r.deny) return r
     const a = await active($)
     if (a) startTimer($)
-    if (a) await newItem($, a, input.tool_use_id, { kind: 'choice', ask: input.ask, recap: input.recap, actions: (input.actions ?? []).map((x) => x.label ?? x.action ?? '').filter(Boolean) }).catch(() => undefined)
+    if (a && (await reasked($, a, input.ask).catch(() => 'new')) === 'new') await newItem($, a, input.tool_use_id, { kind: 'choice', ask: input.ask, recap: input.recap, actions: (input.actions ?? []).map((x) => x.label ?? x.action ?? '').filter(Boolean) }).catch(() => undefined)
     return r
   }).catch(($, e, next) => next(e))
 
@@ -165,6 +166,7 @@ export const register: Register = (on) => {
   on('turn.start', async ($, e, next) => {
     wrapRecap = undefined // a subagent's run raises no turn.start: this is the main loop's
     inTurn = true
+    turnStartedAt = await $.clock.now()
     const me = await inboxSelf($).catch(() => undefined)
     if (me) await $.fs.write(`${me.root}/turn`, `busy ${await $.clock.now()}`).catch(() => undefined) // the watchdog reads it
     return next(e)
@@ -191,7 +193,7 @@ export const register: Register = (on) => {
     if (q && !asked) {
       startTimer($)
       const tail = (e.answer ?? '').trim()
-      await newItem($, a, `turn-${e.turnId}`, { kind: 'choice', ask: q, recap: tail.length > 700 ? `…${tail.slice(-700)}` : tail, actions: [] }).catch(() => undefined)
+      if ((await reasked($, a, q).catch(() => 'new')) === 'new') await newItem($, a, `turn-${e.turnId}`, { kind: 'choice', ask: q, recap: tail.length > 700 ? `…${tail.slice(-700)}` : tail, actions: [] }).catch(() => undefined)
     } else if (reports && !asked) await finishReport($, a, e, recap).catch(() => undefined)
     return r
   }).catch(($, e, next) => next(e))
@@ -266,14 +268,14 @@ async function inboxChatDeny($: D, me: { dir: string; root: string; session: str
 
 // The inbox chat rewords a question when it asks it, so compare words, not text: at least half of the shorter side's
 // words of 4+ letters appear in the other. shortcut: word overlap, misses a full paraphrase; upgrade if one slips by.
-export function sameQuestion(a: string, b: string): boolean {
+export function sameQuestion(a: string, b: string, min = 0.5): boolean {
   const words = (s: string) => new Set((s.toLowerCase().match(/[\p{L}\p{N}][\p{L}\p{N}._-]{3,}/gu) ?? []).map((w) => w.replace(/[._-]+$/, '')))
   const [x, y] = [words(a), words(b)]
   const small = x.size < y.size ? x : y, big = small === x ? y : x
   if (small.size < 3) return false
   let n = 0
   for (const w of small) if (big.has(w)) n++
-  return n / small.size >= 0.5
+  return n / small.size >= min
 }
 
 // Switched on for finish reports: by this chat's session id or its app id (the inbox knows the app id of what it starts).
@@ -314,6 +316,27 @@ function finishedLine(reports: Report[]): string {
   const projects = [...new Set(reports.map((r) => r.cwd.split(/[\\/]/).filter(Boolean).pop()))].join(', ')
   const chats = new Set(reports.map((r) => r.session)).size
   return `${chats} chat${chats > 1 ? 's' : ''} finished work (${reports.length} finish report${reports.length > 1 ? 's' : ''}: ${projects}).`
+}
+
+// A box this chat asks again, its words 70% or more those of one it asked before (2026-11-12, 46 items of 20 chats:
+// 3 such re-asks, and the person answered twice each time; different questions of one chat overlapped 50% at most):
+// - its earlier box still open: that one is closed as superseded (kept on disk, so the history stays), 'new';
+// - its earlier box answered from the inbox during this turn: the answer is queued for this chat and enters right after
+//   the turn, so the new one is not filed, 'queued'.
+// Only boxes: an AskUserQuestion item lives as long as its dialog, a card until it is started or declined.
+export const SAME_ASK = 0.7
+async function reasked($: D, a: { dir: string; root: string; session: string }, ask: string): Promise<'new' | 'queued'> {
+  const names = await $.fs.list(`${a.root}/items`).catch(() => [])
+  let queued = false
+  for (const f of names) {
+    if (!f.name.endsWith('.json') || !ownedBy(f.name, a.session)) continue
+    const it = await readJSON<Item>($, `${a.root}/items/${f.name}`)
+    if (!it || it.kind !== 'choice' || !it.ask || !sameQuestion(ask, it.ask, SAME_ASK)) continue
+    const ans = await readJSON<Answer>($, `${a.root}/answers/${it.id}.json`)
+    if (!ans) await cli($, a.dir, ['done', it.id, '[superseded: the chat asked it again]']).catch(() => undefined)
+    else if (ans.by === 'inbox' && turnStartedAt !== undefined && ans.at >= turnStartedAt) queued = true
+  }
+  return queued ? 'queued' : 'new'
 }
 
 // Unanswered items of this chat (mine) or of every other chat (!mine).
