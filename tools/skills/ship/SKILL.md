@@ -38,7 +38,7 @@ A file another chat is halfway through does not belong in this commit. The sessi
 deferred: load them with ToolSearch `select:mcp__ccd_session_mgmt__list_sessions,mcp__ccd_session_mgmt__list_events`,
 and use the fallback below only when that finds nothing. `list_sessions` with `limit: 50`, kept to the
 ones whose `cwd` is this checkout and that were active in the last day. Give those to one `Agent` with
-`model: "sonnet"`, `effort: "medium"`: it reads each one's last 20 events with `list_events` and returns one line per chat -
+`model: "sonnet"`, `effort: "high"`: it reads each one's last 20 events with `list_events` and returns one line per chat -
 the files it edited, and whether its last turn reported the work complete.
 
 - A chat is finished only when it is not running and its last turn reported completion. One that stopped

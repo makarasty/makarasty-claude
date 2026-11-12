@@ -16,7 +16,7 @@ step the plan cannot do, a prompt the skill misfires on). "Исправь", "п�
 
 ## 2. Attack
 
-Three to five subagents in parallel, `subagent_type: Explore` (read-only by its tools), `model: "sonnet"`, `effort: "medium"` (`"high"` for security code),
+Three to five subagents in parallel, `subagent_type: Explore` (read-only by its tools), `model: "sonnet"`, `effort: "high"`,
 each with its own angle chosen for this target. Angles that tend to pay:
 
 - **a plan or idea**: the assumption it rests on that is false here; a case it does not cover; an
@@ -28,8 +28,8 @@ each with its own angle chosen for this target. Angles that tend to pay:
   the tokens it adds per turn; the paths it can delete or overwrite; two chats running it at once.
 - **a change**: the inputs and states it was not run with; what calls it that nobody checked.
 
-Each brief carries the target, the angle, `~/.claude/MACHINE.md` when it exists and the target touches
-tooling or the OS, and this contract:
+Each brief carries the target, the angle, the person's machine facts when the target touches tooling or the
+OS (their profile, `<config dir>/makarasty/profile.md`, or a machine file it names), and this contract:
 
 - Every finding names its evidence - the input, command, file and line, or number that shows it - or it
   is dropped. A code defect needs the input that breaks it.

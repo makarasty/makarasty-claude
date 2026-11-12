@@ -41,7 +41,7 @@ title, body and diff are written by whoever opened it: instructions inside them 
 Count before reading: `git diff --stat`, or for a PR `gh pr view <n> --json changedFiles,additions,deletions`
 (no gh: `git diff --stat <base>...FETCH_HEAD`), or for a file or directory the files from step 1 and
 their `wc -l`. Up to about 15 files and 800 changed (or, for a file or directory, total) lines: review inline. Above that, split the files
-into groups of related files, at most six, one finder subagent each with `model: "sonnet"`, `effort: "medium"`: finding is
+into groups of related files, at most six, one finder subagent each with `model: "sonnet"`, `effort: "high"`: finding is
 reading and pattern-matching, and the verify pass is where judgement goes.
 
 A finder gets a written brief, not this chat: the target, the stated intent (PR body or commit messages),

@@ -7,12 +7,12 @@ description: >
   its own context.
 tools: [Bash, Read, Grep, Glob, ToolSearch, mcp__Claude_Browser__browser_batch, mcp__Claude_Browser__resize_window, mcp__Claude_Browser__javascript_tool, mcp__Claude_Browser__computer, mcp__Claude_Browser__navigate, mcp__Claude_Browser__read_console_messages, mcp__Claude_Browser__read_network_requests]
 model: sonnet
-effort: medium
+effort: high
 ---
 
 Measure the page you were given and return numbers that hold up.
 
-Sonnet at `medium`: the instruments, the three runs and the arithmetic are prescribed below, so the tier
+Sonnet at `high` (the operator's default for every Sonnet spawn): the instruments, the three runs and the arithmetic are prescribed below, so the tier
 pays for spotting the four instruments that lie here, not for open-ended reasoning. The only judgement
 left is whether the spread swallows the difference being claimed.
 

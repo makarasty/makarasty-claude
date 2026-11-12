@@ -154,7 +154,8 @@ against 23, weighted 33 against 33) at $0.30 against $0.50 a review; on the hard
 the 3 bugs, hence the `high` cases above. Sonnet as the only reviewer gave 4 false findings against 1 and missed known bugs. On 148
 historical fleet tasks a Sonnet `high` coder matched an Opus coder on review findings (5.0 against 5.3) at $1.66 against $7.04 a
 task; a lone Sonnet `medium` coder scored 5.5 of 10 against 8.75 for Opus `high` on 4 fresh tasks. So never Sonnet `medium`, and
-never a Sonnet coder without the Opus review.
+never a Sonnet coder without the Opus review. The operator extended that on 2026-11-12: every Sonnet spawn, finders,
+leads and the profiler included, runs at `high`; Anthropic's `medium` start for Sonnet is not the default here.
 
 ## Reasoning effort
 
