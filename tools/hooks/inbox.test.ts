@@ -269,3 +269,26 @@ test('the inbox chat asks a box and a card with the flag; answered in their chat
   const r = await call
   expect(Object.values((r.result as { answers: Record<string, string> }).answers)).toEqual(['[answered in its own chat]', '[answered in its own chat]'])
 })
+
+// 2026-11-12: the person left with one question open in the inbox chat; items that came in meanwhile waited behind it.
+test('the queue: a dialog open 10 min when a new item comes in is closed to be asked again with every open item', async ($, on) => {
+  const w = world(on, { self: 'chatA' })
+  on('turn.start', (_$, e) => ({ turnId: e.turnId }))
+  const put = (id: string) => w.disk.set(`/cfg/makarasty/inbox/items/${id}.json`, JSON.stringify({ id, kind: 'ask', at: 1_000_000, session: id.split('~')[0], cwd: 'C:/work/x', chat: 'c', questions: QUESTIONS }))
+  put('chatB~t1')
+  await $.prompt.submit({ text: 'hi' } as never) // the timer
+  await $.turn.start({ text: 'x', turnId: 'q' } as never)
+  w.disk.set('/cfg/makarasty/inbox/announced/chatB~t1', '')
+  const call = $.tool.call({ tool: 'AskUserQuestion', questions: QUESTIONS, metadata: { source: 'inbox:chatB~t1' }, tool_use_id: 'q1' })
+  await w.until(() => w.dialog.shown === 1, 'shown')
+  for (let i = 0; i < 8; i++) await w.clock.advance(15000) // 2 min
+  put('chatC~t2') // comes in while he is away
+  for (let i = 0; i < 28; i++) await w.clock.advance(15000) // 9 min open: not yet
+  expect(w.dialog.closed).toBe(0)
+  for (let i = 0; i < 6; i++) await w.clock.advance(15000) // past 10 min
+  const r = await call
+  expect((r.result as { answers: Record<string, string> }).answers).toEqual({ [Q]: '[not answered yet: more items came in while this dialog waited; ask again with every open item, these first]' })
+  await w.until(() => w.dialog.closed === 1, 'closed')
+  expect(w.disk.has('/cfg/makarasty/inbox/answers/chatB~t1.json')).toBe(false) // still open, asked again
+  expect(w.submitted.filter((s) => s.startsWith('Inbox:'))).toEqual([]) // no prompt queued behind the turn
+})

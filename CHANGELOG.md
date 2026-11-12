@@ -1,5 +1,21 @@
 # Changelog
 
+## makarasty-tools 1.19.23 — 2026-11-12
+
+- **inbox: a queue, not one question at a time:** the operator left with one question open and came back to that one
+  only; items that came in meanwhile waited behind it (12 of the inbox chat's 38 dialogs that day had an item come in
+  while open and still waiting when it closed) [M63]. A dialog of the inbox chat open 10 minutes when a new item
+  comes in is closed by the plugin, its questions answered "[not answered yet ...]", and the inbox asks every open
+  item anew: those first, then the new ones, oldest first, grouped by chat, up to 4 per call, each call opening with
+  how many are open in how many chats and which call of how many it is. Under 10 minutes the dialog stays: the person
+  may be reading it. Test in `tools/hooks/inbox.test.ts`.
+- **inbox: standing answers are recorded, not guessed:** when the person says a question was answered before ("уже
+  отвечал", "не переспрашивай"), the inbox appends `<topic>: <answer>` to `profile.md`, and later items on that topic
+  are answered from it, named in the report with an undo ("отмени <id>"). No answer is guessed from past picks: of 61
+  answers that day the only repeats were fleet-plan's two standing questions; fleet pace and commit answers changed
+  from case to case [M63]. Never for a commit, push, merge, deploy, delete, money, someone else's data, new work or a
+  choice between approaches. `tools/skills/inbox/SKILL.md`.
+
 ## makarasty-tools 1.19.22 — 2026-11-12
 
 - **inbox: a long turn of the inbox chat no longer hides new questions:** its own dialog stayed open from 16:56 to

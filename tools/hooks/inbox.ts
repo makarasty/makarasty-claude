@@ -234,9 +234,19 @@ export const register: Register = (on) => {
 // The inbox chat's own dialog (metadata.source `inbox:<id>,<id>`): when the person answers every one of those items in
 // its own chat first, the dialog here closes by itself instead of hanging on a question nobody waits for any more.
 export const ANSWERED_THERE = '[answered in its own chat]'
+// The queue: a dialog here that has waited REFRESH_MS when a new item comes in is closed and asked again with every open
+// item, so a person who comes back sees all of them at once, not the one asked before he left (2026-11-12: 12 of the
+// inbox chat's 38 dialogs had an item come in while open and still waiting when it closed; one stayed open 59 min) [M63].
+export const REFRESH_MS = 10 * 60 * 1000
+export const NOT_YET = '[not answered yet: more items came in while this dialog waited; ask again with every open item, these first]'
+let openDialog: { since: number; refresh: () => void } | undefined
 async function inboxAsk($: D, e: { questions: readonly { question: string }[] }, next: (e: never) => Promise<unknown>, ids: string[]): Promise<never> {
   const dir = await claudeDir($)
   if (!ids.length || !dir) return next(e as never) as never
+  const refreshed = new Promise<true>(async (r) => { openDialog = { since: await $.clock.now(), refresh: () => r(true) } })
+  try { return await inboxDialog($, e, next, ids, dir, refreshed) } finally { openDialog = undefined }
+}
+async function inboxDialog($: D, e: { questions: readonly { question: string }[] }, next: (e: never) => Promise<unknown>, ids: string[], dir: string, refreshed: Promise<true>): Promise<never> {
   let settled = false
   const dialog = next(e as never).then((r) => { settled = true; return { r } }, (err: unknown) => { settled = true; return { err } })
   const there = (async (): Promise<boolean> => {
@@ -247,7 +257,8 @@ async function inboxAsk($: D, e: { questions: readonly { question: string }[] },
     }
     return false
   })()
-  const won = await Promise.race([dialog.then((d) => ({ d })), there.then((t) => ({ t }))])
+  const won = await Promise.race([dialog.then((d) => ({ d })), there.then((t) => ({ t })), refreshed.then((f) => ({ f }))])
+  if ('f' in won) { settled = true; return { result: { questions: e.questions, answers: Object.fromEntries(e.questions.map((q) => [q.question, NOT_YET])) } } as never }
   if ('t' in won && won.t) return { result: { questions: e.questions, answers: Object.fromEntries(e.questions.map((q) => [q.question, ANSWERED_THERE])) } } as never
   const d = 'd' in won ? won.d : await dialog
   if ('err' in d) throw d.err
@@ -391,8 +402,8 @@ function wakeOnce($: D, me: { root: string; session: string }): Promise<void> {
 // The inbox chat itself: wake it once per new item from another chat, so nothing waits for the person to ask. The
 // prompt is English on purpose: the inbox chat answers him in his own language, and the plugin serves other people too.
 async function wake($: D, me: { root: string; session: string }): Promise<void> {
-  if (inTurn) return // built when it is sent, from what is still open then
   const now = await $.clock.now()
+  if (inTurn && !(openDialog && now - openDialog.since >= REFRESH_MS)) return // built when it is sent, from what is still open then
   const fresh: Item[] = []
   for (const f of await $.fs.list(`${me.root}/items`).catch(() => [])) {
     if (!f.name.endsWith('.json')) continue
@@ -400,6 +411,12 @@ async function wake($: D, me: { root: string; session: string }): Promise<void> 
     if (ownedBy(id, me.session) || (await $.fs.exists(`${me.root}/answers/${id}.json`)) || (await $.fs.exists(`${me.root}/announced/${id}`))) continue
     const it = await readJSON<Item>($, `${me.root}/items/${f.name}`)
     if (it) fresh.push(it)
+  }
+  if (inTurn) {
+    // Its dialog has waited long enough: the new items join it in one ask, in this same turn (no prompt to queue).
+    if (!fresh.length || !openDialog) return
+    for (const it of fresh) await $.fs.write(`${me.root}/announced/${it.id}`, '')
+    return openDialog.refresh()
   }
   // Finish reports never wake one by one: they go with an item's wake, or as one batch once due (core.mjs dueReports).
   const reports = await waitingReports($, me)

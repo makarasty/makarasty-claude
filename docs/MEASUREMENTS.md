@@ -1053,6 +1053,14 @@ with a dev mod.
   one turn; items came in at 17:15:52, 17:25:55 (account dev2) and 17:42:56, none announced (no wake mid-turn, the
   watchdog quiet while busy); the turn ended 17:55:48 and the person typed at 17:55:57, inside the 15 s tick. The
   "last wake 61 min ago" in `status` was right: the prompts that came meanwhile were the app's session notes.
+- **The queue and past answers (11-12):** of the inbox chat's 38 dialogs that day, 12 had an item from another chat
+  come in while open and still waiting when it closed (dialogs open 0-59 min). Of 104 answered questions, 61 were
+  answered from the inbox: 21 by an option marked recommended or another option, 28 in his own words, the rest cards
+  or other. The same answer twice to the same question: only fleet-plan's crash watch ("Нет") and foreign code
+  ("Чинить уже закоммиченный", then "уже отвечал"). Across all transcripts the fleet pace answers vary: quality
+  "Best quality" 5, "Баланс" 4, "Максимальное качество" 2; isolation "one commit at the end" 15, "commit per wave" 7,
+  others 4 (counts include copied transcripts). Commit answers: "yes" most, also "not yet", "not yet, investigate
+  first", "yes, after typecheck", "yes + issue".
 - **Not measured:** whether a plugin-submitted box answer counts as approval for a delete or a push.
 - **Rule produced:** finish reports (makarasty-tools 1.19.14) wake the inbox chat at 5 min quiet or 15 min from the
   first. makarasty-tools inbox (1.17.0): an ask answered from the inbox goes back as the dialog's own

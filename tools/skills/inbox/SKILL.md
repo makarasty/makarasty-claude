@@ -59,7 +59,10 @@ one line and restart it. A watchdog missing from the task list means this chat r
    Ask in AskUserQuestion with `metadata: {"source": "inbox:<id>,<id>"}` naming the items of that call (the flag keeps
    the call out of the inbox, and the dialog closes by itself once the person has answered all of them in their own
    chats; the plugin refuses a dialog here without the flag while items are open), up to 4 questions per call,
-   oldest first, more calls for the rest:
+   oldest first, grouped by chat, more calls straight after for the rest. Each call opens with one line: how many
+   questions are open in how many chats, and which call of how many this is. Every answer reading "[not answered
+   yet: more items came in ...]" means the person was away: the plugin closed that dialog after 10 minutes because
+   a new item came in. Run `inbox.mjs list` again and ask every open item anew, those questions first:
    - an ask item: each of its questions as one question, the option labels copied exactly (the asking chat matches
      its answer on them), each option's description saying what it leads to, a `preview` copied over;
    - a box ("end-of-turn yes/no"): its question, its button labels as options;
@@ -135,3 +138,14 @@ recommendation: people say no or answer in their own words often enough that a g
 everyone [M67]: an item that only asks whether to keep going with work already asked for ("продолжать?",
 "доводить до конца?", the next wave of the same run) is answered "да, доводим до конца" without asking, and the
 report names it. A new task, a push, merge, deploy, delete, money or someone else's data is never this case.
+
+A standing answer is recorded, not guessed. When the person says an item asks what he answered before ("уже
+отвечал", "не переспрашивай", "всегда так"), append one line to `<config>/makarasty/profile.md`, `<topic>: <his
+answer>` (the topic in a few words, as the question puts it), and say so in one line; the session text carries the
+profile to every chat, and the rule above answers the next such item from it. Never for a commit, push, merge,
+deploy, delete, money, someone else's data, new work or a choice between approaches. Each item answered so names
+the profile line in the report and how to undo it: "отмени <id>" sends that chat a correction with `SendMessage`,
+the person's words quoted. Measured 2026-11-12, 61 answers from the inbox: the only questions he gave the same
+answer to twice were fleet-plan's two standing questions (now in the profile); fleet pace answers changed from run
+to run (quality "best" 5 times, "balanced" 4), and commit answers were "yes", "not yet" and "yes, after X", so a
+guess from past answers would be wrong [M63].
