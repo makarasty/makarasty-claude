@@ -26,6 +26,16 @@ No failure found: the tool is not needed yet, say so.
 - **Only a person should start it**: `disable-model-invocation: true`, and no trigger phrases.
 - **Already done by an installed skill, a built-in command or the project**: use that; write nothing.
 
+One mechanism for every case: build the general path that holds at the edge cases, and give a special case its
+own rule only once it repeats (two or more chats or runs), with that evidence cited. A rule per incident grows the
+tool and still misses the next case.
+
+Shipped text names nobody's machine. A fact about one person (their language, paths, RAM, notify channels,
+accounts, standing answers) goes in their profile, `<config dir>/makarasty/profile.md` (`CLAUDE_CONFIG_DIR`, else `~/.claude`), which makarasty-tools hands
+to every main session when it exists (subagents get what their brief passes) [M67]; the tool says "the person's language" or "the machine facts in their
+profile", not the fact. A tool that asks the person follows the asking rule that ships with makarasty-tools'
+session text (`asking` in `tools/hooks/gates.ts`), not a copy of it.
+
 ## 3. Write the description as the trigger
 
 It decides whether the tool is ever loaded. First sentence: what it does and when, in third person.

@@ -9,7 +9,8 @@ full after a scan, or when the operator asks.
 `Agent` × one per area, `subagent_type: Explore`, `model: haiku`, in parallel. Areas on Windows: `%LOCALAPPDATA%`,
 `%APPDATA%`, Program Files and ProgramData, the home folder's dot folders, the project folders (the parents
 of live sessions' repos), `%TEMP%`, every other drive's top level, developer caches (`~/.gradle`, `~/.m2`,
-`~/.cargo`, `~/.nuget`, toolchains). Give each the rules below, `~/.claude/MACHINE.md` if it exists, and the
+`~/.cargo`, `~/.nuget`, toolchains). Give each the rules below, the person's machine facts (their profile,
+`<config dir>/makarasty/profile.md`, or a machine file it names) if they exist, and the
 current scan's output (`node "${CLAUDE_SKILL_DIR}/machine.mjs" scan --json` saved to a file) so it spends its
 time on what the scan missed. Windows only for now: the `find -printf` below is GNU (Git Bash), not macOS.
 
@@ -26,7 +27,7 @@ Rules every scout gets:
   `LastPlayed`. UserAssist is often reset and BAM or Prefetch need admin: without them a "last used" date is a
   file-write proxy, and the scout says so.
 - Return at most 45 lines, largest first, items of 50 MB or more:
-  `path | MB | newest file | what it is | junk / probably-junk / ask | evidence (one sentence) | how to remove | what breaks if wrong`.
+  `path | MB | newest file | what it is | made by (program or tool) | junk / probably-junk / ask | evidence (one sentence) | how to remove | what breaks if wrong`.
 
 ## 2. Judge
 

@@ -23,6 +23,8 @@ import { fileURLToPath } from 'node:url';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, rmSync, statSync, mkdtempSync, readdirSync, copyFileSync } from 'node:fs';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { unmsys } from '../lib/msys.mjs';
 
 const LIB_VERSION = '1.11.11';
 const LIB_URL = `https://cdn.jsdelivr.net/npm/html-to-image@${LIB_VERSION}/dist/html-to-image.js`;
@@ -182,10 +184,19 @@ export function snippet(port, name, selector, token = '') {
 
 // ---- blocks ----
 const blocksFile = dir => join(resolve(dir), 'blocks.jsonl');
+const skipped = new Set();
 export function readBlocks(dir) {
     const f = blocksFile(dir);
     if (!existsSync(f)) return [];
-    return readFileSync(f, 'utf8').split('\n').filter(l => l.trim()).map(l => JSON.parse(l)).sort((a, b) => a.id - b.id);
+    const out = [];
+    readFileSync(f, 'utf8').split('\n').forEach((l, i) => {
+        if (!l.trim()) return;
+        try { const b = JSON.parse(l); if (!Number.isFinite(b?.id)) throw new Error('no id'); out.push(b); } catch { // a torn line must not block every later block/report
+            const k = `${f}:${i}`;
+            if (!skipped.has(k)) { skipped.add(k); console.error(`warning: skipped unparsable line ${i + 1} of ${f}`); }
+        }
+    });
+    return out.sort((a, b) => a.id - b.id);
 }
 
 export function upsertBlock(dir, o) {
@@ -206,7 +217,9 @@ export function upsertBlock(dir, o) {
         b = { id: Math.max(0, ...blocks.map(x => x.id)) + 1, ...fields };
         blocks.push(b);
     }
-    writeFileSync(blocksFile(dir), blocks.map(x => JSON.stringify(x)).join('\n') + '\n');
+    const f = blocksFile(dir), tmp = `${f}.${process.pid}.tmp`;
+    writeFileSync(tmp, blocks.map(x => JSON.stringify(x)).join('\n') + '\n');
+    renameSync(tmp, f);
     return b;
 }
 
@@ -230,7 +243,15 @@ img{display:block;width:100%;height:auto;border:1px solid var(--line);border-rad
 
 const JS = `document.addEventListener('click',function(e){var z=document.getElementById('zoom');if(e.target.matches&&e.target.matches('figure img')){z.firstChild.src=e.target.src;z.className='on'}else if(z.className){z.className='';z.firstChild.removeAttribute('src')}});document.addEventListener('keydown',function(e){if(e.key==='Escape'){var z=document.getElementById('zoom');z.className='';z.firstChild.removeAttribute('src')}});`;
 
-export function buildReport(dir, { title = 'Отчёт по UI', out, inline = false, maxInline = MAX_INLINE } = {}) {
+// The page's fixed words, in the person's language (`report --lang en`); ru is the default.
+const WORDS = {
+    ru: { title: 'Отчёт по UI', before: 'Как было', after: 'Как стало', block: 'Блок', missing: n => `Файл ${n}.png не найден.`, theme: 'тема', none: 'Снимка нет', why: ': причина в примечании ниже', nowhy: ' (причина не записана)', sub: n => `Блоков: ${n}. Скажите «блок N переделай» - переделаю один блок.` },
+    en: { title: 'UI report', before: 'Before', after: 'After', block: 'Block', missing: n => `${n}.png not found.`, theme: 'theme', none: 'No screenshot', why: ': the reason is in the note below', nowhy: ' (no reason recorded)', sub: n => `Blocks: ${n}. Say "redo block N" to redo one block.` },
+};
+
+export function buildReport(dir, { title, out, inline = false, maxInline = MAX_INLINE, lang = 'ru' } = {}) {
+    const W = WORDS[lang] ?? WORDS.ru;
+    title ??= W.title;
     dir = resolve(dir);
     out = resolve(out || join(dir, 'report.html'));
     const warn = [];
@@ -239,7 +260,7 @@ export function buildReport(dir, { title = 'Отчёт по UI', out, inline = f
     const img = (name, label, alt) => {
         if (!name) return null;
         const f = join(dir, `${name}.png`);
-        if (!existsSync(f)) { warn.push(`image missing: ${name}.png`); return `<figure><figcaption>${esc(label)}</figcaption><div class="none">Файл ${esc(name)}.png не найден.</div></figure>`; }
+        if (!existsSync(f)) { warn.push(`image missing: ${name}.png`); return `<figure><figcaption>${esc(label)}</figcaption><div class="none">${esc(W.missing(name))}</div></figure>`; }
         let src;
         if (inline) src = `data:image/png;base64,${readFileSync(f).toString('base64')}`;
         else if (outside) { mkdirSync(dirname(out), { recursive: true }); copyFileSync(f, join(dirname(out), `${name}.png`)); src = encodeURIComponent(`${name}.png`); }
@@ -247,19 +268,19 @@ export function buildReport(dir, { title = 'Отчёт по UI', out, inline = f
         return `<figure><figcaption>${esc(label)}</figcaption><img src="${esc(src)}" alt="${esc(alt)}" loading="lazy"></figure>`;
     };
     const sections = readBlocks(dir).map(b => {
-        const pair = [img(b.before, 'Как было', `Блок ${b.id}: как было`), img(b.after, 'Как стало', `Блок ${b.id}: как стало`)].filter(Boolean);
-        const chips = [b.viewport && `viewport ${b.viewport}`, b.theme && `тема: ${b.theme}`].filter(Boolean).map(c => `<span class="chip">${esc(c)}</span>`).join('');
-        return `<section id="b${b.id}"><div class="num">Блок ${b.id}</div><h2>${esc(b.title)}</h2>` +
+        const pair = [img(b.before, W.before, `${W.block} ${b.id}: ${W.before}`), img(b.after, W.after, `${W.block} ${b.id}: ${W.after}`)].filter(Boolean);
+        const chips = [b.viewport && `viewport ${b.viewport}`, b.theme && `${W.theme}: ${b.theme}`].filter(Boolean).map(c => `<span class="chip">${esc(c)}</span>`).join('');
+        return `<section id="b${b.id}"><div class="num">${W.block} ${b.id}</div><h2>${esc(b.title)}</h2>` +
             (chips ? `<div class="chips">${chips}</div>` : '') +
             (b.what ? `<p class="what">${esc(b.what)}</p>` : '') +
             (b.files?.length ? `<div class="files">${b.files.map(f => `<code>${esc(f)}</code>`).join(' ')}</div>` : '') +
-            (pair.length ? `<div class="pair">${pair.join('')}</div>` : `<div class="none">Снимка нет${b.note ? ': причина в примечании ниже' : ' (причина не записана)'}.</div>`) +
+            (pair.length ? `<div class="pair">${pair.join('')}</div>` : `<div class="none">${W.none}${b.note ? W.why : W.nowhy}.</div>`) +
             (b.note ? `<div class="note">${esc(b.note)}</div>` : '') + `</section>`;
     });
-    const html = `<!doctype html>\n<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>${esc(title)}</title><style>${CSS}</style></head><body><main><h1>${esc(title)}</h1><p class="sub">Блоков: ${sections.length}. Скажите «блок N переделай» - переделаю один блок.</p>${sections.join('\n')}</main><div id="zoom"><img alt=""></div><script>${JS}</script></body></html>\n`;
+    const html = `<!doctype html>\n<html lang="${lang in WORDS ? lang : 'ru'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>${esc(title)}</title><style>${CSS}</style></head><body><main><h1>${esc(title)}</h1><p class="sub">${esc(W.sub(sections.length))}</p>${sections.join('\n')}</main><div id="zoom"><img alt=""></div><script>${JS}</script></body></html>\n`;
     const bytes = Buffer.byteLength(html);
     if (inline && bytes > maxInline) { // too big for an Artifact: write the linked variant instead
-        const r = buildReport(dir, { title, out, inline: false, maxInline });
+        const r = buildReport(dir, { title, out, inline: false, maxInline, lang });
         r.warn.unshift(`inline report would be ${(bytes / 1048576).toFixed(1)} MB, over ${maxInline / 1048576} MB: wrote the linked variant (PNGs beside it) instead`);
         r.linked = true;
         return r;
@@ -402,6 +423,17 @@ async function selftest() {
         assert.equal(readBlocks(dir).length, 2, 'update does not add a block');
         assert.throws(() => upsertBlock(dir, { id: 9, title: 'x' }), /no block 9/, 'unknown id');
 
+        // a torn line is skipped, not fatal; an update is written via temp + rename
+        writeFileSync(join(dir, 'blocks.jsonl'), readFileSync(join(dir, 'blocks.jsonl'), 'utf8') + '{"id":3,"title":"cut\n');
+        assert.equal(readBlocks(dir).length, 2, 'torn line skipped');
+        assert.equal(upsertBlock(dir, { title: 'Третий' }).id, 3, 'block after a torn line works');
+        assert.deepEqual(readdirSync(dir).filter(f => f.endsWith('.tmp')), [], 'no temp left by upsert');
+        const gb = { MSYSTEM: 'MINGW64', EXEPATH: 'C:/Program Files/Git/bin' };
+        assert.equal(unmsys('C:/Program Files/Git/html/body', gb), '/html/body', 'msys undo used for selectors');
+        const cli = (...a) => spawnSync(process.execPath, [fileURLToPath(import.meta.url), ...a], { encoding: 'utf8', env: { ...process.env, ...gb } });
+        cli('block', dir, '--title', 'T4', '--what', 'C:/Program Files/Git/settings кнопка');
+        assert.equal(readBlocks(dir).find(b => b.title === 'T4').what, '/settings кнопка', 'block --what undone under Git Bash');
+
         const plain = buildReport(dir, { title: 'T <b>x</b>' });
         let html = readFileSync(plain.out, 'utf8');
         assert.ok(html.includes('Блок 1') && html.includes('Блок 2'), 'both blocks');
@@ -409,6 +441,8 @@ async function selftest() {
         assert.ok(!html.includes('<script>alert(1)'), 'title escaped');
         assert.ok(html.includes('&lt;script&gt;alert(1)') && html.includes('T &lt;b&gt;x&lt;/b&gt;'), 'escaped text present');
         assert.ok(html.includes('Снимка нет'), 'imageless block says why');
+        html = readFileSync(buildReport(dir, { out: join(dir, 'en.html'), lang: 'en' }).out, 'utf8');
+        assert.ok(html.includes('<html lang="en">') && html.includes('Block 1') && html.includes('No screenshot') && html.includes('UI report') && !/[а-яё]/i.test(html.replace(/<section[\s\S]*?<\/section>/g, '')), 'lang en: fixed words in English');
         const inl = buildReport(dir, { inline: true, out: join(dir, 'inline.html') });
         html = readFileSync(inl.out, 'utf8');
         assert.ok(html.includes('src="data:image/png;base64,'), 'inline data uri');
@@ -450,16 +484,17 @@ async function main(argv) {
             const dir = need(0, '<dir> <name> [css-selector]'), name = need(1, '<dir> <name> [css-selector]');
             const { port, token } = readPortFile(dir);
             if (!await alive(port, token)) throw new Error(`no receiver running for ${dir}; run: proof.mjs serve ${dir}`);
-            console.log(snippet(port, name, pos[2], token));
+            console.log(snippet(port, name, unmsys(pos[2]), token));
             return;
         }
         case 'block': {
+            for (const k of ['title', 'what', 'note']) if (flags[k] !== undefined) flags[k] = unmsys(flags[k]);
             const b = upsertBlock(need(0, '<dir> --title "..." [...]'), flags);
             console.log(JSON.stringify(b));
             return;
         }
         case 'report': {
-            const r = buildReport(need(0, '<dir> [--title ..] [--out file] [--inline]'), { title: flags.title, out: flags.out, inline: !!flags.inline });
+            const r = buildReport(need(0, '<dir> [--title ..] [--out file] [--inline]'), { title: flags.title, out: flags.out, inline: !!flags.inline, lang: flags.lang });
             for (const w of r.warn) console.error(`warning: ${w}`);
             console.log(`${r.out} (${r.blocks} blocks, ${(r.bytes / 1024).toFixed(0)} KB${r.linked ? ', linked, not inline' : ''})`);
             return;

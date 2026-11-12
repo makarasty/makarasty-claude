@@ -24,7 +24,7 @@ folder under the system temp dir for this task (it holds the PNGs, `blocks.jsonl
    frame count twice, a second apart, and believe the second. Under ten frames the pane is blind and its
    render is a photo of a stopped page; ask the operator to display it, as that doc says.
 3. For each UI change, number it `NN` and:
-   - `node "${CLAUDE_SKILL_DIR}/proof.mjs" snippet <dir> NN-before [css-selector]` prints one JS expression. Run it in the pane's
+   - `node "${CLAUDE_SKILL_DIR}/proof.mjs" snippet <dir> NN-before ['css-selector']` (single-quote the selector: a bare `#app` is a bash comment) prints one JS expression. Run it in the pane's
      `javascript_tool` BEFORE you edit. No selector: the visible viewport (the body clipped to
      innerWidth x innerHeight, scroll undone). With a selector: that whole element, however tall.
    - Edit. Wait on the condition that means rendered (a selector present, a flag flipped), not on a sleep.
@@ -59,7 +59,8 @@ re-render by html-to-image, not a pixel capture, so a pixel-exact claim needs th
 ## Related
 
 `/makarasty-tools:hold` (step 7), `blindtest` and `finish` can call this skill for UI changes; the caller
-wires that. Reports are in Russian, because the person reads them that way.
+wires that. The report is in the person's language: `report --lang en` for a person who does not write Russian
+(the default is Russian), and the titles and notes you write in that language too.
 
 ## Done when
 

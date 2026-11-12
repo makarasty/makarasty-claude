@@ -33,7 +33,8 @@ const MACHINE = /^(Continue work handed off|You are the coordinator|Run the brie
 const STRICT = /перепровер|ты уверен|я же (сказал|просил|говорил)|зачем ты|снова не|не работает|ничего не (изменилось|поменялось)|сломал|галюцин|нагалюц|ты не сделал|не исправил|doesn'?t work|you broke|still (broken|not)/iu;
 const BROAD = /перепровер|ты уверен|я же (сказал|просил|говорил)|не так(?![\p{L}\p{N}])|зачем ты|опять|снова не|не работает|не то(?![\p{L}\p{N}])|ничего не (изменилось|поменялось)|сломал|не понял|непонятно|не нравит|ужасн|бред|галюцин|нагалюц|хуйн|хуй|бля|пиздец|нахуй|заебал|ебан|ты не сделал|не исправил|wtf|what the|doesn'?t work|you broke|still (broken|not)/iu;
 const PLAIN = /простым языком|короче|слишком много текста|много букв|проще объясни|не понял|не понятно|непонятно|plain (english|language|words)|too (long|much text)|explain (it )?simply|eli5/iu;
-const SELF_PROJ = /makarasty-claude|sunup|claude-desktop-toolbox/i;
+// The person's own tool repos, one project name per line in <config>/makarasty/selfreview/self-projects.txt; none: 0%.
+const selfProjects = cfg => { try { return readFileSync(join(cfg, 'makarasty', 'selfreview', 'self-projects.txt'), 'utf8').split(/\r?\n/).map(x => x.trim().toLowerCase()).filter(Boolean); } catch { return []; } };
 const CMD_BUILTIN = new Set(['model', 'compact', 'doctor', 'insights', 'goal', 'auto-mode-setup', 'clear', 'resume', 'config', 'context', 'cost', 'usage', 'login', 'logout', 'help', 'exit', 'init', 'permissions', 'status', 'agents', 'mcp', 'plugin', 'memory', 'rewind', 'fast', 'effort', 'terminal-setup', 'ide', 'vim', 'bug', 'export', 'review', 'rename']);
 const SK_BUILTIN = /^(loop|simplify|code-review|security-review|review|init|run|schedule|batch|claude-api|update-config|keybindings-help|fewer-permission-prompts|plugin-authoring|workflow-authoring|dataviz|debug|artifact-[\w-]+)$/;
 
@@ -77,9 +78,12 @@ export async function scanFile(file, headOnly = false) {
     const rl = createInterface({ input: createReadStream(file, { encoding: 'utf8' }), crlfDelay: Infinity });
     for await (const line of rl) {
         if (line.includes('"isSidechain":true')) continue;
-        if (line.includes('"type":"user"')) {
-            if (line.includes('"type":"tool_result"')) continue;
+        const queued = line.includes('"queued_command"') && line.includes('"type":"attachment"');
+        if (queued || line.includes('"type":"user"')) {
+            if (!queued && line.includes('"type":"tool_result"')) continue;
             let o; try { o = JSON.parse(line); } catch { continue; }
+            // A message typed while the assistant works: a queued_command attachment whose origin is a human.
+            if (queued) { const a = o.attachment; if (a?.type !== 'queued_command' || a.origin?.kind !== 'human' || typeof a.prompt !== 'string') continue; o = { timestamp: o.timestamp, message: { content: a.prompt } }; }
             const p = promptOf(o);
             if (!p || !o.timestamp) continue;
             if (p.cmd && !CMD_BUILTIN.has(p.cmd)) s.cmds[p.cmd] = (s.cmds[p.cmd] || 0) + 1;
@@ -145,7 +149,7 @@ export function installedSkills(cfg) {
 const catOf = n => n.startsWith('makarasty-tools:') ? 'makarasty-tools' : n.startsWith('makarasty:') ? 'makarasty' : SK_BUILTIN.test(n) ? 'built-in' : 'third-party';
 
 // Everything the report needs from [from, to) ISO strings, given the deduped sessions and prompts.
-function measure(D, from, to) {
+function measure(D, from, to, mine = []) {
     const inW = ts => ts >= from && ts < to;
     const chats = D.chats.filter(s => inW(s.born)), clones = D.clones.filter(s => inW(s.born));
     const ps = D.prompts.filter(p => inW(p.ts));
@@ -168,7 +172,7 @@ function measure(D, from, to) {
         c400: c4, c400p: pct(c4, ctx.length), c700: c7, c700p: pct(c7, ctx.length),
         agents: median(chats.map(s => s.agents)), skills: Object.values(bycat).reduce((a, b) => a + b, 0),
         'sk:makarasty': bycat.makarasty, 'sk:makarasty-tools': bycat['makarasty-tools'], 'sk:third-party': bycat['third-party'], 'sk:built-in': bycat['built-in'],
-        self: pct(hp.filter(p => SELF_PROJ.test(p.proj)).length, hp.length),
+        self: pct(hp.filter(p => mine.some(m => p.proj.toLowerCase().includes(m))).length, hp.length),
         machine: ps.filter(p => p.kind === 'm').length, picks: ps.filter(p => p.kind === 'p').length,
     };
     return { m, sk, per, acct, hp };
@@ -201,7 +205,25 @@ export function repeated(hp, { n = 6, minChats = 3, top = 10 } = {}) {
     return picked.map(({ phrase, chats }) => ({ phrase, chats }));
 }
 
-export async function collect({ cfg, since, until, log = () => {} }) {
+// --prompts <dir>: the window's human prompts for readers (selfreview developer.md), one JSONL per project, clones already
+// merged, secrets masked, each cut to 400 characters; index.json lists the files biggest first with their counts.
+function writePrompts(dir, D, from, to) {
+    mkdirSync(dir, { recursive: true });
+    const by = new Map();
+    for (const p of D.prompts) {
+        if (p.kind !== 'h' || !p.text || p.ts < from || p.ts >= to) continue;
+        if (!by.has(p.proj)) by.set(p.proj, []);
+        by.get(p.proj).push({ chat: p.sid, at: p.ts, strict: p.strict, broad: p.broad, text: p.text });
+    }
+    const index = [...by].sort((a, b) => b[1].length - a[1].length).map(([proj, rows], i) => {
+        const file = `${String(i + 1).padStart(3, '0')}-${proj.replace(/[^\w.-]/g, '_').slice(-60)}.jsonl`;
+        writeFileSync(join(dir, file), rows.map(r => JSON.stringify(r)).join('\n') + '\n');
+        return { proj, file, prompts: rows.length, chats: new Set(rows.map(r => r.chat)).size, strict: rows.filter(r => r.strict).length, broad: rows.filter(r => r.broad).length };
+    });
+    writeFileSync(join(dir, 'index.json'), JSON.stringify(index, null, 1));
+}
+
+export async function collect({ cfg, since, until, log = () => {}, prompts }) {
     const from = since + 'T00:00:00.000Z', to = new Date(Date.parse(until + 'T00:00:00Z') + DAY).toISOString();
     const span = Date.parse(to) - Date.parse(from), pFrom = new Date(Date.parse(from) - span).toISOString();
     const root = join(cfg, 'projects'), sessions = [];
@@ -242,8 +264,9 @@ export async function collect({ cfg, since, until, log = () => {} }) {
         }
         if (clone) { s.born = born ?? s.events.at(-1).ts; D.clones.push(s); } else { s.born = s.start; D.chats.push(s); }
     }
+    if (prompts) writePrompts(prompts, D, from, to);
     D.accounts = desktopAccounts(Date.parse(pFrom));
-    const cur = measure(D, from, to), prev = measure(D, pFrom, from);
+    const mine = selfProjects(cfg), cur = measure(D, from, to, mine), prev = measure(D, pFrom, from, mine);
     const installed = installedSkills(cfg);
     const used = new Set(Object.keys(cur.sk));
     const bare = new Set([...used].filter(n => !n.includes(':')));
@@ -308,7 +331,9 @@ export async function run(argv, cfg) {
     if (!isDate(until)) throw new Error(`--until must be YYYY-MM-DD or today, got ${until}`);
     since ??= new Date(Date.parse(until + 'T00:00:00Z') - 30 * DAY).toISOString().slice(0, 10);
     if (!isDate(since) || since > until) throw new Error(`--since must be YYYY-MM-DD and not after --until, got ${since}`);
-    const r = await collect({ cfg, since, until, log: m => process.stderr.write(m + '\n') });
+    const prompts = flag('--prompts', null);
+    if (argv.includes('--prompts') && !prompts) throw new Error('--prompts needs a folder');
+    const r = await collect({ cfg, since, until, log: m => process.stderr.write(m + '\n'), prompts });
     const dir = join(cfg, 'makarasty', 'selfreview'), saved = latestSaved(dir, until);
     if (argv.includes('--save')) { mkdirSync(dir, { recursive: true }); writeFileSync(join(dir, until + '.json'), JSON.stringify(r, null, 1)); }
     return argv.includes('--json') ? JSON.stringify(r, null, 1) : render(r, saved);
@@ -345,6 +370,13 @@ async function selftest() {
         writeFileSync(join(plug, 'skills', 'forge', 'SKILL.md'), '---\n---\n'); writeFileSync(join(plug, 'skills', 'idle', 'SKILL.md'), '---\n---\n');
         mkdirSync(join(cfg, 'skills', 'foo'), { recursive: true }); writeFileSync(join(cfg, 'skills', 'foo', 'SKILL.md'), '---\n---\n');
         mkdirSync(join(cfg, 'plugins'), { recursive: true });
+        mkdirSync(join(cfg, 'makarasty', 'selfreview'), { recursive: true });
+        writeFileSync(join(cfg, 'makarasty', 'selfreview', 'self-projects.txt'), 'makarasty-claude\r\n\r\n');
+        // a message typed while the assistant works counts; a queued notification from a tool does not
+        const qf = join(root, 'q.jsonl'), Q = (kind, prompt) => JSON.stringify({ type: 'attachment', isSidechain: false, timestamp: '2026-10-12T10:00:00.000Z', attachment: { type: 'queued_command', prompt, origin: { kind } } });
+        writeFileSync(qf, [Q('human', 'стоп, ты уверен?'), Q('task-notification', 'agent finished')].join('\n'));
+        const qs = await scanFile(qf);
+        assert.deepEqual(qs.events.map(e => [e.kind, e.strict]), [['h', true]], 'queued human message read, notification skipped');
         writeFileSync(join(cfg, 'plugins', 'installed_plugins.json'), JSON.stringify({ version: 2, plugins: { 'makarasty-tools@m': [{ installPath: plug }] } }));
 
         const r = await collect({ cfg, since: '2026-10-10', until: '2026-10-20' });
@@ -376,6 +408,16 @@ async function selftest() {
         assert.ok(o2.stdout.includes('vs saved 2026-10-09'), o2.stdout);
         assert.equal(JSON.parse(go(['--since', '2026-10-10', '--until', '2026-10-20', '--json']).stdout).window.chats, 3);
         assert.notEqual(go(['--since', 'junk']).status, 0, 'bad date fails');
+        // --prompts: per-project files for readers, clones merged, machine prompts and commands out, secrets masked
+        const pd = join(root, 'prompts');
+        assert.equal(go(['--since', '2026-10-10', '--until', '2026-10-20', '--json', '--prompts', pd]).status, 0);
+        const idx = JSON.parse(readFileSync(join(pd, 'index.json'), 'utf8'));
+        assert.deepEqual(idx.map(x => [x.prompts, x.chats]), [[6, 2], [3, 2]], JSON.stringify(idx));
+        const rows = idx.flatMap(x => readFileSync(join(pd, x.file), 'utf8').trim().split('\n').map(l => JSON.parse(l)));
+        assert.equal(rows.filter(r => r.text === 'привет сделай задачу один').length, 1, 'a prompt the clone copied is listed once');
+        assert.ok(!rows.some(r => /Continue work handed off|sk-abcdef|hunter2|unfinished/.test(r.text)), 'no machine prompt, command or secret');
+        assert.equal(rows.filter(r => r.strict).length, 2);
+        assert.notEqual(go(['--prompts']).status, 0, '--prompts with no folder fails');
         console.log('selfreview.mjs selftest done');
     } finally { rmSync(root, { recursive: true, force: true }); }
 }

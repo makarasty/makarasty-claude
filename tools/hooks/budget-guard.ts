@@ -1,7 +1,7 @@
 import type { Register } from 'claude-code'
 
 // Enforces the "Verify budget" rule: a whole-repo typecheck or whole-suite test run costs gigabytes, and several agent
-// sessions share one 32 GB box. On a Bash, PowerShell or Monitor call that is a HEAVY verify run it refuses when
+// sessions share one machine's RAM. On a Bash, PowerShell or Monitor call that is a HEAVY verify run it refuses when
 //   1. another heavy verify run is already live on the machine (wait for it, or scope this one), or
 //   2. the run goes to the background with no kill-after limit (a hung run holds its RAM for hours).
 // Shape borrowed from git-guard and delete-guard: a function hook, a small lexer, an exported pure `check`. Unlike them
@@ -112,7 +112,7 @@ const ALIAS: Record<string, string> = { 'npm-cli': 'npm', 'npx-cli': 'npx' }
 function tok(w: string): string {
   if (w.startsWith('-')) return w
   if (/playwright/i.test(w) && /[\\/]/.test(w)) return 'playwright'
-  const t = w.replace(/\\/g, '/').split('/').pop()!.toLowerCase().replace(/\.(exe|cmd|bat|ps1|mjs|cjs|js)$/, '')
+  const t = w.replace(/\\/g, '/').split('/').pop()!.toLowerCase().replace(/(?<=\w)@[^@]*$/, '').replace(/\.(exe|cmd|bat|ps1|mjs|cjs|js)$/, '') // `vitest@latest` is vitest
   return t.endsWith('gradlewrappermain') ? 'gradlew' : (ALIAS[t] ?? t)
 }
 
@@ -190,6 +190,18 @@ function heavyTool(t: string, args: string[], live: boolean): boolean {
   }
 }
 
+// Windows PowerShell runs the first word past its own options as the command; -c/-Command, any prefix, takes the rest.
+// Returns where the command starts in `w` (searching from `from`), or -1 (-File, -EncodedCommand: nothing readable).
+const psStart = (w: string[], from: number): number => {
+  for (let k = from; k < w.length; k++) {
+    if (/^-c(o(m(m(a(nd?)?)?)?)?)?$/i.test(w[k]!)) return k + 1
+    if (/^-(f(ile)?|e(c|nc\w*))$/i.test(w[k]!)) return -1
+    if (!w[k]!.startsWith('-')) return k
+    if (/^-(ex\w*|ep|w\w*|i\w*|o\w*|v\w*|conf\w*)$/i.test(w[k]!)) k++
+  }
+  return -1
+}
+
 // One command's words: is it a heavy verify run, and does a kill-after limit (`timeout N`) stand in front of it?
 // `ps`: PowerShell, which has no `timeout` prefix (its `timeout` is a sleep), so a `timeout` word is no limit there.
 function analyze(W: string[], live: boolean, ps: boolean, depth = 0, timeout = false): { heavy: boolean; timeout: boolean } {
@@ -226,9 +238,11 @@ function analyze(W: string[], live: boolean, ps: boolean, depth = 0, timeout = f
     }
     if (!live && depth < 3 && /^(bash|sh|zsh|dash|cmd|powershell|pwsh)$/.test(t)) {
       // A command handed to a nested shell is read as its own line, with the limit that stands before it.
-      const k = W.findIndex((a, n) => n > i && /^(-[a-z]*c|\/[ck]|-command)$/i.test(a))
-      if (k < 0 || W[k + 1] === undefined) return no
-      const inner = /^(cmd|powershell|pwsh)$/.test(t) ? W.slice(k + 1).join(' ') : W[k + 1]!
+      // `cmd //c` is Git Bash's cmd /c; Windows PowerShell also takes its command as the first bare word (`powershell "npm test"`).
+      const isPs = /^(powershell|pwsh)$/.test(t)
+      const s = isPs ? psStart(W, i + 1) : ((k) => k < 0 ? -1 : k + 1)(W.findIndex((a, n) => n > i && /^(-[a-z]*c|\/{1,2}[ck]|-command)$/i.test(a)))
+      if (s < 0 || W[s] === undefined) return no
+      const inner = /^(cmd|powershell|pwsh)$/.test(t) ? W.slice(s).join(' ') : W[s]!
       const found = segments(inner, /^(powershell|pwsh)$/.test(t)).map((s) => analyze(s.words, live, /^(powershell|pwsh)$/.test(t), depth + 1, timeout)).find((r) => r.heavy)
       return found ?? no
     }
@@ -237,7 +251,9 @@ function analyze(W: string[], live: boolean, ps: boolean, depth = 0, timeout = f
       for (; W[p]?.startsWith('-') && W[p] !== '--'; p++) if (PM_VALUE.test(W[p]!)) p++
       const sub = W[p]?.toLowerCase()
       if (sub === undefined) return no
-      if (sub === 'exec' || sub === 'dlx' || (t === 'bun' && sub === 'x')) { i = p; continue } // `pnpm exec vitest`: the tool follows
+      if (sub === 'exec' || sub === 'dlx' || sub === 'x') { i = p; continue } // `pnpm exec vitest`, `npm x vitest`: the tool follows
+      // yarn, pnpm and bun run a package's bin by its bare name: `pnpm vitest run`, `yarn tsc`.
+      if (t !== 'npm' && /^(vitest|jest|mocha|ava|tsc|vue-tsc|playwright|pytest|nx|turbo)$/.test(tok(W[p]!))) { i = p - 1; continue }
       const args = W.slice(i + 1)
       if (flag(args, INFO) || flag(args, WATCH)) return no
       if (t === 'bun' && sub === 'test') return { heavy: !(pos(W.slice(p + 1)).length || flag(args, /^(-t|--test-name-pattern)(=|$)/)), timeout }
@@ -296,7 +312,7 @@ export function check(command: string, tool: string, input: { run_in_background?
   const old = live.filter((p) => p.age !== undefined && p.age > STALE_SECONDS), fresh = live.filter((p) => !old.includes(p))
   if (fresh.length) {
     why.push(`another heavy verify run is live on this machine: ${list(fresh)}. ` +
-      'Several sessions share one 32 GB box and a whole-repo typecheck or suite costs gigabytes each. Wait for it (its result is yours to read) or scope your run to one file or project ' +
+      'Sessions on this machine share its RAM and a whole-repo typecheck or suite costs gigabytes each. Wait for it (its result is yours to read) or scope your run to one file or project ' +
       '(`vitest run src/x.test.ts`, `tsc --noEmit -p packages/a`, `-t`, `--related`). If it looks hung, tell the user; do not end it yourself')
   }
   const loose = tool === 'Monitor' ? undefined : runs.find((r) => (r.bg || input.run_in_background === true) && !r.timeout) // a Monitor ends at its own timeout_ms
@@ -333,9 +349,11 @@ export function parse(out: string, win = true): Proc[] {
 // Windows tells itself apart by OS, or by ComSpec / SystemRoot when a host strips OS from the environment.
 export const isWindows = (os?: string, comspec?: string, sysroot?: string): boolean => os === 'Windows_NT' || !!comspec || !!sysroot
 
-// Windows: command lines come only from CIM. Measured 2026-10-20 on this box under load (4 other sessions): the whole call
-// through a node child is about 300 ms median (powershell startup alone 112 ms); the WQL filter plus -Property is the
-// fastest of the three tried (a Where-Object filter 310 ms, no -Property 360 ms). `tasklist /v` takes 12-14 s and has no
+// Windows: command lines come only from CIM. Measured 2026-11-11 on this box (15 interleaved runs through a node child):
+// median about 510 ms, min 440, max 6000 under load (a first pass under heavier load read 900 to 1350 ms median). Powershell
+// startup alone is about 260 ms. Get-WmiObject, or CIM without CreationDate, read the same within noise, so the listing is not
+// made cheaper; it is paid once per heavy run, never for other lines. Earlier (2026-10-20) the WQL filter plus -Property
+// beat a Where-Object filter (310 ms vs 360 ms, no -Property). `tasklist /v` takes 12-14 s and has no
 // command lines; `wmic` is gone from this build. One `-Command` string, no double quotes, so no quoting survives to break it.
 // The middle column is seconds since CreationDate, empty when CIM has none.
 export const WIN_LIST = "Get-CimInstance Win32_Process -Property ProcessId,CommandLine,CreationDate -Filter 'Name=''node.exe'' OR Name=''bun.exe'' OR Name=''python.exe'' OR Name=''java.exe'' OR Name=''cargo.exe'' OR Name=''pytest.exe''' | ForEach-Object { '' + $_.ProcessId + [char]9 + $(if ($_.CreationDate) { [int]((Get-Date) - $_.CreationDate).TotalSeconds } else { '' }) + [char]9 + $_.CommandLine }"

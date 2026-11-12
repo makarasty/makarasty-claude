@@ -57,6 +57,10 @@ daily tools first.
 - A plugin bump that is not committed is never installed.
 - Rollback with `winget install -v <old>` works only while that version's manifest exists; otherwise the
   rollback is "back up <folder> first".
+- An update that brings new errors (a checker reports what it did not before) is not rolled back or pinned to
+  silence them. Find the culprit first: the code is wrong and the new version is right (fix the code), another
+  checker misses it (report the gap), or the new version has a bug (cite its issue or changelog, pin with a
+  comment that links it).
 - An install outside its vendor's or launcher's default, or on a full or slow disk, gets a `Move` line.
 
 ## 3. Challenge

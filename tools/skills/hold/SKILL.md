@@ -1,9 +1,10 @@
 ---
 description: Quiet collecting mode for a stream of small bug reports or tasks, fixed together once the person says the codeword. Use on "молчи, пока не скажу абрикос", "накидаю баги, потом скажу кодовое слово", "собирай задачи", "collect until I say". The codeword said alone ("абрикос, приступай") ends a running hold; it does not start one. Pass the person's own codeword as the argument ("молчи пока не скажу апельсин" -> `апельсин`).
-argument-hint: [codeword, default абрикос]
+argument-hint: [codeword, default абрикос or apricot]
 ---
 
-The codeword is `$ARGUMENTS`, or `абрикос` when empty. An argument that is a sentence ("молчи пока не
+The codeword is `$ARGUMENTS`; when empty, the codeword the person's profile names, else `абрикос` for a person who writes Russian and `apricot` otherwise
+(the examples below use `абрикос`). An argument that is a sentence ("молчи пока не
 скажу апельсин") holds it as the word after "скажу" or "say", else its last word. The person is walking the
 app and dictating what is wrong, one message at a time. If you act on the first item while they are on the
 fifth, they re-read your change, and the fix misses the pattern the later items would have shown.
@@ -22,7 +23,8 @@ fifth, they re-read your change, and the fix misses the pattern the later items 
 
 `node "${CLAUDE_SKILL_DIR}/hold.mjs" <verb>` (call it `hold.mjs`) keeps a folder per session,
 `makarasty/hold/<session id>/`, and finds the id itself; add `--sid ${CLAUDE_SESSION_ID}` only if it says it
-has none. Verbs and formats: [REFERENCE.md](REFERENCE.md).
+has none. Verbs and formats: [REFERENCE.md](REFERENCE.md). Every free-text argument (a reason, evidence) goes in
+single quotes, each apostrophe in it written `'\''`: inside double quotes bash runs backticks and expands `$`.
 
 1. First message: `hold.mjs init <codeword>`; it prints the folder `<dir>` with forward slashes. Quote it as `"<dir>"`
    in every command (a path with a space splits). A second hold in the same session after `released` archives the
@@ -53,9 +55,9 @@ Add `(+ to NN)` when it looks like an addition to an earlier item and `(= NN?)` 
 
 - A direct question ("а это баг или так задумано?") gets a short answer, then collection continues.
 - "поменяй 3 на ...": write the new text to `inbox`, `hold.mjs edit 3 --from <file>` (the old text stays as
-  `previous`). "убери пункт 3": `hold.mjs drop 3 "<why>"`. Reply with the changed line.
+  `previous`). "убери пункт 3": `hold.mjs drop 3 '<why>'`. Reply with the changed line.
 - "стоп", "отмена", "хватит": ask once whether to drop the list or work it now. Drop: `hold.mjs release
-  --drop "<reason>"`.
+  --drop '<reason>'`.
 - A handoff mid-collection names the folder and the codeword; the next chat runs `hold.mjs carry "<old id>"`. Carried items start as `open`, the old status kept as `previous-status:`.
 - "перенеси прошлое": `hold.mjs last` names the newest earlier unfinished folder of this project; carry it.
 
@@ -87,9 +89,9 @@ worktree", "без вопросов") decide the route and are not asked again.
 7. **Review each item against its own record**: a reviewer (`model: "sonnet"`, `effort: "high"`) gets the
    same verbatim text and screenshot, checks that the named cause, files and tests exist, and for a visual
    item also tries empty, long and error data. The look goes to a `makarasty:fleet-scenario` agent
-   (`model: "sonnet"`, `effort: "medium"`) after `/makarasty:fleet-login`, in every theme; without a pane a
+   (`model: "sonnet"`, `effort: "high"`) after `/makarasty:fleet-login`, in every theme; without a pane a
    visual fix is reported as not checked. To show the person, `/makarasty-tools:proof`.
-8. Write each verdict: `hold.mjs status NN done|partial|not-done|merged→NN "<evidence>"`. Evidence goes in double quotes (a `;` inside splits the command) and is an
+8. Write each verdict: `hold.mjs status NN done|partial|not-done|merged→NN '<evidence>'`. Evidence goes in single quotes (a `;` inside splits the command) and is an
    existing path (`file:line`) or three words or more; `partial` reads `<done part>; left: <rest>`.
 
 ## Report

@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
-import { afterCompact, asksForHandoff, economy, findings, habits, isMarker, levelFor, register, reminder } from './gates.ts'
+import { PROFILE_MAX, afterCompact, asking, asksForHandoff, economy, findings, habits, levelFor, register, reminder } from './gates.ts'
 
 const entry = { kind: 'file' as const, size: 1, mtimeMs: 0, isLink: false }
 const DAY = 86400000
@@ -15,12 +15,14 @@ type World = {
   level?: string
   fleet?: string
   fleetAge?: number
+  runAge?: number // how long ago the run's own folder (or its tasks/claimed) was touched; default: long ago
   hold?: string
   holdIndex?: string
   holdAge?: number
   env?: Record<string, string>
   run?: 'hang' | 'fail'
   exists?: string
+  profile?: string
 }
 function world(on: On, o: World = {}) {
   const writes: Record<string, string> = {}
@@ -31,27 +33,29 @@ function world(on: On, o: World = {}) {
   for (const ev of ['Stop', 'StopFailure', 'Notification', 'UserPromptSubmit', 'SessionStart', 'SessionEnd', 'SubagentStart'] as const) on(`classic.${ev}`, async () => ({}))
   mock.env(on, { CLAUDE_CONFIG_DIR: '/cfg', ...o.env })
   mock.clock(on, { now: 10 * DAY })
-  on('fs.list', async (_$, e) => {
-    lists.push(plain(e.path))
-    if (o.markers === undefined || o.markers === 'missing') return { deny: 'ENOENT' }
-    return { value: o.markers.map(name => ({ ...entry, name })) }
-  })
   on('session.usage', async () => ({ value: { startedAt: 0, context: { window: 1000000, ...(o.tokens === undefined ? {} : { tokens: o.tokens }) }, rateLimits: [] } }))
   on('fs.read', async (_$, e) => {
     if (plain(e.path) === '/cfg/makarasty/context/s1' && o.level !== undefined) return { value: o.level }
     if (plain(e.path) === '/cfg/makarasty/fleet-sessions/s1' && o.fleet !== undefined) return { value: `${o.fleet}\nmore` }
     if (plain(e.path) === '/cfg/makarasty/hold/s1.md' && o.hold !== undefined) return { value: o.hold }
     if (plain(e.path) === '/cfg/makarasty/hold/s1/index.md' && o.holdIndex !== undefined) return { value: o.holdIndex }
+    if (plain(e.path) === '/cfg/makarasty/profile.md' && o.profile !== undefined) return { value: o.profile }
     return { deny: 'ENOENT' }
   })
   on('fs.stat', async (_$, e) => {
     if (plain(e.path) === '/cfg/makarasty/hold/s1.md' && o.hold !== undefined) return { value: { ...entry, mtimeMs: 10 * DAY - (o.holdAge ?? 1000) } }
     if (plain(e.path) === '/cfg/makarasty/hold/s1/index.md' && o.holdIndex !== undefined) return { value: { ...entry, mtimeMs: 10 * DAY - (o.holdAge ?? 1000) } }
     if (plain(e.path) === '/cfg/makarasty/fleet-sessions/s1') return { value: { ...entry, mtimeMs: 10 * DAY - (o.fleetAge ?? 1000) } }
-    if (plain(e.path) === o.fleet) return { value: { ...entry, kind: 'dir' as const } }
+    if (plain(e.path) === o.fleet) return { value: { ...entry, kind: 'dir' as const, mtimeMs: o.runAge === undefined ? 0 : 10 * DAY - o.runAge } }
+    if (o.runAge !== undefined && plain(e.path) === `${o.fleet}/tasks/claimed`) return { value: { ...entry, kind: 'dir' as const, mtimeMs: 10 * DAY - o.runAge } }
     return { deny: 'ENOENT' }
   })
-  on('fs.exists', async (_$, e) => ({ value: plain(e.path) === o.exists }))
+  // lists: every marker path asked about; a marker is notify/<name>.json for each name in o.markers.
+  on('fs.exists', async (_$, e) => {
+    const p = plain(e.path)
+    if (p.includes('/makarasty/notify/')) { lists.push(p); return { value: Array.isArray(o.markers) && o.markers.some(n => p.endsWith(`/notify/${n}`)) } }
+    return { value: p === o.exists }
+  })
   on('fs.write', async (_$, e) => { writes[plain(e.path)] = e.text; return { value: undefined } })
   on('process.run', async (_$, e) => {
     runs.push({ argv: e.argv, stdin: e.init?.stdin, timeoutMs: e.init?.timeoutMs })
@@ -65,13 +69,6 @@ const prompt = (text = 'go on') => ({ prompt: text, session_id: 's1', transcript
 
 // ---- pure parts ----
 
-test('only a non-hidden *.json counts as a marker, as the shell glob did', () => {
-  expect(isMarker('s1.json')).toBe(true)
-  expect(isMarker('.json')).toBe(false)
-  expect(isMarker('.hidden.json')).toBe(false)
-  expect(isMarker('notes.txt')).toBe(false)
-})
-
 test('levels: the threshold, then every step, once each; a drop re-arms', () => {
   expect(levelFor(699999, 700000, 150000, 0)).toBe(0)
   expect(levelFor(700000, 700000, 150000, 0)).toBe(700000)
@@ -83,7 +80,8 @@ test('levels: the threshold, then every step, once each; a drop re-arms', () => 
 })
 
 test('a prompt that asks for the handoff is recognised; one that only mentions it is not', () => {
-  for (const p of ['/handoff', '/makarasty-tools:handoff now', 'do a handoff', 'сделай хенд-офф', 'handoff', 'handoff!'])
+  for (const p of ['/handoff', '/makarasty-tools:handoff now', 'do a handoff', 'сделай хенд-офф', 'handoff', 'handoff!',
+    'хэндофф', 'Сделай хэндофф', 'хендоф', 'хэндоф', 'hand off', 'do a hand off', 'сделай хэнд-офф'])
     expect(asksForHandoff(p)).toBe(true)
   for (const p of ['fix the handoff reminder text in context.mjs', 'why does the handoff hook fire twice'])
     expect(asksForHandoff(p)).toBe(false)
@@ -99,19 +97,37 @@ test('the texts are the ones context.mjs printed', () => {
 
 test('nothing armed: no node is started on any notify event', async ($, on) => {
   const w = world(on, { markers: ['readme.txt'] })
-  await $.classic.UserPromptSubmit({ prompt: 'hi' })
-  await $.classic.Stop({ stop_hook_active: false })
-  await $.classic.StopFailure({ error: 'rate_limit' })
-  await $.classic.Notification({ notification_type: 'permission_prompt', message: 'm' })
-  await $.classic.SessionStart({ source: 'resume' })
-  await $.classic.SessionEnd({ reason: 'clear' })
+  const s = { session_id: 's1' }
+  await $.classic.UserPromptSubmit({ prompt: 'hi', ...s })
+  await $.classic.Stop({ stop_hook_active: false, ...s })
+  await $.classic.StopFailure({ error: 'rate_limit', ...s })
+  await $.classic.Notification({ notification_type: 'permission_prompt', message: 'm', ...s })
+  await $.classic.SessionStart({ source: 'resume', ...s })
+  await $.classic.SessionEnd({ reason: 'clear', ...s })
   expect(w.runs).toEqual([])
-  expect(w.lists[0]).toBe('/cfg/makarasty/notify')
+  expect(w.lists[0]).toBe('/cfg/makarasty/notify/s1.json')
+})
+
+test("another chat's marker does not start node here: only this session's own marker arms it", async ($, on) => {
+  const w = world(on, { markers: ['other.json'] })
+  const s = { session_id: 's1' }
+  await $.classic.UserPromptSubmit({ prompt: 'hi', ...s })
+  await $.classic.Stop({ stop_hook_active: false, ...s })
+  await $.classic.SessionStart({ source: 'resume', ...s })
+  await $.classic.SessionEnd({ reason: 'clear', ...s })
+  expect(w.runs).toEqual([])
+})
+
+test('a path-like session id never reaches the folder', async ($, on) => {
+  const w = world(on, { markers: ['s1.json'] })
+  await $.classic.Stop({ stop_hook_active: false, session_id: '../x' })
+  expect(w.runs).toEqual([])
+  expect(w.lists).toEqual([])
 })
 
 test('no notify folder at all is not armed and not an error', async ($, on) => {
   const w = world(on, { markers: 'missing' })
-  await $.classic.UserPromptSubmit({ prompt: 'hi' })
+  await $.classic.UserPromptSubmit({ prompt: 'hi', session_id: 's1' })
   expect(w.runs).toEqual([])
 })
 
@@ -127,53 +143,53 @@ test('armed: the payload reaches notify.mjs as the command hook got it, on stdin
 
 test('Stop, StopFailure and the needs-you Notifications start it; other notifications do not', async ($, on) => {
   const w = world(on, { markers: ['s1.json'] })
-  await $.classic.Stop({ stop_hook_active: false })
-  await $.classic.StopFailure({ error: 'rate_limit' })
-  await $.classic.Notification({ notification_type: 'permission_prompt', message: 'm' })
-  await $.classic.Notification({ notification_type: 'idle_prompt', message: 'm' })
-  await $.classic.Notification({ notification_type: 'agent_needs_input', message: 'm' })
-  await $.classic.Notification({ notification_type: 'elicitation_dialog', message: 'm' })
-  await $.classic.Notification({ notification_type: 'elicitation_url_dialog', message: 'm' })
+  await $.classic.Stop({ stop_hook_active: false, session_id: 's1' })
+  await $.classic.StopFailure({ error: 'rate_limit', session_id: 's1' })
+  await $.classic.Notification({ notification_type: 'permission_prompt', message: 'm', session_id: 's1' })
+  await $.classic.Notification({ notification_type: 'idle_prompt', message: 'm', session_id: 's1' })
+  await $.classic.Notification({ notification_type: 'agent_needs_input', message: 'm', session_id: 's1' })
+  await $.classic.Notification({ notification_type: 'elicitation_dialog', message: 'm', session_id: 's1' })
+  await $.classic.Notification({ notification_type: 'elicitation_url_dialog', message: 'm', session_id: 's1' })
   expect(w.events()).toEqual(['Stop', 'StopFailure', 'Notification', 'Notification', 'Notification', 'Notification'])
   expect(w.runs.every(r => r.timeoutMs === 20000)).toBe(true)
 })
 
 test('a Stop does not wait for notify.mjs', async ($, on) => {
   const w = world(on, { markers: ['s1.json'], run: 'hang' })
-  await $.classic.Stop({ stop_hook_active: false })
+  await $.classic.Stop({ stop_hook_active: false, session_id: 's1' })
   expect(w.runs).toHaveLength(1)
 })
 
 test('a notify.mjs that cannot run does not fail the turn', async ($, on) => {
   const w = world(on, { markers: ['s1.json'], run: 'fail' })
-  await $.classic.StopFailure({ error: 'rate_limit' })
-  await $.classic.UserPromptSubmit({ prompt: 'hi' })
+  await $.classic.StopFailure({ error: 'rate_limit', session_id: 's1' })
+  await $.classic.UserPromptSubmit({ prompt: 'hi', session_id: 's1' })
   expect(w.runs).toHaveLength(2)
 })
 
 test("SessionStart resume hands notify.mjs's note to the chat; other sources and unarmed say nothing", async ($, on) => {
   const w = world(on, { markers: ['s1.json'] })
   w.say('A phone notification is armed for this chat.\n')
-  const r = await $.classic.SessionStart({ source: 'resume' })
-  expect(r.additionalContext).toEqual(['A phone notification is armed for this chat.', economy, habits, findings])
+  const r = await $.classic.SessionStart({ source: 'resume', session_id: 's1' })
+  expect(r.additionalContext).toEqual(['A phone notification is armed for this chat.', economy, habits, asking, findings])
   const n = w.runs.length
-  expect((await $.classic.SessionStart({ source: 'startup' })).additionalContext).toEqual([economy, habits, findings])
+  expect((await $.classic.SessionStart({ source: 'startup', session_id: 's1' })).additionalContext).toEqual([economy, habits, asking, findings])
   expect(w.runs.length).toBe(n)
   w.say('')
-  expect((await $.classic.SessionStart({ source: 'resume' })).additionalContext).toEqual([economy, habits, findings])
+  expect((await $.classic.SessionStart({ source: 'resume', session_id: 's1' })).additionalContext).toEqual([economy, habits, asking, findings])
 })
 
 test('SessionEnd runs it for /clear only', async ($, on) => {
   const w = world(on, { markers: ['s1.json'] })
-  await $.classic.SessionEnd({ reason: 'prompt_input_exit' })
+  await $.classic.SessionEnd({ reason: 'prompt_input_exit', session_id: 's1' })
   expect(w.runs).toEqual([])
-  await $.classic.SessionEnd({ reason: 'clear' })
+  await $.classic.SessionEnd({ reason: 'clear', session_id: 's1' })
   expect(w.runs).toHaveLength(1)
   expect(w.runs[0]!.timeoutMs).toBe(5000)
 })
 
 test('SessionEnd writes the ended marker except for /clear, which still reaches notify', async ($, on) => {
-  const w = world(on, { markers: ['s1.json'] })
+  const w = world(on, { markers: ['s1.json', 's2.json'] })
   await $.classic.SessionEnd({ reason: 'prompt_input_exit', session_id: 's1' })
   expect(w.writes['/cfg/makarasty/ended/s1']).toBe(new Date(10 * DAY).toISOString())
   expect(w.runs).toEqual([])
@@ -184,15 +200,23 @@ test('SessionEnd writes the ended marker except for /clear, which still reaches 
 
 test('without CLAUDE_CONFIG_DIR it looks in ~/.claude, USERPROFILE first, then HOME', async ($, on) => {
   const w = world(on, { markers: 'missing', env: { CLAUDE_CONFIG_DIR: '', USERPROFILE: 'C:/Users/me', HOME: '/c/Users/me' } })
-  await $.classic.UserPromptSubmit({ prompt: 'hi' })
-  expect(w.lists).toEqual(['/Users/me/.claude/makarasty/notify', '/c/Users/me/.claude/makarasty/notify'])
+  await $.classic.UserPromptSubmit({ prompt: 'hi', session_id: 's1' })
+  expect(w.lists).toEqual(['/Users/me/.claude/makarasty/notify/s1.json', '/c/Users/me/.claude/makarasty/notify/s1.json'])
 })
 
 test('with CLAUDE_CONFIG_DIR set, only that folder is looked at, not the home one', async ($, on) => {
   const w = world(on, { markers: 'missing', env: { CLAUDE_CONFIG_DIR: '/other', USERPROFILE: 'C:/Users/me', HOME: '/c/Users/me' } })
-  await $.classic.UserPromptSubmit({ prompt: 'hi' })
-  expect(w.lists).toEqual(['/other/makarasty/notify'])
+  await $.classic.UserPromptSubmit({ prompt: 'hi', session_id: 's1' })
+  expect(w.lists).toEqual(['/other/makarasty/notify/s1.json'])
   expect(w.runs).toEqual([])
+})
+
+test('with no config dir, USERPROFILE and HOME, nothing is written under the drive root', async ($, on) => {
+  const w = world(on, { markers: 'missing', tokens: 800000, env: { CLAUDE_CONFIG_DIR: '', USERPROFILE: '', HOME: '' } })
+  await $.classic.SessionEnd({ reason: 'prompt_input_exit', session_id: 's1' })
+  await $.classic.SessionStart({ source: 'startup', session_id: 's1' })
+  expect((await $.classic.UserPromptSubmit(prompt())).additionalContext).toBeUndefined()
+  expect(w.writes).toEqual({})
 })
 
 // ---- handoff reminder ----
@@ -246,6 +270,12 @@ test('a live fleet session gets none', async ($, on) => {
   const w = world(on, { tokens: 800000, fleet: '/runs/r1' })
   expect((await $.classic.UserPromptSubmit(prompt())).additionalContext).toBeUndefined()
   expect(w.writes).toEqual({})
+})
+
+test('an old record with a run folder touched in the last two days still exempts: a long run outlives its record', async ($, on) => {
+  const w = world(on, { tokens: 800000, fleet: '/runs/r1', fleetAge: 3 * DAY, runAge: 1000 })
+  expect((await $.classic.UserPromptSubmit(prompt())).additionalContext).toBeUndefined()
+  expect(w.writes['/cfg/makarasty/context/s1']).toBeUndefined()
 })
 
 test('a fleet record not rewritten for two days does not exempt', async ($, on) => {
@@ -312,8 +342,8 @@ test('missing ids or transcript: silent, like context.mjs', async ($, on) => {
 
 test('SessionStart compact names the transcript; other sources do not', async ($, on) => {
   world(on, {})
-  expect((await $.classic.SessionStart({ source: 'compact', transcript_path: '/x/t.jsonl' })).additionalContext).toEqual([afterCompact('/x/t.jsonl'), economy, habits, findings])
-  expect((await $.classic.SessionStart({ source: 'startup', transcript_path: '/x/t.jsonl' })).additionalContext).toEqual([economy, habits, findings])
+  expect((await $.classic.SessionStart({ source: 'compact', transcript_path: '/x/t.jsonl' })).additionalContext).toEqual([afterCompact('/x/t.jsonl'), economy, habits, asking, findings])
+  expect((await $.classic.SessionStart({ source: 'startup', transcript_path: '/x/t.jsonl' })).additionalContext).toEqual([economy, habits, asking, findings])
 })
 
 test('token economy: once on startup, clear, resume and compact; MAKARASTY_ECONOMY=off says nothing', async ($, on) => {
@@ -323,7 +353,11 @@ test('token economy: once on startup, clear, resume and compact; MAKARASTY_ECONO
     expect(ctx.filter(c => c === economy)).toHaveLength(1)
   }
   expect(economy.length).toBeLessThan(700)
-  expect(habits.length).toBeLessThan(450)
+  expect(habits.length).toBeLessThan(1450)
+})
+
+test('habits: names each standing rule, under its budget', () => {
+  for (const w of [/what you did not check/, /what happened, why, what you did, what the person must do/, /urgent: the core change and one check/, /never a second/, /Ask first, listing the files: a commit, push, merge, release, delete/, /edit and commit only your own files/, /never raise --max-old-space-size/, /find the culprit before any rollback or pin/]) expect(habits).toMatch(w)
 })
 
 test('MAKARASTY_ECONOMY=off and MAKARASTY_FINDINGS=off drop their texts and leave the compact note', async ($, on) => {
@@ -331,6 +365,29 @@ test('MAKARASTY_ECONOMY=off and MAKARASTY_FINDINGS=off drop their texts and leav
   expect((await $.classic.SessionStart({ source: 'startup' })).additionalContext).toBeUndefined()
   expect((await $.classic.SessionStart({ source: 'resume' })).additionalContext).toBeUndefined()
   expect((await $.classic.SessionStart({ source: 'compact', transcript_path: '/x/t.jsonl' })).additionalContext).toEqual([afterCompact('/x/t.jsonl')])
+})
+
+test('asking: one line names each rule the person asked for, under its budget', () => {
+  for (const w of [/stands alone/, /Number every list/, /continue\?/, /one click or one command/, /what made it, its size, what breaks without it, and your recommendation/, /one ask \(AskUserQuestion\), the recommended option first/, /message that stands alone/, /with the outcomes as options, never only in prose/]) expect(asking).toMatch(w)
+  expect(asking.length).toBeLessThan(1050)
+})
+
+test('profile.md: added after the rules when present, BOM dropped, capped', async ($, on) => {
+  world(on, { profile: '﻿Language: Russian.\nMachine: 32 GB.' + 'x'.repeat(5000) })
+  const ctx = (await $.classic.SessionStart({ source: 'startup' })).additionalContext ?? []
+  expect(ctx.slice(0, 4)).toEqual([economy, habits, asking, findings])
+  expect(ctx[4]).toMatch(/^The person's profile \(\/cfg\/makarasty\/profile\.md.*: Language: Russian\.\nMachine: 32 GB\.x+ \[cut at 2000 characters: the rest of the file is not read\]$/)
+  expect(ctx[4]!.length).toBeLessThan(PROFILE_MAX + 200)
+})
+
+test('profile.md alone survives MAKARASTY_ECONOMY=off and _FINDINGS=off', async ($, on) => {
+  world(on, { env: { MAKARASTY_ECONOMY: 'off', MAKARASTY_FINDINGS: 'off' }, profile: 'Answer in German.' })
+  expect((await $.classic.SessionStart({ source: 'startup' })).additionalContext).toEqual([expect.stringMatching(/Answer in German\.$/)])
+})
+
+test('an empty profile.md adds nothing', async ($, on) => {
+  world(on, { profile: '  \n' })
+  expect((await $.classic.SessionStart({ source: 'startup' })).additionalContext).toEqual([economy, habits, asking, findings])
 })
 
 test('findings: every subagent gets the line', async ($, on) => {
@@ -342,7 +399,7 @@ test('findings: every subagent gets the line', async ($, on) => {
 test('MAKARASTY_FINDINGS=off: no line in subagents, economy alone in a main session', async ($, on) => {
   world(on, { env: { MAKARASTY_FINDINGS: 'off' } })
   expect((await $.classic.SubagentStart({ agent_id: 'a1', agent_type: 'Explore' })).additionalContext).toBeUndefined()
-  expect((await $.classic.SessionStart({ source: 'startup' })).additionalContext).toEqual([economy, habits])
+  expect((await $.classic.SessionStart({ source: 'startup' })).additionalContext).toEqual([economy, habits, asking])
 })
 
 test('an armed chat past the threshold gets both: notify runs and the reminder is returned', async ($, on) => {

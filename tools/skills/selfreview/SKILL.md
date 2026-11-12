@@ -1,12 +1,14 @@
 ---
-description: Monthly review of how the person works with Claude, from all their chat transcripts, against the month before. Use on "проанализируй мои чаты", "разбор моих чатов", "как я работаю с клодом", "ежемесячный разбор", "analyze my chats". Not for a fleet run's speed or cost (/makarasty:fleet-analyze).
-argument-hint: [--since YYYY-MM-DD] [--until YYYY-MM-DD]
+description: Monthly review of how the person works with Claude from their transcripts, or a developer's whole history turned into plugin changes. Use on "проанализируй мои чаты", "как я работаю с клодом", "ежемесячный разбор", "analyze my chats", "разбери историю другого разработчика", "analyze a developer's history". Not for a fleet run (/makarasty:fleet-analyze) or chats left open (unfinished).
+argument-hint: [--since YYYY-MM-DD] [--until YYYY-MM-DD] | developer [<config dir>]
 ---
 
-The owner wants one question answered every month: is the way I work with Claude getting better? A
-script reads every transcript (about 1,700 files, 5 GB, under a minute), merges cloned chats, drops
-machine prompts, and prints the numbers for a window and the window before it. You read the numbers; the
-script judges nothing.
+One question every month: is the way the person works with Claude getting better? A script reads every
+transcript (a thousand or more files take under a minute), merges cloned chats, drops machine prompts, and
+prints the numbers for a window and the window before it. You read the numbers; the script judges nothing.
+
+With `developer` (or when asked to analyse another developer's history, find their habits and weak spots, or
+turn what their chats show into plugin changes), follow `developer.md` beside this file instead.
 
 ## Flow
 
@@ -33,7 +35,8 @@ script judges nothing.
 - Windows are UTC days, `until` included; the previous window has the same length.
 - Prompt text in the output is cut to 120 characters and tokens, keys and passwords are masked. Do not paste
   longer prompt text from the transcripts into the report.
-- Self-tooling share counts projects named makarasty-claude, sunup or claude-desktop-toolbox.
+- Self-tooling share counts the projects named one per line in `<config>/makarasty/selfreview/self-projects.txt`
+  (the person's own tool repos; no file: 0).
 - `node "${CLAUDE_SKILL_DIR}/selfreview.mjs" --selftest` checks the script on fake transcripts.
 
 ## Done when
