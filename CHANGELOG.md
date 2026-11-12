@@ -1,5 +1,27 @@
 # Changelog
 
+## makarasty-tools 1.19.33 — 2026-11-13
+
+- **Every question is screened before it reaches the person:** ask-guard refuses an AskUserQuestion once unless
+  it carries `metadata.screened` (one line: what the chat checked and why only the person can answer). The refusal
+  sends the chat to check the project's CLAUDE.md and docs, what runs locally, the scripts and env it uses, earlier
+  answers and the standing answers, itself or with a Haiku Explore agent; settled → it does the step; something not
+  running that it cannot start → it asks the person to start it. A stake (push, merge, deploy, delete, money,
+  sign-in) and the inbox chat's own relays skip the screen. On 95 real questions a screen would have settled 15%
+  with no wrong call [M72]. `MAKARASTY_SCREEN=off` drops it.
+- **A local commit of the chat's own files is not a question:** the session's working rules now say commit your own
+  files when done; push, merge, release and delete stay asked. The inbox answers a commit question that still
+  comes in with "commit your own files yourself" unless the person's profile says commits are asked.
+
+## makarasty-tools 1.19.32 — 2026-11-13
+
+- **No secret is asked for, and nothing the agent can run is handed to the person:** a fleet asked for a sandbox
+  database password while a local proxy to that database was already up. ask-guard refuses an AskUserQuestion that
+  asks for a password, token, secret, API key or an `*_PASS`/`*_TOKEN`/`*_SECRET`/`*_KEY` value, or asks the person to
+  run something themselves; the refusal sends the agent to find the local way in (a proxy or tunnel, open ports,
+  the env files and scripts the project uses) and do the step itself. The session's working rules carry one line of
+  the same.
+
 ## makarasty-tools 1.19.31 — 2026-11-13
 
 - **No commands inside a question:** a command cannot be copied out of the dialog. ask-guard refuses an

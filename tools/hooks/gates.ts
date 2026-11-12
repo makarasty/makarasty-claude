@@ -106,7 +106,8 @@ export const habits =
   'Call a fix done only after a check you ran shows it, and say plainly what you did not check. Report in this order: what happened, why, ' +
   'what you did, what the person must do. Told it is urgent: the core change and one check, no extra review rounds, then list what you skipped. ' +
   'Do without asking, then report: run the scoped tests, typecheck or build; start the dev server the task needs, after checking its port ' +
-  'and using one that already answers (never a second); fix what your own change broke. Ask first, listing the files: a commit, push, merge, release, delete, anything ' +
+  'and using one that already answers (never a second); fix what your own change broke. Never ask for secrets or to run what you can: ' +
+  'use the local way in (proxy, port). Commit your own files when done. Ask first: push, merge, release, delete, anything ' +
   'sent off this machine, stopping a process the person started, a real choice between approaches; otherwise take the recommended option and ' +
   "say so in one line. Other chats may share this checkout: edit and commit only your own files, name another chat's file, never touch or " +
   'discard it. A check that runs out of memory is too broad: narrow it, never raise --max-old-space-size or drop a worker cap someone set. ' +

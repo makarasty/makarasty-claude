@@ -359,7 +359,7 @@ test('token economy: once on startup, clear, resume and compact; MAKARASTY_ECONO
 })
 
 test('habits: names each standing rule, under its budget', () => {
-  for (const w of [/what you did not check/, /what happened, why, what you did, what the person must do/, /urgent: the core change and one check/, /never a second/, /Ask first, listing the files: a commit, push, merge, release, delete/, /edit and commit only your own files/, /never raise --max-old-space-size/, /find the culprit before any rollback or pin/]) expect(habits).toMatch(w)
+  for (const w of [/what you did not check/, /what happened, why, what you did, what the person must do/, /urgent: the core change and one check/, /never a second/, /Commit your own files when done\. Ask first: push, merge, release, delete/, /Never ask for secrets/, /edit and commit only your own files/, /never raise --max-old-space-size/, /find the culprit before any rollback or pin/]) expect(habits).toMatch(w)
 })
 
 test('MAKARASTY_ECONOMY=off and MAKARASTY_FINDINGS=off drop their texts and leave the compact note', async ($, on) => {

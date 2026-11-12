@@ -35,6 +35,38 @@ export function holdsCommand(questions: readonly Q[]): boolean {
   return questions.some((q) => [str(q?.question), ...(Array.isArray(q?.options) ? q.options : []).flatMap((o) => [str(o?.label), str(o?.description)])].some((t) => CMD.test(t)))
 }
 
+// Asking the person for a secret, or to run by hand what the agent could run here, stalls the chat on a question it
+// should have answered itself: a sandbox password was asked while a local proxy to that database was already up.
+export const SELF =
+  'Not asked: the question asks the person for a password, token or secret, or to run something themselves. No secret is ' +
+  'asked in chat, ever. First find how this machine already reaches it (a local proxy or tunnel, open ports, the env files ' +
+  "and scripts the project uses, its docs), do the step yourself, and ask only for a decision that stays the person's."
+const SECRET = /(парол|password|passwd|\bpass(word)?\b|токен|token|секрет|secret|api[ -]?key|ключ(а|ом)? (api|доступа)|credential|учётн[а-я]* данн|учетн[а-я]* данн|\b[A-Z][A-Z0-9]*_(PASS|PASSWORD|TOKEN|SECRET|KEY)\b)/i
+const BYHAND = /(запусти|выполни|прогони|run|execute|start)[^?.!\n]{0,40}(сам(?![а-я])|самостоятельно|вручную|у себя|yourself|by hand|manually|on your (machine|side))|(сам(?![а-я])|вручную|yourself|manually)[^?.!\n]{0,20}(запусти|выполни|прогони|run|execute)/i
+export function asksSelf(questions: readonly Q[]): boolean {
+  if (!Array.isArray(questions)) return false
+  return questions.some((q) => { const t = [str(q?.question), ...(Array.isArray(q?.options) ? q.options : []).map((o) => str(o?.label))].join('\n'); return SECRET.test(t) || BYHAND.test(t) })
+}
+
+// The screen: a question reaches the person only after the asking chat checked it could not answer it itself. Of 95
+// questions answered 11-11..11-12, 15% were the agent's own to settle (a duplicate, its reviewer's question, a
+// "continue?", a standing answer, log noise), none of them one the person then answered his own way [M72]. A stake
+// (push, merge, deploy, delete, money, sign-in) skips the screen; it is always his. The inbox chat relays screened items.
+export const SCREEN =
+  'Screen this question first; it reaches the person only if nobody else can answer it. Check yourself (or with a Haiku ' +
+  'Explore agent given this question and the project folder): the project CLAUDE.md and docs, what runs locally (ports, ' +
+  'proxies, processes), the scripts and env it uses, earlier answers in this chat and the standing answers. If that settles ' +
+  'it, do the step and do not ask. If something must be started that you cannot start, ask the person to start it (never a ' +
+  'password). Otherwise ask again with metadata {"screened": "<one line: what you checked and why only the person can answer>"}.'
+export function screened(meta: unknown): boolean {
+  const m = meta && typeof meta === 'object' ? (meta as Record<string, unknown>) : {}
+  return (typeof m.screened === 'string' && m.screened.trim().length >= 20) || /^inbox(:|$)/.test(str(m.source))
+}
+export function staked(questions: readonly Q[]): boolean {
+  if (!Array.isArray(questions)) return false
+  return questions.some((q) => STAKE.test([str(q?.question), str(q?.header), ...(Array.isArray(q?.options) ? q.options : []).flatMap((o) => [str(o?.label), str(o?.description)])].join('\n')))
+}
+
 export function pointsAbove(questions: readonly Q[]): boolean {
   if (!Array.isArray(questions)) return false
   return questions.some((q) => { const t = str(q?.question); return ABOVE.test(t) && !/#local_[0-9a-f-]{8,}|https?:\/\/|claude:\/\//i.test(t) })
@@ -116,6 +148,8 @@ export const register: Register = (on) => {
     if (e.tool !== 'AskUserQuestion' || (await $.env.get('MAKARASTY_ASK_GUARD')) === 'off') return next(e)
     if (pointsAbove(e.questions as readonly Q[])) return { deny: ELSEWHERE }
     if (holdsCommand(e.questions as readonly Q[])) return { deny: COMMAND }
+    if (asksSelf(e.questions as readonly Q[])) return { deny: SELF }
+    if ((await $.env.get('MAKARASTY_SCREEN')) !== 'off' && !staked(e.questions as readonly Q[]) && !screened((e as { metadata?: unknown }).metadata) && !continueQuestions(e.questions as readonly Q[]).length) return { deny: SCREEN }
     const n = continueQuestions(e.questions as readonly Q[])
     if (!n.length) return next(e)
     if (n.length === e.questions.length) return { deny: MESSAGE }

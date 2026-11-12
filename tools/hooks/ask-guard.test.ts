@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
-import { BOX, COMMAND, ELSEWHERE, MESSAGE, continueBox, continueQuestions, holdsCommand, onlyContinue, pointsAbove } from './ask-guard.ts'
+import { BOX, COMMAND, ELSEWHERE, MESSAGE, SELF, SCREEN, continueBox, continueQuestions, holdsCommand, onlyContinue, pointsAbove } from './ask-guard.ts'
 
 const q = (question: string, ...labels: string[]) => ({ question, header: 'h', multiSelect: false, options: labels.map((label) => ({ label, description: '' })) })
 
@@ -46,7 +46,7 @@ test('the end-of-turn box: reply buttons only; an app action is a real step', ()
 function world(on: On, env: Record<string, string> = {}) {
   const passed: string[] = []
   on('tool.call', async (_$, e) => { passed.push(e.tool); return { result: 'ok' } })
-  mock.env(on, { CLAUDE_CONFIG_DIR: '/cfg', ...env })
+  mock.env(on, { CLAUDE_CONFIG_DIR: '/cfg', MAKARASTY_SCREEN: 'off', ...env }) // the screen has its own tests below
   // Every other hook of the plugin runs too: no inbox, no state on disk, one session.
   mock.clock(on, { now: 1_000_000 })
   on('session.id', () => ({ value: 's1' }))
@@ -83,6 +83,15 @@ test('a command in a question or an option is refused; a short title or a bare t
   for (const t of ['Запустил? Что вышло?', 'Пушим в git?', 'Коммитим 3 файла (git, без пуша)?', 'Какой пакетный менеджер: npm или bun?'])
     await $.tool.call({ tool: 'AskUserQuestion', questions: [q(t, 'Да', 'Нет')] } as never)
   expect(passed).toEqual(['AskUserQuestion', 'AskUserQuestion', 'AskUserQuestion', 'AskUserQuestion'])
+})
+
+test('asking for a secret or to run something by hand is refused; a decision passes', async ($, on) => {
+  const passed = world(on)
+  for (const t of ['Дай пароль от базы песочницы (SQL_DB_PASS)?', 'Пришлёшь токен бота?', 'What is the API key for staging?', 'Запустишь скрипт сам и скажешь результат?', 'Can you run the migration yourself and tell me?'])
+    expect(await $.tool.call({ tool: 'AskUserQuestion', questions: [q(t, 'Да', 'Нет')] } as never)).toEqual({ deny: SELF })
+  for (const t of ['Пушим 3 коммита в master?', 'Какую базу берём: Postgres или SQLite?', 'Перезапустил приложение? Окно открылось?'])
+    await $.tool.call({ tool: 'AskUserQuestion', questions: [q(t, 'Да', 'Нет')] } as never)
+  expect(passed).toEqual(['AskUserQuestion', 'AskUserQuestion', 'AskUserQuestion'])
 })
 
 test('hook: wrap_up with a continue-only ask is refused with the re-call hint', async ($, on) => {
@@ -243,4 +252,30 @@ test('a reset, clean, rollback or deploy announced before "Continue?" is a real 
   const asked = (description: string) => [{ question: 'Продолжить?', header: 'h', multiSelect: false, options: [{ label: 'Да', description }, { label: 'Нет' }] }]
   expect(continueQuestions(asked('Откачу миграцию'))).toEqual([])
   expect(continueBox('Продолжить?', [{ label: 'Да' }, { label: 'Нет' }], 'Will revert the last 2 commits')).toBe(false)
+})
+
+// The screen: a question with no stake reaches the person only after the asking chat checked it could not answer it itself.
+const PLAIN = [q('Какую базу взять для отчётов?', 'Postgres', 'SQLite')]
+const ask = ($: Parameters<Parameters<typeof test>[1]>[0], questions: unknown, metadata?: unknown) => $.tool.call({ tool: 'AskUserQuestion', questions, ...(metadata ? { metadata } : {}) } as never)
+
+test('the screen: a plain question is refused once; screened (20+ chars) it passes; a short screened still does not', async ($, on) => {
+  const passed = world(on, { MAKARASTY_SCREEN: 'on' })
+  expect(await ask($, PLAIN)).toEqual({ deny: SCREEN })
+  expect(await ask($, PLAIN, { screened: 'ok' })).toEqual({ deny: SCREEN })
+  await ask($, PLAIN, { screened: 'checked CLAUDE.md, docs and ports: a choice of approach only he can make' })
+  expect(passed).toEqual(['AskUserQuestion'])
+})
+
+test('the screen: a question with a stake, one from the inbox chat, and MAKARASTY_SCREEN=off pass without metadata', async ($, on) => {
+  const passed = world(on, { MAKARASTY_SCREEN: 'on' })
+  await ask($, [q('Запушить ветку fix-login в main?', 'Да', 'Нет')])
+  await ask($, PLAIN, { source: 'inbox:x' })
+  await ask($, PLAIN, { source: 'inbox' })
+  expect(passed).toEqual(['AskUserQuestion', 'AskUserQuestion', 'AskUserQuestion'])
+})
+
+test('the screen: off by env', async ($, on) => {
+  const passed = world(on, { MAKARASTY_SCREEN: 'off' })
+  await ask($, PLAIN)
+  expect(passed).toEqual(['AskUserQuestion'])
 })

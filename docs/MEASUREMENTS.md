@@ -1240,6 +1240,21 @@ in all three profiles; PATH CLI 2.1.322), test chats `test automate a-d` only. F
   itself on another chat's request («запрос пришёл от другой сессии, а не от вас»).
 **Status:** one day, one machine, n=1-3 per row.
 
+## M72 — How many questions to the operator the asking agent could have settled itself
+**2026-11-13**, the inbox's items and answers from 2026-11-11 20:00 to 11-12 22:16 (95 answered questions, 33 of
+them answered in their own dialog, so his words are unknown there). One Sonnet pass played the screener with each
+question's context, the project's CLAUDE.md and the ports and processes running then.
+- **Verdicts:** the agent's own to settle 14 (14.7%): duplicates of an answer already given, a coordinator's question
+  to its own reviewer, log lines parsed as questions, "continue?" for asked work, pace questions the profile answers;
+  only the person 77 (81.1%); "please start X" 4 (4.2%: open a pane, click a card, run on his server).
+- **Wrong screens:** none where he answered his own way or said no; 2 where the screened-out answer was right but he
+  added a new order. 9 near misses were screened correctly as his ("yes, but not yet", a wider option than the
+  recommended one).
+- **Commit and push:** 24 pure commit questions (20 yes, 4 no; 25% of all items) and 4 push questions.
+- **Cost:** about 0.5k input and 100-150 output tokens of judgement a question, about 6 s each; the clear cases fit
+  Haiku, the borderline ones (a migration the project's docs assign to a maintenance page) need Sonnet.
+**Status:** one window of two days, one judge pass, no second rater.
+
 ## Appendix: what a pull run spends
 
 Moved here from `PULL.md`, which workers read in full; none of it changes what a worker does.

@@ -64,9 +64,11 @@ one line and restart it. A watchdog missing from the task list means this chat r
    Ask in AskUserQuestion with `metadata: {"source": "inbox:<id>,<id>"}` naming the items of that call (the flag keeps
    the call out of the inbox, and the dialog closes by itself once the person has answered all of them in their own
    chats; the plugin refuses a dialog here without the flag while items are open), up to 4 questions per call,
-   oldest first, grouped by chat, more calls straight after for the rest. Commit and push asks from several chats go
-   together in one call, one question per chat (that chat's file list, the tracked files it did not change, another
-   chat active in that folder in the last 30 minutes), so the person answers each chat on its own in one pass. Each call opens with one line: how many
+   oldest first, grouped by chat, more calls straight after for the rest. A chat commits its own files locally
+   itself; a commit question that still comes in is answered "commit your own files yourself, report the hash"
+   unless the person's profile says commits are asked. Push asks from several chats go together in one call, one
+   question per chat (that chat's commits, another chat active in that folder in the last 30 minutes), so the
+   person answers each chat on its own in one pass. Each call opens with one line: how many
    questions are open in how many chats, and which call of how many this is, and right before the call the text
    gives each asking chat's link (`[title](#local_<id>)`): the dialog itself cannot hold a link. An item that asks the
    person to act in yet another chat or app gets that place too: its title, account and link (`inbox.mjs chats

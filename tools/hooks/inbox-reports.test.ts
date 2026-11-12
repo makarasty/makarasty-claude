@@ -11,7 +11,7 @@ function world(on: On, o: { self?: string; session?: string; failSubmits?: numbe
   const disk = new Map<string, string>([['/cfg/makarasty/inbox.on', 'x']])
   if (o.self) disk.set(`${R}/self`, o.self)
   const plain = (p: string): string => p.replace(/^[A-Za-z]:/, '').replaceAll('\\', '/')
-  mock.env(on, { CLAUDE_CONFIG_DIR: '/cfg', CLAUDE_CODE_HOST_SESSION_ID: 'local_aaaa', CLAUDE_CODE_ACCOUNT_UUID: 'acc1' })
+  mock.env(on, { CLAUDE_CONFIG_DIR: '/cfg', CLAUDE_CODE_HOST_SESSION_ID: 'local_aaaa', CLAUDE_CODE_ACCOUNT_UUID: 'acc1', MAKARASTY_SCREEN: 'off' })
   const clock = mock.clock(on, { now: 10_000_000 })
   on('session.id', () => ({ value: o.session ?? 'chatA' }))
   on('session.cwd', () => ({ value: 'C:/work/reports-app' }))

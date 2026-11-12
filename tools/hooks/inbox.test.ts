@@ -18,7 +18,7 @@ function world(on: On, o: { on?: boolean; session?: string; self?: string; child
   let answerDialog: ((v: unknown) => void) | undefined
   const dialog = { shown: 0, closed: 0 }
   let wake: (() => void) | undefined
-  mock.env(on, { CLAUDE_CONFIG_DIR: '/cfg', CLAUDE_CODE_HOST_SESSION_ID: 'local_aaaa', CLAUDE_CODE_ACCOUNT_UUID: 'acc1' })
+  mock.env(on, { CLAUDE_CONFIG_DIR: '/cfg', CLAUDE_CODE_HOST_SESSION_ID: 'local_aaaa', CLAUDE_CODE_ACCOUNT_UUID: 'acc1', MAKARASTY_SCREEN: 'off' })
   const clock = mock.clock(on, { now: o.now ?? 1_000_000 })
   on('session.id', () => ({ value: o.session ?? 'chatA' }))
   on('session.cwd', () => ({ value: 'C:\\work\\reports-app' }))
