@@ -292,3 +292,69 @@ test('the queue: a dialog open 10 min when a new item comes in is closed to be a
   expect(w.disk.has('/cfg/makarasty/inbox/answers/chatB~t1.json')).toBe(false) // still open, asked again
   expect(w.submitted.filter((s) => s.startsWith('Inbox:'))).toEqual([]) // no prompt queued behind the turn
 })
+
+// "continue?" questions: answered at once when the person's profile.md / answers.md says so, and only then.
+const CQ = 'Продолжить с миграцией схемы?' // not the bare shape ask-guard.ts already refuses
+const cont = (labels: string[], q = CQ) => [{ question: q, header: 'Дальше', multiSelect: false, options: labels.map((label) => ({ label })) }]
+const RULE_LINE = 'Continue questions: answered yes'
+const YESNO = ['Да, продолжать (Рекомендую)', 'Нет, остановиться']
+
+test('a continue-only question with the standing rule is answered at once: the answer says who gave it, is logged, and is written before the item', async ($, on) => {
+  const w = world(on)
+  w.disk.set('/cfg/makarasty/answers.md', `# Answers\n- ${RULE_LINE}\n`)
+  const r = await $.tool.call({ tool: 'AskUserQuestion', questions: cont(YESNO) as never, tool_use_id: 'toolu_c1' })
+  const got = (r.result as { answers: Record<string, string> }).answers[CQ]
+  expect(got).toBe(`Да, продолжать (Рекомендую) [answered by the person's standing rule: "${RULE_LINE}"]`)
+  const ans = JSON.parse(w.disk.get('/cfg/makarasty/inbox/answers/chatA~toolu_c1.json')!)
+  expect([ans.by, ans.standing, ans.answers[CQ]]).toEqual(['inbox', true, got])
+  const log = w.disk.get('/cfg/makarasty/inbox/auto.jsonl')!.trim().split('\n').map((l) => JSON.parse(l))
+  expect(log.map((l) => [l.id, l.question, l.label, l.rule])).toEqual([['chatA~toolu_c1', CQ, 'Да, продолжать (Рекомендую)', RULE_LINE]])
+  const keys = [...w.disk.keys()]
+  expect(keys.indexOf('/cfg/makarasty/inbox/answers/chatA~toolu_c1.json')).toBeLessThan(keys.indexOf('/cfg/makarasty/inbox/items/chatA~toolu_c1.json'))
+  expect(w.dialog.shown).toBe(0)
+})
+
+// The owner's real profile.md: one line, the rule is one sentence of several, and a later sentence says "Never".
+const PROFILE = 'Language: Russian, plain and short. Machine facts for tooling, perf and OS work: ~/.claude/MACHINE.md (Windows 11, RAM shared by 20-30 chats at once). Continue questions about work already asked are answered yes. Never propose fewer workers, test workers or parallel chats to save RAM: a RAM fix must not cost speed.'
+test('a one-line profile.md (the owner own wording): a continue question is answered yes', async ($, on) => {
+  const w = world(on)
+  w.disk.set('/cfg/makarasty/profile.md', PROFILE)
+  const r = await $.tool.call({ tool: 'AskUserQuestion', questions: cont(YESNO) as never, tool_use_id: 'toolu_c6' })
+  expect((r.result as { answers: Record<string, string> }).answers[CQ]).toContain('standing rule: "Continue questions about work already asked are answered yes"')
+})
+
+test('the rule in profile.md as "Continue: yes" counts too', async ($, on) => {
+  const w = world(on)
+  w.disk.set('/cfg/makarasty/profile.md', 'Отвечай коротко.\nContinue: yes\n')
+  const r = await $.tool.call({ tool: 'AskUserQuestion', questions: cont(['Yes, continue', 'No, stop']) as never, tool_use_id: 'toolu_c1b' })
+  expect((r.result as { answers: Record<string, string> }).answers[CQ]).toContain('Yes, continue [answered by the person')
+})
+
+// Each of these must reach the person's dialog; the answered-at-once path never opens it.
+async function notAnswered(on: On, $: Parameters<Parameters<typeof test>[1]>[0], rule: string, questions: unknown, id: string) {
+  const w = world(on)
+  w.disk.set('/cfg/makarasty/profile.md', rule)
+  const call = $.tool.call({ tool: 'AskUserQuestion', questions: questions as never, tool_use_id: id })
+  await w.until(() => w.dialog.shown === 1, 'dialog')
+  expect(w.disk.has(`/cfg/makarasty/inbox/answers/chatA~${id}.json`)).toBe(false)
+  w.answerDialog({ result: { questions: [], answers: {} } })
+  await call
+}
+
+for (const q of ['Продолжить и закоммитить?', 'Продолжать и запушить?', 'Продолжить и смержить в master?', 'Продолжать, задеплоить на прод?', 'Продолжить выкатку на прод?',
+  'Продолжить, стереть старые данные?', 'Продолжить, перезаписав прод-базу?', 'Продолжить и отправить письмо клиенту?', 'Continue and ship it to production?',
+  'Продолжить и сбросить базу?', 'Продолжить, снести старую ветку?', 'Продолжить и откатить миграцию?', 'Продолжить и залить на сервер?', 'Продолжить и очистить папку dist?', 'Продолжить чистку диска?', 'Продолжить сброс кэша?', 'Continue the cleanup?',
+  'Continue and reset the database?', 'Continue with a force rebase?', 'Continue and buy the domain?', 'Continue and close the PR?', 'Продолжить, пока ты не уйдёшь на обед и мы не вернёмся к этому разговору позже?']) {
+  test(`a stake or a long question is never answered by the rule: ${q}`, ($, on) => notAnswered(on, $, RULE_LINE, cont(['Да', 'Нет'], q), 'toolu_c3'))
+}
+
+test('a choice between approaches phrased with "continue" is left to the person', ($, on) =>
+  notAnswered(on, $, RULE_LINE, cont(['Продолжить через REST (Рекомендую)', 'Продолжить через GraphQL'], 'Как продолжим?'), 'toolu_c5'))
+
+for (const labels of [['Остановиться', 'Сначала покажи план'], ['Да, продолжать', 'Сначала покажи план'], ['Да', 'Нет', 'Позже']]) {
+  test(`a continue question whose options are not exactly one yes and one no is left to the person: ${labels.join(' / ')}`, ($, on) => notAnswered(on, $, RULE_LINE, cont(labels), 'toolu_c4'))
+}
+
+for (const rule of ['Continue questions: never answer yes for me, ask me.', 'Продолжать без спроса: нет, спрашивай.', 'Продолжительность созвонов: да', 'Continue: yes, but never for deploys', 'Отвечай коротко и по делу.']) {
+  test(`a negated or unrelated line is no standing rule: ${rule}`, ($, on) => notAnswered(on, $, rule, cont(YESNO), 'toolu_c2'))
+}

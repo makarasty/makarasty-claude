@@ -1,5 +1,5 @@
 import type { EngineInterface, Register } from 'claude-code'
-import { PUSH_AFTER_MS, clean, contextOf, deliveryText, dueReports, excerptOf, explainPrompt, itemId, ownedBy, safe, toResult, type Answer, type Item, type Report } from '../skills/inbox/core.mjs'
+import { PUSH_AFTER_MS, clean, contextOf, continueAnswer,deliveryText, dueReports, excerptOf, explainPrompt, itemId, ownedBy, safe, toResult, type Answer, type Item, type Report } from '../skills/inbox/core.mjs'
 import { find as secretIn } from './secret-guard.ts'
 
 // The cross-chat inbox (skill /makarasty-tools:inbox, layout in skills/inbox/core.mjs). Off unless
@@ -53,6 +53,20 @@ function cli($: D, dir: string, args: string[], timeoutMs = 20000) {
   return $.process.run(['node', `${$.plugin.root}/skills/inbox/inbox.mjs`, ...args], { timeoutMs, env: { CLAUDE_CONFIG_DIR: dir } })
 }
 
+// The person's standing rule that "continue?" questions are answered yes: the line of profile.md or answers.md that says so, or
+// undefined. Narrow on purpose: "Continue questions: ... answered yes", or "Continue: yes"; a line with a negation is no rule.
+async function continueRule($: D, dir: string): Promise<string | undefined> {
+  for (const f of ['profile.md', 'answers.md']) {
+    const text = String(await $.fs.read(`${dir}/makarasty/${f}`).catch(() => ''))
+    // Sentence by sentence (a profile line often holds several): the rule and the negation are judged in the same sentence.
+    for (const raw of text.split(/[.;!?\n]+/)) {
+      const l = raw.replace(/^[\s\-*•>]+/, '').trim()
+      if ((/\bcontinue questions?\b[^\n]*\banswered yes\b/i.test(l) || /^continue:\s*yes\b/i.test(l)) && !/never|не |нет|ask me|спрашивай/i.test(l)) return l
+    }
+  }
+  return undefined
+}
+
 async function readJSON<T>($: D, path: string): Promise<T | undefined> {
   try { return JSON.parse(String(await $.fs.read(path)).replace(/^﻿/, '')) as T } catch { return undefined }
 }
@@ -67,10 +81,12 @@ async function origin($: D, a: { session: string }, msgs: readonly { role: strin
   }
 }
 
-async function newItem($: D, a: { root: string; session: string }, toolUseId: string | undefined, fields: Pick<Item, 'kind'> & Partial<Item>): Promise<Item> {
+// `before` runs once the id is known and before the item file is written (an answer written there is never seen as open).
+async function newItem($: D, a: { root: string; session: string }, toolUseId: string | undefined, fields: Pick<Item, 'kind'> & Partial<Item>, before?: (id: string) => Promise<void>): Promise<Item> {
   const now = await $.clock.now()
   const msgs = await $.session.messages().catch(() => [])
   const item = { id: itemId(a.session, toolUseId ?? String(now)), at: now, ...(await origin($, a, msgs)), context: contextOf(msgs), ...fields }
+  await before?.(item.id)
   await $.fs.write(`${a.root}/items/${item.id}.json`, JSON.stringify(item))
   return item
 }
@@ -116,7 +132,26 @@ export const register: Register = (on) => {
     const a = await active($)
     if (!a) return next(e)
     startTimer($)
-    const item = await newItem($, a, e.tool_use_id, { kind: 'ask', questions: e.questions.map((q) => ({ ...q, options: [...q.options] })) })
+    const questions = e.questions.map((q) => ({ ...q, options: [...q.options] }))
+    // A "continue?" for work already under way, and the person said continue questions are answered yes: answered at once.
+    // The value says who answered, so the asking chat does not take it for the person's own words; auto.jsonl is what `list` shows him.
+    const standing = continueAnswer({ kind: 'ask', questions } as Item)
+    const rule = standing ? await continueRule($, a.dir) : undefined
+    const got: { auto?: Answer } = {} // set in the callback: a bare `let` is narrowed to undefined after it
+    const item = await newItem($, a, e.tool_use_id, { kind: 'ask', questions }, async (id) => {
+      if (!standing || !rule || (await $.fs.exists(`${a.root}/answers/${id}.json`))) return
+      const by = (label: string) => `${label} [answered by the person's standing rule: "${rule}"]`
+      got.auto = { id, at: await $.clock.now(), by: 'inbox', answers: Object.fromEntries(Object.entries(standing).map(([q, l]) => [q, by(l)])), standing: true }
+      await $.fs.write(`${a.root}/answers/${id}.json`, JSON.stringify(got.auto))
+    })
+    const auto = got.auto
+    if (auto && standing && rule) {
+      // shortcut: read-and-rewrite (no append in $.fs); two chats auto-answering within milliseconds can lose a line.
+      const old = String(await $.fs.read(`${a.root}/auto.jsonl`).catch(() => ''))
+      const lines = Object.entries(standing).map(([question, label]) => JSON.stringify({ at: auto.at, id: item.id, chat: item.chat, question, label, rule }))
+      await $.fs.write(`${a.root}/auto.jsonl`, `${old}${old && !old.endsWith('\n') ? '\n' : ''}${lines.join('\n')}\n`).catch(() => undefined)
+      return { result: toResult(item, auto) }
+    }
     let settled = false
     const dialog = next(e).then((r) => { settled = true; return { r } }, (err: unknown) => { settled = true; return { err } })
     const inbox = (async (): Promise<Answer | undefined> => {

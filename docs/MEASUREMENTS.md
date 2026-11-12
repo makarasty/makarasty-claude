@@ -1204,6 +1204,42 @@ special cases instead of one mechanism, and the plugins carrying his own machine
 - **Candidates:** none, because no chat was ended or idle for 120 min at the time. The 120 min is machine.mjs's existing "ask the owner to close it" line, a decision, not a measurement.
 **Status:** two observations on one day; the idle limit is untested against a real finished chat.
 
+## M70 — A new chat on another account with no click
+**2026-11-12**, app 5.1231.2, profiles main / dev2 / dev on one Windows box; links given to `apps\dev2\Claude-dev2.exe --user-data-dir=<dev2>` as `inbox.mjs open` does.
+- **`claude://code/new?q=<prompt>&folder=<dir>`** (route read from the app's `app.asar`): the dev2 window took it and saved trust for the folder (`Saved workspace trust for …`), but no chat was made: the prompt waits in the composer for Send. The main process forwards only `q`, `folder`, `ssh_*`, `environment`, `runner_pool`; there is no submit parameter.
+- **`claude://resume?session=<uuid>`** after `claude -p "…" --session-id <uuid>` in the folder (5 s): dev2 logged `Resume deep link: importing CLI session`, wrote `local_<uuid>.json` with that folder, and the chat was listed by `ListAgents` 13 s later. A `SendMessage` to its name was answered in 6 s with the folder and `DEV2-OK`; the dev2 log shows the query in dev2's process (`Query completed for session local_<uuid>`). With `-n <name>` the listed name is `<name>` (seen: `test cross-account`).
+- **Limits seen:** the imported chat keeps the CLI turn's model (a `--model haiku` bootstrap left the chat on Haiku), so `start` passes none; `set_session_title` and `SendMessage` by app id from a main chat answered `not found` for the dev2 chat, by name it worked. Computer use cannot be granted Claude's own windows, so the composer route cannot be finished by a click from here.
+- **It takes the window:** the import logged `setFocusedSession: sessionId=local_<new>` and, in the operator's main window, replaced the chat he was dictating into (his report). In the code the resume route always navigates to the imported chat after the second-instance handler shows the window; the other import paths ask for a click (the "Import N sessions" dialog, the resume picker), and nothing watches the session index, so a hand-written index entry appears only after that window restarts.
+- **The bare handler is not the window:** for `main` (no renamed copy) `cmd /c start claude://…` ran the installed exe with no `--user-data-dir`, which opened a fresh signed-out instance; the same exe with `--user-data-dir="<profiles>\main"` reached his window.
+**Status:** two chats on one day, one account pair (main → dev2).
+
+## M71 — Driving other chats from a script: focus, flip-back, reload, model (2026-11-12)
+**2026-11-12**, app 5.1231.2, bundled CLI 2.1.321 (`<profiles>\<p>\claude-code\2.1.321\d0e23af87588\claude.exe`, same
+in all three profiles; PATH CLI 2.1.322), test chats `test automate a-d` only. Foreground and idle read with
+`GetForegroundWindow` + `GetLastInputInfo`, sampled about every 1.5 s.
+- **Import while another app is in front:** dev imported at 21:30:05 (`setFocusedSession` new chat); foreground stayed
+  `kitty_nocompress.exe` through 21:30:14. The dev window did not come up.
+- **Import while a main window is in front:** 22:08:56 import, 22:08:58 `setFocusedSession` back to the chat dev showed
+  before (the 1.19.25 flip-back works, 2 s); foreground went from main's `claude.exe` (operator idle 31 s) to
+  `Claude-dev.exe` and stayed there. The script ran under main's CLI, a descendant of the foreground window, which
+  Windows lets take the foreground; the cause is inferred, not isolated.
+- **SendMessage does not switch:** three sends to a dev chat the dev window was not showing (21:30-21:33): no
+  `setFocusedSession` after 21:31:14, foreground unchanged (`brave.exe`), the chat answered.
+- **Bootstrap flags:** `--model haiku --permission-mode auto` on the CLI turn → the dev record holds `"model":
+  "claude-haiku-5-5"`, `"permissionMode":"auto"`; a start without the flag also came in as auto, so the mode flag is
+  not shown to matter. No `effort` key is written. With no `--model` the chat came in on the CLI default
+  (`claude-sonnet-5-5`).
+- **set_session_model / set_session_effort** on an imported main chat: applied from its next turn without a click
+  (`/model` ran as a local command in that chat); each call was first denied once by auto mode because a hook adds a
+  `session` field, then accepted when re-sent. n=1.
+- **Plugin reload:** archive stopped the chat's CLI (pid gone); unarchive + a message started a new one. After
+  makarasty-tools 1.19.26 was installed, the unarchived chat quoted the new answers.md context line ("The person's
+  standing answers (…/answers.md"), which 1.19.25 never injected: a new process loads the new plugin version.
+  `/reload-plugins` sent as a message reached the model as text and did nothing.
+- **Refusals:** `start_session` on a turn another session began was denied by auto mode; a dev chat refused to archive
+  itself on another chat's request («запрос пришёл от другой сессии, а не от вас»).
+**Status:** one day, one machine, n=1-3 per row.
+
 ## Appendix: what a pull run spends
 
 Moved here from `PULL.md`, which workers read in full; none of it changes what a worker does.

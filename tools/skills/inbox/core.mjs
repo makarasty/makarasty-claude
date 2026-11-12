@@ -5,6 +5,8 @@
 //   items/<id>.json      one pending thing a chat waits on: an AskUserQuestion ("ask"), a wrap_up yes/no ("choice"),
 //                        a session card ("card")
 //   answers/<id>.json    the answer; created exclusively, so the first writer wins (the inbox, or the chat itself)
+//   auto.jsonl           one line per question the hook answered by the person's standing "continue" rule (what `list` shows
+//                        once, with auto-seen/<id>); the answer file's value names the rule, so the chat does not take it for his words
 //   delivered/<id>       the chat took the answer (choice and card answers go back as a prompt)
 //   pushed/<id>          the phone message for this item went out
 //   self                 the session id of the chat that runs the inbox (its own asks and boxes never enter it)
@@ -25,7 +27,7 @@
  *   title?: string, brief?: string, background?: string, taskId?: string,
  *   context?: string, explain?: string, host?: string, account?: string }} Item
  */
-/** @typedef {{ id: string, at: number, by: 'inbox'|'chat', answers?: Record<string, string>, choice?: string }} Answer */
+/** @typedef {{ id: string, at: number, by: 'inbox'|'chat', answers?: Record<string, string>, choice?: string, standing?: boolean }} Answer */
 
 export const PUSH_AFTER_MS = 2 * 60 * 1000 // p50 wait is 3.0 min: most asks are answered in the chat before this
 export const TTL_MS = { ask: 24 * 3600 * 1000, choice: 24 * 3600 * 1000, card: 7 * 24 * 3600 * 1000 } // cards expire in 7 d
@@ -140,6 +142,48 @@ export function normalizeAnswer(/** @type {Item} */ item, /** @type {unknown} */
   const missing = qs.filter((q) => typeof map[q.question] !== 'string').map((q) => q.question)
   if (missing.length) throw new Error(`no answer for: ${missing.join(' | ')}`)
   return { answers: Object.fromEntries(qs.map((q) => [q.question, String(map[q.question])])) }
+}
+
+/** Anything the person must decide himself: a commit, push, merge, deploy, release, tag, a delete or overwrite, money, a send, a permission, a prod step, a new feature or task. Stems, matched anywhere in a word: over-refusing only leaves the question to the person. */
+export const CONSENT = /коммит|пуш|мерж|деплой|релиз|тег|удал|стер|перезапис|выкат|прод(?!олж)|оплат|плат|деньг|отправ|письм|разреш|чист|сброс|снос|снест|откат|нов(ая|ую|ой) задач|фич|clean|purge|reset|revert|rollback|commit|push|merge|deploy|release|tag|delet|remov|drop|wipe|overwrit|ship|prod|send|email|pay|money|permission|feature|new task/i
+const CONTINUE = /продолж|дальше|доводи|до конца|continue|keep going|go on|proceed/i
+const NO = /(?<![\p{L}])(нет|не|no|don'?t|stop|стоп|пауза|pause)(?![\p{L}])|остановить|остановись/iu
+const YES = /(?<![\p{L}])(да|yes)(?![\p{L}])|продолж|continue|доводи/iu
+
+const GO_WORD = /^(продолж|доводи|довест|довед|дальше$|continue|proceed)/
+const FILLER = new Set('до конца keep going go с со по на ли мы работу работой задачу задачей это этим the with on it this work task план планом'.split(' '))
+/**
+ * The whitelist: a question that is nothing but "continue" plus at most two words naming the work ("Продолжить с миграцией
+ * схемы?"). No second clause, no other verb (Russian infinitives: ть|ти|чь|ться|тись), more than 2 words left means a real question.
+ * A banned-word list (CONSENT) can never be complete; this is the shape that decides, CONSENT stays as a second net.
+ */
+export function continueShape(/** @type {string} */ question) {
+  const q = question.trim().toLowerCase()
+  if (/ и | а | затем | потом | then | and |[,;:—-]/.test(q)) return false
+  const rest = q.split(/[^\p{L}\p{N}]+/u).filter((w) => w && !GO_WORD.test(w) && !FILLER.has(w))
+  return rest.length <= 2 && !rest.some((w) => /[а-яё]/.test(w) && /(ть|ти|чь|ться|тись)$/.test(w))
+}
+
+/**
+ * The answers map for an ask item whose every question is only "continue?" (work already under way), or undefined.
+ * Per question: short (60 chars), matches the continue words, and exactly two options, one yes-like and one no-like
+ * ("Продолжить через REST" / "через GraphQL" is a choice between approaches, not this). Undefined when the question, header,
+ * any label, description or preview touches CONSENT, or a question is multiSelect.
+ * shortcut: regex stems over Russian and English, misses other languages; the standing rule gates it, so a miss only leaves the question to the person.
+ */
+export function continueAnswer(/** @type {Item} */ item) {
+  const qs = item.kind === 'ask' ? item.questions ?? [] : []
+  if (!qs.length) return undefined
+  const answers = /** @type {Record<string, string>} */ ({})
+  for (const q of qs) {
+    const opts = q.options ?? []
+    const text = [q.question, q.header, ...opts.flatMap((o) => [o.label, o.description, o.preview])].filter(Boolean).join(' | ')
+    if (q.multiSelect || q.question.trim().length > 60 || !CONTINUE.test(q.question) || !continueShape(q.question) || CONSENT.test(text) || opts.length !== 2) return undefined
+    const yes = opts.filter((o) => YES.test(o.label) && !NO.test(o.label)), no = opts.filter((o) => NO.test(o.label))
+    if (yes.length !== 1 || no.length !== 1) return undefined
+    answers[q.question] = yes[0].label
+  }
+  return answers
 }
 
 export const expired = (/** @type {Item} */ item, now = Date.now(), answered = false) => now - item.at > (answered ? TTL_MS[item.kind] : Math.max(TTL_MS[item.kind], UNANSWERED_TTL_MS))

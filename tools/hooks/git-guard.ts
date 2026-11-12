@@ -482,7 +482,16 @@ export function check(cmd: string, tool = 'Bash', where: Where = {}): string | n
     while (g >= 0 && k < w.length && w[k]!.startsWith('-')) k += GLOBAL_WITH_VALUE.test(w[k]!) ? 2 : 1
     return g < 0 ? '' : w[k] ?? ''
   }
-  if (!/pipefail|PIPESTATUS/.test(cmd)) for (const seg of raw.split(/&&|\|\||[;&\n]/)) {
+  // The exemption counts only live text, `# comments` blanked. $PIPESTATUS is read where the shell expands it, so double-quoted
+  // text is kept (single-quoted is blanked); pipefail counts only as a `set`/`shopt` command in an earlier segment than the pipe.
+  const nocomment = (t: string) => t.replace(/(^|\s)#.*/gm, '$1')
+  const rawc = nocomment(raw)
+  // One left-to-right pass, so a `#` inside a double-quoted string is not a comment; only single-quoted text is blanked.
+  const expands = /\$\{?PIPESTATUS\b/.test(hd.replace(/'[^']*'|("(?:[^"\\]|\\.)*")|((?:^|\s)#.*)/gm, (_m, dq?: string, c?: string) => c === undefined ? dq ?? '""' : /^\s/.test(c) ? c[0]! : ''))
+  const pipefail = (seg: string) => /^\s*(?:[({]\s*)*set\s+(?:\S+\s+)*?-[a-z]*o\s+pipefail\b/.test(seg) || /^\s*(?:[({]\s*)*shopt\s+((?:-\w+\s+)+)pipefail\b/.exec(seg)?.[1]?.match(/s.*o|o.*s/) != null
+  const segs = rawc.split(/&&|\|\||[;&\n]/)
+  if (!expands) for (const seg of segs) {
+    if (pipefail(seg)) break // a set/shopt segment before the pipe; one after it never gets here
     const st = seg.split(/(?<!\|)\|(?!\|)/)
     const k = st.findIndex((p, n) => /^(commit|push)$/.test(stageSub(p)) && st.slice(n + 1).some((q) => /^(tail|head|tee|select-object|select)\b/i.test(q.trim())))
     if (k >= 0) return `git ${stageSub(st[k]!)}: piping it into tail/head/tee/Select-Object hides git's exit code, so a failed hook looks like success: run it bare and check $? (or git ls-remote after a push), or use set -o pipefail / PIPESTATUS`

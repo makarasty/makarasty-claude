@@ -1,5 +1,47 @@
 # Changelog
 
+## makarasty-tools 1.19.26 — 2026-11-12
+
+Phase 1 of the rebuild plan (rebuild-plan.md in the coordinator's side-session notes).
+- **inbox: continue questions answered from the standing rule:** an AskUserQuestion that only asks whether to keep
+  going (short, the continue words, exactly one yes and one no option, not multi-select) is answered yes the moment
+  it is filed, when profile.md or answers.md has a line `Continue questions … answered yes` or `Continue: yes`
+  (negated lines do not count). Never when the question, header, an option, description or preview names a consent
+  stem (commit, push, merge, deploy, release, delete, overwrite, ship, prod, send, pay, permission, new task and the
+  Russian stems). The answer says it came from the rule, goes to `inbox/auto.jsonl`, and `inbox.mjs list` shows it
+  once with «отмени <id>».
+- **Standing answers in their own file:** `<config>/makarasty/answers.md` is injected as its own line (cap 4000), so
+  the 2000-character profile cut no longer drops the newest answers; both files warn past 80% of their cap.
+- **git-guard: the pipe exemption needs a real `pipefail` or `$PIPESTATUS`:** before, the word anywhere in the text
+  (a comment, a commit message) let `git push | tail` through. Now `set … -o pipefail` / `shopt -so pipefail` must be
+  a command before the pipe, or `$PIPESTATUS` must be expanded (double-quoted forms count).
+- **inbox `start`: the flip-back target is read after the CLI turn,** not up to 180 s before it, so a chat the person
+  switched to meanwhile is the one shown again. Live 11-12: the flip-back returned dev to its old chat in 2 s, but the
+  dev window came to the front while a main window was in front (the gate in phase 2 handles that) [M71].
+- **inbox SKILL:** finish reports say what the person can see now and where, and each item's status; commit asks of
+  several chats go in one call, one question per chat.
+
+## makarasty-tools 1.19.25 — 2026-11-12
+
+- **inbox: `open` and `start` reach the operator's own window, never a fresh app:** a chat of `main` (no renamed app
+  copy) went to the bare `claude://` handler, which has no `--user-data-dir`: it opened a separate signed-out app
+  instance instead of his window. The link now goes to the exe of the window already running with that profile's
+  `--user-data-dir` (read from the process list); with no such window, or a chat in no profile, the command refuses.
+- **inbox: `start` needs `--switches-window`:** the resume import shows that account's window and switches it to the
+  new chat (`setFocusedSession`); it replaced the chat the operator was dictating into. No import path in the app
+  avoids it (the recovery import asks for a click, the index is read only at start) [M70], so `start` refuses unless
+  the caller says that window is not in use. After the import `start` opens again the chat that window showed before
+  (the highest `lastFocusedAt` of that profile), so the window flips to the new chat and straight back.
+
+## makarasty-tools 1.19.24 — 2026-11-12
+
+- **inbox: a new chat on another account with no click:** `inbox.mjs start <profile> <folder> <name> [--model m]
+  [--effort e]` runs a one-word `claude -p` turn in the folder with a known session id and name, then hands
+  `claude://resume?session=<id>` to that profile's app copy, which imports it as its own chat; the coordinator then
+  sends the brief with `SendMessage` to that name and every turn from there runs on that account. Replaces "ask an idle
+  chat there to offer a card, and the person clicks". `claude://code/new?q=&folder=` was tried first: it only fills
+  the composer and waits for Send [M70]. Selftest in `inbox-selftest.mjs`.
+
 ## makarasty-tools 1.19.23 — 2026-11-12
 
 - **inbox: a queue, not one question at a time:** the operator left with one question open and came back to that one

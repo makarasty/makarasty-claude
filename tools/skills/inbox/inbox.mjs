@@ -13,7 +13,9 @@
 //   node inbox.mjs wait <id>[,<id>...] <ms> block until every item is answered; prints the answer JSON (exit 3: timed out)
 //   node inbox.mjs push <id>                one phone message for the item through notify.mjs, once
 //   node inbox.mjs open <id>|local_<id>     bring that chat up in the app window of its own account (profile)
-//   node inbox.mjs children <local_id>      app ids of the chats that chat started, one per line
+//   node inbox.mjs start <profile> <folder> <name> [--model m] [--effort e]  a new chat in that folder on that
+//                                           profile's account, named <name>; then SendMessage the brief to <name>
+//   node inbox.mjs children <local_id>     app ids of the chats that chat started, one per line
 //   node inbox.mjs report on|off [chat id]  that chat (default: the one running this) sends finish reports, or stops
 //   node inbox.mjs reports                  every finish report of the last 3 days, shown or not
 //   node inbox.mjs follow <chat>            finish reports on for a chat of any account: app id, session id, a piece of
@@ -25,6 +27,7 @@
 
 import { execFileSync, spawn } from 'node:child_process'
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync, writeSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -81,6 +84,30 @@ function profileOf(/** @type {string} */ host) {
   }
   return undefined
 }
+// The exe of the window already running with that profile's --user-data-dir (main runs the installed app, the others a
+// renamed copy), given the link with the same flag: that window takes it. Never the bare claude:// handler: it has no
+// --user-data-dir and opened a fresh signed-out app instead of the operator's window. The link quoted, as measured:
+// unquoted it did not reach the window. INBOX_PROCS (lines "exe|command line") stands in for the process list in tests.
+function profileExe(/** @type {{name: string, dir: string}} */ prof) {
+  let procs = process.env.INBOX_PROCS
+  if (procs === undefined) {
+    try { procs = execFileSync('powershell', ['-NoProfile', '-Command', `Get-CimInstance Win32_Process -Filter "Name like 'Claude%'" | % { $_.ExecutablePath + '|' + $_.CommandLine }`], { encoding: 'utf8', timeout: 20e3 }) } catch { procs = '' }
+  }
+  const flag = `--user-data-dir="${prof.dir}"`.toLowerCase()
+  const row = procs.split(/\r?\n/).find((l) => { const c = l.toLowerCase(); return c.includes(flag) && !c.includes('--type=') })
+  return row?.split('|')[0] || undefined
+}
+function linkArgv(/** @type {{name: string, dir: string} | undefined} */ prof, /** @type {string} */ url) {
+  const exe = prof && profileExe(prof)
+  return exe && prof ? [exe, `--user-data-dir="${prof.dir}"`, `"${url}"`] : undefined
+}
+function launch(/** @type {{name: string, dir: string} | undefined} */ prof, /** @type {string} */ url) {
+  const argv = linkArgv(prof, url)
+  if (!argv) return false
+  spawn(argv[0], argv.slice(1), { detached: true, stdio: 'ignore', windowsVerbatimArguments: true }).unref()
+  return true
+}
+const noWindow = (/** @type {{name: string} | undefined} */ prof) => `inbox: no running app window for ${prof ? `profile ${prof.name}` : 'that chat (it is in no profile)'}; open that account from its own shortcut first`
 
 // Every chat of every profile, from the app's own records: profile, app id, CLI id, folder, last activity, archived.
 function chats() {
@@ -96,7 +123,7 @@ function chats() {
       for (const f of files) {
         if (!/^local_[0-9a-f-]{36}\.json$/.test(f)) continue
         const j = readJSON(join(d, f))
-        if (j) out.push({ profile: name, host: f.slice(0, -5), cli: j.cliSessionId, cwd: String(j.cwd || j.originCwd || ''), last: Number(j.lastActivityAt) || 0, archived: !!j.isArchived, parent: j.spawnedFrom?.sessionId, title: String(j.title || '') })
+        if (j) out.push({ profile: name, host: f.slice(0, -5), cli: j.cliSessionId, cwd: String(j.cwd || j.originCwd || ''), last: Number(j.lastActivityAt) || 0, focused: Number(j.lastFocusedAt) || 0, archived: !!j.isArchived, parent: j.spawnedFrom?.sessionId, title: String(j.title || '') })
       }
     }
   }
@@ -159,6 +186,15 @@ function reports() {
   return out.sort((a, b) => a.at - b.at)
 }
 const shown = (/** @type {string} */ id) => existsSync(join(root, 'reports', 'seen', id))
+// Questions the hook answered by the person's standing rule (auto.jsonl, one line per question) in the last 24 h, not shown yet.
+function autoAnswers() {
+  const out = [], now = Date.now()
+  for (const l of readOr(join(root, 'auto.jsonl')).split('\n')) {
+    let e; try { e = JSON.parse(l) } catch { continue }
+    if (e?.id && now - e.at < 24 * 3600e3 && !existsSync(join(root, 'auto-seen', e.id))) out.push(e)
+  }
+  return out
+}
 const readOr = (/** @type {string} */ p) => { try { return readFileSync(p, 'utf8').trim() } catch { return '' } }
 
 async function main() {
@@ -311,7 +347,8 @@ async function main() {
     else if (self) { mkdirSync(root, { recursive: true }); writeFileSync(join(root, 'self'), self) }
     const open = items().filter((i) => !answered(i.id) && i.session !== self)
     const done = reports().filter((r) => !shown(r.id) && r.session !== self)
-    if (!open.length && !done.length) { say('inbox: nothing pending'); return 0 }
+    const auto = autoAnswers()
+    if (!open.length && !done.length && !auto.length) { say('inbox: nothing pending'); return 0 }
     if (open.length) say(`inbox: ${open.length} pending\n`)
     for (const it of open) say(`${render(it, Date.now(), process.env.CLAUDE_CODE_ACCOUNT_UUID)}\n`)
     if (done.length) {
@@ -319,6 +356,13 @@ async function main() {
       say(`## Finished: ${new Set(done.map((r) => r.session)).size} chats, ${done.length} reports\n`)
       say(`${renderReports(done, Date.now(), process.env.CLAUDE_CODE_ACCOUNT_UUID)}\n`)
       if (!readOnly) for (const r of done) writeFileSync(join(dir(join('reports', 'seen')), r.id), '')
+    }
+    if (auto.length) {
+      // Shown once, like the finish reports. The chat took each answer as the person's own, so a wrong one is told to it by hand.
+      say('## Answered by a standing rule (last 24 h)\n')
+      for (const e of auto) say(`- ${e.chat}: "${e.question}" -> ${e.label}  (rule: "${e.rule}"; to undo say "отмени ${e.id}")`)
+      say('')
+      if (!readOnly) for (const id of new Set(auto.map((e) => e.id))) writeFileSync(join(dir('auto-seen'), id), '')
     }
     return 0
   }
@@ -387,13 +431,53 @@ async function main() {
     if (!host || !/^local_[0-9a-f-]{36}$/.test(host)) { console.error(`inbox: no app id for ${id} (an item from before the link was kept)`); return 1 }
     const url = `claude://claude.ai/epitaxy/${host}`
     const prof = profileOf(host)
-    // That profile's own copy of the app, given the link: the running window of that profile takes it and shows the chat.
-    // The link quoted, as measured: unquoted it did not reach the window. No profile copy: the system's claude:// handler.
-    const exe = prof ? join(profilesDir(), 'apps', prof.name, `Claude-${prof.name}.exe`) : undefined
-    const argv = exe && existsSync(exe) ? [exe, `--user-data-dir="${prof.dir}"`, `"${url}"`] : ['cmd', '/c', 'start', '""', `"${url}"`]
+    const argv = linkArgv(prof, url)
+    if (!argv) { console.error(noWindow(prof)); return 1 }
     if (process.env.INBOX_DRY_OPEN) { say(argv.join(' ')); return 0 }
-    spawn(argv[0], argv.slice(1), { detached: true, stdio: 'ignore', windowsVerbatimArguments: true }).unref()
+    launch(prof, url)
     say(`inbox: opened ${host}${prof ? ` in profile ${prof.name}` : ''}`)
+    return 0
+  }
+
+  if (cmd === 'start') {
+    // A new chat on another account, no click: a one-word CLI turn makes a transcript with a known id and name, the
+    // profile's app imports it through claude://resume (its own route), and the caller sends the brief with SendMessage
+    // to that name; the turns from there on run in that profile's app, on its account.
+    // --model / --effort go to the CLI turn: the imported chat keeps that turn's model (a Haiku bootstrap stayed Haiku).
+    const [folder, ...args] = rest, flags = [], words = []
+    let switches = false
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '--switches-window') switches = true
+      else if ((args[i] === '--model' || args[i] === '--effort') && args[i + 1]) flags.push(args[i], args[++i])
+      else words.push(args[i])
+    }
+    const name = words.join(' ').trim()
+    const prof = id && existsSync(join(profilesDir(), id, 'claude-code-sessions')) ? { name: id, dir: join(profilesDir(), id) } : undefined
+    if (!prof || !folder || !existsSync(folder) || !name) { console.error('inbox: usage: start <profile> <folder> <chat name> --switches-window (a profile under Claude-Profiles, an existing folder)'); return 2 }
+    // The resume route always shows the window and switches it to the new chat (setFocusedSession): it replaced the chat
+    // the operator was dictating into [M70]. Refused unless the caller says that window is not in use.
+    if (!switches) { console.error(`inbox: start switches ${prof.name}'s window to the new chat; run it only when nobody uses that window, with --switches-window`); return 2 }
+    const sid = randomUUID(), host = `local_${sid}`
+    const cli = [process.env.INBOX_CLAUDE || 'claude', '-p', 'Reply with the single word READY.', '--session-id', sid, '-n', name, ...flags]
+    const url = `claude://resume?session=${sid}`
+    const argv = linkArgv(prof, url)
+    if (!argv) { console.error(noWindow(prof)); return 1 }
+    // The chat that window shows (the app stamps lastFocusedAt when a chat is shown): opened again after the import, so
+    // the window flips to the new chat and straight back. Read after the CLI turn (up to 180 s), when the person may have
+    // switched chats in that window meanwhile: a flip-back to the chat shown before the turn would force a stale one.
+    const backOf = () => {
+      const shown = chats().filter((c) => c.profile === prof.name).sort((a, b) => b.focused - a.focused)[0]
+      return shown?.focused ? { host: shown.host, url: `claude://claude.ai/epitaxy/${shown.host}` } : undefined
+    }
+    if (process.env.INBOX_DRY_OPEN) { say(`cd ${folder}`); say(cli.join(' ')); say(argv.join(' ')); const b = backOf(); if (b) say(`back: ${b.url}`); return 0 }
+    try { execFileSync(cli[0], cli.slice(1), { cwd: folder, stdio: ['ignore', 'pipe', 'pipe'], timeout: 180e3 }) } catch (e) { console.error(`inbox: the CLI turn failed: ${/** @type {Error} */ (e).message.split('\n')[0]}`); return 1 }
+    const back = backOf()
+    launch(prof, url)
+    for (let i = 0; i < 60 && profileOf(host)?.name !== prof.name; i++) await new Promise((r) => setTimeout(r, 500))
+    if (profileOf(host)?.name !== prof.name) { console.error(`inbox: ${prof.name} did not import ${sid} within 30 s (is that account's window running?)`); return 1 }
+    if (back) launch(prof, back.url)
+    say(`inbox: started ${host} in profile ${prof.name}, folder ${folder}${back ? `; window sent back to ${back.host}` : ''}`)
+    say(`next: SendMessage to "${name}" with the brief; that turn runs on ${prof.name}'s account`)
     return 0
   }
 

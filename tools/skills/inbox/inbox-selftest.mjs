@@ -9,6 +9,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, utimesSync, writeFileSync 
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { CONSENT, continueAnswer } from './core.mjs'
 
 const cli = join(dirname(fileURLToPath(import.meta.url)), 'inbox.mjs')
 const tmp = join(tmpdir(), `inbox-selftest-${process.pid}`)
@@ -81,11 +82,29 @@ try {
   const prof = join(tmp, 'profiles')
   mkdirSync(join(prof, 'dev2', 'claude-code-sessions', 'acc', 'org'), { recursive: true })
   writeFileSync(join(prof, 'dev2', 'claude-code-sessions', 'acc', 'org', `${host}.json`), '{}')
-  mkdirSync(join(prof, 'apps', 'dev2'), { recursive: true }); writeFileSync(join(prof, 'apps', 'dev2', 'Claude-dev2.exe'), '')
-  const o = spawnSync(process.execPath, [cli, 'open', host], { env: { ...env, INBOX_PROFILES_DIR: prof, INBOX_DRY_OPEN: '1' }, encoding: 'utf8' })
-  check('open hands the quoted link to the profile that holds the chat', o.status === 0 && o.stdout.includes('Claude-dev2.exe') && o.stdout.includes(`--user-data-dir="${join(prof, 'dev2')}"`) && o.stdout.includes(`"claude://claude.ai/epitaxy/${host}"`), o.stdout + o.stderr)
-  const o2 = spawnSync(process.execPath, [cli, 'open', 'local_00000000-0000-0000-0000-000000000000'], { env: { ...env, INBOX_PROFILES_DIR: prof, INBOX_DRY_OPEN: '1' }, encoding: 'utf8' })
-  check('a chat in no profile goes to the system link handler', o2.status === 0 && o2.stdout.startsWith('cmd /c start'), o2.stdout)
+  // The running windows as Win32_Process rows: dev2 from its renamed copy (plus a renderer child to skip), main from
+  // the installed app; the link goes to that exe with the same --user-data-dir, never to the bare claude:// handler.
+  const exe2 = 'C:\\Apps\\dev2\\Claude-dev2.exe'
+  const procs = [`${exe2}|"${exe2}" --type=renderer --user-data-dir="${join(prof, 'dev2')}"`, `${exe2}|"${exe2}" --user-data-dir="${join(prof, 'dev2')}"`, 'C:\\WA\\Claude.exe|"C:\\WA\\Claude.exe" --user-data-dir="C:\\other\\main"'].join('\n')
+  const runP = (/** @type {string[]} */ a, /** @type {string} */ ps = procs) => spawnSync(process.execPath, [cli, ...a], { env: { ...env, INBOX_PROFILES_DIR: prof, INBOX_DRY_OPEN: '1', INBOX_PROCS: ps }, encoding: 'utf8' })
+  const o = runP(['open', host])
+  check('open hands the quoted link to the running window of the profile that holds the chat', o.status === 0 && o.stdout.startsWith(exe2) && !o.stdout.includes('--type=') && o.stdout.includes(`--user-data-dir="${join(prof, 'dev2')}"`) && o.stdout.includes(`"claude://claude.ai/epitaxy/${host}"`), o.stdout + o.stderr)
+  const o2 = runP(['open', 'local_00000000-0000-0000-0000-000000000000'])
+  check('a chat in no profile is refused, not sent to the bare link handler (it opened a fresh signed-out app)', o2.status === 1 && !o2.stdout.includes('cmd'), o2.stdout + o2.stderr)
+  const o3 = runP(['open', host], '')
+  check('no running window of that profile: refused', o3.status === 1 && /no running app window for profile dev2/.test(o3.stderr), o3.stdout + o3.stderr)
+  // Two chats of dev2, the later-shown one is what its window shows now: start sends the window back to it.
+  const seen = join(prof, 'dev2', 'claude-code-sessions', 'acc', 'org'), shownNow = 'local_11111111-1111-1111-1111-111111111111'
+  writeFileSync(join(seen, `${shownNow}.json`), JSON.stringify({ lastFocusedAt: 2000 })); writeFileSync(join(seen, 'local_22222222-2222-2222-2222-222222222222.json'), JSON.stringify({ lastFocusedAt: 1000 }))
+  const st = runP(['start', 'dev2', tmp, 'test', '--model', 'opus', 'cross-account', '--switches-window'])
+  for (const f of [shownNow, 'local_22222222-2222-2222-2222-222222222222']) rmSync(join(seen, `${f}.json`))
+  const sid = /--session-id ([0-9a-f-]{36}) -n test cross-account --model opus/.exec(st.stdout)?.[1]
+  check('start names a CLI turn in the folder and hands its id to that profile through claude://resume', st.status === 0 && st.stdout.startsWith(`cd ${tmp}`) && !!sid && st.stdout.includes(exe2) && st.stdout.includes(`"claude://resume?session=${sid}"`), st.stdout + st.stderr)
+  check('start then sends that window back to the chat it showed (highest lastFocusedAt)', st.stdout.includes(`back: claude://claude.ai/epitaxy/${shownNow}`), st.stdout)
+  const noFlag = runP(['start', 'dev2', tmp, 'x'])
+  check('start refuses without --switches-window: the import switches that window to the new chat', noFlag.status === 2 && /switches dev2/.test(noFlag.stderr), noFlag.stdout + noFlag.stderr)
+  const noProf = runP(['start', 'nosuch', tmp, 'x', '--switches-window'])
+  check('start refuses a profile that does not exist', noProf.status === 2, noProf.stdout + noProf.stderr)
   // The coordinator: which account a project's new task goes to, the chats of a project, and the list of handed-out work.
   const sess = (/** @type {string} */ profile, /** @type {string} */ id, /** @type {string} */ cwd, /** @type {number} */ ago) => {
     const d = join(prof, profile, 'claude-code-sessions', 'acc', 'org'); mkdirSync(d, { recursive: true })
@@ -214,6 +233,20 @@ try {
   // The coordinator's task file is written through a unique temp name: a leftover fixed name cannot block it.
   mkdirSync(join(tmp, 'makarasty', 'coord', 'tasks.json.tmp'), { recursive: true })
   check('tasks.json does not use a fixed temp name', run(['track', 'chatT', 'main', 'p', 'task']).status === 0 && existsSync(join(tmp, 'makarasty', 'coord', 'tasks.json')))
+  // continueAnswer: only a pure continue question with a yes-like option, and nothing that needs the person's own consent.
+  const ask = (/** @type {string} */ q, /** @type {string[]} */ labels) => ({ kind: 'ask', questions: [{ question: q, options: labels.map((label) => ({ label })) }] })
+  check('continueAnswer picks the recommended yes-like option', JSON.stringify(continueAnswer(/** @type {any} */ (ask('Продолжать?', ['Нет', 'Да (Рекомендую)'])))) === JSON.stringify({ 'Продолжать?': 'Да (Рекомендую)' }))
+  check('continueAnswer refuses consent words, no yes option, and a non-continue question', !continueAnswer(/** @type {any} */ (ask('Продолжить и закоммитить?', ['Да']))) && !continueAnswer(/** @type {any} */ (ask('Continue?', ['Stop', 'Show plan']))) && !continueAnswer(/** @type {any} */ (ask('Какую базу?', ['Да'])))  && CONSENT.test('Deploy now') && CONSENT.test('удалить') && !CONSENT.test('Продолжить, довести до конца'))
+  const full = (/** @type {Record<string, unknown>} */ q) => /** @type {any} */ ({ kind: 'ask', questions: [{ question: 'Продолжать?', options: [{ label: 'Да' }, { label: 'Нет' }], ...q }] })
+  const stakes = ['Продолжать и запушить?', 'Продолжить и смержить в master?', 'Продолжать, задеплоить на прод?', 'Продолжить выкатку на прод?', 'Продолжить, стереть старые данные?', 'Продолжить, перезаписав прод-базу?', 'Продолжить и отправить письмо клиенту?', 'Continue and ship it to production?', 'Продолжить и сбросить базу?', 'Продолжить, снести старую ветку?', 'Продолжить и откатить миграцию?', 'Продолжить и залить на сервер?', 'Продолжить и очистить папку dist?', 'Continue and reset the database?', 'Continue with a force rebase?', 'Continue and buy the domain?', 'Continue and close the PR?']
+  check('continueAnswer refuses a stake in the question, however prefixed', stakes.every((q) => !continueAnswer(full({ question: q }))) && !!continueAnswer(full({})) && !!continueAnswer(full({ question: 'Продолжить с миграцией схемы?' })) && !continueAnswer(full({ question: 'Продолжить, пока ты не уйдёшь на обед и мы не вернёмся к этому разговору позже?' })))
+  check('continueAnswer refuses a stake in the header, a description or a preview', !continueAnswer(full({ header: 'Деплой' })) && !continueAnswer(full({ options: [{ label: 'Да', description: 'выкатит на прод' }, { label: 'Нет' }] })) && !continueAnswer(full({ options: [{ label: 'Да', preview: 'git push origin master' }, { label: 'Нет' }] })))
+  check('continueAnswer refuses a choice between approaches and options that are not one yes plus one no', !continueAnswer(full({ question: 'Как продолжим?', options: [{ label: 'Продолжить через REST (Рекомендую)' }, { label: 'Продолжить через GraphQL' }] })) && !continueAnswer(full({ options: [{ label: 'Да' }, { label: 'Нет' }, { label: 'Позже' }] })) && !continueAnswer(full({ options: [{ label: 'Да' }, { label: 'Сначала покажи план' }] })))
+  // list shows what a standing rule answered, once, with the undo hint.
+  mkdirSync(root, { recursive: true })
+  writeFileSync(join(root, 'auto.jsonl'), JSON.stringify({ at: Date.now() - 60e3, id: 'chatZ~t1', chat: 'Чат Z (chatZ)', question: 'Продолжать?', label: 'Да', rule: 'Continue questions: answered yes.' }) + '\n')
+  const auto1 = run(['list']), auto2 = run(['list'])
+  check('list shows an answer given by a standing rule once, with the undo hint', auto1.stdout.includes('## Answered by a standing rule (last 24 h)') && auto1.stdout.includes('отмени chatZ~t1') && !auto2.stdout.includes('standing rule'), auto1.stdout + auto2.stdout)
   check('off removes the switch', run(['off']).status === 0 && !existsSync(join(tmp, 'makarasty', 'inbox.on')))
 } finally {
   rmSync(tmp, { recursive: true, force: true })

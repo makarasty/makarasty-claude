@@ -127,11 +127,17 @@ export const asking =
 // The person's own facts (language, machine, channels, standing answers) live in <config>/makarasty/profile.md, written by
 // them; shipped text names nobody's machine [M67]. Read only when the file is there; capped so a long file costs little.
 export const PROFILE_MAX = 2000
+// Standing answers have their own file so the newest line is never the one a profile cut drops.
+export const ANSWERS_MAX = 4000
+const near = (n: number, max: number, file: string) => n > max ? ` [cut at ${max} characters: the rest of the file is not read]` : n > max * 0.8 ? ` [warning: ${file} is ${n} of ${max} characters: shorten it]` : ''
 async function profile($: Dollar): Promise<string[]> {
   const dir = await base($)
-  const text = dir ? String(await $.fs.read(`${dir}/profile.md`).catch(() => '')).replace(/^﻿/, '').trim() : ''
-  const cut = text.length > PROFILE_MAX ? ` [cut at ${PROFILE_MAX} characters: the rest of the file is not read]` : ''
-  return text ? [`The person's profile (${dir}/profile.md, their own facts and standing answers; they override a skill's defaults): ${text.slice(0, PROFILE_MAX)}${cut}`] : []
+  const read = async (f: string) => dir ? String(await $.fs.read(`${dir}/${f}`).catch(() => '')).replace(/^﻿/, '').trim() : ''
+  const text = await read('profile.md'), answers = await read('answers.md')
+  return [
+    ...(text ? [`The person's profile (${dir}/profile.md, their own facts and standing answers; they override a skill's defaults): ${text.slice(0, PROFILE_MAX)}${near(text.length, PROFILE_MAX, 'profile.md')}`] : []),
+    ...(answers ? [`The person's standing answers (${dir}/answers.md, their own words; answer matching questions from them, never a commit, push, merge, deploy, delete, money or permission question): ${answers.slice(0, ANSWERS_MAX)}${near(answers.length, ANSWERS_MAX, 'answers.md')}`] : []),
+  ]
 }
 
 const withEconomy = async ($: Dollar, out: { additionalContext?: string[] }, more: string[] = []) => {

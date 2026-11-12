@@ -382,6 +382,16 @@ test('git commit or push piped into tail/head/tee/Select-Object is refused unles
     'git push && git log | head', 'git commit -m x | cat'].filter((c) => check(c, 'Bash', MAIN))).toEqual([])
 })
 
+test('the pipefail/PIPESTATUS exemption counts only live text, not a comment, a quoted word or $?', () => {
+  expect(['git push | tail # PIPESTATUS', 'git commit -m "PIPESTATUS" | tail -3', 'git push | tail; echo exit=$?', 'git push | tail # set -o pipefail',
+    'git push | tail -3; set -o pipefail', 'echo set -o pipefail; git push | tail', 'echo "set -o pipefail"; git push | tail', "git commit -m '${PIPESTATUS[0]}' | tail", 'set +o pipefail; git push | tail', 'git commit -m "x" | tail # "${PIPESTATUS[0]}"']
+    .filter((c) => !check(c, 'Bash', MAIN))).toEqual([])
+  expect(['set -o pipefail; git push | tail -3', 'set -euo pipefail; git push | tail -3', 'git push | tail; echo ${PIPESTATUS[0]}', 'git push | tail; echo $PIPESTATUS',
+    'git push 2>&1 | tail -3; echo "rc=${PIPESTATUS[0]}"', 'git push | tail -3; [ "${PIPESTATUS[0]}" -eq 0 ]', 'shopt -so pipefail; git push | tail', 'set -o errexit -o pipefail; git push | tail',
+    'set -o pipefail && git push | tail', 'git commit -m "fix #12" 2>&1 | tail -3; echo "rc=${PIPESTATUS[0]}"', '(set -o pipefail; git push | tail -3)', '{ set -o pipefail; git push | tail -3; }']
+    .filter((c) => check(c, 'Bash', MAIN))).toEqual([])
+})
+
 test('commit -a under a scratch index is still refused (it moves the real branch)', () => {
   expect(['GIT_INDEX_FILE=/tmp/i git commit -am x', 'GIT_INDEX_FILE=x git commit -a -m x', 'env GIT_INDEX_FILE=x git commit --all -m x'].filter((c) => !check(c, 'Bash', MAIN))).toEqual([])
   expect(check('GIT_INDEX_FILE=/tmp/i git commit -am x', 'Bash', MAIN)).toContain('git commit -a')

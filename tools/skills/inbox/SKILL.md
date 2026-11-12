@@ -42,8 +42,9 @@ one line and restart it. A watchdog missing from the task list means this chat r
    read-only; `inbox.mjs list --take` moves the inbox to this chat (only when the person wants it here).
 2. Under "## Finished" `list` prints finish reports, one block per chat (its newest report in full, earlier recaps a
    line each); they are shown once, `inbox.mjs reports` shows the last 3 days again. Give each chat four plain lines:
-   what it did, what it found, what it found beyond its task (first, when there is any), what is left, plus its
-   "Open the chat" line. Only what the report says. A report is not a question: no AskUserQuestion for it, except a
+   what it did, what it found, what it found beyond its task (first, when there is any), what is left, plus what
+   the person can see now and where (a page, a file, a command; not a hidden localhost route), and its "Open the
+   chat" line. A task of several items lists each item's status, so none goes missing between reports. Only what the report says. A report is not a question: no AskUserQuestion for it, except a
    step only the person can do (rule below). A chat with a "noted" task: `inbox.mjs note <chat> <status> <one line>`.
    Show each item as the person would want it cold, in the person's language, plain and short: which project and chat, what happened and
    why it asks, what each option does. Use the item's "Plainly" line when it has one; otherwise write it from
@@ -59,7 +60,9 @@ one line and restart it. A watchdog missing from the task list means this chat r
    Ask in AskUserQuestion with `metadata: {"source": "inbox:<id>,<id>"}` naming the items of that call (the flag keeps
    the call out of the inbox, and the dialog closes by itself once the person has answered all of them in their own
    chats; the plugin refuses a dialog here without the flag while items are open), up to 4 questions per call,
-   oldest first, grouped by chat, more calls straight after for the rest. Each call opens with one line: how many
+   oldest first, grouped by chat, more calls straight after for the rest. Commit and push asks from several chats go
+   together in one call, one question per chat (that chat's file list, the tracked files it did not change, another
+   chat active in that folder in the last 30 minutes), so the person answers each chat on its own in one pass. Each call opens with one line: how many
    questions are open in how many chats, and which call of how many this is. Every answer reading "[not answered
    yet: more items came in ...]" means the person was away: the plugin closed that dialog after 10 minutes because
    a new item came in. Run `inbox.mjs list` again and ask every open item anew, those questions first:
@@ -107,9 +110,13 @@ Messages reach chats of other accounts too: a fleet coordinator on another accou
      like, its `model` and `effort` set (judgement, design, diagnosis: the top model; execution: Sonnet, high
      effort; mechanical: Haiku; a started session is never above this chat, so this chat runs on the top
      model); its turns then report here, and the plugin switches its finish reports on. Work sent with `SendMessage`
-     to a running chat: `inbox.mjs report on <its app id>` (`track` with the app id does it too). None, on another account: ask any idle chat there to offer a card with the
-     brief (a turn a message began may offer a card, never start a session [M63]), bring that window up with
-     `inbox.mjs open <its app id>` and tell the person the one click.
+     to a running chat: `inbox.mjs report on <its app id>` (`track` with the app id does it too). None, on another account: `inbox.mjs start <profile> <project folder> <short
+     name> --model <m> --effort <e> --switches-window` makes the chat there with no click (a one-word CLI turn on this machine's CLI login, then that account's
+     app imports it), then `SendMessage` to that name with the brief; every turn from the brief on runs on that
+     account [M70]. The chat keeps the model of that CLI turn (hence `--model`); it cannot be renamed or messaged by
+     app id from here, only by name. The import shows that account's window and switches it to the new chat (it
+     replaced the chat the operator was dictating into): never while the person may be using that window; until a
+     quiet path exists, ask him first.
   3. `inbox.mjs track <chat> <profile> <project> <task>`; each reply: `inbox.mjs note <chat> <status> <one line>`.
 - **Status** ("что с задачами"): `inbox.mjs tasks`, plus `list_events` for a chat whose last note is old. Then
   `inbox.mjs followed`: a chat in its "busy, not followed" part that is not this one and not tracked gets one line,
@@ -137,12 +144,15 @@ The inbox only carries the person's own picks. It never answers an item by itsel
 recommendation: people say no or answer in their own words often enough that a guess is wrong. One exception, the default for
 everyone [M67]: an item that only asks whether to keep going with work already asked for ("продолжать?",
 "доводить до конца?", the next wave of the same run) is answered "да, доводим до конца" without asking, and the
-report names it. A new task, a push, merge, deploy, delete, money or someone else's data is never this case.
+report names it. A new task, a push, merge, deploy, delete, money or someone else's data is never this case. When
+the person's standing answers say continue questions get yes, the plugin answers such an ask itself the moment it
+is filed (`core.mjs` `continueAnswer`, never one that names a consent word).
 
 A standing answer is recorded, not guessed. When the person says an item asks what he answered before ("уже
-отвечал", "не переспрашивай", "всегда так"), append one line to `<config>/makarasty/profile.md`, `<topic>: <his
-answer>` (the topic in a few words, as the question puts it), and say so in one line; the session text carries the
-profile to every chat, and the rule above answers the next such item from it. Never for a commit, push, merge,
+отвечал", "не переспрашивай", "всегда так"), append one line to `<config>/makarasty/answers.md`, `<topic>: <his
+answer> (<date>)` (the topic in a few words, as the question puts it), and say so in one line; the session text
+carries that file to every chat (apart from profile.md, so neither cuts the other), and the rule above answers the
+next such item from it. Never for a commit, push, merge,
 deploy, delete, money, someone else's data, new work or a choice between approaches. Each item answered so names
 the profile line in the report and how to undo it: "отмени <id>" sends that chat a correction with `SendMessage`,
 the person's words quoted. Measured 2026-11-12, 61 answers from the inbox: the only questions he gave the same

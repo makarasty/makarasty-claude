@@ -23,6 +23,7 @@ type World = {
   run?: 'hang' | 'fail'
   exists?: string
   profile?: string
+  answers?: string
 }
 function world(on: On, o: World = {}) {
   const writes: Record<string, string> = {}
@@ -40,6 +41,7 @@ function world(on: On, o: World = {}) {
     if (plain(e.path) === '/cfg/makarasty/hold/s1.md' && o.hold !== undefined) return { value: o.hold }
     if (plain(e.path) === '/cfg/makarasty/hold/s1/index.md' && o.holdIndex !== undefined) return { value: o.holdIndex }
     if (plain(e.path) === '/cfg/makarasty/profile.md' && o.profile !== undefined) return { value: o.profile }
+    if (plain(e.path) === '/cfg/makarasty/answers.md' && o.answers !== undefined) return { value: o.answers }
     return { deny: 'ENOENT' }
   })
   on('fs.stat', async (_$, e) => {
@@ -383,6 +385,31 @@ test('profile.md: added after the rules when present, BOM dropped, capped', asyn
 test('profile.md alone survives MAKARASTY_ECONOMY=off and _FINDINGS=off', async ($, on) => {
   world(on, { env: { MAKARASTY_ECONOMY: 'off', MAKARASTY_FINDINGS: 'off' }, profile: 'Answer in German.' })
   expect((await $.classic.SessionStart({ source: 'startup' })).additionalContext).toEqual([expect.stringMatching(/Answer in German\.$/)])
+})
+
+test('answers.md: its own line right after the profile, warns past 80% of its cap, cut past the cap, nothing when missing', async ($, on) => {
+  world(on, { profile: 'Language: Russian.', answers: 'tests: always scoped (2026-11-12)' })
+  const ctx = (await $.classic.SessionStart({ source: 'startup' })).additionalContext ?? []
+  expect(ctx[4]).toMatch(/^The person's profile/)
+  expect(ctx[5]).toMatch(/^The person's standing answers \(\/cfg\/makarasty\/answers\.md, their own words;.*never a commit, push, merge, deploy, delete, money or permission question\): tests: always scoped \(2026-11-12\)$/)
+})
+
+test('answers.md and profile.md over 80% of their cap get a warning naming the file and size', async ($, on) => {
+  world(on, { profile: 'p'.repeat(1700), answers: 'a'.repeat(3300) })
+  const ctx = (await $.classic.SessionStart({ source: 'startup' })).additionalContext ?? []
+  expect(ctx[4]).toMatch(/\[warning: profile\.md is 1700 of 2000 characters: shorten it\]$/)
+  expect(ctx[5]).toMatch(/\[warning: answers\.md is 3300 of 4000 characters: shorten it\]$/)
+})
+
+test('answers.md over its cap is cut at 4000 characters', async ($, on) => {
+  world(on, { answers: 'a'.repeat(5000) })
+  const ctx = (await $.classic.SessionStart({ source: 'startup' })).additionalContext ?? []
+  expect(ctx[4]).toMatch(/a{4000} \[cut at 4000 characters: the rest of the file is not read\]$/)
+})
+
+test('no answers.md adds nothing, with or without a profile', async ($, on) => {
+  world(on, { profile: 'Language: Russian.' })
+  expect(((await $.classic.SessionStart({ source: 'startup' })).additionalContext ?? []).length).toBe(5)
 })
 
 test('an empty profile.md adds nothing', async ($, on) => {
