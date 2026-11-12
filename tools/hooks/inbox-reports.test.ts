@@ -7,7 +7,7 @@ declare const setTimeout: (f: (v?: unknown) => void, ms: number) => unknown // t
 // batches. Kept apart from inbox.test.ts, which other chats edit.
 
 const R = '/cfg/makarasty/inbox'
-function world(on: On, o: { self?: string; session?: string } = {}) {
+function world(on: On, o: { self?: string; session?: string; failSubmits?: number } = {}) {
   const disk = new Map<string, string>([['/cfg/makarasty/inbox.on', 'x']])
   if (o.self) disk.set(`${R}/self`, o.self)
   const plain = (p: string): string => p.replace(/^[A-Za-z]:/, '').replaceAll('\\', '/')
@@ -38,7 +38,7 @@ function world(on: On, o: { self?: string; session?: string } = {}) {
     : { result: 'Shown in the next-step box.' }))
   const submitted: string[] = []
   const contexts: (readonly string[] | undefined)[] = []
-  on('prompt.submit', (_$, e) => { submitted.push(e.text); contexts.push(e.context); return { text: e.text } })
+  on('prompt.submit', (_$, e) => { if (o.failSubmits) { o.failSubmits--; throw new Error('the prompt did not go') } submitted.push(e.text); contexts.push(e.context); return { text: e.text } })
   on('turn.start', (_$, e) => ({ turnId: e.turnId }))
   on('turn.complete', (_$, e) => ({ text: e.answer }))
   const under = (d: string) => [...disk.keys()].filter((k) => k.startsWith(`${R}/${d}/`) && !k.slice(R.length + d.length + 2).includes('/'))
@@ -419,4 +419,114 @@ test('a batch-only chat still batches: nothing for 5 min, then one wake', async 
   expect(wakes(w)).toEqual([])
   for (let i = 0; i < 3; i++) await w.clock.advance(15000)
   await w.until(() => wakes(w).length === 1, 'batch wake')
+})
+
+// 2026-11-12: an answer written while its chat was mid-turn was marked delivered at once, the prompt never reached the chat,
+// and nothing retried it; a new ask of the same chat was then held back as "queued" for an answer that was already gone.
+const answerFor = (w: ReturnType<typeof world>, id: string) => w.disk.set(`${R}/answers/${id}.json`, JSON.stringify({ id, at: 10_000_000, by: 'inbox', choice: 'Да, коммит' }))
+const delivered = (w: ReturnType<typeof world>, id: string) => w.disk.has(`${R}/delivered/${id}`)
+
+test('an answer that comes in while its chat is mid-turn is held, then delivered when the turn ends', async ($, on) => {
+  const w = world(on)
+  await $.turn.start({ text: 'x', turnId: 'm1' } as never)
+  await $.tool.call(box('Запушить ветку fix-login?', 'p1'))
+  answerFor(w, 'chatA~p1')
+  for (let i = 0; i < 6; i++) await w.clock.advance(15000)
+  expect(w.submitted).toEqual([])
+  expect(delivered(w, 'chatA~p1')).toBe(false)
+  await $.turn.complete(turn('Готово, жду ответа.', { turnId: 'm1' }))
+  await w.until(() => w.submitted.length === 1 && delivered(w, 'chatA~p1'), 'delivered after the turn')
+  expect(w.submitted[0]).toContain('Да, коммит')
+})
+
+test('a submit that fails is not marked delivered: it is tried again at the next tick, once it goes', async ($, on) => {
+  const w = world(on, { failSubmits: 1 })
+  w.disk.set(`${R}/turns/chatA`, 'idle 1')
+  await $.tool.call(box('Запушить ветку fix-login?', 'p2'))
+  answerFor(w, 'chatA~p2')
+  await w.clock.advance(15000)
+  await w.until(() => w.disk.has(`${R}/answers/chatA~p2.json`))
+  expect(w.submitted).toEqual([])
+  expect(delivered(w, 'chatA~p2')).toBe(false)
+  await w.clock.advance(15000)
+  await w.until(() => w.submitted.length === 1 && delivered(w, 'chatA~p2'), 'retried')
+  await w.clock.advance(30000)
+  expect(w.submitted).toHaveLength(1)
+})
+
+test('a new ask after an answered and delivered one is a new item, even in the turn the answer came in', async ($, on) => {
+  const w = world(on)
+  await $.turn.start({ text: 'a', turnId: 'a' } as never)
+  await $.tool.call(box(ASK1, 'r1'))
+  answerFor(w, 'chatA~r1')
+  w.disk.set(`${R}/delivered/chatA~r1`, '10000000') // the chat has read it
+  await $.tool.call(box(ASK2, 'r2'))
+  expect(w.items().map((i) => i.id).sort()).toEqual(['chatA~r1', 'chatA~r2'])
+})
+
+test('a new ask while the answer to the old one is in flight is not filed; that answer is delivered once', async ($, on) => {
+  const w = world(on)
+  await $.turn.start({ text: 'a', turnId: 'a' } as never)
+  await $.tool.call(box(ASK1, 's1'))
+  answerFor(w, 'chatA~s1')
+  await $.tool.call(box(ASK2, 's2'))
+  expect(w.items().map((i) => i.id)).toEqual(['chatA~s1'])
+  await $.turn.complete(turn('Жду ответа на вопрос.', { turnId: 'a' }))
+  await w.until(() => w.submitted.length === 1 && delivered(w, 'chatA~s1'), 'delivered')
+  await w.clock.advance(60000)
+  expect(w.submitted).toHaveLength(1)
+})
+
+// The inbox's `scan` files an ask for a dialog no waiter in its chat races (plugin reloaded mid-dialog): its answer is a prompt.
+test('an ask the scan found is answered as a prompt with the questions and the picks; a live ask is not', async ($, on) => {
+  const w = world(on)
+  w.disk.set(`${R}/turns/chatA`, 'idle 1')
+  const ask = (id: string, o: object) => w.disk.set(`${R}/items/${id}.json`, JSON.stringify({ id, kind: 'ask', at: 1, session: 'chatA', cwd: 'C:/work/x', chat: 'c', questions: [{ question: 'Какую базу взять?', options: [] }], ...o }))
+  const answer = (id: string) => w.disk.set(`${R}/answers/${id}.json`, JSON.stringify({ id, at: 2, by: 'inbox', answers: { 'Какую базу взять?': 'SQLite' } }))
+  ask('chatA~live', {}); answer('chatA~live')
+  ask('chatA~scan', { found: 'scan' }); answer('chatA~scan')
+  await $.prompt.submit({ text: 'hi' } as never) // starts the timer
+  await w.clock.advance(15000)
+  const sent = () => w.submitted.filter((x) => x !== 'hi')
+  await w.until(() => sent().length === 1 && delivered(w, 'chatA~scan'), 'delivered')
+  expect(sent()[0]).toContain('"Какую базу взять?": "SQLite"')
+  expect(sent()[0]).toContain('from the inbox')
+  await w.clock.advance(60000)
+  expect(sent()).toHaveLength(1)
+  expect(delivered(w, 'chatA~live')).toBe(false) // its own hook returns that one
+})
+
+test('the turn state is on disk: a plugin reload mid-turn does not let a tick deliver; the turn end does', async ($, on) => {
+  const w = world(on)
+  w.disk.set(`${R}/turns/chatA`, 'busy 10000000') // the turn began before the reload: this module never saw its turn.start
+  await $.tool.call(box('Запушить ветку fix-login?', 'rl1'))
+  answerFor(w, 'chatA~rl1')
+  for (let i = 0; i < 6; i++) await w.clock.advance(15000)
+  expect(w.submitted).toEqual([])
+  await $.turn.complete(turn('Готово, жду ответа.', { turnId: 'rl' }))
+  expect(w.disk.get(`${R}/turns/chatA`)).toMatch(/^idle /)
+  await w.until(() => w.submitted.length === 1 && delivered(w, 'chatA~rl1'), 'delivered at the turn end')
+})
+
+test('a turn state never written (chat from before the upgrade, reloaded): busy for 30 min or until a turn ends, then delivered', async ($, on) => {
+  const w = world(on)
+  await $.tool.call(box('Запушить ветку fix-login?', 'nf1'))
+  answerFor(w, 'chatA~nf1')
+  for (let i = 0; i < 20; i++) await w.clock.advance(60000) // 20 min
+  expect(w.submitted).toEqual([])
+  for (let i = 0; i < 12; i++) await w.clock.advance(60000)
+  await w.until(() => w.submitted.length === 1 && delivered(w, 'chatA~nf1'), 'after 30 min')
+})
+
+test('one answer per delivery: the second goes at a later tick, never together', async ($, on) => {
+  const w = world(on)
+  w.disk.set(`${R}/turns/chatA`, 'idle 1')
+  await $.tool.call(box('Запушить ветку fix-login?', 'o1'))
+  await $.tool.call(box('Какая сенса верная: 1.8 или 1.3?', 'o2'))
+  answerFor(w, 'chatA~o1'); answerFor(w, 'chatA~o2')
+  await w.clock.advance(15000)
+  await w.until(() => w.submitted.length === 1, 'first')
+  expect(delivered(w, 'chatA~o2') && delivered(w, 'chatA~o1')).toBe(false)
+  await w.clock.advance(15000)
+  await w.until(() => w.submitted.length === 2 && delivered(w, 'chatA~o1') && delivered(w, 'chatA~o2'), 'second, a tick later')
 })

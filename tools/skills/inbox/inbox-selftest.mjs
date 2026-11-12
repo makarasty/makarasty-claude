@@ -6,7 +6,7 @@
 
 import { spawn, spawnSync } from 'node:child_process'
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -363,6 +363,75 @@ try {
   writeFileSync(join(root, 'auto.jsonl'), JSON.stringify({ at: Date.now() - 60e3, id: 'chatZ~t1', chat: 'Чат Z (chatZ)', question: 'Продолжать?', label: 'Да', rule: 'Continue questions: answered yes.' }) + '\n')
   const auto1 = run(['list']), auto2 = run(['list'])
   check('list shows an answer given by a standing rule once, with the undo hint', auto1.stdout.includes('## Answered by a standing rule (last 24 h)') && auto1.stdout.includes('отмени chatZ~t1') && !auto2.stdout.includes('standing rule'), auto1.stdout + auto2.stdout)
+  // scan: questions waiting in live chats of any account, read from the shared transcript tree, filed as items.
+  const cdir = join(prof, 'dev', 'claude-code-sessions', 'acc7', 'org'); mkdirSync(cdir, { recursive: true })
+  const tdir = join(tmp, 'projects', 'C--work-scan'); mkdirSync(tdir, { recursive: true })
+  const T = Math.floor(Date.now() / 1000) * 1000 - 2 * 3600e3 // the question's timestamp (2 h ago): `at` must carry it
+  const line = (/** @type {string} */ type, /** @type {unknown} */ content, /** @type {Record<string, unknown>} */ x = {}) => JSON.stringify({ type, timestamp: new Date(x.ts ? Number(x.ts) : T).toISOString(), message: { role: type, content }, ...x })
+  const askTool = (/** @type {string} */ id) => ({ type: 'tool_use', id, name: 'AskUserQuestion', input: { questions: [{ question: `Which DB for ${id}?`, options: [{ label: 'Postgres' }, { label: 'SQLite' }] }] } })
+  const wrapTool = (/** @type {string} */ id) => ({ type: 'tool_use', id, name: 'mcp__ccd_turn__wrap_up', input: { ask: `Push the branch ${id}?`, recap: 'Fixed login.', actions: [{ label: 'Yes, push' }, { label: 'Not now' }] } })
+  /** @param {string} name @param {string[]} lines @param {{ago?: number, archived?: boolean}} [o] */
+  const chat = (name, lines, o = {}) => {
+    const cli = randomUUID(), host = `local_${randomUUID()}`
+    writeFileSync(join(cdir, `${host}.json`), JSON.stringify({ cliSessionId: cli, cwd: `C:\\work\\${name}`, title: `Chat ${name}`, lastActivityAt: Date.now() - (o.ago ?? 60e3), isArchived: !!o.archived }))
+    writeFileSync(join(tdir, `${cli}.jsonl`), `${lines.join('\n')}\n`)
+    return { cli, host }
+  }
+  const u = (/** @type {string} */ text) => line('user', text)
+  const toolRes = (/** @type {string} */ id) => line('user', [{ type: 'tool_result', tool_use_id: id, content: 'ok' }])
+  const open1 = chat('open-ask', [u('Сделай выгрузку'), line('assistant', [{ type: 'text', text: 'Нужна база.' }, askTool('toolu_A1')])])
+  const answered = chat('answered-ask', [u('x'), line('assistant', [askTool('toolu_A2')]), toolRes('toolu_A2'), line('assistant', [{ type: 'text', text: 'ok' }])])
+  const wrapLater = chat('wrap-later', [u('x'), line('assistant', [wrapTool('toolu_W1')]), u('да, пушь')])
+  const wrapOpen = chat('wrap-open', [u('Почини логин'), line('assistant', [wrapTool('toolu_W2')])])
+  const existing = chat('has-item', [u('x'), line('assistant', [askTool('toolu_A3')])])
+  const held = chat('held', [u('x'), line('assistant', [askTool('toolu_A4')])])
+  const me = chat('inbox-itself', [u('x'), line('assistant', [askTool('toolu_A5')])])
+  const oldChat = chat('stale', [u('x'), line('assistant', [askTool('toolu_A6')])], { ago: 30 * 3600e3 })
+  const arch = chat('archived', [u('x'), line('assistant', [askTool('toolu_A7')])], { archived: true })
+  const side = chat('sidechain', [u('x'), line('assistant', [askTool('toolu_A8')], { isSidechain: true })])
+  const big = chat('big', [...Array.from({ length: 3000 }, (_, i) => line('user', `${'filler '.repeat(150)}${i}`)), line('assistant', [askTool('toolu_A9')])])
+  const meta = chat('meta-after', [u('x'), line('assistant', [askTool('toolu_B1')]), line('user', 'hook text', { isMeta: true })])
+  const old8 = chat('eight-days', [u('x'), line('assistant', [askTool('toolu_D8')], { ts: Date.now() - 8 * 24 * 3600e3 })]) // the chat is active now, its question is 8 days old
+  const wrapRe = chat('wrap-reask', [u('x'), line('assistant', [wrapTool('toolu_R2')])])
+  const idOf = (/** @type {{cli: string}} */ c, /** @type {string} */ t) => `${c.cli}~${t}`
+  mkdirSync(join(root, 'items'), { recursive: true }); mkdirSync(join(tmp, 'makarasty', 'hold', held.cli), { recursive: true })
+  writeFileSync(join(root, 'items', `${idOf(existing, 'toolu_A3')}.json`), '{"mine":1}')
+  writeFileSync(join(tmp, 'makarasty', 'hold', held.cli, 'index.md'), 'collecting\n- a\n')
+  // the inbox chat is whoever runs the scan: its own session id
+  // an earlier box of wrap-reask that the inbox answered and the chat has not taken yet
+  mkdirSync(join(root, 'answers'), { recursive: true })
+  writeFileSync(join(root, 'items', `${wrapRe.cli}~toolu_R1.json`), JSON.stringify({ id: `${wrapRe.cli}~toolu_R1`, kind: 'choice', at: T, session: wrapRe.cli, ask: 'Push?', actions: ['Yes'] }))
+  writeFileSync(join(root, 'answers', `${wrapRe.cli}~toolu_R1.json`), JSON.stringify({ id: `${wrapRe.cli}~toolu_R1`, at: T, by: 'inbox', choice: 'Yes' }))
+  const meEnv = { ...penv, CLAUDE_CODE_SESSION_ID: me.cli }
+  const sc = spawnSync(process.execPath, [cli, 'scan'], { env: meEnv, encoding: 'utf8' })
+  const itemOf = (/** @type {{cli: string}} */ c, /** @type {string} */ t) => { try { return JSON.parse(readFileSync(join(root, 'items', `${idOf(c, t)}.json`), 'utf8')) } catch { return undefined } }
+  const a1 = itemOf(open1, 'toolu_A1'), w2 = itemOf(wrapOpen, 'toolu_W2')
+  check('scan files an open AskUserQuestion as an ask item with its questions, chat, folder, app id, account, time', sc.status === 0 && a1?.kind === 'ask' && a1.questions[0].question === 'Which DB for toolu_A1?' && a1.session === open1.cli && a1.host === open1.host && a1.cwd === 'C:\\work\\open-ask' && a1.account === 'acc7' && a1.profile === 'dev' && a1.at === T && a1.found === 'scan' && a1.chat.startsWith('Chat open-ask (') && a1.context.includes('assistant: Нужна база.'), sc.stdout + sc.stderr + JSON.stringify(a1))
+  check('scan files a wrap_up ask nobody answered as a choice item with its actions and recap', w2?.kind === 'choice' && w2.ask === 'Push the branch toolu_W2?' && w2.actions.join('|') === 'Yes, push|Not now' && w2.recap === 'Fixed login.' && w2.found === 'scan', JSON.stringify(w2))
+  check('scan prints one line per filed item', sc.stdout.split('\n').filter((l) => l.startsWith('inbox: found a waiting question')).length === 4 && sc.stdout.includes('toolu_W2'), sc.stdout)
+  check('scan files nothing for an answered AskUserQuestion, nor a wrap_up with a later prompt', !itemOf(answered, 'toolu_A2') && !itemOf(wrapLater, 'toolu_W1'))
+  check('scan leaves an existing item alone (no duplicate, no rewrite)', readFileSync(join(root, 'items', `${idOf(existing, 'toolu_A3')}.json`), 'utf8') === '{"mine":1}' && !sc.stdout.includes('toolu_A3'))
+  check('scan skips a hold chat, the inbox chat itself, a chat idle over 24 h, an archived one, a subagent turn', !itemOf(held, 'toolu_A4') && !itemOf(me, 'toolu_A5') && !itemOf(oldChat, 'toolu_A6') && !itemOf(arch, 'toolu_A7') && !itemOf(side, 'toolu_A8'))
+  check('a question older than 24 h is not filed even in a chat active now', !itemOf(old8, 'toolu_D8') && !sc.stdout.includes('toolu_D8'))
+  check('a wrap_up while the chat\'s earlier box answer is undelivered is not filed', !itemOf(wrapRe, 'toolu_R2') && !sc.stdout.includes('toolu_R2'))
+  mkdirSync(join(root, 'delivered'), { recursive: true }); writeFileSync(join(root, 'delivered', `${wrapRe.cli}~toolu_R1`), '1')
+  check('once that answer is delivered the wrap_up is filed (found: scan)', spawnSync(process.execPath, [cli, 'scan'], { env: meEnv, encoding: 'utf8' }).stdout.includes('toolu_R2') && itemOf(wrapRe, 'toolu_R2')?.found === 'scan')
+  check('scan reads the tail of a transcript far bigger than the tail', !!itemOf(big, 'toolu_A9'))
+  check('a hook-injected meta message after the question does not cancel it', !!itemOf(meta, 'toolu_B1'))
+  const sc2 = spawnSync(process.execPath, [cli, 'scan'], { env: meEnv, encoding: 'utf8' })
+  check('a second scan files nothing again', sc2.stdout.includes('scan found no waiting question') && !sc2.stdout.includes('found a waiting'), sc2.stdout)
+  check('an answered item is not filed again by a scan', (writeFileSync(join(root, 'answers', `${idOf(open1, 'toolu_A1')}.json`), '{}'), rmSync(join(root, 'items', `${idOf(open1, 'toolu_A1')}.json`)), !spawnSync(process.execPath, [cli, 'scan'], { env: meEnv, encoding: 'utf8' }).stdout.includes('toolu_A1')))
+  // list: becoming the inbox (first mark, or --take) scans; an ordinary list of the inbox chat does not
+  const lateChat = chat('late-ask', [u('x'), line('assistant', [askTool('toolu_L1')])])
+  writeFileSync(join(root, 'self'), 'otherChat'); writeFileSync(join(root, 'beat'), String(Date.now() - 10e3))
+  const ro2 = spawnSync(process.execPath, [cli, 'list'], { env: meEnv, encoding: 'utf8' })
+  check('a read-only list scans nothing', !ro2.stdout.includes('toolu_L1') && !itemOf(lateChat, 'toolu_L1'), ro2.stdout)
+  const tk = spawnSync(process.execPath, [cli, 'list', '--take'], { env: meEnv, encoding: 'utf8' })
+  check('list --take scans, and the filed item is in the same list', tk.stdout.includes('toolu_L1') && !!itemOf(lateChat, 'toolu_L1') && tk.stdout.includes('Which DB for toolu_L1?'), tk.stdout)
+  const lateChat2 = chat('late-ask2', [u('x'), line('assistant', [askTool('toolu_L2')])])
+  spawnSync(process.execPath, [cli, 'list'], { env: meEnv, encoding: 'utf8' })
+  check('a plain list by the chat that already is the inbox does not scan', !itemOf(lateChat2, 'toolu_L2'))
+  writeFileSync(join(root, 'self'), 'inboxChat')
   check('off removes the switch', run(['off']).status === 0 && !existsSync(join(tmp, 'makarasty', 'inbox.on')))
 } finally {
   rmSync(tmp, { recursive: true, force: true })

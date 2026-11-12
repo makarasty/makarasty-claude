@@ -85,7 +85,7 @@ export const afterCompact = (transcript: string): string =>
 export const economy =
   'Token economy: spawn the narrowest agent (Explore for read-only search; fleet-coder for edits and fleet-reviewer for review if installed, ' +
   'else general-purpose) and set model and effort on every spawn: every Sonnet spawn high (coder or finder, never medium), reviewer Opus medium (high for diffs over ~400 lines or ' +
-  'security), judgement and design Opus. Keep noisy work (test runs, screenshots, wide searches, logs) in subagents, routine screenshots at ' +
+  'security), judgement and design Opus (a profile Effort: line wins). Keep noisy work (test runs, screenshots, wide searches, logs) in subagents, routine screenshots at ' +
   'scale 0.5; show one whenever the person wants to see it. Read big files with ' +
   'the Grep tool and a line range; `git diff --stat` before a full diff; scope checks to the files you touched.'
 
@@ -120,7 +120,8 @@ export const asking =
   'they answer it hours later among other chats. Number every list they answer point by point. Work they already asked ' +
   'for is finished without asking "continue?". A step only they can do (restart an app and look, sign in, click in ' +
   'another app, check by eye) is one click or one command, with its link or exact path, asked in AskUserQuestion (or the ' +
-  'end-of-turn ask) with the outcomes as options, never only in prose, where it gets missed. A delete-or-keep question says what the thing is, what made it, its size, what breaks without it, and your recommendation. ' +
+  'end-of-turn ask) with the outcomes as options, never only in prose; a step elsewhere names the chat (title, account) ' +
+  'in the question, with its link and any command above it in a code block (PowerShell 5.1: `;` not `&&`). A delete-or-keep question says what the thing is, what made it, its size, what breaks without it, and your recommendation. ' +
   'Several questions go in one ask (AskUserQuestion), the recommended option first. A turn that ends waiting on the person ends with a ' +
   'message that stands alone: what happened, and the one thing to press or type.'
 

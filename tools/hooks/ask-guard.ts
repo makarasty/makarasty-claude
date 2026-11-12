@@ -14,6 +14,32 @@ export const MESSAGE =
   'Ask only what is theirs to decide (a commit or a push with its files, a delete, a real choice between approaches) and name that decision.'
 export const BOX = `${MESSAGE} Call wrap_up again without the ask.`
 
+// A question that sends the person elsewhere by pointing "above" ("в чате по ссылке выше", "the link above") reaches
+// them without that text when the inbox relays it, and they cannot find the chat among dozens. The question itself must
+// name the place: the chat's title and account, or the path or command; the link goes in the text right above the call.
+export const ELSEWHERE =
+  'Not asked: the question points at a link or chat "above", which the person does not see when the dialog is relayed. ' +
+  'Name the place in the question itself (the chat title and its account, or the exact path or command) and the exact action, ' +
+  'put the chat link [title](#local_<id>) in the text right above the call, then ask again.'
+const ABOVE = /(ссылк[аеиуой]*|чат[еау]?|окн[еоа]|link|chat|window)\s+(выше|сверху|above)|(выше|above)\s+(по ссылке|ссылк|link)|по ссылке (выше|сверху)|linked above/i
+// A command inside the dialog cannot be copied from it, and a `&&` chain fails in Windows PowerShell 5.1. A command
+// line: a known tool with an argument that is a flag, a path or a chain, `cd <path>`, or a `&&` / `||` chain.
+export const COMMAND =
+  'Not asked: the question or an option holds a command, which cannot be copied from the dialog. Put the command in a ' +
+  'code block in the text right above the call (on Windows in a form Windows PowerShell 5.1 runs: `;` instead of `&&`, ' +
+  'tagged powershell), and keep the question a short title ("Запустил? Что вышло?"), then ask again.'
+const TOOLS = '(?:npm|npx|pnpm|yarn|bun|bunx|node|deno|git|gh|python3?|pip|uv|cargo|go|dotnet|docker|claude|powershell|pwsh|cmd|bash|sh|curl|wget)'
+const CMD = new RegExp(`&&|\\|\\||(?:^|[\\s\`(])cd\\s+["']?(?:[A-Za-z]:[\\\\/]|[~./\\\\])|(?:^|[\\s\`(])${TOOLS}\\s+(?:\\S+\\s+)*?(?:-{1,2}[A-Za-z]|[A-Za-z]:[\\\\/]|\\.{0,2}[\\\\/]\\S|\\S+\\.(?:m?[jt]s|json|ps1|sh|py)\\b)`, 'i')
+export function holdsCommand(questions: readonly Q[]): boolean {
+  if (!Array.isArray(questions)) return false
+  return questions.some((q) => [str(q?.question), ...(Array.isArray(q?.options) ? q.options : []).flatMap((o) => [str(o?.label), str(o?.description)])].some((t) => CMD.test(t)))
+}
+
+export function pointsAbove(questions: readonly Q[]): boolean {
+  if (!Array.isArray(questions)) return false
+  return questions.some((q) => { const t = str(q?.question); return ABOVE.test(t) && !/#local_[0-9a-f-]{8,}|https?:\/\/|claude:\/\//i.test(t) })
+}
+
 // Lower-case words, ё read as е; "keep going/on" is a go-on verb, a bare "keep" (keep them?) is a decision. Explicit letter ranges: without the `u` flag `\w` and `\b` do not see Cyrillic.
 const words = (s: string): string[] => s.toLowerCase().replace(/ё/g, 'е').replace(/\bkeep (going|on)\b/g, 'continue').split(/[^a-zа-я0-9]+/).filter(Boolean)
 const set = (s: string): Set<string> => new Set(s.split(' '))
@@ -88,6 +114,8 @@ export function continueBox(ask: string, actions: readonly { label?: unknown; ac
 export const register: Register = (on) => {
   on('tool.call', { tool: 'AskUserQuestion' }, async ($, e, next) => {
     if (e.tool !== 'AskUserQuestion' || (await $.env.get('MAKARASTY_ASK_GUARD')) === 'off') return next(e)
+    if (pointsAbove(e.questions as readonly Q[])) return { deny: ELSEWHERE }
+    if (holdsCommand(e.questions as readonly Q[])) return { deny: COMMAND }
     const n = continueQuestions(e.questions as readonly Q[])
     if (!n.length) return next(e)
     if (n.length === e.questions.length) return { deny: MESSAGE }

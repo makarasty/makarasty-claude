@@ -7,6 +7,7 @@
 //   node inbox.mjs watchdog                 run in the inbox chat in the background; exits (and wakes it) only when the wake broke
 //   node inbox.mjs list [--take]            pending items, explained, oldest first; marks this chat as the inbox (not while
 //                                           another inbox chat is alive, unless --take)
+//   node inbox.mjs scan                     file the questions waiting in live chats of every account that have no item (list does it when this chat becomes the inbox)
 //   node inbox.mjs show <id>               the whole item as JSON (a card's full brief)
 //   node inbox.mjs answer <id> [text]       answer one item (text, or a JSON map on stdin); first answer wins
 //   node inbox.mjs done <id>                the chat answered it itself (dialog, box button, card click, Esc)
@@ -31,12 +32,12 @@
 // Exit 0 ok, 1 refused (already answered, unknown id, bad answer), 2 bad arguments, 3 wait timed out.
 
 import { execFileSync, spawn } from 'node:child_process'
-import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync, writeSync } from 'node:fs'
+import { appendFileSync, closeSync, existsSync, fstatSync, mkdirSync, openSync, readFileSync, readdirSync, readSync, renameSync, rmSync, statSync, writeFileSync, writeSync } from 'node:fs'
 import { createHash, randomUUID } from 'node:crypto'
 import { freemem, homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { REPORT_TTL_MS, TTL_MS, UNSEEN_REPORT_TTL_MS, expired, normalizeAnswer, pushText, render, renderReports, safe } from './core.mjs'
+import { REPORT_TTL_MS, TTL_MS, UNSEEN_REPORT_TTL_MS, clean, contextOf, expired, itemId, normalizeAnswer, pushText, render, renderReports, safe } from './core.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const base = join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'makarasty')
@@ -128,7 +129,7 @@ function chats() {
       for (const f of files) {
         if (!/^local_[0-9a-f-]{36}\.json$/.test(f)) continue
         const j = readJSON(join(d, f))
-        if (j) out.push({ profile: name, host: f.slice(0, -5), cli: j.cliSessionId, cwd: String(j.cwd || j.originCwd || ''), last: Number(j.lastActivityAt) || 0, focused: Number(j.lastFocusedAt) || 0, archived: !!j.isArchived, parent: j.spawnedFrom?.sessionId, title: String(j.title || '') })
+        if (j) out.push({ profile: name, acc, host: f.slice(0, -5), cli: j.cliSessionId, cwd: String(j.cwd || j.originCwd || ''), last: Number(j.lastActivityAt) || 0, focused: Number(j.lastFocusedAt) || 0, archived: !!j.isArchived, parent: j.spawnedFrom?.sessionId, title: String(j.title || '') })
       }
     }
   }
@@ -401,6 +402,88 @@ async function startCmd(/** @type {string | undefined} */ id, /** @type {string[
 }
 
 
+// ---- scan: questions that wait in chats which filed no item ----
+// Run when a chat becomes the inbox (list's first mark, or --take) and by `inbox.mjs scan`. Every account's transcripts sit in the
+// one shared <config>/projects tree. For each chat of the registry active in the last 24 h (not archived, not the inbox chat, not a
+// hold chat) the tail of its transcript is read (never the whole file): the last AskUserQuestion with no tool_result after it, or
+// the last wrap_up with an `ask` and no real user prompt after it, becomes an item through the normal path (found: 'scan').
+function tailLines(/** @type {string} */ path, n = 400, maxBytes = 2 * 1024 * 1024) {
+  const fd = openSync(path, 'r')
+  try {
+    const size = fstatSync(fd).size, len = Math.min(size, maxBytes), buf = Buffer.alloc(len)
+    readSync(fd, buf, 0, len, size - len)
+    const lines = buf.toString('utf8').split('\n')
+    if (size > len) lines.shift() // the first line is cut
+    return lines.filter(Boolean).slice(-n)
+  } finally { closeSync(fd) }
+}
+const textOf = (/** @type {any} */ c) => (typeof c === 'string' ? c : Array.isArray(c) ? c.filter((b) => b?.type === 'text').map((b) => b.text).join('\n') : '')
+// As the hook: a hold chat's list starts with `collecting` and was touched in the last day.
+function holding(/** @type {string} */ cli) {
+  for (const f of [join(base, 'hold', safe(cli), 'index.md'), join(base, 'hold', `${safe(cli)}.md`)]) {
+    const t = readOr(f)
+    if (!t) continue
+    if (!/^\s*collecting\b/.test(t)) return false
+    try { return Date.now() - statSync(f).mtimeMs < 86400e3 } catch { return true }
+  }
+  return false
+}
+function undelivered(/** @type {string} */ cli) {
+  try {
+    return readdirSync(join(root, 'items')).some((f) => {
+      if (!f.endsWith('.json') || !f.startsWith(`${safe(cli)}~`)) return false
+      const it = readJSON(join(root, 'items', f))
+      return it?.kind === 'choice' && readJSON(join(root, 'answers', f))?.by === 'inbox' && !existsSync(join(root, 'delivered', it.id))
+    })
+  } catch { return false }
+}
+function scan(/** @type {string[]} */ selves) {
+  const projects = join(dirname(base), 'projects'), where = new Map(), filed = []
+  try { for (const d of readdirSync(projects)) { try { for (const f of readdirSync(join(projects, d))) if (f.endsWith('.jsonl')) where.set(f.slice(0, -6), join(projects, d, f)) } catch { /* not a folder */ } } } catch { return filed }
+  for (const c of chats()) {
+    if (c.archived || !c.cli || selves.includes(c.cli) || Date.now() - c.last > 24 * 3600e3) continue
+    const path = where.get(c.cli)
+    if (!path || holding(c.cli)) continue
+    let lines
+    try { lines = tailLines(path) } catch { continue }
+    const results = new Set(), msgs = []
+    /** @type {{ tool: any, at: number, ctx: { role: string, text: string }[] } | undefined} */ let wait
+    for (const l of lines) {
+      let e
+      try { e = JSON.parse(l) } catch { continue }
+      if (!e || e.isSidechain) continue // a subagent's turn is not the chat's
+      const content = e.message?.content
+      if (e.type === 'user') {
+        if (Array.isArray(content)) for (const b of content) if (b?.type === 'tool_result') results.add(b.tool_use_id)
+        if (e.isMeta || (Array.isArray(content) && content.every((b) => b?.type === 'tool_result'))) continue
+        wait = undefined // a real prompt after the question: the chat went on
+        const t = textOf(content); if (t) msgs.push({ role: 'user', text: t })
+      } else if (e.type === 'assistant' && Array.isArray(content)) {
+        const t = textOf(content); if (t) msgs.push({ role: 'assistant', text: t })
+        for (const b of content) if (b?.type === 'tool_use' && (b.name === 'AskUserQuestion' || (b.name === 'mcp__ccd_turn__wrap_up' && String(b.input?.ask ?? '').trim()))) wait = { tool: b, at: Date.parse(e.timestamp) || c.last, ctx: msgs.slice(-6) }
+      }
+    }
+    if (!wait || (wait.tool.name === 'AskUserQuestion' && results.has(wait.tool.id))) continue
+    if (Date.now() - wait.at > 24 * 3600e3) continue // a day-old question in a chat touched today: it would be swept as expired and filed again
+    const t = wait.tool, id = itemId(c.cli, t.id)
+    if (existsSync(join(root, 'items', `${id}.json`)) || existsSync(join(root, 'answers', `${id}.json`))) continue
+    // As the hook's re-ask rule: a box of this chat that the inbox answered and the chat has not taken yet means the chat is about to get
+    // that answer as a prompt; its newer wrap_up is not a new question.
+    if (t.name !== 'AskUserQuestion' && undelivered(c.cli)) continue
+    const title = clean(c.title || msgs.find((m) => m.role === 'user')?.text || ''), head = { id, at: wait.at, session: c.cli, cwd: c.cwd, chat: `${title.length > 70 ? `${title.slice(0, 69)}…` : title} (${c.cli.slice(0, 8)})`, host: c.host, account: c.acc, profile: c.profile, context: contextOf(wait.ctx), found: 'scan' }
+    let item
+    if (t.name === 'AskUserQuestion') {
+      if (!Array.isArray(t.input?.questions) || !t.input.questions.length) continue
+      item = { ...head, kind: 'ask', questions: t.input.questions }
+    } else item = { ...head, kind: 'choice', ask: String(t.input.ask), recap: t.input.recap, actions: (t.input.actions ?? []).map((/** @type {any} */ x) => x?.label ?? x?.action ?? '').filter(Boolean) }
+    if (create(join(dir('items'), `${id}.json`), JSON.stringify(item))) {
+      filed.push(id)
+      say(`inbox: found a waiting question in ${c.profile} / ${String(c.cwd).split(/[\\/]/).filter(Boolean).pop()}: ${(item.kind === 'ask' ? item.questions[0]?.question : item.ask).slice(0, 80)} (${id})`)
+    }
+  }
+  return filed
+}
+
 async function main() {
   const [cmd, id, ...rest] = process.argv.slice(2)
   if (cmd === 'on') { mkdirSync(base, { recursive: true }); writeFileSync(join(base, 'inbox.on'), `${new Date().toISOString()}\n`); say('inbox: on for every chat that loads makarasty-tools (running chats after their next restart or plugin reload)'); return 0 }
@@ -555,6 +638,11 @@ async function main() {
     return 0
   }
 
+  if (cmd === 'scan') {
+    // Files the questions that wait in live chats of every account and have no item (also run by the first list and by list --take).
+    if (!scan([process.env.CLAUDE_CODE_SESSION_ID || '']).length) say('inbox: scan found no waiting question without an item')
+    return 0
+  }
   if (cmd === 'list') {
     const self = process.env.CLAUDE_CODE_SESSION_ID
     // Another chat that is the inbox and alive (its timer wrote `beat` in the last 2 minutes) is not taken over by a plain
@@ -562,7 +650,11 @@ async function main() {
     const was = readOr(join(root, 'self')), beatAge = Date.now() - (Number(readOr(join(root, 'beat'))) || 0)
     const readOnly = !!was && was !== self && !rest.includes('--take') && id !== '--take' && beatAge < 120000
     if (readOnly) say(`inbox: ${was} is the inbox chat (beat ${Math.round(beatAge / 1000)}s ago); run \`inbox.mjs list --take\` to move it here`)
-    else if (self) { mkdirSync(root, { recursive: true }); writeFileSync(join(root, 'self'), self) }
+    else if (self) {
+      mkdirSync(root, { recursive: true }); writeFileSync(join(root, 'self'), self)
+      // This chat just became the inbox: questions already waiting in other chats (they filed no item) enter the normal path now.
+      if (was !== self || rest.includes('--take') || id === '--take') { try { scan([self]) } catch (e) { console.error(`inbox: scan failed: ${/** @type {Error} */ (e).message}`) } }
+    }
     const open = items().filter((i) => !answered(i.id) && i.session !== self)
     const done = reports().filter((r) => !shown(r.id) && r.session !== self)
     const auto = autoAnswers()

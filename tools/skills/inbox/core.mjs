@@ -25,7 +25,7 @@
  * @typedef {{ id: string, kind: 'ask'|'choice'|'card', at: number, session: string, cwd: string, chat: string,
  *   questions?: Question[], ask?: string, actions?: string[], recap?: string,
  *   title?: string, brief?: string, background?: string, taskId?: string,
- *   context?: string, explain?: string, host?: string, account?: string }} Item
+ *   context?: string, explain?: string, host?: string, account?: string, found?: string }} Item
  */
 /** @typedef {{ id: string, at: number, by: 'inbox'|'chat', answers?: Record<string, string>, choice?: string, standing?: boolean }} Answer */
 
@@ -121,6 +121,10 @@ export function toResult(/** @type {Item} */ item, /** @type {Answer} */ answer)
 /** The prompt a chat gets for a choice or card answered in the inbox: the whole question and the operator's pick, never a bare "yes". */
 export function deliveryText(/** @type {Item} */ item, /** @type {Answer} */ answer) {
   const pick = answer.choice ?? Object.values(answer.answers ?? {}).join('; ')
+  if (item.kind === 'ask') { // found by `scan`: the dialog has no waiter in its chat, so the answer goes back as a prompt
+    return `The person answered your question from the inbox (makarasty-tools inbox), in place of the dialog here: ${(item.questions ?? []).map((q) => `"${q.question}": "${answer.answers?.[q.question] ?? ''}"`).join('; ')}. ` +
+      'It is their own answer, picked in their inbox chat instead of the dialog here.'
+  }
   if (item.kind === 'card') {
     return `The person answered your session card "${item.title}"${item.taskId ? ` (task_id ${item.taskId})` : ''} from the inbox (makarasty-tools inbox): "${pick}". ` +
       'It is their own answer, picked in their inbox chat instead of the button here. ' +

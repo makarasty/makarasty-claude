@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
-import { BOX, MESSAGE, continueBox, continueQuestions, onlyContinue } from './ask-guard.ts'
+import { BOX, COMMAND, ELSEWHERE, MESSAGE, continueBox, continueQuestions, holdsCommand, onlyContinue, pointsAbove } from './ask-guard.ts'
 
 const q = (question: string, ...labels: string[]) => ({ question, header: 'h', multiSelect: false, options: labels.map((label) => ({ label, description: '' })) })
 
@@ -63,6 +63,26 @@ test('hook: a continue-only dialog is refused; a mixed one names the question to
   expect(mixed).toEqual({ deny: `${MESSAGE} Ask the other questions again without question 2.` })
   await $.tool.call({ tool: 'AskUserQuestion', questions: [q('Какую базу?', 'Postgres', 'SQLite')] } as never)
   expect(passed).toEqual(['AskUserQuestion'])
+})
+
+test('a question pointing at a link "above" without naming the place is refused; one that names it passes', async ($, on) => {
+  const passed = world(on)
+  for (const t of ['В чате по ссылке выше напиши «запусти тест». Написал?', 'Open the chat linked above and type go. Done?', 'Нажми в окне выше Allow. Готово?'])
+    expect(await $.tool.call({ tool: 'AskUserQuestion', questions: [q(t, 'Написал', 'Не сейчас')] } as never)).toEqual({ deny: ELSEWHERE })
+  expect(pointsAbove([{ question: 'В чате «Coordinator» (аккаунт main, [чат](#local_339c936f-797e)) по ссылке выше напиши go. Написал?' }])).toBe(false)
+  await $.tool.call({ tool: 'AskUserQuestion', questions: [q('В чате «Coordinator» на аккаунте main напиши `go`. Написал?', 'Написал', 'Не сейчас')] } as never)
+  await $.tool.call({ tool: 'AskUserQuestion', questions: [q('Какой вариант выше нравится больше?', 'A', 'B')] } as never)
+  expect(passed).toEqual(['AskUserQuestion', 'AskUserQuestion'])
+})
+
+test('a command in a question or an option is refused; a short title or a bare tool name passes', async ($, on) => {
+  const passed = world(on)
+  for (const t of ['Запусти `cd C:\\work\\app && bun run dev`. Запустил?', 'Run npm run build -- --prod and tell me. Done?', 'Выполни git push --force origin main. Готово?', 'Запусти node scripts/fleet.mjs check. Что вышло?'])
+    expect(await $.tool.call({ tool: 'AskUserQuestion', questions: [q(t, 'Запустил', 'Не сейчас')] } as never)).toEqual({ deny: COMMAND })
+  expect(holdsCommand([{ question: 'Запустил?', options: [{ label: 'Да', description: 'cd C:\\work; bun run dev' }] }])).toBe(true)
+  for (const t of ['Запустил? Что вышло?', 'Пушим в git?', 'Коммитим 3 файла (git, без пуша)?', 'Какой пакетный менеджер: npm или bun?'])
+    await $.tool.call({ tool: 'AskUserQuestion', questions: [q(t, 'Да', 'Нет')] } as never)
+  expect(passed).toEqual(['AskUserQuestion', 'AskUserQuestion', 'AskUserQuestion', 'AskUserQuestion'])
 })
 
 test('hook: wrap_up with a continue-only ask is refused with the re-call hint', async ($, on) => {

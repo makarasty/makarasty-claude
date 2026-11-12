@@ -68,7 +68,11 @@ one line and restart it. A watchdog missing from the task list means this chat r
    together in one call, one question per chat (that chat's file list, the tracked files it did not change, another
    chat active in that folder in the last 30 minutes), so the person answers each chat on its own in one pass. Each call opens with one line: how many
    questions are open in how many chats, and which call of how many this is, and right before the call the text
-   gives each asking chat's link (`[title](#local_<id>)`): the dialog itself cannot hold a link. Every answer reading "[not answered
+   gives each asking chat's link (`[title](#local_<id>)`): the dialog itself cannot hold a link. An item that asks the
+   person to act in yet another chat or app gets that place too: its title, account and link (`inbox.mjs chats
+   <title>`), or the exact path or command, and the action in a code span, in the text right above the call. A
+   command an item asks him to run moves out of the question into a code block above the call (on Windows in a form
+   Windows PowerShell 5.1 runs: `;` instead of `&&`, tagged powershell); the question stays a short title. Every answer reading "[not answered
    yet: more items came in ...]" means the person was away: the plugin closed that dialog after 10 minutes because
    a new item came in. Run `inbox.mjs list` again and ask every open item anew, those questions first:
    - an ask item: each of its questions as one question, the option labels copied exactly (the asking chat matches
@@ -150,6 +154,9 @@ Messages reach chats of other accounts too: a fleet coordinator on another accou
   noted `paused` gets «Продолжай с того места, где
   остановился; если ты координатор флита: сними флит с паузы», then `note <chat> working`.
 - **Open a chat** ("открой <проект>"): `inbox.mjs chats <project>` for its app id, `inbox.mjs open <app id>`.
+  To point the person at another chat, give its clickable link; never open it in a split pane or a separate window
+  unasked. The one exception: a chat whose Browser pane must be on screen may get its own window, and that chat
+  opens its pane itself.
 
 A case none of these fits uses the same verbs: pick, send, track, note. When one case keeps coming back, it gets
 its own rule here.

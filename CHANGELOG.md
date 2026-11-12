@@ -1,5 +1,46 @@
 # Changelog
 
+## makarasty-tools 1.19.31 — 2026-11-13
+
+- **No commands inside a question:** a command cannot be copied out of the dialog. ask-guard refuses an
+  AskUserQuestion whose question, option label or description holds a command line (a `&&`/`||` chain, `cd <path>`,
+  or a known tool with a flag, path or script argument); the command goes in a code block right above the call, on
+  Windows in a form Windows PowerShell 5.1 runs (`;` instead of `&&`, tagged powershell), and the question stays a
+  short title. Same rule in the session's asking line and for items the inbox relays.
+
+## makarasty-tools 1.19.30 — 2026-11-13
+
+Every chat gets its answer: an extra question beats a lost one.
+- **An answer is never lost mid-turn:** an inbox answer to a box written while the asking chat was in a turn was
+  marked delivered and its prompt vanished. Now the chat delivers its own answers only between turns (turn state
+  kept in `inbox/turns/<session>`, so a plugin reload mid-turn does not forget it), one per call, re-checked right
+  before the submit; `delivered/<id>` is written only after a submit that did not throw, and a failed one is retried.
+- **A re-ask after an answer is a new item:** a box asked again after its answer went out was suppressed as
+  "queued", so the chat waited and the inbox was empty. Now only an answer still on its way holds a re-ask back.
+- **`inbox.mjs scan`, run when a chat becomes the inbox:** reads the tail of every live chat's transcript on every
+  account (one shared transcript tree) and files an item for each AskUserQuestion without a result or wrap_up ask
+  without a later prompt that no item covers (questions over 24 h old skipped); answers to them are delivered as a
+  prompt.
+
+## makarasty-tools 1.19.29 — 2026-11-12
+
+- **A question that sends the person elsewhere names the place:** ask-guard refuses an AskUserQuestion that points
+  at a link, chat or window "above" without a link in the question itself; a relayed dialog shows only its own
+  text, and the person could not find the chat. The session's asking line now says: name the chat (title and
+  account) in the question, the link and the exact action right above it. The inbox adds the same for items it
+  relays that point at yet another chat or app.
+- **Live (11-12):** with a Claude window in front, a `start` the person asked for stayed queued and the inbox
+  chat's timer retried it every minute; the same typed prompt a second time was refused.
+
+## makarasty-tools 1.19.28 — 2026-11-12
+
+- **Effort from the profile:** a line `Effort: <when medium, when high>` in profile.md overrides the plugin's effort
+  defaults for spawned agents and sessions (the session text says so; README lists the key).
+- **inbox SKILL:** point the person at another chat with its link; never open it in a split pane or a separate
+  window unasked (a chat whose Browser pane must be on screen may get its own window and opens its pane itself).
+- **Tests:** a commit question phrased as a continue ask ("Продолжаем: коммитим локально?") is never answered by
+  the continue rule.
+
 ## makarasty-tools 1.19.27 — 2026-11-12
 
 Phase 2 of the rebuild plan: the inbox starts chats on any account by itself, behind a gate and the person's words.

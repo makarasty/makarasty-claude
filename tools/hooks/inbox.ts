@@ -102,7 +102,6 @@ let turnOrigin: string | undefined
 // The main turn is running. The inbox chat sends no wake then: a prompt queued mid-turn enters only after it, by when
 // the person has often answered its items (2026-11-12: "3 new items" woke it, all three answered, list "nothing pending").
 let inTurn = false
-let turnStartedAt: number | undefined
 // Called from router.ts's session.start too (one unmatched hook per event and module): it runs again when the plugin
 // reloads (an update), which drops this timer, so the inbox chat is not left without its wake.
 export async function startInboxTimer($: D): Promise<void> {
@@ -201,7 +200,7 @@ export const register: Register = (on) => {
   on('turn.start', async ($, e, next) => {
     wrapRecap = undefined // a subagent's run raises no turn.start: this is the main loop's
     inTurn = true
-    turnStartedAt = await $.clock.now()
+    await markTurn($, 'busy').catch(() => undefined)
     const me = await inboxSelf($).catch(() => undefined)
     if (me) await $.fs.write(`${me.root}/turn`, `busy ${await $.clock.now()}`).catch(() => undefined) // the watchdog reads it
     return next(e)
@@ -224,6 +223,9 @@ export const register: Register = (on) => {
       void wakeOnce($, me).catch(() => undefined)
       return r
     }
+    turnCompleted = true
+    const mine = await markTurn($, 'idle').catch(() => undefined)
+    if (mine) void deliverOnce($, mine).catch(() => undefined) // answers that came in while this turn ran
     if (e.isAborted || (e.reason !== 'answer' && e.reason !== 'error')) return r
     const a = await active($).catch(() => undefined)
     if (!a || (await holding($, a).catch(() => false))) return r
@@ -421,8 +423,9 @@ function finishedLine(reports: Report[]): string {
 // A box this chat asks again, its words 70% or more those of one it asked before (2026-11-12, 46 items of 20 chats:
 // 3 such re-asks, and the person answered twice each time; different questions of one chat overlapped 50% at most):
 // - its earlier box still open: that one is closed as superseded (kept on disk, so the history stays), 'new';
-// - its earlier box answered from the inbox during this turn: the answer is queued for this chat and enters right after
-//   the turn, so the new one is not filed, 'queued'.
+// - its earlier box answered from the inbox and that answer not yet delivered (it waits for the turn's end): the answer is
+//   delivered, so the new one is not filed, 'queued';
+// - answered and delivered: the chat has read it and asks anew, so the new box is always filed, 'new'.
 // Only boxes: an AskUserQuestion item lives as long as its dialog, a card until it is started or declined.
 export const SAME_ASK = 0.7
 async function reasked($: D, a: { dir: string; root: string; session: string }, ask: string): Promise<'new' | 'queued'> {
@@ -434,7 +437,7 @@ async function reasked($: D, a: { dir: string; root: string; session: string }, 
     if (!it || it.kind !== 'choice' || !it.ask || !sameQuestion(ask, it.ask, SAME_ASK)) continue
     const ans = await readJSON<Answer>($, `${a.root}/answers/${it.id}.json`)
     if (!ans) await cli($, a.dir, ['done', it.id, '[superseded: the chat asked it again]']).catch(() => undefined)
-    else if (ans.by === 'inbox' && turnStartedAt !== undefined && ans.at >= turnStartedAt) queued = true
+    else if (ans.by === 'inbox' && !(await $.fs.exists(`${a.root}/delivered/${it.id}`))) queued = true
   }
   return queued ? 'queued' : 'new'
 }
@@ -544,6 +547,51 @@ async function drainStarts($: D, me: { dir: string; root: string }): Promise<voi
   try { await cli($, me.dir, ['start', '--drain'], 300000) } finally { draining = false }
 }
 
+// The inbox's answers to this chat's boxes and cards, entered as prompts. Not while this chat is in a turn (2026-11-12: one sent
+// mid-turn never reached it, and was marked delivered): they go at the turn's end or the next idle tick, and delivered/<id>
+// is written only after a submit that did not throw, so a failed one is tried again at the next tick. One run at a time.
+let delivering: Promise<void> | undefined
+function deliverOnce($: D, a: { root: string; session: string }): Promise<void> {
+  delivering ??= deliverAnswers($, a).finally(() => { delivering = undefined })
+  return delivering
+}
+
+// The chat's turn state is on disk (<root>/turns/<session>: "busy <ms>" from turn.start, "idle <ms>" from turn.complete), so a
+// plugin reload in the middle of a turn does not lose it. No file yet: busy until this module has seen a turn end, or for 30 min.
+const BUSY_MAX_MS = 3 * 3600000 // a "busy" older than this is a chat that died, not a turn
+const UNKNOWN_BUSY_MS = 30 * 60000
+let turnCompleted = false
+let firstSeen: number | undefined
+async function markTurn($: D, state: 'busy' | 'idle'): Promise<{ root: string; session: string } | undefined> {
+  const a = await active($)
+  if (a) await $.fs.write(`${a.root}/turns/${safe(a.session)}`, `${state} ${await $.clock.now()}`)
+  return a
+}
+async function chatBusy($: D, a: { root: string; session: string }): Promise<boolean> {
+  if (inTurn) return true
+  const now = await $.clock.now()
+  const m = /^(busy|idle) (\d+)/.exec(String(await $.fs.read(`${a.root}/turns/${safe(a.session)}`).catch(() => '')).trim())
+  if (m) return m[1] === 'busy' && now - Number(m[2]) < BUSY_MAX_MS
+  firstSeen ??= now
+  return !turnCompleted && now - firstSeen < UNKNOWN_BUSY_MS
+}
+
+// One answer per call (the next goes when its turn ends or at a later idle tick), and the turn state is read again just
+// before the submit.
+async function deliverAnswers($: D, a: { root: string; session: string }): Promise<void> {
+  for (const f of await $.fs.list(`${a.root}/answers`).catch(() => [])) {
+    if (!f.name.endsWith('.json') || !ownedBy(f.name, a.session)) continue
+    const id = f.name.slice(0, -5)
+    if (await $.fs.exists(`${a.root}/delivered/${id}`)) continue
+    const [ans, it] = [await readJSON<Answer>($, `${a.root}/answers/${f.name}`), await readJSON<Item>($, `${a.root}/items/${id}.json`)]
+    if (!ans || !it || ans.by !== 'inbox' || (it.kind === 'ask' && it.found !== 'scan')) continue // a live dialog's answer goes back through its own hook
+    if (await chatBusy($, a)) return
+    try { await $.prompt.submit({ text: deliveryText(it, ans) }) } catch { return }
+    await $.fs.write(`${a.root}/delivered/${id}`, String(await $.clock.now())).catch(() => undefined)
+    return
+  }
+}
+
 export async function tick($: D): Promise<void> {
   const me = await inboxSelf($)
   if (me) {
@@ -554,15 +602,7 @@ export async function tick($: D): Promise<void> {
   const a = await active($)
   if (!a) return
   const now = await $.clock.now()
-  for (const f of await $.fs.list(`${a.root}/answers`).catch(() => [])) {
-    if (!f.name.endsWith('.json') || !ownedBy(f.name, a.session)) continue
-    const id = f.name.slice(0, -5)
-    if (await $.fs.exists(`${a.root}/delivered/${id}`)) continue
-    const [ans, it] = [await readJSON<Answer>($, `${a.root}/answers/${f.name}`), await readJSON<Item>($, `${a.root}/items/${id}.json`)]
-    if (!ans || !it || ans.by !== 'inbox' || it.kind === 'ask') continue // an ask's answer goes back through its own hook
-    await $.fs.write(`${a.root}/delivered/${id}`, String(now))
-    await $.prompt.submit({ text: deliveryText(it, ans) })
-  }
+  await deliverOnce($, a).catch(() => undefined)
   for (const it of await openItems($, a)) {
     if (now - it.at < PUSH_AFTER_MS) continue
     // pushed/<id> is empty once pushed, or {fails, at} after a failed try (inbox.mjs push: 3 tries, 5 min apart)

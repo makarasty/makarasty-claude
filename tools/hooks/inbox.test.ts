@@ -108,6 +108,7 @@ test('answered in the dialog first: the dialog\'s answer stands and the item lea
 
 test('an end-of-turn box answered in the inbox reaches chat A as a prompt with the whole question and the pick', async ($, on) => {
   const w = world(on)
+  w.disk.set('/cfg/makarasty/inbox/turns/chatA', 'idle 1') // between turns
   await $.tool.call({ tool: 'mcp__ccd_turn__wrap_up', recap: 'Тесты прошли.', ask: 'Запушить ветку fix-login?', actions: [{ label: 'Да, пушь' }, { label: 'Не сейчас' }], tool_use_id: 'toolu_3' } as never)
   const item = w.items()[0]
   expect(item.kind).toBe('choice')
@@ -344,7 +345,7 @@ async function notAnswered(on: On, $: Parameters<Parameters<typeof test>[1]>[0],
 for (const q of ['Продолжить и закоммитить?', 'Продолжать и запушить?', 'Продолжить и смержить в master?', 'Продолжать, задеплоить на прод?', 'Продолжить выкатку на прод?',
   'Продолжить, стереть старые данные?', 'Продолжить, перезаписав прод-базу?', 'Продолжить и отправить письмо клиенту?', 'Continue and ship it to production?',
   'Продолжить и сбросить базу?', 'Продолжить, снести старую ветку?', 'Продолжить и откатить миграцию?', 'Продолжить и залить на сервер?', 'Продолжить и очистить папку dist?', 'Продолжить чистку диска?', 'Продолжить сброс кэша?', 'Continue the cleanup?',
-  'Continue and reset the database?', 'Continue with a force rebase?', 'Continue and buy the domain?', 'Continue and close the PR?', 'Продолжить, пока ты не уйдёшь на обед и мы не вернёмся к этому разговору позже?']) {
+  'Continue and reset the database?', 'Continue with a force rebase?', 'Continue and buy the domain?', 'Continue and close the PR?', 'Коммитим фазу 2 локально, без пуша?', 'Продолжаем: коммитим локально?', 'Продолжить, пока ты не уйдёшь на обед и мы не вернёмся к этому разговору позже?']) {
   test(`a stake or a long question is never answered by the rule: ${q}`, ($, on) => notAnswered(on, $, RULE_LINE, cont(['Да', 'Нет'], q), 'toolu_c3'))
 }
 
