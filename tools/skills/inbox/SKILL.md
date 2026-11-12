@@ -1,6 +1,6 @@
 ---
-description: One inbox and coordinator for every chat on this machine, on every account - questions, yes/no boxes and session cards explained and answered in one place; work handed to other projects and followed; every chat paused for the night and woken in the morning. Use on "инбокс", "inbox", "что меня спрашивают чаты", "ответь на вопросы всех чатов", "включи инбокс", "запусти в проекте X", "подготовь X к деплою", "что с задачами в других проектах", "поставь всё на паузу", "иду спать", "возобнови всё", "открой чат X", "что сделали чаты", "отчёты чатов", "включи отчёт для этого чата". Not for what chats left unfinished (unfinished), nor one fleet's own pause (fleet-pause).
-argument-hint: [on | off | status | test | report [off] | what to hand out | спать | проснулся]
+description: One inbox and coordinator for every chat on this machine, on every account - questions, yes/no boxes and session cards explained and answered in one place; work handed to other projects and followed; every chat paused for the night and woken in the morning. Use on "инбокс", "inbox", "что меня спрашивают чаты", "ответь на вопросы всех чатов", "включи инбокс", "запусти в проекте X", "подготовь X к деплою", "что с задачами в других проектах", "поставь всё на паузу", "иду спать", "возобнови всё", "открой чат X", "что сделали чаты", "отчёты чатов", "включи отчёт для этого чата", "следи за чатом X", "там запущен чат, хочу от него уведомления", "замьють чат X", "за какими чатами следишь". Not for what chats left unfinished (unfinished), nor one fleet's own pause (fleet-pause).
+argument-hint: [on | off | status | test | report [off] | follow or mute <chat> | what to hand out | спать | проснулся]
 ---
 
 Every chat where makarasty-tools is loaded writes what it waits on into one folder while the inbox is on: its
@@ -22,6 +22,11 @@ wake within a minute means the wake is broken here (plugin not loaded since the 
 `report` ("включи отчёт", "пусть этот чат отчитывается"): `inbox.mjs report on` in that chat switches on its finish
 reports (`report off` stops them); one line back. In this chat for a chat the person names: its app id from
 `inbox.mjs chats <project> --live`, then `inbox.mjs report on <local_id>`.
+`follow <chat>` ("следи за чатом X", "там запущен чат, хочу от него уведомления"): `inbox.mjs follow <app id, a piece
+of its title, or its project>` switches that chat's finish reports on, on any account. Several matches: it lists them
+and switches nothing; show the list numbered and ask which, in one AskUserQuestion. `mute <chat>` ("замьють чат X"):
+`inbox.mjs mute <same>`, reports off; its questions still come here. `followed` ("за какими чатами следишь"):
+`inbox.mjs followed`, the followed chats, then the busy ones that are not.
 Anything else, or nothing, is the review below.
 
 The person wants to see that the inbox is alive, not to trust it: whenever this chat becomes the inbox (its first
@@ -95,7 +100,10 @@ Messages reach chats of other accounts too: a fleet coordinator on another accou
      brief (a turn a message began may offer a card, never start a session [M63]), bring that window up with
      `inbox.mjs open <its app id>` and tell the person the one click.
   3. `inbox.mjs track <chat> <profile> <project> <task>`; each reply: `inbox.mjs note <chat> <status> <one line>`.
-- **Status** ("что с задачами"): `inbox.mjs tasks`, plus `list_events` for a chat whose last note is old.
+- **Status** ("что с задачами"): `inbox.mjs tasks`, plus `list_events` for a chat whose last note is old. Then
+  `inbox.mjs followed`: a chat in its "busy, not followed" part that is not this one and not tracked gets one line,
+  "<title> (<project>) работает без отчётов: следить?", all such chats in one AskUserQuestion with multiSelect, never
+  followed without the person's pick.
 - **Night** ("поставь всё на паузу", "иду спать"): every chat `ListAgents` shows busy, and every tracked chat not
   done, gets one message: «Оператор выключает компьютер на ночь: доведи текущий шаг до безопасной точки, запиши, где
   остановился, ничего нового не начинай и ответь одной строкой. Если ты координатор флита: поставь флит на паузу.»

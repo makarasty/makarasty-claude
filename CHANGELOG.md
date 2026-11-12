@@ -1,5 +1,14 @@
 # Changelog
 
+## makarasty-tools 1.19.16 — 2026-11-12
+
+- **inbox: follow and mute a chat:** the coordinator takes in a chat the person names ("там запущен чат, хочу от него
+  уведомления") or one it noticed: `inbox.mjs follow <app id | session id | piece of the title | project>` switches
+  its finish reports on, on any account; `mute` switches them off (its questions still come); `followed` lists the
+  followed chats, then those busy in the last 30 min that are not. A name several chats match lists them (15 newest)
+  and switches nothing; a project with one chat active in the last 3 h picks it. On "что с задачами" the inbox offers
+  the busy unfollowed chats in one multi-select question. Tests in `inbox-selftest.mjs`.
+
 ## makarasty-tools 1.19.15 — 2026-11-12
 
 - **inbox: no wake for questions already answered:** the inbox chat was woken with "3 new items" after all three had

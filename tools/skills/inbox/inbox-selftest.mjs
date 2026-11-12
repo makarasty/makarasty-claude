@@ -111,6 +111,26 @@ try {
   check('a shown report leaves the next list', run(['list']).stdout.includes('nothing pending'))
   check('reports shows them again', run(['reports']).stdout.includes('Обновил sass.'))
   check('status counts the reports not shown yet', run(['status']).stdout.includes('finish reports not shown yet: 0'))
+  // follow / mute / followed: a chat of any account named by a piece of its title, its project or its app id.
+  const titled = (/** @type {string} */ profile, /** @type {string} */ id, /** @type {string} */ cwd, /** @type {string} */ title, /** @type {number} */ ago) => {
+    const d = join(prof, profile, 'claude-code-sessions', 'acc', 'org'); mkdirSync(d, { recursive: true })
+    writeFileSync(join(d, `local_${id}.json`), JSON.stringify({ cwd, title, lastActivityAt: Date.now() - ago, cliSessionId: `cli-${id.slice(0, 4)}` }))
+  }
+  titled('dev2', '77777777-7777-7777-7777-777777777777', 'C:\\work\\darkkitty', 'Превью и баги', 5 * 60e3)
+  titled('main', '88888888-8888-8888-8888-888888888888', 'C:\\work\\darkkitty', 'Старый деплой', 20 * 3600e3)
+  titled('main', '99999999-9999-9999-9999-999999999999', 'C:\\work\\lifelines', 'LifeLines отчёты', 2 * 3600e3)
+  titled('main', 'aaaaaaaa-9999-9999-9999-999999999999', 'C:\\work\\lifelines', 'LifeLines линтеры', 2 * 3600e3)
+  const f1 = r(['follow', 'превью']) // a piece of the title, any case, another account
+  check('follow by a piece of the title switches that chat on by app id and session id', f1.status === 0 && f1.stdout.includes('following Превью и баги (local_77777777-7777-7777-7777-777777777777, dev2)') &&
+    existsSync(join(root, 'reports', 'on', 'local_77777777-7777-7777-7777-777777777777')) && existsSync(join(root, 'reports', 'on', 'cli-7777')), f1.stdout)
+  const f2 = r(['follow', 'LifeLines'])
+  check('an ambiguous name lists the candidates and switches nothing', f2.status === 1 && f2.stdout.includes('2 chats match "LifeLines"') && f2.stdout.includes('LifeLines линтеры') &&
+    !existsSync(join(root, 'reports', 'on', 'local_99999999-9999-9999-9999-999999999999')), f2.stdout)
+  check('a project with one chat active now picks that one', r(['mute', 'darkkitty']).stdout.includes('muted Превью и баги') && !existsSync(join(root, 'reports', 'on', 'cli-7777')))
+  r(['follow', 'local_99999999-9999-9999-9999-999999999999'])
+  const fl = r(['followed']).stdout
+  check('followed lists the followed chats, then the busy ones that are not', /^followed \(1\):\nmain\tlocal_9999.*LifeLines отчёты/.test(fl) && /busy in the last 30 min, not followed \(\d+\):[\s\S]*Превью и баги/.test(fl) && !fl.includes('Старый деплой'), fl)
+  check('a name nothing matches is refused', r(['follow', 'нет-такого']).status === 1)
   // The watchdog: an item waiting while the inbox chat is inside a turn is no broken wake; the same item while idle is.
   put(item({ id: 'chatW~t1', at: Date.now() - 70e3 }))
   writeFileSync(join(root, 'self'), 'inboxChat')

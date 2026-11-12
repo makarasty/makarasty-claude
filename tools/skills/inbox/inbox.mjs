@@ -15,6 +15,10 @@
 //   node inbox.mjs children <local_id>      app ids of the chats that chat started, one per line
 //   node inbox.mjs report on|off [chat id]  that chat (default: the one running this) sends finish reports, or stops
 //   node inbox.mjs reports                  every finish report of the last 3 days, shown or not
+//   node inbox.mjs follow <chat>            finish reports on for a chat of any account: app id, session id, a piece of
+//                                           its title, or its project (several matches: the candidates, exit 1)
+//   node inbox.mjs mute <chat>              finish reports off for it (its questions still come)
+//   node inbox.mjs followed                 the chats followed, then the busy ones that are not
 //
 // Exit 0 ok, 1 refused (already answered, unknown id, bad answer), 2 bad arguments, 3 wait timed out.
 
@@ -81,7 +85,7 @@ function chats() {
       for (const f of files) {
         if (!/^local_[0-9a-f-]{36}\.json$/.test(f)) continue
         const j = readJSON(join(d, f))
-        if (j) out.push({ profile: name, host: f.slice(0, -5), cli: j.cliSessionId, cwd: String(j.cwd || j.originCwd || ''), last: Number(j.lastActivityAt) || 0, archived: !!j.isArchived, parent: j.spawnedFrom?.sessionId })
+        if (j) out.push({ profile: name, host: f.slice(0, -5), cli: j.cliSessionId, cwd: String(j.cwd || j.originCwd || ''), last: Number(j.lastActivityAt) || 0, archived: !!j.isArchived, parent: j.spawnedFrom?.sessionId, title: String(j.title || '') })
       }
     }
   }
@@ -93,6 +97,21 @@ const inProject = (/** @type {string} */ cwd, /** @type {string} */ project) => 
   return c === p || c.startsWith(`${p}/`) || (!p.includes('/') && c.split('/').includes(p))
 }
 const LIVE_MS = 3 * 3600e3
+const BUSY_MS = 30 * 60e3
+
+// The chat a person names: its app id or session id, else a piece of its title or its project, among the chats not
+// archived. Several by title or project: the ones active in the last 3 h, if that leaves one.
+function resolve(/** @type {string} */ q) {
+  const all = chats().filter((c) => !c.archived)
+  const exact = all.filter((c) => c.host === q || c.cli === q)
+  if (exact.length || /^local_[0-9a-f-]{36}$/.test(q)) return exact.length ? exact : [{ host: q, cli: undefined, title: '', profile: '?', last: 0, cwd: '' }]
+  const t = q.toLowerCase()
+  const hits = all.filter((c) => c.title.toLowerCase().includes(t) || inProject(c.cwd, q))
+  const live = hits.filter((c) => Date.now() - c.last < LIVE_MS)
+  return hits.length > 1 && live.length === 1 ? live : hits
+}
+const chatLine = (/** @type {{ profile: string, host: string, last: number, title: string, cwd: string }} */ c) =>
+  `${c.profile}\t${c.host}\t${c.last ? `${Math.round((Date.now() - c.last) / 60e3)} min` : '?'}\t${c.title || '(no title)'}\t${c.cwd}`
 
 // Which account a new task for a project goes to. The operator's rule: first the account where chats of that project
 // run now (live in the last 3 h), then the one with the most chats of it; a tie or nothing found is the operator's call.
@@ -197,6 +216,35 @@ async function main() {
   if (cmd === 'children') {
     // `children <app id>`: the app ids of the chats that chat started (the app's spawnedFrom), one per line.
     for (const c of chats()) if (id && c.parent === id && !c.archived) say(c.host)
+    return 0
+  }
+  if (cmd === 'follow' || cmd === 'mute') {
+    const q = [id, ...rest].filter(Boolean).join(' ')
+    if (!q) { console.error(`inbox: ${cmd} <app id | session id | piece of its title | project>`); return 2 }
+    const found = resolve(q)
+    if (found.length !== 1) {
+      if (!found.length) { say(`inbox: no chat matches "${q}"`); return 1 }
+      say(`inbox: ${found.length} chats match "${q}"; name one by its app id:`)
+      for (const c of found.sort((a, b) => b.last - a.last).slice(0, 15)) say(chatLine(c))
+      if (found.length > 15) say(`... ${found.length - 15} more, older: a longer piece of the title narrows it`)
+      return 1
+    }
+    const c = found[0], on = dir(join('reports', 'on'))
+    for (const k of [c.host, c.cli].filter(Boolean).map((x) => safe(String(x)))) {
+      if (cmd === 'follow') writeFileSync(join(on, k), new Date().toISOString()); else rmSync(join(on, k), { force: true })
+    }
+    say(`inbox: ${cmd === 'follow' ? 'following' : 'muted'} ${c.title || c.host} (${c.host}${c.profile !== '?' ? `, ${c.profile}` : ''}): finish reports ${cmd === 'follow' ? 'on' : 'off'}; its questions come either way`)
+    return 0
+  }
+  if (cmd === 'followed') {
+    const on = new Set(readdirSync(dir(join('reports', 'on'))))
+    const me = process.env.CLAUDE_CODE_SESSION_ID, self = readOr(join(root, 'self'))
+    const all = chats().filter((c) => !c.archived && c.cli !== me && c.cli !== self)
+    const followed = all.filter((c) => on.has(c.host) || (c.cli && on.has(c.cli)))
+    say(followed.length ? `followed (${followed.length}):` : 'inbox: no chat followed')
+    for (const c of followed.sort((a, b) => b.last - a.last)) say(chatLine(c))
+    const busy = all.filter((c) => !followed.includes(c) && Date.now() - c.last < BUSY_MS).sort((a, b) => b.last - a.last)
+    if (busy.length) { say(`busy in the last 30 min, not followed (${busy.length}):`); for (const c of busy) say(chatLine(c)) }
     return 0
   }
   if (cmd === 'report') {
