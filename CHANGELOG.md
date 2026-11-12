@@ -1,5 +1,304 @@
 # Changelog
 
+## makarasty-tools 1.19.15 — 2026-11-12
+
+- **inbox: no wake for questions already answered:** the inbox chat was woken with "3 new items" after all three had
+  been answered, and `list` said "nothing pending": the wake prompt was queued during its turn and entered after it,
+  built from what was open before. The hook now sends no wake while the inbox chat's turn runs and builds it after
+  the turn from what is still open. Test in `tools/hooks/inbox-reports.test.ts`.
+- **inbox watchdog: no false alarm on an older plugin copy:** it fired three times while the inbox chat was busy
+  ("its last tick never": that chat runs a copy from before the `turn` file). An item now also counts as being
+  handled when the inbox chat's own transcript changed after it came in. Test in `inbox-selftest.mjs`.
+
+## makarasty-tools 1.19.14 — 2026-11-12
+
+- **inbox: finish reports:** a chat switched on for it leaves a report in the inbox when it ends a working turn
+  (wrap_up called, or the turn died on an error): its recap and the final message cut to 2000 chars, a secret in it
+  replaced by "open the chat". Switched on: every session the inbox chat starts (the plugin does it), a chat the
+  coordinator `track`s by app id, and any chat by `/makarasty-tools:inbox report` (operator's choice, 2026-11-12:
+  reports only from the coordinator's chats and the ones he switches on). A turn that left a question writes its item
+  and no report; a `/loop` tick writes none. Reports never wake the inbox chat one by one: they go with the next item
+  wake, with a prompt the person types there, or as one batch at 5 min quiet or 15 min from the first [M63]. `inbox.mjs
+  list` shows them under "Finished" once, `reports` for 3 days, then they are swept. No phone message, no model call.
+  `tools/hooks/inbox.ts`, `tools/skills/inbox/{core.mjs,inbox.mjs,SKILL.md}`; tests `tools/hooks/inbox-reports.test.ts`
+  and `inbox-selftest.mjs`.
+- **inbox watchdog: no false alarm in a long turn:** it exited with "the wake is broken" when an item waited 63 s
+  while the inbox chat was inside a long turn, where no chat can be woken. The inbox chat now marks its turns busy and
+  idle (`inbox/turn`) and its timer's last tick (`inbox/beat`); the watchdog waits while it is busy (up to 2 h) and
+  names the last tick when it does call the wake broken.
+
+## makarasty-tools 1.19.13 — 2026-11-12
+
+- **culprit before rollback:** new errors after a tool update are no longer silenced by a rollback or a pin. The
+  session finds the culprit first: wrong code (fix it), a gap in another checker (report it), or a bug in the new
+  version (cite its issue or changelog, then pin with a comment linking it). Operator's rule, 2026-11-12, after a
+  type checker update reported two new errors another checker did not. `habits` in `tools/hooks/gates.ts`, and the
+  `update` skill's picks.
+
+## makarasty-tools 1.19.12 — 2026-11-12
+
+- **a step only the person can do is asked, not written:** restart an app and look, sign in, click in another app,
+  check something by eye now goes in AskUserQuestion (or the end-of-turn ask) with the outcomes as options, never
+  only in prose, where people skip it (operator, 2026-11-12). `asking` in `tools/hooks/gates.ts`; the inbox skill
+  asks such a step the same way, from an item or its own report. The inbox still never re-asks a question of a
+  session it started (1.19.11).
+
+## makarasty-tools 1.19.11 — 2026-11-12
+
+- **inbox: no second copy of a started session's question:** the inbox chat re-asked, reworded, AskUserQuestion
+  items from sessions it had started itself (Vize, prompt-health, Value); the app already shows those sessions'
+  dialogs in the inbox chat, so the person saw each question twice. `tools/hooks/inbox.ts` now refuses an inbox-chat
+  dialog that names such an item in its flag, or whose words overlap it by half or more, with or without the
+  flag, and says to answer it in its own dialog above. Which sessions it started comes from the app's own record
+  (`spawnedFrom`), through the new `inbox.mjs children <app id>`. Test in `tools/hooks/inbox.test.ts`.
+
+## makarasty-tools 1.19.10 — 2026-11-12
+
+- **inbox: one question, one answer:** the inbox chat re-asked a chat's open AskUserQuestion in its own dialog
+  without `metadata.source "inbox:<id>"`, so its dialog did not close when the person answered in the asking chat,
+  and they answered the same question twice (item `f37427f1~toolu_01S3Tj1aZ3HdUmHSudiqDzxf`: filed 11:37:49Z, the
+  inbox dialog opened 11:38:15Z, answered in the chat 11:38:22Z, answered again in the inbox 11:38:44Z). The hook
+  (`tools/hooks/inbox.ts`) now refuses an inbox-chat AskUserQuestion without the flag while items from other chats
+  are open, and names their ids; test in `tools/hooks/inbox.test.ts`.
+
+## makarasty 1.18.3, makarasty-tools 1.19.9 — 2026-11-12
+
+- **commits are asked:** a session asks one yes/no, with the files listed, before a commit too, not only before a
+  push (operator's rule, 2026-11-12). `habits` in `tools/hooks/gates.ts` puts the commit first in its ask-first list;
+  ask-guard's refusal text names a commit as the person's decision ("commit" was already a stake word, so a commit
+  question is never refused as a "continue?"). Fleet: the pace answer sets when a commit is due, and every commit to
+  the main checkout is still asked at its time, without holding the run (`docs/ONECHAT.md` "Commits",
+  `commands/fleet-collect.md` landing, `commands/fleet-plan.md` Round 0). An explicit `/commit`, `/ship` or
+  `/finish` request is the consent and is unchanged; worktree branch commits (opt-in) are unchanged.
+
+## makarasty-tools 1.19.8 — 2026-11-12
+
+- **cleanup:** `residents.mjs` finds long-running dev processes that a live parent hides from the orphan census:
+  `tsc --watch`, `tsc --lsp`, vite and other dev servers, headless automation browsers, `heavy.mjs` wrappers. It
+  names the owner chat by the parent chain and sorts CANDIDATE (owner chat ended or idle 120 min, no CPU in a 3 s
+  sample, no connection on its port, 10 min old), ASK (a terminal's or an unknown owner) and KEEP. Read only, 6 s:
+  `node tools/skills/cleanup/residents.mjs`, `--selftest`. The full `scan` lists CANDIDATE and ASK as
+  `idle-residents` items with method none, so `apply` cannot end them; ending is the operator's yes, then
+  `taskkill /PID` per pid. Numbers and what is not measured: [M69].
+
+## makarasty-tools 1.19.7 — 2026-11-12
+
+- **session rules:** the session-start text now carries the standing rules a person who runs many chats gives every
+  session, so a new install gets them without a personal CLAUDE.md. `habits` (tools/hooks/gates.ts): say what you did
+  not check; report what happened, why, what you did, what the person must do; "urgent" means the core change and one
+  check, then the list of what was skipped; do without asking (scoped checks, the dev server after checking its port,
+  fixing your own breakage) and ask first (push, merge, release, delete, sending off the machine, stopping the
+  person's process, a real choice); edit and commit only your own files when chats share a checkout; an OOM means a
+  narrower check, never a bigger heap or a dropped worker cap. `asking`: several questions in one AskUserQuestion,
+  recommended first; a turn that ends waiting on the person ends with a message that stands alone. About 1 KB more per
+  session start; no new measurement, so no new `[Mnn]`.
+- **hold:** with no argument the codeword comes from the person's profile when it names one.
+- budget-guard header no longer names one machine's RAM size.
+
+## makarasty 1.18.2, makarasty-tools 1.19.6 — 2026-11-12
+
+- **models:** every Sonnet spawn now runs at effort `high`, not `medium` (operator's default, 2026-11-12). The coder was
+  already `high` [M51]; the rest moved: `fleet-lead` and `fleet-profiler` frontmatter, the finder or reader spawns in
+  hold, review, redteam, handoff and ship, the lead line in `docs/ONECHAT.md`, and the session-start economy rule in
+  `tools/hooks/gates.ts` (it now says every Sonnet spawn, coder or finder, never medium). Haiku stays at `medium`.
+  Cost: more tokens per Sonnet finder call; no new measurement, so no new `[Mnn]`.
+
+## makarasty-tools 1.19.5 — 2026-11-12
+
+- **inbox:** the wake timer restarts when the plugin reloads (session.start, through router.ts) and at every turn
+  end. Found live by the watchdog: after `claude plugin update` the inbox chat sat 67 s on a new item unwoken,
+  because the reload dropped the timer and only a typed prompt started it again.
+
+## makarasty-tools 1.19.4 — 2026-11-12
+
+- **inbox:** `watchdog`, a background task the inbox chat keeps in its task list: silent while the wake works, it
+  exits (and wakes the chat) when an item waits a minute unannounced or another chat became the inbox. The person
+  sees the inbox alive instead of trusting it.
+
+## makarasty-tools 1.19.3 — 2026-11-12
+
+- **inbox:** `status` also says when an item last came in, when the inbox chat was last woken and when an answer
+  last went out; `test` writes a check item from a pretend chat so the person sees the inbox chat wake by itself
+  (measured live: woke after 8 s).
+
+## makarasty-tools 1.19.2 — 2026-11-12
+
+- **inbox:** the marker for an item answered in its own chat is English, `[answered in its own chat]`, in the hook,
+  its test and the skill; this release also carries the prose-question capture and the inbox self-wake listed
+  under 1.19.1, which landed after that version was installed.
+
+## makarasty 1.18.1, makarasty-tools 1.19.1 — 2026-11-12
+
+The rest of the author's own facts out of shipped text [M67].
+
+- **inbox:** its explain prompt, rendered list, phone line and the answer it hands back are English; the plain
+  explanation is written in the language the person writes in. Card buttons are in the person's language; the
+  answers written back are "Started from the inbox" / "Declined".
+- **inbox:** a reply that ends with a question asked only in prose becomes an inbox item at turn end
+  (turn.complete; not for subagents, the inbox chat, or a turn that already asked formally).
+- **proof:** `report --lang en` writes the page's fixed words in English (Russian stays the default).
+- **hold:** with no codeword, `абрикос` for a person who writes Russian, `apricot` otherwise.
+- **selfreview:** the self-tooling share reads the person's own repos from
+  `<config>/makarasty/selfreview/self-projects.txt` (none: 0); a message typed while the assistant works
+  (a `queued_command` attachment) now counts as a prompt.
+- **fleet-init, PROTOCOL:** the 32 GB worker count is cited as [M68]; the sample FLEET.md is marked as one
+  project's example.
+
+## makarasty 1.18.0, makarasty-tools 1.19.0 — 2026-11-12
+
+The operator's complaints of 11-11..12 as rules, each in the one place that owns it [M67].
+
+- **How a question is asked, once for every chat.** makarasty-tools' session text gains one line: a question
+  stands alone (what happened, why, what each option does), a list the person answers point by point is
+  numbered, work already asked is finished without "continue?", a step only the person can do is one click or one
+  command with its link, and a delete-or-keep question says what the thing is, what made it, its size, what breaks
+  without it, and a recommendation. Off with `MAKARASTY_ECONOMY=off`, like the rest of that text.
+- **ask-guard** (new hook): refuses an `AskUserQuestion` question or a `wrap_up` ask that only asks whether to go
+  on, and names the question to drop from a mixed dialog. By shape, not keywords: the question sentence is a
+  go-on verb plus filler ("the rest", "до конца"), every option a bare yes or not-now, and no stake around it
+  (money, prod, push, delete, fix, relaunch, a new chat). A red team's 16 real decisions worded as "continue?"
+  all pass. A narrow net: 0 refusals over 618 asks of 30 days, so the session line does the work.
+  `MAKARASTY_ASK_GUARD=off` drops it.
+- **profile.md:** a person's own facts (language, machine, channels, standing answers) go in
+  `~/.claude/makarasty/profile.md`; the session hook hands it to every session when it exists (capped at 2,000
+  characters). Shipped text no longer carries the author's: project names in inbox, "32 GB box" in budget-guard,
+  `~/.claude/MACHINE.md` in redteam and the cleanup deep scan, "Reports are in Russian" in proof, "`LiveProjects`
+  trusted" in fleet-init.
+- **forge:** one mechanism for every case, a special case only once it repeats; owner facts go to the profile.
+- **cleanup:** each pick also says what made it and the recommendation; the deep scan's scouts report "made by".
+- **selfreview `developer`** (`developer.md`): a reusable analysis of any developer's history (theirs, or a copy
+  via `CLAUDE_CONFIG_DIR`): `selfreview.mjs --prompts <dir>` writes the window's typed prompts per project (clones
+  merged, secrets masked) with counts; Sonnet readers return totals and samples; an Opus judge keeps findings seen
+  in two or more chats and sorts each into covered, failing (file and line), missing (mechanism), or a profile
+  line; numbered report, then the chosen plugin changes by forge. The profile draft is written only line by line
+  with the person's approval.
+- **fleet-plan:** whether to go on with the run the operator launched is never asked.
+- **inbox:** the inbox chat is woken by its own timer once per new item from another chat (English prompt), so
+  questions reach it without being asked.
+
+## makarasty 1.17.1 — 2026-11-12
+
+- **A relaunched coordinator gets the operator's own words.** A blind test at three real relaunch points [M64]:
+  the brief alone lost his wishes and bans; the brief plus `<run>/operator-words.md` (every operator message and
+  AskUserQuestion answer from every coordinator's transcript, verbatim, written by `fleet.sh relaunch`, no model
+  summary) scored 55-56 of 60 against 57-60 for the full context, 43-44 for the brief alone and 41-42 for
+  compaction, with no confident errors. The chip prompt reads STATE.md AND operator-words.md; STATE.md gains
+  "standing wishes and bans", "options he rejected", "decisions and why". Compaction in place stays the fallback
+  [M60, M66].
+- **The hand-back cap works.** The gate read a subagent's reply from its last assistant text, which is empty when
+  the agent ends with SubagentHandback, so no reply was ever capped (0 of 17 in a probe run). It now reads the last
+  handback message (also from the tail of transcripts over 4 MiB) at any depth, and asks for a shorter handback.
+- **Reviewers write their verdict file on a pass too.** "Read-only" in fleet-reviewer made 3 of 7 depth-2
+  reviewers with no defects refuse to write `reports/<id>.review.md`; the file is now its one allowed write.
+  fleet-lead passes REVIEW_PROMPT verbatim, renames the round-1 review, and escalates when no verdict file appears.
+- **fleet-analyze, one-chat runs:** the coordinator's subagents (any depth) are listed as workers by agent type and
+  model; a coordinator is a session that ran `resume <run> --take-over` itself, and records repeated by forks count
+  once.
+- Slot-lead slowness traced [M65]: the probe's own pause, host load (Bash 5× slower in run B) and an Opus fix
+  round; the lead layer itself was not slower. Slot leads stay opt-in.
+- Selftest part g1's watch tests wait for the expected line instead of fixed sleeps (they failed about 1 run in 4
+  under load).
+
+## makarasty 1.17.0, makarasty-tools 1.18.0 — 2026-11-11
+
+A polish pass over both plugins: an inventory of every tool against 30 days of transcripts (346 guard blocks,
+usage per tool, trigger misses), a review per area (Opus) and three red teams (Windows shells, two chats at once,
+edge inputs and cost), each finding reproduced before it was fixed. The README is rewritten for a new reader.
+
+Guards (makarasty-tools):
+- **False blocks gone.** kill-guard no longer reads `$(..)` or a backtick inside single quotes or a PowerShell
+  here-string as a command (`git commit -m 'never \`pkill node\`'` was refused, and blocked a notes write);
+  in PowerShell a backtick is an escape. git-guard's pipe check cuts PowerShell here-strings like heredocs, so an
+  apostrophe in a commit message no longer un-pairs the quotes (a double-quoted `@"..."@` still runs `$(..)` and
+  is still read). `git add -A --pathspec-from-file=<f>` is scoped and runs.
+- **Wrappers read through.** Git Bash's `cmd //c`, `cmd /k` and a bare `powershell <command>` (and `-Com`) are
+  unwrapped by git, delete, kill and budget guards, as `bash -c` already was.
+- **Gaps closed.** `git add *`, `":(top)"`, a pathspec of excludes only (`git add -A ':!x'`), `git commit -m x .` /
+  `-- .` / `:/` are whole-tree sweeps; `HUSKY=0`
+  skips hooks like `--no-verify`; `Stop-Process -ProcessName`, `kill $(ps -C node ..)` kill by name; `pnpm`/`yarn`/
+  `bun <bin>`, `npm x` and `npx -y vitest@latest` are heavy runs. secret-guard matches test folders below the
+  project root only (a project under `C:/Users/dev/specs/` got the relaxed test rules everywhere).
+- **The heredoc scan is linear.** 160 KB of `a<<b` openers took 17 s, past the hook budget, so the guard was
+  skipped; now about 17 ms. budget-guard's header gives the measured listing cost (about 510 ms median, not 300).
+  A loop that waits on the live run's PID and then starts the check is still refused: a bounded wait ends and
+  starts the second run anyway.
+
+Per-turn hooks:
+- **An unarmed chat starts no node.** gates.ts took any notify marker on the machine as "armed", so while one chat
+  waited for a phone message every other chat started `node notify.mjs` on each prompt, Stop and resume
+  (250-1100 ms each). It now checks the chat's own marker.
+- **The handoff reminder** recognises "хэндофф", "хендоф", "хэнд-офф" and "hand off" as the ask itself. The economy
+  and after-compact texts say "the Grep tool", as the reads line does. The reads line names only the read tools the
+  agent has. With no home folder variable nothing is written under the drive root.
+
+notify, hold, proof, tune, unfinished, cleanup, prune, scrub (makarasty-tools):
+- **Git Bash path conversion undone for text.** An argument that starts with `/` arrives as
+  `C:/Program Files/Git/...`, quoted or not: a hold reason or evidence, `--where`, a notify label and a proof
+  selector or block text were stored mangled. `tools/skills/lib/msys.mjs` undoes it (only under Git Bash, only
+  that prefix); hold's SKILL.md puts free text in single quotes, since double quotes ran backticks and lost `$5`.
+- **notify** reads only the last 8 MB of a transcript (a 587 MB one hit ERR_STRING_TOO_LONG, so a Stop another
+  hook blocked went out as finished), and claims an undelivered message by a rename before resending it: two chats
+  reopened at once sent every unsent message twice in 8 of 8 runs, now 0 of 8.
+- **hold**: the index is written by temp file and rename; an empty item file left by a killed `add` no longer fails
+  `check` forever; a title cut keeps whole emoji; `last` skips another live chat's hold; a paste naming thousands of
+  image paths takes 0.4 s instead of 81 s. `last` also skips an open chat idle for hours.
+- **proof** writes blocks.jsonl by temp file and rename and skips a torn line instead of failing every later call.
+- **tune**'s lock holds pid, start and a time limit, so a dead scan's lock or a reused pid no longer blocks it.
+- **unfinished**: the secret mask was quadratic (1 MB never returned, a 100 MB transcript took 88 s); it is anchored.
+- **cleanup** never offers a folder holding a git checkout from its temp, scratch, downloads and videos rules (a
+  worktree with uncommitted work in Temp, untouched three days, was offered as a safe delete); ids carry a hash of the path, so "Setup (1).exe" and "setup-1.exe" differ;
+  the scratch rule covers the current `%TEMP%\claude\<hex>\<session>` layout with the live-session hold.
+- **prune**: `restore` really detaches a tree whose branch name was taken meanwhile; a worktree holding git-ignored
+  files other than build output (`.env`) is asked about with the files named, not trashed as clean; a live
+  run's lock is not stolen after 10 minutes, and two runs taking over one dead lock cannot both win (tune too).
+- **scrub** leaves `/rewind` checkpoints (`file-history`) alone, since masking them writes asterisks into your
+  files on a rewind, skips installed skill docs, and with `--root` reads only that folder. Its secret patterns are
+  linear: a 120 KB line of `a-` took 22 s, 400k-char runs of `sk-`, `eyJ` or `BEGIN` timed out; now 4-20 ms.
+- **confirm** refuses an empty session id and reads only the last 16 MB of the transcript (a 629 MB one could
+  never grant a delete). cleanup's `admin <id>` rejects an unknown id before its two-minute scan.
+- **inbox**: coordinator verbs — pick the account for a project's task (live chats first, then most chats, else
+  ask), list chats of every app profile, keep a list of handed-out work, night pause and morning resume by message
+  (M63).
+- **commit**: a file another chat also edited is committed only when every hunk is this chat's; git runs with
+  `core.quotepath=false` so Cyrillic names print as themselves.
+
+Fleet (makarasty):
+- **`fleet-gate.mjs prove` records no false proof.** A `before` the shell could not start (exit 126 or 127) was
+  taken as a failing reproduction; `check` now refuses it, and a `/usr/bin/...` that Git Bash turned into
+  `C:/Program Files/Git/usr/bin/...` is recorded as typed.
+- **The fleet gate hooks** treat a fleet record as live only while its run exists, is not FINISHED and the record,
+  the run folder or its claimed/done queue changed in the last two days (50 of 61 records here pointed at gone
+  runs, and each spawned a node per tool call); the
+  SubagentStop reply check works on transcripts over 4 MiB. The coder and reviewer agents say the 3-line reply a
+  dispatched worker owes.
+- fleet-init: step 0 asks the operator to trust the project's parent and Claude's temp root once, so new run folders
+  open without the trust dialog.
+
+## makarasty-tools 1.17.3 — 2026-11-11
+
+- **Inbox for every chat (`/makarasty-tools:inbox`), off until `inbox on`.** Every chat with makarasty-tools writes
+  what it waits on to `~/.claude/makarasty/inbox/`: each AskUserQuestion, each end-of-turn box with a question, each
+  own_initiative session card. The dialog still shows in the chat; whichever answers first wins, and an inbox answer
+  goes back as the dialog's own result (the open dialog is closed). Box and card answers go back as a prompt the
+  chat's own timer submits when it is idle. After 2 minutes unanswered the asking chat adds a plain explanation
+  (a small model over its last messages) and sends one phone message through notify. The inbox chat lists
+  everything explained, asks once, starts a chosen card itself. Hook `tools/hooks/inbox.ts`, script and pure core
+  `tools/skills/inbox/`, tests `tools/hooks/inbox.test.ts` and `inbox-selftest.mjs`. Need and probes: M63.
+  The inbox chat's own dialog closes by itself once every item in it was answered in its own chat. Known limit: a
+  box whose yes starts a session cannot be answered from the inbox (the app takes a plugin prompt as an automated
+  event); its chat needs the click. Each item carries a one-click link to its chat (`CLAUDE_CODE_HOST_SESSION_ID`); a
+  chat under another account (another app profile) opens with `inbox.mjs open <id>`, which hands the quoted link to
+  that profile's own app copy; the plain `claude://` link opens the default app, not that window.
+
+## makarasty 1.16.0 — 2026-11-11
+
+- **Slot leads, opt-in probe.** New agent `makarasty:fleet-lead` (Sonnet, medium; tools Agent, Bash, TaskStop):
+  one per repo slot, it runs dispatch, a foreground coder, `coded`, a foreground reviewer, one fix round and
+  `finish`, and returns one line (`DRAINED`, `RETIRED`, `WAITING`, `STOPPED` or `ESCALATE`). Every judgement
+  escalates to the coordinator. On only with `leads: on` on the `pace:` line (`docs/ONECHAT.md`, "Opt-in: slot
+  leads"); default off. Aim: the coordinator grows by a spawn and a line per task instead of 13.5-20K (M58).
+  Probe results: `docs/MEASUREMENTS.md` M61.
+
 ## makarasty 1.15.0, makarasty-tools 1.16.0 — 2026-11-11
 
 Built from transcript evidence (M57-M59), then a review, a red team replaying hold dictation and two more

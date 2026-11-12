@@ -961,6 +961,229 @@ context growth; tasks = unique `fleet.sh finish` DONE ids.
   `disk_clear_gb` 30; a mockup round carries `reports/<subject>.req.md` verbatim.
 **Status:** current for 2.1.322.
 
+## M60 — Background agents and a Monitor survive /compact
+**2026-11-11**, Claude Code 2.1.322, desktop app, a Haiku test chat. The chat started one background subagent
+(a foreground Bash loop of 300 × `sleep 2`, then `echo AGENT-SURVIVED`) and one Monitor (12 ticks, one a
+minute), then the operator typed `/compact`.
+- **Compaction:** done; the chat's context started over from the summary.
+- **Monitor:** ticks 1-12 all arrived after the compaction, each one waking the chat; the stream then ended.
+- **Subagent:** an interim notice, then its final reply `AGENT-SURVIVED` (exit 0) about 10 min after `/compact`.
+  The Bash tool capped the foreground timeout at 600000 ms.
+- **Earlier tries:** a bare `sleep 300` in a subagent was blocked by the harness, so a long wait needs a loop.
+- **Not measured:** a coordinator at 700K+ compacting with claims in flight; auto-compaction (only a manual
+  `/compact` here); what the summary keeps of a fleet's state beyond STATE.md.
+- **Rule produced:** none yet; compaction in place instead of a relaunch is an open decision (docs/RELAUNCH.md).
+**Status:** current for 2.1.322.
+
+## M61 — Slot leads, P0: a plugin agent spawns, the pause holds grandchildren, TaskStop reaches them
+**2026-11-11**, Claude Code 2.1.322, desktop app, plugin makarasty 1.16.0, scratch run (3 repo slots, Opus
+coordinator, `makarasty:fleet-lead` on Sonnet, `fleet-coder` grandchildren on Haiku).
+- **(a) Plugin agent spawns:** `makarasty:fleet-lead` ran `dispatch` (exit 0) and a foreground `fleet-coder` whose
+  one Bash loop wrote 290 lines over 2 s steps; the reply `DONE` reached the lead after 610 s. The lead's shell
+  has the coordinator's `CLAUDE_CODE_SESSION_ID`, so no chip file was written (`chips/` never created). The
+  grandchild's meta says `spawnDepth 2`, `parentAgentId` the lead; its transcript sits in the coordinator
+  session's `subagents/` beside the leads'.
+- **(b) Pause holds a grandchild:** `fleet.sh pause` at t+0. The grandchild's calls at +4 ... +29 s ran (the 30 s
+  grace), the call at about +34 s was refused ("RUN PAUSED by the operator and the grace is over"), and it stopped
+  and returned. The lead's next `Agent` call was refused ("No new subagent starts while the run is paused").
+  So the hook payload of a depth-2 subagent carries the root session id and an agent id.
+- **(c) TaskStop reaches a grandchild:** lead stopped while its grandchild's foreground loop appended a line every
+  2 s; the last line was written 4 s before the stop, the file stayed at 6 lines for 24 s and still 6 after 10 min.
+- **Reply cap does not reach a grandchild:** a 10-line reply to a dispatch-shaped prompt (`Read .../tasks/claimed/<id>/prompt.md
+  and follow it.`) came back to the lead unblocked, paused or not; the same cap has sent back direct children's
+  replies in at least 5 earlier runs. The lead's context carries the long reply; the coordinator's does not.
+- **Rule produced:** P0 passes, the A/B run goes ahead (its own entry, once measured). Open: the reply cap for depth 2.
+**Status:** current for 2.1.322.
+
+## M63 — What chats ask the operator, how long it waits, and what can answer for him
+**2026-11-11**, Claude Code 2.1.322, desktop app, this machine. Transcripts: `~/.claude/projects/*/*.jsonl`, 2020
+files, subagents left out, events deduped by tool_use id; 30 days = 2026-10-13..11-11. Probes in one Opus chat
+with a dev mod.
+- **Asks:** 608 `AskUserQuestion` calls in 173 chats, 13 projects; per day median 14, p90 39, max 64; 2.2 questions
+  per call (4 in 31%). Time to the answer p50 3.0 min, p90 23 min; 23% over 10 min, 2.9% over 1 h; 3.5% never
+  answered. 24.5% of answered questions got typed text instead of an option.
+- **Unclear asks:** 32 operator prompts in 23 of 171 asked chats complain right after an ask or in its free text
+  ("Не понял, объясни лучше.", "не понимаю, что делать?").
+- **Cards:** 106 a month (`spawn_task`); all time 578, 10.2% never started, every one of those expired at 7 days;
+  card to start p50 3.9 min, p90 43 min. `start_session` cards: too few yet (6, most of them probes).
+- **End-of-turn boxes** (`wrap_up` `ask`, since 11-11): 19; to the next prompt p50 3.0 min, p90 26.8 min.
+- **Concurrency:** per day median 20 chats (p90 30, max 46) in 4 projects (max 10); peak 29 chats in one hour.
+- **P1, a hook answers an open AskUserQuestion:** a `tool.call` hook called `next(e)` (dialog shown) and raced a
+  6 s waiter; returning `{ result: { questions, answers } }` gave the model `"…"="Beta"` as the user's answer
+  (6056 ms). In `claude plugin test`, the call beneath is aborted when the hook settles, so the dialog's promise
+  rejects (`tools/hooks/inbox.test.ts`). Not seen on screen: the dialog closing.
+- **P2, a timer wakes an idle desktop chat:** `$.prompt.submit` from `$.clock.after` started a turn, framed as "a
+  prompt a plugin submits between turns — it starts this turn in the user's place".
+- **A relayed answer is not consent for a start:** the operator told this chat to answer another chat's two asks; the
+  answer went by `SendMessage` with his words quoted. The other chat took the answers but would not start a session
+  in another folder: "приложение открывает, только если команду напишете вы сами в этом чате".
+- **Live, inbox 1.17.0 in real chats:** darkkitty's 4-question ask was answered from the inbox chat; the asking chat
+  read `Your questions have been answered: …` at 20:46:45 and went on, and the operator saw its dialog close. Two
+  asks he answered in their own chats were closed as `by: chat`, but the inbox chat's own dialog for them stayed open
+  (fixed in 1.17.1: it waits on its items and closes itself). Slot-lead's box answered from the inbox reached that
+  chat as a plugin prompt within its 15 s timer; the chat then could not start the session: "Ответ из инбокса оно
+  считает автоматическим событием". So a box whose yes starts a session needs the click in its own chat.
+- **Across accounts:** `ListAgents` in a `main` chat listed the chats of all three app profiles; a `SendMessage` by name
+  to the `dev2` fleet coordinator of oxi-yapper was answered within minutes ("Filed as fleet task d08-auto-enter").
+  The trust dialog is per folder in `~/.claude.json` and covers subfolders (`LiveProjects` trusted, its projects
+  without an entry open with no dialog). A night-pause message to one of this chat's own idle test chats was refused
+  by the auto-mode classifier: "[Interfere With Workloads]".
+- **Night and morning (11-11 → 11-12):** on "Я спать." the pause message to two busy chats went through (the person
+  asked); the dev2 fleet confirmed "paused at 00:33 ... nothing in flight". In the morning after the computer was off
+  `ListAgents` listed no chat; `inbox.mjs open` of the fleet's app id started it in the dev2 window and it was listed
+  at once ("started 0s ago"), then took the resume message.
+- **The dialog closes on screen (11-12):** a session this chat started showed its own AskUserQuestion in this chat,
+  under it the inbox's copy; the operator answered the copy, and the original dialog vanished by itself ("Я отвечал
+  на нижний, а потом верхний сам пропал"). This is P1 seen by a person; the double display read as a UI bug.
+- **How finishes bunch (11-12, for the report batch):** every main-chat `wrap_up` call since 11-11 (the app has
+  called it since then), subagents left out: 132 finishes in 39 chats over 26.8 h; per active hour p50 5, p90 14,
+  max 19; gap between two finishes p25 12 s, p50 162 s, p75 550 s, p90 1332 s. A batch (wake once Q quiet or at M
+  from the first) simulated on them: 1/5 min woke 4.8 times an active hour with 1.4 reports a wake (delay max 134 s);
+  2/10 min 3.9 and 1.8; 5/15 min 2.8 and 2.5 (delay p50 305 s, max 900 s); 10/30 min 1.7 and 4.0 (max 1800 s, past
+  the operator's p90 answer gap of 23 min). All chats counted: an upper bound for chats switched on for reports.
+- **Not measured:** whether a plugin-submitted box answer counts as approval for a delete or a push.
+- **Rule produced:** finish reports (makarasty-tools 1.19.14) wake the inbox chat at 5 min quiet or 15 min from the
+  first. makarasty-tools inbox (1.17.0): an ask answered from the inbox goes back as the dialog's own
+  result; box and card answers go back as a plugin prompt with the full question; a chosen card is started by the
+  inbox chat on the operator's own turn; explanation and phone message only after 2 min unanswered.
+**Status:** current for 2.1.322.
+
+## M64 — Handoff against compaction at a real relaunch point, blind-graded
+**2026-11-11**, Claude Code 2.1.322, Opus 5.5 subjects. Cases: the real relaunch points of runs hold-polish
+(coordinator 1→2, 724K; 2→3, 720K) and oxi-roadmap (742K). 30 questions per case, built from the source chat
+before the cut and from what the successor needed or got wrong after it (10-15 on the operator's own wishes and
+bans). Subjects answered from memory, no tools: **F** the source forked whole (upper bound), **C** the fork after
+`/compact`, **H** a fresh chat given exactly what the real successor got (chip prompt + STATE.md). Two blind judges
+(Opus, Fable) scored 2 / 1 / 0 (UNKNOWN) / -1 (confidently wrong); mean per question below (max 2).
+- **All questions:** F 1.95 / 1.95 / — · H 1.50 / 1.93 / 1.43 · C 1.38 / 0.90 / 1.12.
+- **Confidently wrong:** C 1-2 in case 1 (named the option the operator rejected as the chosen one), 0-1 in case 2;
+  H 0 in every case.
+- **Operator's wishes and bans:** H 1.13 / 1.80 / 1.00 · C 1.57 / 1.35 / 1.50 · F 2.00 / 2.00. Compaction kept them
+  better in 2 of 3 cases (case 3 lost "answer in Russian" and "Windows first" from the brief).
+- **Answers not written in the brief** (13 / 3 / 8 questions): H 0.92 / 1.50 / 0.38 · C 1.46 / 1.83 / 1.00. A
+  handoff knows only what was written down.
+- **Caveats:** case 3's subjects saw the answer key (the Read tool returned the whole question file) — indicative
+  only; 27 of case 2's answers are in its brief; a fourth and fifth case (design-system-hub, a handoff-skill chat)
+  did not run: the API credit for `claude -p` ran out at about $48. The handoff skill run in a fork of a fleet
+  coordinator refused (a coordinator is relaunched, not handed off).
+- **The fix, re-tested blind on case 1** (subjects read a question-only file this time): the brief alone 43 / 44
+  of 60 (operator's wishes 17 / 16 of 30); the brief plus the operator's messages extracted verbatim from the
+  old coordinator's transcript (50 messages, 32 KB) 55 / 56 (wishes 28 / 28), 0 confidently wrong; compaction
+  42 / 41 (wishes 23 / 23), 1 confidently wrong; the full context had 57 / 60.
+- **Rule produced:** keep the relaunch (handoff) over compaction in place [M60]; the relaunch carries the
+  operator's own messages verbatim (`<run>/operator-words.md`) beside STATE.md, which is where it lost points.
+**Status:** current for 2.1.322.
+
+## M65 — Slot leads, A/B: a quarter of the coordinator's growth, slower wall clock
+**2026-11-11**, Claude Code 2.1.322, plugin makarasty 1.16.0. Two identical fixtures: six `.mjs` modules with one
+defect each and a failing `node --test` file, six `kind: fix` tasks (two with an acceptance line the test does not
+cover), Opus coordinator, 2 repo slots, coder Sonnet high, reviewer Opus medium, pace balanced, end commit local.
+A = the Card as written; B = `leads: on` plus one live pause. One run each, so every number is n = 1.
+- **Coordinator growth**, first dispatch (A) or lead spawn (B) to the last turn before collect, from the usage of
+  each turn: A 57,263 tokens over 7 tasks (6 plus a fix task its re-review filed) = 8.2K per task; B 15,658 over 6
+  = 2.6K per task, 32% of A. Both are below M58's 13.5-20.3K, which came from a 47-task run with longer reports.
+- **Cost**, list prices over the coordinator and every file in its `subagents/` (depth 2 included): A $4.84
+  ($0.69 a task; coordinator $3.09, coders $0.62, reviewers $1.13); B $3.72 ($0.62 a task, 0.90 x A;
+  coordinator $1.41, leads $0.53, coders $0.83 with one Opus fix round, reviewers $0.95).
+- **Wall clock**, START to END: A 493 s; B 845 s = 1.71 x A, 1.42 x after taking out its 145 s pause.
+- **Work:** 6/6 done in both with a before and an after proof, every task reviewed (B: 7 reviewer spawns, 6 plus
+  the re-review), both commits only `src/` and `test/`. f5's bait was caught in both, f3's in neither. A filed a fix
+  task from its re-review; B's lead re-coded f5 on Opus and the re-review passed. Leads ran only `dispatch`,
+  `coded`, the `owns:` grep, `finish`, `drained` and the two agent types; none read a report or skipped a review.
+- **Pause in B:** at the pause both leads were between tasks; their next `dispatch` exited 8 and they returned
+  `STOPPED`. No claim was held, so the owns-mtime check had nothing to check. Fresh leads after the resume finished
+  the queue.
+- **Seen beside it:** 3 of B's 7 depth-2 reviewers put the verdict only in their reply and wrote no
+  `reports/<id>.review.md`. fleet-analyze priced A's coordinator only ($4.41) and found 0 subagents: it misses a
+  one-chat coordinator's `subagents/`.
+- **Verdict against the probe's thresholds:** growth ≤ 6K and ≤ 50% of A: pass. Cost ≤ 1.15 x: pass. Work and
+  reviews complete: pass. P0 and pause: pass, except the held-claim check was not exercised. Wall clock ≤ 1.25 x:
+  fail.
+- **Where B's extra 352 s went** (timeline from both runs' coordinator and subagent timestamps, 2026-11-12): 142 s
+  the probe's own pause (both leads back at 20:57:07, respawned 20:59:23); about 110 s the same agents running
+  slower — median Bash 6.6 s against 1.3 s for coders and 2.2 s against 0.5 s for reviewers, the leads' first
+  `dispatch` 26 s against 2 s, a plain heredoc write 31 s — host load from other sessions, cause not measured; about
+  110 s the Opus fix round (133 s against A's 21 s Sonnet fix, whose re-review failed and cost A a 7th task, net
+  +46 s). The lead layer itself: Sonnet lead turns 2-2.6 s against the Opus coordinator's 4-9 s per transition,
+  nested spawn latency median 1.3 s against about 1 s, both leads concurrent throughout. Without the pause and the
+  host stalls B lands near 1.1-1.25 x A (estimate).
+- **Rule produced:** none yet; slot leads stay opt-in [M61] until a re-run on a quiet host.
+**Status:** current for 2.1.322, n = 1.
+
+## M66 — A fleet coordinator compacted in place mid-run, with two coders in flight
+**2026-11-11**, Claude Code 2.1.322, plugin makarasty 1.16.0, fixture C (the M65 fixture, plain Card, Opus
+coordinator, 2 repo slots, Monitor watch). The coordinator asked for `/compact` after 2 tasks were done; by the
+time the operator typed it, 4 were done and the coders of f5 and f6 were in flight.
+- **Compaction:** manual, 21:30:10-21:30:46 (36 s). The harness counted 137,275 tokens before and 24,604 after. The
+  next turn's context was 103,015 against 83,171 at the session's first turn, so the run's own part fell from about
+  54K to about 20K.
+- **Agents in flight:** both coders finished during the compaction (21:30:16, 21:30:21). Their notices were
+  delivered after it, and both tasks went through `coded`, review, finish (f5 also a fix round and a re-review).
+- **Watch:** the Monitor started before the compaction delivered its `stream ended` after it (21:34:36, when
+  both slots were drained). The watch printed no other line in this run, so this is one event, not a stream.
+- **State after:** the coordinator logged `fleet.sh status`, re-read `STATE.md` and the Card, and went on. 6 of 6
+  done, 6 claim directories, one coder spawn per task plus f5's fix, no task dispatched twice, nothing left in
+  `ready/`, commit baffb72 with only `src/` and `test/`, all six tests pass. START to END 681 s (A: 493 s).
+- **Verdict:** in-flight agents handled, watch delivered, no duplicate, lost or re-done claim, the run landed 6/6:
+  pass. Context right after: 24.6K by the harness's count, 103K with the system prompt and tools.
+- **Not measured:** a compaction at 700K, an agent finishing long after the compaction, auto-compaction, and
+  whether the summary keeps the operator's words (M64 says it keeps fewer of them than a handoff).
+- **Rule produced:** none; the relaunch stays the rule [M64].
+**Status:** current for 2.1.322, n = 1.
+
+## M67 — How chats ask the operator, and what is one person's in shipped text
+**2026-11-12**, Claude Code 2.1.322, this machine. The operator's complaints of 11-11..12, quoted in the inbox chat:
+questions out of context ("каждый чат задаёт вопросы близко к своему контексту, плохо объяснено"), unnumbered
+lists ("без номеров мне очень сложно отвечать"), "continue?" asks ("на них нужно автоматически отвечать, что да,
+мы доводим до конца"), steps he had to hunt for ("человеку просто нажать одну кнопку чем искать где-то"), a
+delete question with no facts ("я не знаю, что это за лог, стоит ли его удалять ... и сколько места занимает"),
+special cases instead of one mechanism, and the plugins carrying his own machine into other people's context.
+- **Continue asks, transcripts 10-13..11-12** (main chains, deduped by tool_use id): 617 `AskUserQuestion` calls,
+  1371 questions, 174 chats; 25 `wrap_up` asks. A first yes/no matcher flagged 4 questions, all wrong: a continue
+  word in the context, not in the question ("ушедший человек продолжает читать. Чиним?"), and "Окно 300 мс"
+  read as "ок". Matching the last sentence only, with budgets, relaunches and fixes left to the person: 0 flagged.
+  23 more questions carry a continue word and pass; read one by one, one asked only whether to go on with work
+  already asked ("доделать в этом флите? Да, доделать / Только список"), the rest were real choices (show the
+  pane, relaunch, which branch). 0 of 21,559 assistant texts ended on a continue question. So the yes/no pair
+  is rare and the session rule does the work; the hook is a net for the exact form.
+- **Red team of that matcher** (a Sonnet attacker running the functions): a keyword list of stakes let 16 real
+  decisions through as "continue?" ("Продолжить с миграцией схемы БД?", "Proceed with dropping the users table?",
+  "Продолжить? | Да / Да, и перезапиши конфиг / Нет"). Rebuilt by shape (a go-on verb plus filler words only, bare
+  yes/not-now options, no stake): all 16 pass, the pure asks it missed ("Возобновить работу?", emoji labels) are
+  caught, and the 30-day scan still flags 0 of 618.
+- **Follow-up, same day** (the operator's yes from the inbox): the inbox's own strings (its explain prompt, the
+  list it renders, the phone line, the answer it hands back) are English with the explanation in the person's
+  language; proof takes `--lang en`; hold's default codeword follows the person's language; selfreview reads the
+  person's own repos from `makarasty/selfreview/self-projects.txt` and counts a message typed while the assistant
+  works (a `queued_command` attachment with a human origin, 35 of about 3,800 such records in 60 files).
+- **Owner facts in shipped text** (an Explore audit of both plugins): his project names in the inbox skill, "32 GB
+  box" in the budget guard's refusal, `~/.claude/MACHINE.md` in redteam and the cleanup deep scan, "Reports are
+  in Russian" in proof, "`LiveProjects` trusted" in fleet-init. Every one sits in text loaded on use; the only
+  text loaded every session was the makarasty-tools session rules, which hold none.
+- **Not measured:** an A/B of the asking line (whether it changes how a question is written), and how often a
+  question that does not stand alone gets a "не понял" (M63 counted 32 such complaints in 23 chats).
+- **Rule produced:** makarasty-tools 1.19.0: the `asking` session line (stands alone, numbered, no "continue?",
+  one click with the link, what/made by/size/what breaks/recommendation for delete-or-keep); `ask-guard` refuses a
+  yes/no question that only asks to go on; `~/.claude/makarasty/profile.md`, the person's own facts, read at
+  session start when it exists; selfreview `developer` turns another developer's history into plugin changes.
+**Status:** current for 2.1.322.
+
+## M68 — Workers a machine carries against what its owner keeps
+**2026-08-26**, the plugin author's desktop, 32 GB with memory compression on, moved here from fleet-init.
+- **Carried:** ten workers ran without the machine refusing any of them.
+- **Kept:** the operator chose five, so the computer stayed usable for his own work.
+- **Rule produced:** fleet-init reports both numbers and recommends the second.
+**Status:** a single observation.
+
+## M69 — Resident dev processes on a shared box: who owns them, and what separates idle from busy
+**2026-11-12**, the plugin author's desktop, 32 GB, `residents.mjs` run twice, nothing ended.
+- **Found:** 14 rows in the first run (before a watcher inside a dev server's tree was merged into that server's row), 12 in the second (a dev server also ended in between): `tsc --watch`, `tsc --lsp` (3, one per live chat), two vite/bun dev servers, a dev-server.cjs under `node --watch`, `heavy.mjs` wrappers and headless Brave of automation runs.
+- **CPU in a 3 s sample:** every idle resident read 0 ms; the working ones (a `film.ts` screenshot run and its Brave) read 9 391 and 11 641 ms. The 50 ms line sits in a gap of over 9 000 ms, so it is not a fit but is not close to either side.
+- **Memory:** the idle `tsc --watch` tree showed 2 047 MB private working set at 15 min and 1 208-1 247 MB later, with 2 382 MB commit; the idle vite showed 500 MB, then 23 MB working set with 999 MB commit. Windows trims an idle process's working set, so a working-set figure alone understates what a resident holds; the list prints both.
+- **Owners:** the parent chain reached a live chat for the `tsc --lsp` and one `heavy.mjs`; the watcher, both servers and the film runs sat under the operator's terminals; one dev server and one Brave storage stub had no parent (owner unknown).
+- **Candidates:** none, because no chat was ended or idle for 120 min at the time. The 120 min is machine.mjs's existing "ask the owner to close it" line, a decision, not a measurement.
+**Status:** two observations on one day; the idle limit is untested against a real finished chat.
+
 ## Appendix: what a pull run spends
 
 Moved here from `PULL.md`, which workers read in full; none of it changes what a worker does.
