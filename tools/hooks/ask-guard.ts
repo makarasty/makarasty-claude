@@ -3,8 +3,10 @@ import type { Register } from 'claude-code'
 // Refuses a question that only asks whether to go on with work the person already asked for ("Продолжать?",
 // "Довести до конца?", "Continue with the remaining tasks?"). People answer it yes, and an open ask blocks the chat's
 // turn until they come back [M59] [M67]. Shape, not keywords: the question sentence holds a go-on verb and nothing but
-// filler (the rest, the next wave, до конца), every option is a bare yes or not-now, and no word around it names a
-// stake (money, prod, a push, a delete, a relaunch). "Продолжить с миграцией схемы?" names its object and passes.
+// filler (the rest, the next wave, до конца), every option is a bare yes or not-now, and no word around it (the question, an
+// option's description, a header, a wrap_up recap) names a stake: money, prod, a push, a delete or overwrite, a failure, a
+// step only the person can do (sign in, click). The question and the labels are tested against all of it; a description,
+// header or recap only against the steps ahead (AHEAD), since a recap reports status ("fixed 12", "0 failed"). "Продолжить с миграцией схемы?" names its object and passes.
 // AskUserQuestion and the desktop app's end-of-turn box (wrap_up `ask`). MAKARASTY_ASK_GUARD=off drops it.
 
 export const MESSAGE =
@@ -12,24 +14,27 @@ export const MESSAGE =
   'Ask only what is theirs to decide (a commit or a push with its files, a delete, a real choice between approaches) and name that decision.'
 export const BOX = `${MESSAGE} Call wrap_up again without the ask.`
 
-// Lower-case words, ё read as е. Explicit letter ranges: without the `u` flag `\w` and `\b` do not see Cyrillic.
-const words = (s: string): string[] => s.toLowerCase().replace(/ё/g, 'е').split(/[^a-zа-я0-9]+/).filter(Boolean)
+// Lower-case words, ё read as е; "keep going/on" is a go-on verb, a bare "keep" (keep them?) is a decision. Explicit letter ranges: without the `u` flag `\w` and `\b` do not see Cyrillic.
+const words = (s: string): string[] => s.toLowerCase().replace(/ё/g, 'е').replace(/\bkeep (going|on)\b/g, 'continue').split(/[^a-zа-я0-9]+/).filter(Boolean)
 const set = (s: string): Set<string> => new Set(s.split(' '))
 
 // The go-on verbs: the question needs one.
-const GO = /^(продолж|довест|довед|довод|додел|дожат|дожм|возобнов|приступ|continu|proceed|carry|finish|keep|resume|ahead$|дальше$)/
+const GO = /^(продолж|довест|довед|довод|додел|дожат|дожм|возобнов|приступ|continu|proceed|carry|finish|resume|ahead$|дальше$)/
 // Words that add nothing to "go on?": who, the rest of the work, the next wave.
 const FILL = set('я мы мне нам ли ну так и а с со до к конца конец все это эту этот эти тут здесь сейчас по плану их его ее ' +
   'хочешь хотите чтобы можно нужно надо мне ' +
   'i we me you should shall can may want would like do to the a an with on go going it this that these them all everything ' +
-  'rest remaining up plan now ahead here next of and')
+  'rest remaining up now ahead here next of and')
 const FILL_STEM = /^(работ|задач|пункт|шаг|волн|следующ|остальн|оставш|начат|част|flow|task|item|step|wave|round|batch|part|work|thing)/
 const YESW = set('да ага ок ok okay yes yep yeah sure давай конечно хорошо please go ahead do it')
 const NOW = set('нет no не сейчас надо стоп stop пауза pause позже потом later not now хватит enough подожди wait hold off ' +
   'остановись остановиться here здесь end')
 const NOTE = set('recommended рекомендую рекомендуется рекомендовано')
 // A stake anywhere in the question, its context or an option: it stays the person's however it is worded.
-const STAKE = /(\bpush|пуш|merge|мерж|смерж|деплой|deploy|релиз|release|\btag\b|delet|удали|удален|удаля|снест|снос|\bdrop\b|\brm\b|reset|force|оплат|\bpay\b|payment|купи|purchase|\$|€|₽|credit|кредит|cost|стоит|потрат|spend|prod\b|прод(?![а-яё])|продакшен|облак|cloud|нов[а-я]* (чат|сесси|координатор)|new (chat|session|coordinator)|handoff|хенд|relaunch|перезапус|перезагруз|restart|reboot|другом (чате|аккаунте)|another (chat|account)|ceiling|\blimit|лимит|budget|бюджет|overnight|на ночь|ночью|чиним|почин|\bfix|исправ|kill|убить|убей|install|установ|send|отправ|email|письм|commit|коммит|migrat|миграц)/i
+const STAKE = /(\bpush|пуш|merge|мерж|смерж|деплой|deploy|релиз|release|\btag\b|delet|\bremove|\bwipe|\beras|\boverwrit|(?<![а-я])(удал(?!ос|ас|ся)|убер|убра|сотр(?!удн)|стере(?!о)|стёр|стерл|очист|очищ|сброс|сброш|откат|откач|перезапи|снес|закоммич|задепло)|почист|почищ|подчист|подчищ|деплою|\brevert|\brollback|\broll back|\bdrop\b|\brm\b|reset|force|оплат|\bpay\b|payment|купи|purchase|\$|€|₽|credit|кредит|cost|стоит|потрат|spend|prod\b|прод(?![а-яё])|продакшен|облак|cloud|нов[а-я]* (чат|сесси|координатор)|new (chat|session|coordinator)|handoff|хенд|relaunch|перезапус|перезагруз|restart|reboot|другом (чате|аккаунте)|another (chat|account)|ceiling|\blimit|лимит|budget|бюджет|overnight|на ночь|ночью|чиним|почин|\bfix|исправ|kill|убить|убей|install|установ|send|отправ|email|письм|commit|коммит|migrat|миграц|(?<!\b0 |\bno |\bzero |\bбез |\bнет )(\bfail|\berror|ошибк)|\bbroke\b|\bbroken|(?<![а-я])(упал|пада|слома|войди|залогин|нажми)|\bsign in\b|\blog in\b|\bclick)/i
+// What a context (header, option description, wrap_up recap) may name to keep the ask: a step ahead. Status words
+// ("fixed 12", "nothing committed", "0 failed") are what a recap reports, so they are not here.
+const AHEAD = /(\bpush|пуш|merge|мерж|деплой|deploy|релиз|release|delet|почист|почищ|подчист|подчищ|деплою|\brevert|\brollback|\broll back|(?<![а-я])(очист|очищ|сброс|сброш|откат|откач)|\bremove|\bwipe|\boverwrit|(?<![а-я])удал(?!ос|ас|ся)|\bpay\b|payment|money|оплат|деньги|prod\b|прод(?![а-яё])|продакшен|\bsign in\b|войди|restart|relaunch|перезапус|нов[а-я]* (чат|сесси)|new (chat|session)|\bsend|email|отправ)/i
 
 const filler = (w: string): boolean => FILL.has(w) || FILL_STEM.test(w) || /^\d+$/.test(w)
 
@@ -51,29 +56,33 @@ function reply(label: string): 'yes' | 'no' | null {
 }
 
 // True when the question asks only whether to keep going (see the top of the file).
-export function onlyContinue(question: string, options: readonly string[]): boolean {
+export function onlyContinue(question: string, options: readonly string[], context = ''): boolean {
   if (typeof question !== 'string' || !Array.isArray(options) || question.length > 4000) return false
   const ask = words(lastSentence(question))
   if (ask.length > 25 || !ask.some((w) => GO.test(w)) || !ask.every((w) => GO.test(w) || filler(w))) return false
-  if (STAKE.test(question) || options.some((o) => typeof o !== 'string' || STAKE.test(o))) return false
+  if (STAKE.test(question) || AHEAD.test(str(context)) || options.some((o) => typeof o !== 'string' || STAKE.test(o))) return false
   const kinds = options.map(reply)
   return kinds.includes('yes') && kinds.every((k) => k !== null)
 }
 
-type Q = { question?: unknown; options?: readonly { label?: unknown }[] }
+type Q = { question?: unknown; header?: unknown; options?: readonly { label?: unknown; description?: unknown }[] }
 const str = (v: unknown): string => (typeof v === 'string' ? v : '')
 
-// The 1-based numbers of the continue-only questions in an AskUserQuestion input.
+// The 1-based numbers of the continue-only questions in an AskUserQuestion input. Labels are judged as replies; the
+// header and the option descriptions only carry a stake ("Удалит 4 папки").
 export function continueQuestions(questions: readonly Q[]): number[] {
   if (!Array.isArray(questions)) return []
-  return questions.flatMap((q, i) => (onlyContinue(str(q?.question), (Array.isArray(q?.options) ? q.options : []).map((o) => str(o?.label))) ? [i + 1] : []))
+  return questions.flatMap((q, i) => {
+    const opts = Array.isArray(q?.options) ? q.options : []
+    return onlyContinue(str(q?.question), opts.map((o) => str(o?.label)), [str(q?.header), ...opts.map((o) => str(o?.description))].join(' ')) ? [i + 1] : []
+  })
 }
 
 // wrap_up: an ask whose buttons are all replies (an app action such as commit or create_pr is a real step).
-export function continueBox(ask: string, actions: readonly { label?: unknown; action?: unknown }[]): boolean {
+export function continueBox(ask: string, actions: readonly { label?: unknown; action?: unknown }[], recap = ''): boolean {
   if (typeof ask !== 'string' || !ask.trim() || !Array.isArray(actions) || actions.some((a) => str(a?.action))) return false
   // A box with no buttons, or a bare "Продолжить?", is the same yes/no question.
-  return onlyContinue(ask, actions.length ? actions.map((a) => str(a?.label)) : ['Да', 'Нет'])
+  return onlyContinue(ask, actions.length ? actions.map((a) => str(a?.label)) : ['Да', 'Нет'], recap)
 }
 
 export const register: Register = (on) => {
@@ -86,8 +95,8 @@ export const register: Register = (on) => {
   }).catch(($, e, next) => next(e))
 
   on('tool.call', { tool: 'mcp__ccd_turn__wrap_up' }, async ($, e, next) => {
-    const i = e as unknown as { ask?: unknown; actions?: { label?: unknown; action?: unknown }[] }
-    if ((await $.env.get('MAKARASTY_ASK_GUARD')) === 'off' || !continueBox(str(i.ask), Array.isArray(i.actions) ? i.actions : [])) return next(e)
+    const i = e as unknown as { recap?: unknown; ask?: unknown; actions?: { label?: unknown; action?: unknown }[] }
+    if ((await $.env.get('MAKARASTY_ASK_GUARD')) === 'off' || !continueBox(str(i.ask), Array.isArray(i.actions) ? i.actions : [], str(i.recap))) return next(e)
     return { deny: BOX }
   }).catch(($, e, next) => next(e))
 }

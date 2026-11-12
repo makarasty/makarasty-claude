@@ -192,14 +192,18 @@ function heavyTool(t: string, args: string[], live: boolean): boolean {
 
 // Windows PowerShell runs the first word past its own options as the command; -c/-Command, any prefix, takes the rest.
 // Returns where the command starts in `w` (searching from `from`), or -1 (-File, -EncodedCommand: nothing readable).
-const psStart = (w: string[], from: number): number => {
+const psStart = (w: string[], from = 0): number[] => {
+  const out: number[] = []
   for (let k = from; k < w.length; k++) {
-    if (/^-c(o(m(m(a(nd?)?)?)?)?)?$/i.test(w[k]!)) return k + 1
-    if (/^-(f(ile)?|e(c|nc\w*))$/i.test(w[k]!)) return -1
-    if (!w[k]!.startsWith('-')) return k
-    if (/^-(ex\w*|ep|w\w*|i\w*|o\w*|v\w*|conf\w*)$/i.test(w[k]!)) k++
+    if (/^-c(o(m(m(a(nd?)?)?)?)?)?$/i.test(w[k]!)) return [...out, k + 1] // the options end here; a later -c is the command's own
+    if (/^-(f(ile)?|e(c|nc\w*)?)$/i.test(w[k]!)) return out
+    if (!w[k]!.startsWith('-')) return [...out, k]
+    if (/^-(no\w*|sta|mta|l(ogin)?)$/i.test(w[k]!)) continue
+    if (/^-(ex\w*|ep|w\w*|i(f|nputformat)|o(f|utputformat)|v(e\w*)?|conf\w*|settingsfile|psconsolefile|custompipename)$/i.test(w[k]!)) k++
+    // An unknown option: its next word is its value or the command. Both are read; a guard that checks more is safe.
+    else if (w[k + 1] !== undefined && !w[k + 1]!.startsWith('-')) out.push(k + 1), k++
   }
-  return -1
+  return out
 }
 
 // One command's words: is it a heavy verify run, and does a kill-after limit (`timeout N`) stand in front of it?
@@ -240,10 +244,11 @@ function analyze(W: string[], live: boolean, ps: boolean, depth = 0, timeout = f
       // A command handed to a nested shell is read as its own line, with the limit that stands before it.
       // `cmd //c` is Git Bash's cmd /c; Windows PowerShell also takes its command as the first bare word (`powershell "npm test"`).
       const isPs = /^(powershell|pwsh)$/.test(t)
-      const s = isPs ? psStart(W, i + 1) : ((k) => k < 0 ? -1 : k + 1)(W.findIndex((a, n) => n > i && /^(-[a-z]*c|\/{1,2}[ck]|-command)$/i.test(a)))
-      if (s < 0 || W[s] === undefined) return no
-      const inner = /^(cmd|powershell|pwsh)$/.test(t) ? W.slice(s).join(' ') : W[s]!
-      const found = segments(inner, /^(powershell|pwsh)$/.test(t)).map((s) => analyze(s.words, live, /^(powershell|pwsh)$/.test(t), depth + 1, timeout)).find((r) => r.heavy)
+      const ss = isPs ? psStart(W, i + 1) : [((k) => k < 0 ? -1 : k + 1)(W.findIndex((a, n) => n > i && /^(-[a-z]*c|\/{1,2}[ck]|-command)$/i.test(a)))]
+      const found = ss.filter((s) => s >= 0 && W[s] !== undefined).flatMap((s) => {
+        const inner = /^(cmd|powershell|pwsh)$/.test(t) ? W.slice(s).join(' ') : W[s]!
+        return segments(inner, /^(powershell|pwsh)$/.test(t)).map((g) => analyze(g.words, live, /^(powershell|pwsh)$/.test(t), depth + 1, timeout))
+      }).find((r) => r.heavy)
       return found ?? no
     }
     if (/^(npm|pnpm|yarn|bun)$/.test(t)) {

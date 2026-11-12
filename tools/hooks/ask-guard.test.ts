@@ -134,3 +134,93 @@ test('review rows: a fix of findings, substrings of go-on words, a "No, <other>"
     ['Продолжить на проде?', ['Да', 'Нет']],
   ] as [string, string[]][]) expect([text, onlyContinue(text, opts)]).toEqual([text, false])
 })
+
+// 2026-11-12: real decisions that ended in "Continue?" were refused. Each row is one case from the operator's list.
+test('a stake worded in the statement before "Continue?" is a real decision', () => {
+  for (const [text, opts] of [
+    ['Удалю 4 папки с кэшем (1.2 ГБ). Продолжить?', ['Да', 'Нет']],
+    ['I\'ll remove the 3 stale worktrees. Continue?', ['Yes', 'No']],
+    ['Found 3 stale worktrees (2.1 GB). Keep them?', ['Yes', 'No']],
+    ['Proceed with the plan?', ['Yes', 'No']],
+    ['Tests failed: 3 of 40. Continue?', ['Yes, continue', 'No, stop']],
+    ['Открыл окно входа в браузере, войди под своим аккаунтом. Продолжаем?', ['Да', 'Нет']],
+  ] as [string, string[]][]) expect([text, onlyContinue(text, opts)]).toEqual([text, false])
+})
+
+test('a stake in an option description, the header or the wrap_up recap is a real decision', () => {
+  const asked = { question: 'Продолжить?', header: 'h', multiSelect: false, options: [{ label: 'Да', description: 'Удалит 4 папки и запушит ветку' }, { label: 'Нет' }] }
+  expect(continueQuestions([asked])).toEqual([])
+  expect(continueQuestions([{ ...asked, header: 'Deploy', options: [{ label: 'Да' }, { label: 'Нет' }] }])).toEqual([])
+  expect(continueQuestions([{ ...asked, options: [{ label: 'Да', description: 'Идём дальше' }, { label: 'Нет' }] }])).toEqual([1])
+  expect(continueBox('Proceed?', [{ label: 'Yes' }, { label: 'Not now' }], 'Ready to push 3 commits to origin/master')).toBe(false)
+  expect(continueBox('Proceed?', [{ label: 'Yes' }, { label: 'Not now' }], 'Done 3 of 5')).toBe(true)
+})
+
+test('hook: a wrap_up recap with a stake lets the ask through', async ($, on) => {
+  const passed = world(on)
+  await $.tool.call({ tool: 'mcp__ccd_turn__wrap_up', recap: 'Ready to push 3 commits to origin/master', ask: 'Proceed?', actions: [{ label: 'Yes' }, { label: 'Not now' }] } as never)
+  expect(passed).toEqual(['mcp__ccd_turn__wrap_up'])
+})
+
+test('a bare go-on question is still refused', () => {
+  for (const [text, opts] of [
+    ['Продолжать с остальными задачами?', ['Да', 'Нет']],
+    ['Should I proceed?', ['Yes', 'No']],
+    ['Довести до конца?', ['Да, доводи (Recommended)', 'Нет, стоп']],
+    ['Continue with the remaining tasks?', ['Yes', 'Not now']],
+    ['Keep going?', ['Yes', 'No']],
+    ['Keep on going?', ['Keep going', 'No']],
+  ] as [string, string[]][]) expect([text, onlyContinue(text, opts)]).toEqual([text, true])
+})
+
+// Review round 2: common words that contain a stake stem, and recaps that report status, stay bare continues.
+test('words that only contain a stake stem do not make a continue a decision', () => {
+  for (const [text, opts] of [
+    ['Сделал выпадающий список. Продолжаем?', ['Да', 'Нет']],
+    ['Добавил сотрудников. Продолжить?', ['Да', 'Нет']],
+    ['Сборка удалась. Продолжить?', ['Да', 'Нет']],
+    ['Finished the design in Figma. Continue?', ['Yes', 'No']],
+    ['Added the catalog in the sidebar. Continue?', ['Yes', 'No']],
+    ['All 40 tests pass, 0 failed, no errors. Continue?', ['Yes', 'No']],
+    ['Продолжить по плану?', ['Да', 'Нет']],
+  ] as [string, string[]][]) expect([text, onlyContinue(text, opts)]).toEqual([text, true])
+})
+
+test('the stems still catch the real word: sign in, log in, стереть, удалить, упало', () => {
+  for (const [text, opts] of [
+    ['Please sign in to the site. Continue?', ['Yes', 'No']],
+    ['Нужно стереть логи. Продолжить?', ['Да', 'Нет']],
+    ['Удалить кэш. Продолжить?', ['Да', 'Нет']],
+    ['Сборка упала. Продолжить?', ['Да', 'Нет']],
+    ['2 errors in the build. Continue?', ['Yes', 'No']],
+    ['Нажми «Разрешить» в окне. Продолжаем?', ['Да', 'Нет']],
+  ] as [string, string[]][]) expect([text, onlyContinue(text, opts)]).toEqual([text, false])
+})
+
+test('a recap, header or description that reports status does not hide a bare continue', () => {
+  const yn = [{ label: 'Да' }, { label: 'Нет' }]
+  expect(continueBox('Продолжить?', yn, 'Сделал 3 волны из 5, ничего не закоммичено.')).toBe(true)
+  expect(continueBox('Продолжить?', yn, 'Fixed 12 of 20 findings; nothing committed yet.')).toBe(true)
+  expect(continueBox('Продолжить?', yn, 'Тесты: 3 failed, 1 error. Исправил остальное.')).toBe(true)
+  const described = (description: string) => [{ question: 'Продолжить?', header: 'h', multiSelect: false, options: [{ label: 'Да', description }, { label: 'Нет' }] }]
+  expect(continueQuestions(described('Продолжу исправлять оставшиеся баги'))).toEqual([1])
+  expect(continueQuestions(described('Запушу ветку'))).toEqual([])
+})
+
+// Review round 3: cleaning, reset, rollback and deploy verbs in the first person are real decisions.
+test('a reset, clean, rollback or deploy announced before "Continue?" is a real decision', () => {
+  for (const [text, opts] of [
+    ['Сброшу локальные изменения. Продолжить?', ['Да', 'Нет']],
+    ['Очищу корзину (2 ГБ). Продолжить?', ['Да', 'Нет']],
+    ['Почищу 4 ветки. Продолжить?', ['Да', 'Нет']],
+    ['Подчищу старые логи. Продолжить?', ['Да', 'Нет']],
+    ['Деплою на стейджинг. Продолжить?', ['Да', 'Нет']],
+    ['Откачу миграцию. Продолжить?', ['Да', 'Нет']],
+    ['I\'ll revert the last 2 commits. Continue?', ['Yes', 'No']],
+    ['Roll back the release?', ['Yes', 'No']],
+    ['Rollback the deploy. Continue?', ['Yes', 'No']],
+  ] as [string, string[]][]) expect([text, onlyContinue(text, opts)]).toEqual([text, false])
+  const asked = (description: string) => [{ question: 'Продолжить?', header: 'h', multiSelect: false, options: [{ label: 'Да', description }, { label: 'Нет' }] }]
+  expect(continueQuestions(asked('Откачу миграцию'))).toEqual([])
+  expect(continueBox('Продолжить?', [{ label: 'Да' }, { label: 'Нет' }], 'Will revert the last 2 commits')).toBe(false)
+})

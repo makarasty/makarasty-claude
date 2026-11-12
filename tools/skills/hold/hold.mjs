@@ -12,7 +12,7 @@
 //   add [--from FILE]                    FILE (else stdin): optional header lines `where:` `reading:` `flag:` `img:`,
 //                                        a `---` line, then the person's text. Prints `NN chars=.. img=ok/seen ..`
 //   status NN <st> <evidence...>         st = open done partial not-done unseen dropped merged->NN (evidence after `--` may start with --).
-//                                        An item with `img:` or `visual: yes` is `done` only when the evidence names its img/NN-after.<ext> and `judge: <who>`; else `unseen`
+//                                        An item with `img:` or `visual: yes` is `done` only when the evidence names its img/NN-after.<ext> and `judge: <agent> seen-fixed|not-fixed` (not-fixed is refused); else `unseen`
 //   means NN <text> [--visual]           add a `means:` line (what done means, one per sub-ask); every non-dropped item needs one before check passes. --visual marks a screen item
 //   scope NN <n> <of>                    a breadth item ("all", "everywhere") touched n of `of`; `done` is refused while n < of
 //   table                                the closing table: non-done rows in full, done rows as one line, `ask:` lists every unfinished item
@@ -21,8 +21,8 @@
 //   drop NN <reason>                     the person removed the item (status dropped)
 //   check                                exit 1 and list every item or stray file that is not final
 //   release [--drop REASON]              first line becomes `released <codeword>`; --drop marks every unfinished item not-done
-//   carry <old-sid|old-dir> [--all]      copy unfinished items (not-done, partial, open) into this folder, print old->new
-//   last                                 print the newest earlier folder of this project whose check fails
+//   carry <old-sid|old-dir> [--all]      copy unfinished items (not-done, partial, open) into this folder, print old->new; the source gets a `carried-to` marker (a repeat into the same folder is refused, `last` skips it)
+//   last                                 print the newest earlier folder of this project with a not-done/partial/unseen/open item not yet carried
 //   clean                                remove folders/files older than a day holding only a `collecting` line
 //
 // Exit 0 = ok, 1 = refused or check failed. Flags --reading --where --flag --img on add are a fallback to the header.
@@ -220,7 +220,9 @@ function meta(dir, nn) {
 // `done` of a screen item needs a look: its after-shot exists and a judge other than the worker is named.
 const bare = (t) => t.replace(/^["'(]|["'),.;]$/g, '');
 // The shot may be written img/NN-after.png, with the hold dir in front, or with backslashes.
-const afterOk = (dir, nn, ev) => ev.split(' ').map((t) => bare(t).replaceAll('\\', '/')).some((t) => { const m = new RegExp(`(?:^|/)(img/${nn}-after\\.\\w+)$`).exec(t); return m && existsSync(join(dir, m[1])); }) && /judge:\s*(?!(?:none|no|n\/a|self|-)(?:\s|$))\S/i.test(ev);
+// A copy of a before-shot proves nothing: the after-shot must differ in bytes from every other image of the item.
+const copyOfBefore = (dir, nn, rel) => { const a = readFileSync(join(dir, rel)); return readdirSync(join(dir, 'img')).some((f) => f.startsWith(`${nn}-`) && `img/${f}`.toLowerCase() !== rel.toLowerCase() && readFileSync(join(dir, 'img', f)).equals(a)); };
+const afterOk = (dir, nn, ev) => ev.split(' ').map((t) => bare(t).replaceAll('\\', '/')).some((t) => { const m = new RegExp(`(?:^|/)(img/${nn}-after\\.\\w+)$`).exec(t); return m && existsSync(join(dir, m[1])) && !copyOfBefore(dir, nn, m[1]); }) && /judge:\s*(?!(?:none|no|n\/a|self|-)(?:\s|$))\S/i.test(ev) && !/judge:.*\bnot-fixed\b/i.test(ev); // format: judge: <agent> seen-fixed|not-fixed
 function evidenceOk(st, ev, c) {
   ev = one(ev);
   if (st === 'dropped') return ev !== '';
@@ -360,8 +362,9 @@ function carry(dir, src, all) {
   if (!existsSync(indexOf(from))) die(`no hold at ${from}`);
   if (resolve(from) === resolve(dir)) die('a hold cannot carry itself');
   ensureIndex(dir, firstLine(from).split(' ')[1] ?? 'абрикос');
-  const tag = basename(from);
-  if (files(dir).some((n) => new RegExp(`^carried: ${tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/`, 'm').test(read(join(dir, `${n}.md`))))) die(`already carried from ${tag}`);
+  const empty = items(dir).length === 0;
+  const tag = basename(from), mark = join(from, 'carried-to'); // the marker lives in the source, so a rename of either folder cannot lose it
+  if (existsSync(mark) && lines(read(mark)).includes(basename(dir))) die(`already carried from ${tag}`);
   const rank = { 'not-done': 0, partial: 1, unseen: 1, open: 2 };
   const old = items(from).filter((i) => all || rank[i.status] !== undefined);
   old.sort((a, b) => (rank[a.status] ?? 3) - (rank[b.status] ?? 3) || +a.nn - +b.nn);
@@ -382,18 +385,24 @@ function carry(dir, src, all) {
     appendFileSync(indexOf(dir), `${fmt({ nn, status: 'open', title: i.title, flags: i.flags })}\n`);
     map.push(`${tag}/${i.nn}→${nn}`);
   }
+  if (old.length) appendFileSync(mark, `${basename(dir)}\n`);
+  if (existsSync(join(from, 'rules2')) || empty) writeFileSync(join(dir, 'rules2'), '');
+  if (!existsSync(join(dir, 'project.txt'))) writeFileSync(join(dir, 'project.txt'), `${process.cwd()}\n`);
   console.log(`carried ${old.length} of ${items(from).length}${map.length ? `\n${map.join('\n')}` : ''}`);
 }
 
-// The newest earlier folder of this project whose check fails: what "carry over" refers to.
+// The newest earlier folder of this project with an item still not-done, partial, unseen or open that no other
+// folder has carried: what "carry over" refers to. A properly closed hold qualifies; only a still-collecting folder of a live chat is skipped.
 function last(opt) {
   const cur = dirFor(opt, true), proj = existsSync(join(cur, 'project.txt')) ? read(join(cur, 'project.txt')).trim() : process.cwd();
   if (!existsSync(root)) return;
-  const unfinished = (p) => { const { bad, open } = problems(p); return bad.length || open.length; };
-  const liveIds = new Set(chats().filter((x) => (x.state === 'live' || x.state === 'idle') && x.id).map((x) => x.id)); // another open chat's hold (live, or idle with its process up) is not "earlier"
-  const c = readdirSync(root).map((e) => join(root, e)).filter((p) => resolve(p) !== resolve(cur) && !liveIds.has(basename(p)) && existsSync(indexOf(p)) && existsSync(join(p, 'project.txt')) && read(join(p, 'project.txt')).trim() === proj)
-    .filter((p) => items(p).length && unfinished(p)).sort((a, b) => statSync(indexOf(b)).mtimeMs - statSync(indexOf(a)).mtimeMs)[0];
-  if (c) console.log(`${fwd(c)} (${problems(c).bad.length} items not final)`);
+  const all = readdirSync(root).map((e) => join(root, e)).filter((p) => existsSync(indexOf(p)));
+  const carried = (p) => existsSync(join(p, 'carried-to'));
+  const unfinished = (p) => items(p).filter((i) => /^(not-done|partial|unseen|open)$/.test(i.status));
+  const liveIds = new Set(chats().filter((x) => (x.state === 'live' || x.state === 'idle') && x.id).map((x) => x.id)); // another open chat's collecting hold (live, or idle with its process up) is not "earlier"
+  const c = all.filter((p) => resolve(p) !== resolve(cur) && !(liveIds.has(basename(p)) && (firstLine(p).startsWith('collecting') || items(p).some((i) => i.status === 'open'))) && existsSync(join(p, 'project.txt')) && read(join(p, 'project.txt')).trim() === proj)
+    .filter((p) => unfinished(p).length && !carried(p)).sort((a, b) => statSync(indexOf(b)).mtimeMs - statSync(indexOf(a)).mtimeMs)[0];
+  if (c) console.log(`${fwd(c)} (${unfinished(c).length} items unfinished)`);
 }
 
 // A lone `collecting` line is what a forked session leaves behind. Younger than a day may be live (the hooks use the same day).

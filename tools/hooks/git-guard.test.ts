@@ -495,3 +495,37 @@ test('a pathspec list of excludes only is the whole tree: add -A ":!x", ":(exclu
   expect(["git add -A ':!x'", "git add -A ':(exclude)x'", "git add . ':!x'", "git add ':!x'", "git add ':^x' ':!y'", "git add -A ':(glob,exclude)x'", "git commit -m x ':!y'"].filter((c) => !check(c))).toEqual([])
   expect(["git add -A ':!x' src", "git add src ':!src/a.ts'", "git add ':(top)src'", "git commit -m x src ':!src/a.ts'"].filter((c) => check(c))).toEqual([])
 })
+
+test('an unknown PowerShell option with a value does not hide -Command; plain -Command "git status" passes', () => {
+  expect(['pwsh -SettingsFile s.json -Command "git stash"', 'powershell -PSConsoleFile x.psc1 -Command "git reset --hard"'].filter((c) => !check(c))).toEqual([])
+  expect(['pwsh -NoProfile -Command "git status"', 'pwsh -SettingsFile s.json -Command "git status"'].filter((c) => check(c))).toEqual([])
+})
+
+test('git add ./*, ":/*", ** and commit -m x ./* are the whole-tree sweep like git add *', () => {
+  expect(['git add ./*', "git add ':/*'", "git add '**'", 'git commit -m x ./*'].filter((c) => !check(c))).toEqual([])
+  expect(['git add src/a.ts', 'git add ./src/*'].filter((c) => check(c))).toEqual([])
+})
+
+test('HUSKY=0 exported or set in an earlier segment of the line skips the hooks too', () => {
+  expect(['export HUSKY=0; git commit -m x', 'export HUSKY=0 && git commit -m x', 'export FOO=1 HUSKY=0; git commit -m x'].filter((c) => !check(c))).toEqual([])
+  expect(['$env:HUSKY=0; git commit -m x', "$env:HUSKY = '0'; git commit -m x"].filter((c) => !check(c, 'PowerShell'))).toEqual([])
+  expect(['$env:FOO=1; git commit -m x -- src/a.ts', 'export HUSKY=1; git commit -m x'].filter((c) => check(c, 'PowerShell'))).toEqual([])
+  expect(check('export FOO=1; git commit -m x')).toBeNull()
+})
+
+test('a -c after the positional command is git\'s own; an unknown option followed by a word is read both ways', () => {
+  expect(['powershell git -c a=b stash', 'pwsh -NoProfile git -c a=b stash', 'pwsh -Foo x -Command "git stash"', 'pwsh -Foo git stash'].filter((c) => !check(c))).toEqual([])
+  expect(['powershell -ExecutionPolicy Bypass -Command "git status"', 'pwsh -NoProfile -Command "git status"', 'powershell git -c a=b status'].filter((c) => check(c))).toEqual([])
+})
+
+test('exported HUSKY=0 skips hooks only for hook-running subcommands, also inside bash -c; bare -e is -EncodedCommand', () => {
+  expect(['export HUSKY=0; bash -c "git commit -m x"', 'export HUSKY=0 && bash -c "git push"', 'export HUSKY=0; git -C . commit -m x'].filter((c) => !check(c))).toEqual([])
+  expect(['export HUSKY=0 && npm ci && git status', 'export HUSKY=0; git log', 'export HUSKY=0; git diff', 'export HUSKY=0; git show HEAD', 'export HUSKY=0; bash -c "git status"'].filter((c) => check(c))).toEqual([])
+  expect(check('powershell -e abc')).toBe(check('powershell -EncodedCommand abc'))
+  expect(check('powershell -e abc git status')).toBeNull()
+})
+
+test('exported HUSKY=0 also covers revert, worktree, clone and gc', () => {
+  expect(['export HUSKY=0; git revert HEAD', 'export HUSKY=0; git worktree add ../x', 'export HUSKY=0; git clone u x', 'export HUSKY=0; git gc'].filter((c) => !check(c))).toEqual([])
+  expect(check('export HUSKY=0; git log')).toBeNull()
+})

@@ -358,3 +358,13 @@ test('cmd //c, cmd /k and a positional powershell command are read as the inner 
     'pwsh -NoProfile Remove-Item -Recurse -Force ..', 'powershell -Com "Remove-Item -Recurse -Force .."'].filter((c) => !check(c, 'Bash', WIN))).toEqual([])
   expect(['cmd //c "rd /s /q dist"', 'cmd //c rd //s //q dist', 'powershell Remove-Item -Recurse -Force dist', 'powershell -File clean.ps1', 'powershell Get-ChildItem ..'].filter((c) => check(c, 'Bash', WIN))).toEqual([])
 })
+
+test('an unknown PowerShell option with a value does not hide -Command', () => {
+  expect(['pwsh -SettingsFile s.json -Command "Remove-Item -Recurse -Force C:\\Users\\dev"', 'powershell -PSConsoleFile x.psc1 -Command "Remove-Item -Recurse -Force .."'].filter((c) => !check(c, 'PowerShell', WIN))).toEqual([])
+  expect(['pwsh -SettingsFile s.json -Command "Remove-Item -Recurse dist"'].filter((c) => check(c, 'Bash', WIN))).toEqual([])
+})
+
+test('bare -e is -EncodedCommand: decoded like the long form', () => {
+  expect([`powershell -e ${enc('Remove-Item -Recurse -Force ..')}`, `pwsh -ec ${enc('rd /s ..')}`].filter((c) => !check(c, 'Bash', WIN))).toEqual([])
+  expect([`powershell -e ${enc('Remove-Item -Recurse dist')}`].filter((c) => check(c, 'Bash', WIN))).toEqual([])
+})

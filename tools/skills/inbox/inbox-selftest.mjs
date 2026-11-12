@@ -27,14 +27,15 @@ try {
   check('on writes the switch', run(['on']).status === 0 && existsSync(join(tmp, 'makarasty', 'inbox.on')))
   put(item({ id: 'chatA~t1', host: 'local_aaaa', account: 'other-account', explain: 'Чат делает выгрузку и спрашивает, какую базу взять.' }))
   put(item({ id: 'inboxChat~t9', session: 'inboxChat' })) // the inbox chat's own: never listed there
-  put(item({ id: 'chatB~old', at: Date.now() - 25 * 3600e3 })) // a day old: swept
+  put(item({ id: 'chatB~old', at: Date.now() - 25 * 3600e3 })) // asked and answered more than a day ago: swept
+  mkdirSync(join(root, 'answers'), { recursive: true }); writeFileSync(join(root, 'answers', 'chatB~old.json'), JSON.stringify({ id: 'chatB~old', at: Date.now() - 25 * 3600e3, by: 'chat' }))
 
   const list = run(['list'])
   check('list shows the item explained, with its question and options', list.status === 0 && list.stdout.includes('reports-app — question, waiting 5 min') &&
     list.stdout.includes('Plainly: Чат делает выгрузку') && list.stdout.includes(Q) && list.stdout.includes('- SQLite: файл рядом с отчётом') &&
     list.stdout.includes('Chat on another account: open it with `inbox.mjs open chatA~t1`'), list.stdout)
   check('list skips the inbox chat\'s own item and marks it as the inbox', !list.stdout.includes('inboxChat~t9') && readFileSync(join(root, 'self'), 'utf8') === 'inboxChat')
-  check('an expired item is swept', !list.stdout.includes('chatB~old') && !existsSync(join(root, 'items', 'chatB~old.json')))
+  check('an answered item a day old is swept', !list.stdout.includes('chatB~old') && !existsSync(join(root, 'items', 'chatB~old.json')))
 
   // A waiter (the asking chat's hook) blocks until the inbox answers.
   const waiter = spawn(process.execPath, [cli, 'wait', 'chatA~t1', '20000'], { env })
@@ -60,6 +61,20 @@ try {
   const p1 = run(['push', 'chatA~t3']), p2 = run(['push', 'chatA~t3'])
   const sent = existsSync(sink) ? readFileSync(sink, 'utf8').trim().split('\n') : []
   check('one push, once, naming the project and the question', p1.status === 0 && p2.status === 0 && sent.length === 1 && sent[0].includes('reports-app') && sent[0].includes(Q), `${p1.stderr} ${sent.join(' / ')}`)
+  // A push that fails leaves no marker, so the next tick retries it.
+  put(item({ id: 'chatA~t4' }))
+  const sentN = () => (existsSync(sink) ? readFileSync(sink, 'utf8').trim().split('\n').length : 0)
+  const mark4 = join(root, 'pushed', 'chatA~t4'), failedPush = (/** @type {string} */ id) => spawnSync(process.execPath, [cli, 'push', id], { env: { ...env, NOTIFY_DRY_RUN: tmp }, encoding: 'utf8' }) // a folder as the sink: notify cannot write it
+  const failed = failedPush('chatA~t4')
+  check('a failed push keeps an attempt record, not the pushed mark', failed.status === 1 && JSON.parse(readFileSync(mark4, 'utf8')).fails === 1, failed.stderr)
+  const n0 = sentN()
+  check('no retry within 5 minutes', run(['push', 'chatA~t4']).status === 0 && sentN() === n0 && JSON.parse(readFileSync(mark4, 'utf8')).fails === 1)
+  writeFileSync(mark4, JSON.stringify({ fails: 1, at: Date.now() - 6 * 60e3 }))
+  check('after 5 minutes the push is retried and goes out', run(['push', 'chatA~t4']).status === 0 && sentN() === n0 + 1 && readFileSync(mark4, 'utf8') === '')
+  put(item({ id: 'chatA~t5' }))
+  writeFileSync(join(root, 'pushed', 'chatA~t5'), JSON.stringify({ fails: 3, at: Date.now() - 3600e3 }))
+  check('after 3 failed tries it gives up', run(['push', 'chatA~t5']).status === 0 && sentN() === n0 + 1)
+  run(['done', 'chatA~t4']); run(['done', 'chatA~t5'])
   check('the chat answering itself closes the item', run(['done', 'chatA~t3']).stdout.includes('done') && JSON.parse(readFileSync(join(root, 'answers', 'chatA~t3.json'), 'utf8')).by === 'chat')
   // open: finds the profile that holds the chat and hands the link to that profile's app copy (dry run prints it)
   const host = 'local_9fe89352-d54d-4073-874d-1806f8dacf22'
@@ -103,14 +118,19 @@ try {
   const rep = (/** @type {Record<string, unknown>} */ o) => { mkdirSync(join(root, 'reports'), { recursive: true }); writeFileSync(join(root, 'reports', `${o.id}.json`), JSON.stringify({ session: String(o.id).split('~')[0], cwd: 'C:\\work\\vize', chat: 'Обнови зависимости (chatR)', host: 'local_rrrr', account: 'my-account', ...o })) }
   rep({ id: 'chatR~turn-1', at: Date.now() - 20 * 60e3, recap: 'Обновил vite, тесты зелёные.' })
   rep({ id: 'chatR~turn-2', at: Date.now() - 2 * 60e3, recap: 'Обновил sass.', excerpt: 'Готово. Сверх задачи: в `build.ts` мёртвый импорт.' })
-  rep({ id: 'chatS~turn-1', at: Date.now() - 4 * 24 * 3600e3, recap: 'старый' })
+  rep({ id: 'chatS~turn-1', at: Date.now() - 8 * 24 * 3600e3, recap: 'старый' })
   const l1 = run(['list'])
   check('list shows reports under Finished, newest of a chat in full, the earlier one as a line', l1.stdout.includes('## Finished: 1 chats, 2 reports') && l1.stdout.includes('vize — finished 2 min ago') &&
     l1.stdout.includes('Сверх задачи: в `build.ts` мёртвый импорт') && l1.stdout.includes('Earlier, 20 min ago: Обновил vite') && l1.stdout.includes('Open the chat: [Обнови зависимости (chatR)](#local_rrrr)'), l1.stdout)
-  check('a report older than 3 days is swept', !l1.stdout.includes('старый') && !existsSync(join(root, 'reports', 'chatS~turn-1.json')))
+  check('a report older than 7 days is swept', !l1.stdout.includes('старый') && !existsSync(join(root, 'reports', 'chatS~turn-1.json')))
   check('a shown report leaves the next list', run(['list']).stdout.includes('nothing pending'))
   check('reports shows them again', run(['reports']).stdout.includes('Обновил sass.'))
   check('status counts the reports not shown yet', run(['status']).stdout.includes('finish reports not shown yet: 0'))
+  // A report nobody has seen outlives the 3 days; once shown, it goes at 3.
+  rep({ id: 'chatU~turn-1', at: Date.now() - 4 * 24 * 3600e3, recap: 'не показан' })
+  check('an unseen report 4 days old is kept and listed', run(['reports']).stdout.includes('не показан') && existsSync(join(root, 'reports', 'chatU~turn-1.json')))
+  check('list shows it once', run(['list']).stdout.includes('не показан') && run(['list']).stdout.includes('nothing pending'))
+  check('a shown report 4 days old is swept', !run(['reports']).stdout.includes('не показан') && !existsSync(join(root, 'reports', 'chatU~turn-1.json')))
   // follow / mute / followed: a chat of any account named by a piece of its title, its project or its app id.
   const titled = (/** @type {string} */ profile, /** @type {string} */ id, /** @type {string} */ cwd, /** @type {string} */ title, /** @type {number} */ ago) => {
     const d = join(prof, profile, 'claude-code-sessions', 'acc', 'org'); mkdirSync(d, { recursive: true })
@@ -151,6 +171,49 @@ try {
   writeFileSync(join(root, 'turn'), `busy ${Date.now() - 3 * 3600e3}`)
   const lost = spawnSync(process.execPath, [cli, 'watchdog'], { env: wenv, encoding: 'utf8', timeout: 5000 })
   check('a busy mark older than 2 h counts as lost: the alarm goes off', lost.status === 1, lost.stdout)
+  // An item answered late is kept until delivered; a day after its answer it goes (answered by the chat itself: at once).
+  const late = (/** @type {string} */ id, /** @type {string} */ by) => { put(item({ id, kind: 'choice', ask: 'Q?', actions: ['Да'], questions: undefined, at: Date.now() - 30 * 3600e3 })); writeFileSync(join(root, 'answers', `${id}.json`), JSON.stringify({ id, at: Date.now() - 25 * 3600e3, by, choice: 'Да' })) }
+  late('chatL~t1', 'inbox'); late('chatL~t2', 'chat')
+  run(['list'])
+  check('an inbox answer given a day ago but not delivered keeps its item', existsSync(join(root, 'items', 'chatL~t1.json')) && existsSync(join(root, 'answers', 'chatL~t1.json')))
+  check('an item the chat answered itself a day ago is swept', !existsSync(join(root, 'items', 'chatL~t2.json')))
+  mkdirSync(join(root, 'delivered'), { recursive: true }); writeFileSync(join(root, 'delivered', 'chatL~t1'), '1')
+  run(['list'])
+  check('delivered, a day after its answer, it is swept', !existsSync(join(root, 'items', 'chatL~t1.json')) && !existsSync(join(root, 'answers', 'chatL~t1.json')))
+  // Answered on day 6.9 and not delivered: kept past day 7; the hard cap is 14 days from the question.
+  const aged = (/** @type {string} */ id, /** @type {number} */ days) => { put(item({ id, kind: 'choice', ask: 'Q?', actions: ['Да'], questions: undefined, at: Date.now() - days * 24 * 3600e3 })); writeFileSync(join(root, 'answers', `${id}.json`), JSON.stringify({ id, at: Date.now() - 3600e3, by: 'inbox', choice: 'Да' })) }
+  aged('chatL~t3', 6.9); aged('chatL~t4', 15)
+  run(['list'])
+  check('an inbox answer an hour old, question 6.9 days old, undelivered: kept', existsSync(join(root, 'items', 'chatL~t3.json')) && existsSync(join(root, 'answers', 'chatL~t3.json')))
+  check('a question 15 days old is swept even undelivered', !existsSync(join(root, 'items', 'chatL~t4.json')))
+  writeFileSync(join(root, 'items', 'chatL~t3.json'), JSON.stringify(item({ id: 'chatL~t3', kind: 'choice', ask: 'Q?', actions: ['Да'], questions: undefined, at: Date.now() - 7.1 * 24 * 3600e3 })))
+  run(['list'])
+  check('still kept once the question passes 7 days (answered, undelivered)', existsSync(join(root, 'items', 'chatL~t3.json')))
+  rmSync(join(root, 'items', 'chatL~t3.json'), { force: true }); rmSync(join(root, 'answers', 'chatL~t3.json'), { force: true })
+  // A day-old question nobody answered stays; the night does not eat it.
+  rmSync(join(root, 'turn'), { force: true })
+  put(item({ id: 'chatN~t1', at: Date.now() - 25 * 3600e3 }))
+  check('an unanswered item a day old is kept', run(['list']).stdout.includes('chatN~t1') && existsSync(join(root, 'items', 'chatN~t1.json')))
+  put(item({ id: 'chatN~t2', at: Date.now() - 8 * 24 * 3600e3 }))
+  run(['list'])
+  check('an unanswered item 8 days old is swept', !existsSync(join(root, 'items', 'chatN~t2.json')))
+  // list does not take the inbox from another chat whose timer beat just now; --take does.
+  const beat = (/** @type {number} */ ago) => writeFileSync(join(root, 'beat'), String(Date.now() - ago))
+  writeFileSync(join(root, 'self'), 'otherChat'); beat(10e3)
+  const ro = run(['list'])
+  check('list leaves a live inbox chat alone and says how to take over', ro.status === 0 && ro.stdout.includes('inbox: otherChat is the inbox chat (beat ') && ro.stdout.includes('inbox.mjs list --take') && readFileSync(join(root, 'self'), 'utf8') === 'otherChat', ro.stdout)
+  check('a dead inbox chat (no beat for 3 min) is taken over', (beat(180e3), run(['list']).status === 0) && readFileSync(join(root, 'self'), 'utf8') === 'inboxChat')
+  writeFileSync(join(root, 'self'), 'otherChat'); beat(10e3)
+  check('--take moves the inbox here', run(['list', '--take']).status === 0 && readFileSync(join(root, 'self'), 'utf8') === 'inboxChat')
+  // A plain terminal (no session id) listing while a live inbox exists does not mark reports as seen.
+  writeFileSync(join(root, 'self'), 'otherChat'); beat(10e3)
+  rep({ id: 'chatV~turn-1', at: Date.now() - 60e3, recap: 'ещё не видел' })
+  const term = spawnSync(process.execPath, [cli, 'list'], { env: { ...env, CLAUDE_CODE_SESSION_ID: '' }, encoding: 'utf8' })
+  check('a terminal list leaves reports unseen and the inbox chat alone', term.stdout.includes('otherChat is the inbox chat') && !existsSync(join(root, 'reports', 'seen', 'chatV~turn-1')) && readFileSync(join(root, 'self'), 'utf8') === 'otherChat', term.stdout)
+  writeFileSync(join(root, 'self'), 'inboxChat'); run(['list'])
+  // The coordinator's task file is written through a unique temp name: a leftover fixed name cannot block it.
+  mkdirSync(join(tmp, 'makarasty', 'coord', 'tasks.json.tmp'), { recursive: true })
+  check('tasks.json does not use a fixed temp name', run(['track', 'chatT', 'main', 'p', 'task']).status === 0 && existsSync(join(tmp, 'makarasty', 'coord', 'tasks.json')))
   check('off removes the switch', run(['off']).status === 0 && !existsSync(join(tmp, 'makarasty', 'inbox.on')))
 } finally {
   rmSync(tmp, { recursive: true, force: true })

@@ -30,8 +30,8 @@ What the numbers are worth here:
   prompts stay in and look human. `c700` is the author's 700k context mark: meaningless on a smaller window.
 - For a copy, `unusedSkills`, `installedSkills` and `accounts` describe the machine it runs on, not the
   developer's: skip them.
-- Not in the files: a message typed while the assistant was working (a queued command), and anything older than
-  the window. Say so in the report.
+- Messages typed while the assistant was working (queued commands) are included as prompts. Not in the files:
+  anything older than the window. Say so in the report.
 
 ## 2. Readers
 

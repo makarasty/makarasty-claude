@@ -261,9 +261,14 @@ set aside section, and `backlog.md` exists.
 ## Report
 
 A run from a hold list (tasks carry `hold: NN`) ends with the person's items, not the task count. Set each
-item's status from its tasks' results with `hold.mjs status` (`unseen` when no agent looked at a screen item;
-`partial ... left:` for a narrowed one, a "file later" or a trade-off you accepted: file the follow-up as a task
-now or list it), make `hold.mjs check` pass, and print `hold.mjs table` before anything else. Every number on
+item's status from its tasks' results with `hold.mjs status`. The hold directory is the `hold:` line of
+`STATE.md`: every `hold.mjs` call here takes `--dir "<hold dir from STATE.md>"`, since a relaunched coordinator has
+no session id of the chat that made it. Before any screen item (`img:` or `visual: yes`) is set `done`, spawn one
+`makarasty:fleet-design-eye` agent per such item: it gets the person's quote and `img/NN-*`, compares them with
+`img/NN-after.*` and returns `seen-fixed` or `not-fixed`; its verdict word goes into the evidence as
+`judge: fleet-design-eye <verdict>` (one format: `judge: <agent> seen-fixed|not-fixed`; `not-fixed` is refused as `done`: `partial ... left:` or `not-done`). No agent looked, or no
+after-shot: `unseen`. `partial ... left:` for a narrowed one, a "file later" or a trade-off you accepted: file the
+follow-up as a task now or list it. Make `hold.mjs check` pass, and print `hold.mjs table` before anything else. Every number on
 its `ask:` line goes into the one closing question as fix now / carry / leave (hold skill, Report). Then:
 
 The banner from `fleet.sh summary`, then the set aside counts and the top three findings by severity under

@@ -113,3 +113,8 @@ test('only a PowerShell single-quoted here-string is text: an expandable @".."@ 
   expect(check('echo @"`pkill node`"@')).not.toBeNull()
   expect(check("git commit -m @'\nnotes `Stop-Process -Name node` $(pkill node)\n'@", 'PowerShell')).toBeNull()
 })
+
+test('an unknown PowerShell option with a value does not hide -Command', () => {
+  expect(['pwsh -SettingsFile s.json -Command "Stop-Process -Name node"', 'powershell -PSConsoleFile x.psc1 -Command "Stop-Process -Name node"'].filter((c) => !check(c))).toEqual([])
+  expect(['pwsh -SettingsFile s.json -Command "Stop-Process -Id 4242"'].filter((c) => check(c))).toEqual([])
+})

@@ -1,5 +1,42 @@
 # Changelog
 
+## makarasty-tools 1.19.21 — 2026-11-12
+
+Fixes from the review and red team of the day's work (two review rounds on the fixes).
+- **ask-guard stops refusing real decisions.** A delete or remove in any form ("Удалю 4 папки… Продолжить?"),
+  keep-or-discard ("Keep them?"), plan approval, a failure ("Tests failed: 3 of 40. Continue?"), a sign-in step, or a
+  stake in an option's description, the header or the wrap_up recap now passes. Recap, header and descriptions are
+  read for forward steps only (push, deploy, delete, prod, ...), so a status recap does not let a bare continue
+  through. Cyrillic stems need a word start ("выпадающий", "сотрудник", "удалась" are not stakes).
+- **guards.** PowerShell -Command after an unknown value option (`pwsh -SettingsFile s.json -Command "git stash"`)
+  and bare `-e` (EncodedCommand) are read; `git add ./*`, `':/*'`, `'**'` are whole-tree; `export HUSKY=0;` or
+  `$env:HUSKY=0;` before a hook-running git (also inside `bash -c`) is hooks-skipped. The delete grant is refused
+  when a Claude shell has no session id.
+- **inbox.** A hold chat files no box or card either; a `collecting` list untouched for 24 h no longer silences a
+  chat. A card no longer hides that turn's prose question. Prose questions keep their subject ("Удалить
+  config.json?") and are found before `**`, `»`, `)`. Unanswered items stay 7 days (answered ones go 24 h after the
+  answer, an inbox answer only once delivered); an unseen finish report stays 7 days. A failed phone push is retried
+  3 times, 5 min apart. `list` in another chat no longer takes the inbox over while the inbox chat is alive
+  (`--take` does); tasks.json writes cannot collide.
+- **hold.** "Carry to the next hold" works: `last` offers a released hold with not-done, partial or unseen items
+  that was not carried yet (a `carried-to` marker survives the archive rename), skipping a live chat's hold while
+  it still collects or fixes. `carry` writes the new-hold rules. The after-shot must differ from the before-shots;
+  `judge: <agent> not-fixed` cannot be `done`.
+- **cleanup.** A chat's own tool shell or the desktop app as an ancestor is "a Claude chat", never the operator's
+  terminal; claude.exe is never a candidate; a crashed chat's record or reused pid no longer hides or keeps the
+  wrong process; rows carry `created` / `pidCreated` and the skill re-scans before any kill.
+- **selfreview** masks `scheme://user:pass@` passwords; developer.md says queued prompts are included.
+  **blindtest** runs its Sonnet user at high effort.
+
+## makarasty 1.18.6 — 2026-11-12
+
+- **A hold survives a coordinator relaunch.** STATE.md records `hold: <dir>`; fleet-collect runs every `hold.mjs`
+  call with `--dir` from it and spawns a fleet-design-eye judge per screen item before `done` (no look: `unseen`).
+  A screen task owns `<hold dir>/img/NN-after.png` and saves it through its own `proof.mjs` receiver.
+- **fleet-plan** reads profile.md itself (the session text is cut at 2000 characters) and replaces a `Fleet ...:`
+  line instead of appending one; `cover` paths are quoted; the anecdote naming projects is gone.
+- **operator-words.md** keeps the text the person typed when rejecting a tool call.
+
 ## makarasty-tools 1.19.20 — 2026-11-12
 
 - **inbox: the coordinator's rules from 11-12 live in the skill.** A question already answered (here, in its chat,

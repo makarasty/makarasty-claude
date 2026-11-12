@@ -24,6 +24,8 @@ function world(on: On, o: { self?: string; session?: string } = {}) {
     const names = [...disk.keys()].filter((k) => k.startsWith(dir) && !k.slice(dir.length).includes('/')).map((k) => k.slice(dir.length))
     return names.length ? { value: names.map((name) => ({ name, kind: 'file' as const, size: 1, mtimeMs: 0, isLink: false })) } : { deny: 'ENOENT' }
   })
+  const mtimes = new Map<string, number>() // a file's age for fs.stat; default: just now
+  on('fs.stat', (_$, e) => (disk.has(plain(e.path)) ? { value: { kind: 'file' as const, size: 1, mtimeMs: mtimes.get(plain(e.path)) ?? 10_000_000, isLink: false } } : { deny: 'ENOENT' }))
   // The CLI's `done`, played on the same disk: it closes an item only if nothing answered it yet.
   on('process.run', (_$, e) => {
     const [, , cmd, id, ...rest] = e.argv as string[]
@@ -32,7 +34,7 @@ function world(on: On, o: { self?: string; session?: string } = {}) {
     return { value: { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
   })
   on('tool.call', (_$, e) => (e.tool === 'mcp__ccd_session__start_session'
-    ? { result: 'Started session "Деплой" (local_12345678-aaaa-bbbb-cccc-1234567890ab) in C:/work/x' }
+    ? { result: 'Started session "Деплой" (local_12345678-aaaa-bbbb-cccc-1234567890ab) in C:/work/x (task_id: task_abc123)' }
     : { result: 'Shown in the next-step box.' }))
   const submitted: string[] = []
   const contexts: (readonly string[] | undefined)[] = []
@@ -43,7 +45,7 @@ function world(on: On, o: { self?: string; session?: string } = {}) {
   const reports = () => under('reports').filter((k) => k.endsWith('.json')).map((k) => JSON.parse(disk.get(k)!))
   const items = () => under('items').map((k) => JSON.parse(disk.get(k)!))
   const until = async (f: () => boolean, what = '') => { for (let i = 0; i < 200 && !f(); i++) await new Promise((r) => setTimeout(r, 5)); expect([what, f()]).toEqual([what, true]) }
-  return { clock, disk, reports, items, submitted, contexts, until }
+  return { clock, disk, mtimes, reports, items, submitted, contexts, until }
 }
 const turn = (answer: string, extra: object = {}) => ({ answer, reason: 'answer', durationMs: 5000, isAborted: false, turnId: 't1', ...extra }) as never
 const wrap = (recap: string, extra: object = {}) => ({ tool: 'mcp__ccd_turn__wrap_up', recap, tool_use_id: 'w1', ...extra }) as never
@@ -247,4 +249,35 @@ test('a chat in hold mode files no box and no finish report until the codeword',
   await $.tool.call(wrap('Починил 3 жалобы.'))
   await $.turn.complete(turn('Готово, все три.', { turnId: 'h2' }))
   expect(w.reports()).toHaveLength(1)
+})
+
+test('a hold chat also files no wrap_up box and no card; a collecting list untouched for 24 h no longer holds', async ($, on) => {
+  const w = world(on)
+  const hold = '/cfg/makarasty/hold/chatA/index.md'
+  w.disk.set(hold, 'collecting until абрикос\n')
+  await $.tool.call(box('Это баг или так задумано?', 'hb1'))
+  await $.tool.call({ tool: 'mcp__ccd_session__start_session', initiation: 'own_initiative', title: 'Карточка', prompt: 'p', tool_use_id: 'hc1' } as never)
+  expect(w.items()).toEqual([])
+  w.mtimes.set(hold, 10_000_000 - 25 * 3600e3) // forgotten: gates.ts ignores it too
+  await $.tool.call(box('Это баг или так задумано?', 'hb2'))
+  expect(w.items().map((i) => i.id)).toEqual(['chatA~hb2'])
+})
+
+test('a card filed this turn hides neither the turn prose question nor its finish report; a scheduled turn origin does not leak into the next', async ($, on) => {
+  const w = world(on)
+  w.disk.set(`${R}/reports/on/chatA`, 'x')
+  await $.tool.call({ tool: 'mcp__ccd_session__start_session', initiation: 'own_initiative', title: 'Карточка', prompt: 'p', tool_use_id: 'c1' } as never)
+  await $.turn.complete(turn('Готово. Удалить временный лог?', { turnId: 'k1' }))
+  expect(w.items().map((i) => [i.kind, i.ask])).toEqual([['card', undefined], ['choice', 'Удалить временный лог?']])
+  await w.clock.advance(60000)
+  await $.tool.call({ tool: 'mcp__ccd_session__start_session', initiation: 'own_initiative', title: 'Ещё', prompt: 'p', tool_use_id: 'c2' } as never)
+  await $.tool.call(wrap('Сделал.'))
+  await $.turn.complete(turn('Готово.', { turnId: 'k2' }))
+  expect(w.reports().map((r) => r.id)).toEqual(['chatA~turn-k2'])
+  // turnOrigin: a /loop tick makes no report, and the person's next prompt (origin read at its own start) is not tainted
+  await $.prompt.submit({ text: '/loop tick', origin: { kind: 'scheduled-trigger' } } as never)
+  await $.turn.complete(turn('Тик.', { turnId: 'k3' }))
+  await $.tool.call(wrap('Позже.'))
+  await $.turn.complete(turn('Дальше.', { turnId: 'k4' })) // no prompt.submit set an origin: not a scheduled turn
+  expect(w.reports().map((r) => r.id)).toContain('chatA~turn-k4')
 })

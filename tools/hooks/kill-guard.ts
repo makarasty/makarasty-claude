@@ -86,15 +86,19 @@ function live(s: string, ps: boolean): string {
 
 // Where the command of a `powershell`/`pwsh` line starts in its arguments: after -c/-Command (any prefix) or, Windows PowerShell's
 // positional form, at the first word past its own options. -File and -EncodedCommand run no readable text.
-function psStart(args: string[]): number {
+function psStart(args: string[]): number[] {
+  const out: number[] = []
   for (let k = 0; k < args.length; k++) {
     const a = args[k]!
-    if (/^-c(o(m(m(a(nd?)?)?)?)?)?$/i.test(a)) return k + 1
-    if (/^-(f(ile)?|e(c|nc\w*))$/i.test(a)) return -1
-    if (!a.startsWith('-')) return k
-    if (/^-(ex\w*|ep|w\w*|i\w*|o\w*|v\w*|conf\w*)$/i.test(a)) k++
+    if (/^-c(o(m(m(a(nd?)?)?)?)?)?$/i.test(a)) return [...out, k + 1] // the options end here; a later -c is the command's own
+    if (/^-(f(ile)?|e(c|nc\w*)?)$/i.test(a)) return out
+    if (!a.startsWith('-')) return [...out, k]
+    if (/^-(no\w*|sta|mta|l(ogin)?)$/i.test(a)) continue
+    if (/^-(ex\w*|ep|w\w*|i(f|nputformat)|o(f|utputformat)|v(e\w*)?|conf\w*|settingsfile|psconsolefile|custompipename)$/i.test(a)) k++
+    // An unknown option: its next word is its value or the command. Both are read; a guard that checks more is safe.
+    else if (args[k + 1] !== undefined && !args[k + 1]!.startsWith('-')) out.push(k + 1), k++
   }
-  return -1
+  return out
 }
 
 export function check(cmd: string, tool = 'Bash', depth = 0): string | null {
@@ -129,8 +133,8 @@ export function check(cmd: string, tool = 'Bash', depth = 0): string | null {
         const { head, args } = parse(stmt)
         if (/^(eval|iex|invoke-expression)$/.test(head)) nested.push([args.join(' '), tool])
         else if (SHELL.test(head)) {
-          const win = /^(pwsh|powershell)$/.test(head), f = win ? psStart(args) : args.findIndex((w) => SHELL_CMD.test(w)) + 1
-          if (f > 0 || (win && f === 0)) nested.push([args.slice(f).join(' '), win ? 'PowerShell' : 'Bash'])
+          const win = /^(pwsh|powershell)$/.test(head), fs = win ? psStart(args) : [args.findIndex((w) => SHELL_CMD.test(w)) + 1]
+          for (const f of fs) if (f > 0 || (win && f === 0)) nested.push([args.slice(f).join(' '), win ? 'PowerShell' : 'Bash'])
         } else if (head === 'taskkill') {
           // By PID, or filtered on a PID, is fine; a name (/IM, or a /FI on anything but PID) is not.
           const pid = args.some((w) => /^[/-]{1,2}pid$/i.test(w))

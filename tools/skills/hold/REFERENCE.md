@@ -18,8 +18,8 @@ hold root itself are refused. `--dir <path>` names a folder outright (tests). Th
 | `cover <run dir>` | exit 1 listing the live items no file under `<run dir>/tasks/` names with a `hold: 03, 07` line |
 | `check` | exit 1 and list: items not final or with thin evidence, strays (an `NN.md` not in the index) apart, an index not yet `released`, zero items |
 | `release [--drop REASON]` | first line becomes `released <codeword>`; `--drop` first marks every unfinished item not-done with REASON |
-| `carry <old id or dir> [--all]` | copies unfinished items (not-done, partial, open) with screenshots, prints `old/NN→NN`; `--all` only on request; the same source twice is refused |
-| `last` | prints the newest earlier folder of this project when its check fails; nothing otherwise |
+| `carry <old id or dir> [--all]` | copies unfinished items (not-done, partial, open) with screenshots, prints `old/NN→NN`; writes `rules2` (when the source has it or this folder was empty) and `project.txt` (the cwd) if missing; `--all` only on request; the source gets a `carried-to` file listing the destination folders, so the same source into the same folder twice is refused even after a rename |
+| `last` | prints the newest earlier folder of this project with any not-done, partial, unseen or open item that was not carried (no `carried-to` file in it), released or not; a live chat's folder is skipped only while it still reads `collecting` or still has an `open` item (that chat is fixing it); nothing otherwise |
 | `clean` | removes folders or files older than a day holding only a `collecting` line |
 
 `index.md`: first line `collecting <codeword>` or `released <codeword>`, then `NN | status | short title | flags`.
@@ -33,7 +33,7 @@ status line, unchanged).
 Also in `NN.md`: `means:`, `visual: yes`, `scope: n of N`, and `back: <id>/NN` (written by `add` when an earlier
 `done` item of the same project has the same `where:`, case ignored; `add` prints `back=<id>/NN`).
 
-Statuses: `open` while collecting; `unseen` final, changed but never looked at (a screen item without its after-shot and judge); `done` fixed and checked against the record (a screen item: evidence names `img/NN-after.<ext>` and `judge: <agent>`); `partial` evidence
+Statuses: `open` while collecting; `unseen` final, changed but never looked at (a screen item without its after-shot and judge); `done` fixed and checked against the record (a screen item: evidence names `img/NN-after.<ext>`, which must differ in bytes from every other `img/NN-*` of the item (a copy of the before-shot is refused), and `judge: <agent> seen-fixed|not-fixed`, where `not-fixed` is refused); `partial` evidence
 `<done>; left: <rest>`; `not-done` not fixed, evidence says why; `dropped` removed by the person, evidence
 the reason; `merged→NN` the same as item NN, which must be final and not itself merged. Evidence: an existing
 path (`file:line`) or at least three words.

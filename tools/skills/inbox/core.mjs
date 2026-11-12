@@ -29,6 +29,7 @@
 
 export const PUSH_AFTER_MS = 2 * 60 * 1000 // p50 wait is 3.0 min: most asks are answered in the chat before this
 export const TTL_MS = { ask: 24 * 3600 * 1000, choice: 24 * 3600 * 1000, card: 7 * 24 * 3600 * 1000 } // cards expire in 7 d
+export const UNANSWERED_TTL_MS = 7 * 24 * 3600 * 1000 // a question nobody answered survives the night and the weekend; TTL_MS is for answered ones
 
 // File names: letters, digits, - and _ only, so no `:` or question text reaches a Windows path.
 export const safe = (/** @type {string} */ s) => String(s).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 80)
@@ -141,7 +142,7 @@ export function normalizeAnswer(/** @type {Item} */ item, /** @type {unknown} */
   return { answers: Object.fromEntries(qs.map((q) => [q.question, String(map[q.question])])) }
 }
 
-export const expired = (/** @type {Item} */ item, now = Date.now()) => now - item.at > TTL_MS[item.kind]
+export const expired = (/** @type {Item} */ item, now = Date.now(), answered = false) => now - item.at > (answered ? TTL_MS[item.kind] : Math.max(TTL_MS[item.kind], UNANSWERED_TTL_MS))
 
 /**
  * @typedef {{ id: string, at: number, session: string, cwd: string, chat: string, recap?: string, excerpt?: string,
@@ -154,6 +155,7 @@ export const expired = (/** @type {Item} */ item, now = Date.now()) => now - ite
 export const QUIET_MS = 5 * 60 * 1000
 export const MAX_MS = 15 * 60 * 1000
 export const REPORT_TTL_MS = 3 * 24 * 3600 * 1000
+export const UNSEEN_REPORT_TTL_MS = 7 * 24 * 3600 * 1000 // a report the person never saw is kept longer
 
 /** Whether the waiting reports (not woken about yet) are due for one wake. */
 export function dueReports(/** @type {Report[]} */ waiting, now = Date.now()) {

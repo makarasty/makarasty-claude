@@ -59,7 +59,7 @@ Add `(+ to NN)` when it looks like an addition to an earlier item and `(= NN?)` 
 - "стоп", "отмена", "хватит": ask once whether to drop the list or work it now. Drop: `hold.mjs release
   --drop '<reason>'`.
 - A handoff mid-collection names the folder and the codeword; the next chat runs `hold.mjs carry "<old id>"`. Carried items start as `open`, the old status kept as `previous-status:`.
-- "перенеси прошлое": `hold.mjs last` names the newest earlier unfinished folder of this project; carry it.
+- "перенеси прошлое": `hold.mjs last` names the newest earlier folder of this project that still has a not-done, partial, unseen or open item nobody carried (a closed, released hold counts); carry it.
 
 ## The codeword
 
@@ -105,7 +105,7 @@ worktree", "без вопросов") decide the route and are not asked again.
    A screen item (it has `img:` or `--visual`) is `done` only with an "after" screenshot saved as
    `<dir>/img/NN-after.<ext>` and judged by a separate agent (`makarasty:fleet-design-eye` or
    `fleet-scenario`, never the worker that fixed it) given his quote, his `img/` shot and the after-shot; the
-   evidence names both: `'<what changed>; img/NN-after.png judge: <agent>'`. No look, or no pane: `unseen`.
+   evidence names both: `'<what changed>; img/NN-after.png judge: <agent> seen-fixed'` (one format: `judge: <agent> seen-fixed|not-fixed`; `not-fixed` is refused as `done`). No look, or no pane: `unseen`.
    A breadth item is `done` only when `scope` reads N of N. A "later", a compromise or a decision the
    coordinator made for the person is `partial ... left:` or `not-done`, never prose.
 

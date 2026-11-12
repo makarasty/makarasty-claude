@@ -143,7 +143,7 @@ export const register: Register = (on) => {
     if (!input.ask?.trim() || r.isError || r.deny) return r
     const a = await active($)
     if (a) startTimer($)
-    if (a && (await reasked($, a, input.ask).catch(() => 'new')) === 'new') await newItem($, a, input.tool_use_id, { kind: 'choice', ask: input.ask, recap: input.recap, actions: (input.actions ?? []).map((x) => x.label ?? x.action ?? '').filter(Boolean) }).catch(() => undefined)
+    if (a && !(await holding($, a).catch(() => false)) && (await reasked($, a, input.ask).catch(() => 'new')) === 'new') await newItem($, a, input.tool_use_id, { kind: 'choice', ask: input.ask, recap: input.recap, actions: (input.actions ?? []).map((x) => x.label ?? x.action ?? '').filter(Boolean) }).catch(() => undefined)
     return r
   }).catch(($, e, next) => next(e))
 
@@ -159,7 +159,7 @@ export const register: Register = (on) => {
     if (input.initiation !== 'own_initiative' || !taskId || r.isError || r.deny) return r
     const a = await active($)
     if (a) startTimer($)
-    if (a) await newItem($, a, input.tool_use_id, { kind: 'card', title: input.title, brief: input.prompt, background: input.background, taskId }).catch(() => undefined)
+    if (a && !(await holding($, a).catch(() => false))) await newItem($, a, input.tool_use_id, { kind: 'card', title: input.title, brief: input.prompt, background: input.background, taskId }).catch(() => undefined)
     return r
   }).catch(($, e, next) => next(e))
 
@@ -177,7 +177,8 @@ export const register: Register = (on) => {
   on('turn.complete', async ($, e, next) => {
     const r = await next(e)
     const recap = e.agentId ? undefined : wrapRecap
-    if (!e.agentId) { wrapRecap = undefined; inTurn = false }
+    const origin = e.agentId ? undefined : turnOrigin
+    if (!e.agentId) { wrapRecap = undefined; turnOrigin = undefined; inTurn = false }
     await startInboxTimer($).catch(() => undefined)
     if (e.agentId) return r
     const me = await inboxSelf($).catch(() => undefined)
@@ -186,10 +187,10 @@ export const register: Register = (on) => {
     const a = await active($).catch(() => undefined)
     if (!a || (await holding($, a).catch(() => false))) return r
     const q = e.reason === 'answer' ? proseQuestion(e.answer ?? '') : undefined
-    const reports = (recap !== undefined || e.reason === 'error') && turnOrigin !== 'scheduled-trigger' && (await enrolled($, a))
+    const reports = (recap !== undefined || e.reason === 'error') && origin !== 'scheduled-trigger' && (await enrolled($, a))
     if (!q && !reports) return r
     const since = (await $.clock.now()) - (e.durationMs ?? 0) - 1000
-    const asked = (await openItems($, a)).some((it) => it.at >= since)
+    const asked = (await openItems($, a)).some((it) => it.at >= since && it.kind !== 'card') // a card is no question and no finish
     if (q && !asked) {
       startTimer($)
       const tail = (e.answer ?? '').trim()
@@ -277,7 +278,10 @@ export function sameQuestion(a: string, b: string, min = 0.5): boolean {
 async function holding($: D, a: { dir: string; session: string }): Promise<boolean> {
   for (const f of [`${a.dir}/makarasty/hold/${a.session}/index.md`, `${a.dir}/makarasty/hold/${a.session}.md`]) {
     const t = await $.fs.read(f).catch(() => '')
-    if (t) return /^\s*collecting\b/.test(String(t))
+    if (!t) continue
+    if (!/^\s*collecting\b/.test(String(t))) return false
+    const m = await $.fs.stat(f).then((s) => s.mtimeMs, () => undefined) // as gates.ts: a list untouched for a day is stale
+    return m === undefined || (await $.clock.now()) - m < 86400000
   }
   return false
 }
@@ -361,9 +365,13 @@ async function openItems($: D, a: { root: string; session: string }, mine = true
 // sentence, when it ends with "?", code left out. A "?" earlier in the reply is not one: 2026-11-12 a fleet coordinator's
 // question to its own reviewer, followed by more text, and a hold chat's «…counted» (?" were filed as boxes.
 export function proseQuestion(answer: string): string | undefined {
-  const text = answer.replace(/```[\s\S]*?```/g, ' ').trim()
-  if (!/\?\s*$/.test(text)) return undefined
-  const q = text.match(/[^.!?\n]*[^\s.!?(][^.!?\n]*\?\s*$/)?.[0].replace(/^[\s*_\-\d.)]+/, '').trim()
+  // Trailing markdown, quotes, brackets and emoji after the "?" do not hide it; a "." inside a word ("config.json") is no
+  // sentence end: only [.!?] followed by whitespace is.
+  const text = answer.replace(/```[\s\S]*?```/g, ' ').trim().replace(/[\s*_~`"'»”’)\]}>‍️\p{Extended_Pictographic}]+$/u, '')
+  if (!text.endsWith('?')) return undefined
+  let start = 0
+  for (const m of text.slice(0, -1).matchAll(/[.!?]\s|\n/g)) start = m.index + m[0].length
+  const q = text.slice(start).replace(/^[\s*_\-\d.)]+/, '').trim()
   return q && /\p{L}{2,}/u.test(q) && q.length > 3 ? q.slice(0, 400) : undefined
 }
 
@@ -409,7 +417,12 @@ export async function tick($: D): Promise<void> {
     await $.prompt.submit({ text: deliveryText(it, ans) })
   }
   for (const it of await openItems($, a)) {
-    if (now - it.at < PUSH_AFTER_MS || (await $.fs.exists(`${a.root}/pushed/${it.id}`))) continue
+    if (now - it.at < PUSH_AFTER_MS) continue
+    // pushed/<id> is empty once pushed, or {fails, at} after a failed try (inbox.mjs push: 3 tries, 5 min apart)
+    if (await $.fs.exists(`${a.root}/pushed/${it.id}`)) {
+      const m = await readJSON<{ fails: number; at: number }>($, `${a.root}/pushed/${it.id}`)
+      if (!m || m.fails >= 3 || now - m.at < 300000) continue
+    }
     if (!it.explain) {
       const r = await $.model.complete({ model: 'haiku', prompt: explainPrompt(it), maxTokens: 600, timeoutMs: 60000 }).catch(() => undefined)
       if (r?.isAnswered && r.text.trim()) await $.fs.write(`${a.root}/items/${it.id}.json`, JSON.stringify({ ...it, explain: r.text.trim() }))

@@ -59,15 +59,17 @@ parents of the live sessions' `cwd`s and the git repos one level below them.
   ancestor chain reaches a live `claude` or `Claude.exe`, an interactive shell or terminal, or an IDE
   (Cursor, VS Code) is its owner's, not a leak. A parent counts only if it was created before the child
   (PIDs get reused). No `PPID=1` orphan test: Git Bash breaks parent links on Windows.
-- Residents with a live parent (the census lists only orphans, and the desktop app keeps a finished chat's
+- Residents with a live parent (Windows only: do not run it elsewhere; the census lists only orphans, and the desktop app keeps a finished chat's
   processes alive): `node "${CLAUDE_SKILL_DIR}/residents.mjs"` (6 s, read only; `--all` adds KEEP rows). It finds
   `tsc --watch`, `tsc --lsp`, vite and other dev servers, headless automation browsers and `heavy.mjs` wrappers, names
   the owner chat by the parent chain, and sorts: CANDIDATE (owner chat ended or idle 120 min, tree used no CPU in a 3 s
   sample, nobody connected to its port, at least 10 min old), ASK (started from a terminal or IDE, or owner not found:
-  the operator's, so only named), KEEP (live chat, CPU, a connection, a live chat in the same repo). The full `scan`
+  the operator's, so only named; a shell of a Claude chat or any `claude`/`Claude.exe` ancestor is "a Claude chat or the
+  desktop app (chat not identified)", also ASK), KEEP (live chat, CPU, a connection, a live chat in the same repo). The full `scan`
   lists CANDIDATE and ASK too, as `idle-residents` items (owner tier, no method: `apply` skips them). Memory is
   private working set and commit: Windows trims an idle process's working set, so read both. Ending one is a yes
-  from the operator, then step 4's `taskkill /PID <n> /F` per pid, leaves first.
+  from the operator, then step 4's `taskkill /PID <n> /F` per pid, leaves first. Right before any `taskkill`, re-run
+  `residents.mjs --json` and kill only pids still in the same row with the same `created` (the row's) and `pidCreated[pid]` (each pid's creation time in ms; pids are reused).
 - Top ten: `Get-CimInstance Win32_Process | Sort WorkingSetSize -Desc | Select -First 10
   ProcessId,ParentProcessId,Name,WorkingSetSize,CommandLine`, each with its parent chain, so a server the
   operator started from their terminal reads as theirs.

@@ -3,7 +3,7 @@
 //   node tools/skills/hold/hold-selftest.mjs
 // Exit 0 = every check passed. Exit 1 = at least one failed; the failing line names what it wanted.
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -95,7 +95,10 @@ t('done with thin evidence (one word that is no path) is refused', H('m', ['stat
 t('a screen item (it has img:) is not done on words alone', H('m', ['status', '01', 'done', 'fixed', 'in', 'the shared table style']).code === 1);
 png(join(D('m'), 'img', '01-after.png'));
 t('a screen item is not done with an after-shot but no judge', H('m', ['status', '01', 'done', 'img/01-after.png fixed it']).code === 1);
-t('a screen item is done with its after-shot and a judge', H('m', ['status', '01', 'done', 'fixed in the shared table style; img/01-after.png judge: opus-eye']).code === 0);
+writeFileSync(join(D('m'), 'img', '01-after.png'), read(join(D('m'), 'img', '01-1.png')));
+t('a copy of the before-shot is not an after-shot', H('m', ['status', '01', 'done', 'img/01-after.png judge: opus-eye fixed it']).code === 1);
+png(join(D('m'), 'img', '01-after.png'));
+t('a screen item is done with its after-shot and a judge',H('m', ['status', '01', 'done', 'fixed in the shared table style; img/01-after.png judge: opus-eye']).code === 0);
 t('done with an existing path (file:line) is accepted', H('m', ['status', '02', 'done', `${hold}:12`]).code === 0);
 t('partial without a "left:" part is refused', H('m', ['status', '04', 'partial', 'header is done, footer is not']).code === 1);
 t('partial with "left:" is accepted', H('m', ['status', '04', 'partial', 'header done; left: footer']).code === 0);
@@ -159,7 +162,35 @@ R2('lq', ['init']);
 t('last names the earlier folder of this project that fails check', R2('lq', ['last']).out.startsWith(F(d2('lp'))), R2('lq', ['last']).out);
 t('last is silent with nothing earlier', R2('lp', ['last']).out === '');
 R2('lp', ['status', '01', 'done', 'one two three']); R2('lp', ['release']);
-t('last is silent once that folder is final', R2('lq', ['last']).out === '', R2('lq', ['last']).out);
+t('last is silent once every item of that folder is done', R2('lq', ['last']).out === '', R2('lq', ['last']).out);
+
+// a properly closed hold (released, check passes) with a partial item is offered until it is carried
+const R3 = (sid, args, input) => run(['--sid', sid, ...args], input, { CLAUDE_CONFIG_DIR: join(tmp, 'cfg3') });
+const d3 = (sid) => join(tmp, 'cfg3', 'makarasty', 'hold', sid);
+R3('c1', ['init']); R3('c1', ['add'], 'первое'); R3('c1', ['add'], 'второе');
+R3('c1', ['status', '01', 'partial', 'шапка готова; left: подвал']); R3('c1', ['status', '02', 'done', 'one two three']); R3('c1', ['release']);
+R3('c9', ['init']);
+t('last offers a released folder whose check passes but has a partial item', R3('c1', ['check']).code === 0 && R3('c9', ['last']).out.startsWith(F(d3('c1'))), R3('c9', ['last']).out);
+mkdirSync(join(tmp, 'cfg3', 'sessions'), { recursive: true });
+writeFileSync(join(tmp, 'cfg3', 'sessions', `${process.pid}.json`), JSON.stringify({ pid: process.pid, sessionId: 'c1', cwd: tmp }));
+t('a live chat does not hide its released folder', R3('c9', ['last']).out.startsWith(F(d3('c1'))), R3('c9', ['last']).out);
+R3('c4', ['init']); R3('c4', ['add'], 'ещё собирается');
+writeFileSync(join(tmp, 'cfg3', 'sessions', `${process.pid}.json`), JSON.stringify({ pid: process.pid, sessionId: 'c4', cwd: tmp }));
+t('but a live chat still collecting is skipped', R3('c9', ['last']).out.startsWith(F(d3('c1'))) && !R3('c9', ['last']).out.includes('/c4'), R3('c9', ['last']).out);
+R3('c5', ['init']); R3('c5', ['add'], 'первое'); R3('c5', ['add'], 'второе'); R3('c5', ['status', '01', 'partial', 'шапка готова; left: подвал']); R3('c5', ['release']);
+writeFileSync(join(tmp, 'cfg3', 'sessions', `${process.pid}.json`), JSON.stringify({ pid: process.pid, sessionId: 'c5', cwd: tmp }));
+t('a live chat that still has open items in its released folder is fixing them: skipped', !R3('c9', ['last']).out.includes('/c5'), R3('c9', ['last']).out);
+rmSync(join(tmp, 'cfg3', 'sessions'), { recursive: true, force: true });
+t('without a live chat that released folder is offered', R3('c9', ['last']).out.startsWith(F(d3('c5'))), R3('c9', ['last']).out);
+rmSync(join(d3('c9'), 'rules2')); rmSync(join(d3('c9'), 'project.txt')); // carry must make them itself
+R3('c9', ['carry', 'c1']);
+t('once carried, last does not offer that folder again', !R3('c9', ['last']).out.includes(`${F(d3('c1'))} (`), R3('c9', ['last']).out);
+t('carry into a folder with no rules2 and no project.txt writes both', existsSync(join(d3('c9'), 'rules2')) && read(join(d3('c9'), 'project.txt')).trim() !== '', '');
+t('the same source cannot be carried into the same folder twice', R3('c9', ['carry', 'c1']).code === 1);
+// init renames a released folder: the marker lives inside it, so the archive stays carried and the new <sid> is not
+renameSync(d3('c1'), `${d3('c1')}-20260101-0000`);
+R3('c1', ['init']); R3('c1', ['add'], 'новое под тем же id');
+t('a renamed carried folder is not offered again, the new folder of that id is not "carried"', R3('c9', ['last']).out.startsWith(`${F(d3('c1'))} (`) && !R3('c9', ['last']).out.includes('c1-20260101'), R3('c9', ['last']).out);
 
 // a newer finished folder does not hide an older unfinished one
 R2('ls', ['init']); R2('ls', ['add'], 'старое, не доделано');
@@ -298,6 +329,15 @@ console.log('table, means, scope, cover, back');
   t('carry takes an unseen item', H('tb6', ['carry', 'tb5']).out.startsWith('carried 1 of 3'), H('tb6', ['carry', 'tb5']).out);
   mkdirSync(join(D('old1'), 'img'), { recursive: true }); writeFileSync(join(D('old1'), 'index.md'), 'released x\n01 | done | t |\n'); writeFileSync(join(D('old1'), '01.md'), '# 01\nstatus: done | fixed in the old way\n\n> t\n');
   t('a hold made before these rules (no rules2 marker) still passes check without means', H('old1', ['check']).code === 0, H('old1', ['check']).out);
+  t('carry from an old folder (no rules2) into an empty one still writes rules2', H('old9', ['carry', 'old1']).code === 0 && existsSync(join(D('old9'), 'rules2')) && existsSync(join(D('old9'), 'project.txt')), '');
+  // judge verdict and the case of the after-shot name
+  H('tb7', ['init']); H('tb7', ['add'], `x ${shot}`); H('tb7', ['means', '1', 'one thing', '--visual']);
+  writeFileSync(join(D('tb7'), 'img', '01-after.png'), read(shot));
+  t('a copy of the before-shot is refused whatever case the evidence spells its name in', H('tb7', ['status', '01', 'done', 'img/01-after.PNG judge: opus-eye seen-fixed']).code === 1);
+  png(join(D('tb7'), 'img', '01-after.png'), 'DIFFERENT');
+  t('judge: <agent> not-fixed is not done', H('tb7', ['status', '01', 'done', 'img/01-after.png judge: opus-eye not-fixed']).code === 1);
+  if (process.platform === 'win32') t('a real after-shot is accepted when the evidence spells its extension in capitals', H('tb7', ['status', '01', 'done', 'img/01-after.PNG judge: opus-eye seen-fixed']).code === 0, H('tb7', ['status', '01', 'done', 'img/01-after.PNG judge: opus-eye seen-fixed']).err);
+  t('judge: <agent> seen-fixed is done', H('tb7', ['status', '01', 'done', 'img/01-after.png judge: opus-eye seen-fixed']).code === 0);
   H('tb4', ['init']); writeFileSync(join(D('tb4'), 'project.txt'), 'other\n');
   t('another project is never a repeat', !H('tb4', ['add'], 'where: /orders\n---\nx').out.includes('back='));
 }

@@ -405,10 +405,10 @@ const TYPES = {
     residents(r) {
         if (!WIN) return [];
         return scanResidents().filter(x => x.verdict !== 'KEEP' && x.mb >= (r.minMB ?? RESIDENT_LIMITS.minMb)).map(x => ({
-            slug: `${x.kind}-${x.pid}`, title: `${x.verdict === 'CANDIDATE' ? 'Left running by a finished chat' : 'Running, owner to confirm'}: ${x.kind}${x.has.length ? ` + ${x.has.join(', ')}` : ''} (pid ${x.pid})`,
+            slug: `${x.kind}-${x.pid}`, title: `${x.verdict === 'CANDIDATE' ? 'Left running by an ended or idle chat' : 'Running, owner to confirm'}: ${x.kind}${x.has.length ? ` + ${x.has.join(', ')}` : ''} (pid ${x.pid})`,
             paths: [], preset: true, bytes: x.mb * MB, newest: 0,
             evidence: [`${x.mb} MB private working set, ${x.commitMb} MB commit, ${x.ageMin ?? '?'} min old, ${x.cpuMs} ms CPU in the sample, ${x.ports.length ? `port ${x.ports.join(',')} with ${x.conns} connection(s)` : 'no port'}`,
-                `owner: ${x.owner.kind === 'chat' ? `chat ${x.owner.id.slice(0, 8)} "${x.owner.title}" (${x.owner.state}${x.owner.idleMin != null ? `, idle ${x.owner.idleMin} min` : ''})` : x.owner.kind === 'terminal' ? `terminal ${x.owner.name} pid ${x.owner.pid}` : 'not found'}`,
+                `owner: ${x.owner.kind === 'chat' ? `chat ${x.owner.id.slice(0, 8)} "${x.owner.title}" (${x.owner.state}${x.owner.idleMin != null ? `, idle ${x.owner.idleMin} min` : ''})` : x.owner.kind === 'terminal' ? `terminal ${x.owner.name} pid ${x.owner.pid}` : x.owner.kind === 'chatapp' ? 'a Claude chat or the desktop app (chat not identified)' : 'not found'}`,
                 ...x.why, `command: ${x.cmd}`, `pids, leaves first: ${x.pids.join(' ')}`],
         }));
     },

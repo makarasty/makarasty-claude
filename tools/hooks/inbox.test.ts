@@ -131,6 +131,26 @@ test('after 2 minutes an open item gets a plain explanation and one push', async
   expect(w.cli.filter((c) => c[0] === 'push')).toEqual([['push', 'chatA~toolu_4']])
 })
 
+// pushed/<id> is empty once pushed, or {fails, at} after a failed try: tried again after 5 min, 3 times at most.
+const pushCases: [string, string, boolean][] = [
+    ['empty: pushed', '', false],
+    ['one fail, 6 min old', JSON.stringify({ fails: 1, at: 1_000_000 - 6 * 60e3 }), true],
+    ['one fail, 1 min old', JSON.stringify({ fails: 1, at: 1_000_000 }), false],
+    ['three fails', JSON.stringify({ fails: 3, at: 1_000_000 - 3600e3 }), false],
+    ['garbage', 'not json {', false],
+  ]
+for (const [what, marker, pushes] of pushCases) {
+  test(`push marker, ${what}: the tick ${pushes ? 'pushes again' : 'does not push'}`, async ($, on) => {
+    const w = world(on)
+    await $.tool.call({ tool: 'mcp__ccd_turn__wrap_up', recap: 'r', ask: 'Удалить старые отчёты?', actions: [{ label: 'Да' }], tool_use_id: 'toolu_p' } as never)
+    w.disk.set('/cfg/makarasty/inbox/pushed/chatA~toolu_p', marker)
+    await w.clock.advance(3 * 60e3)
+    if (pushes) await w.until(() => w.cli.some((c) => c[0] === 'push'), what)
+    else await new Promise((r) => setTimeout(r, 50))
+    expect([what, w.cli.filter((c) => c[0] === 'push').length]).toEqual([what, pushes ? 1 : 0])
+  })
+}
+
 test('a card offered by chat A enters the inbox with its task id; a click on it closes the item', async ($, on) => {
   const w = world(on)
   await $.tool.call({ tool: 'mcp__ccd_session__start_session', initiation: 'own_initiative', title: 'Чистка логов', prompt: 'Убери старые логи', tool_use_id: 'toolu_5' } as never)

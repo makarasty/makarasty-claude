@@ -239,3 +239,8 @@ test('a wait on the live run never lets a second heavy run through: a bounded lo
   for (const c of ['Wait-Process -Id 4321 -Timeout 1; npx vitest run', 'for i in 1; do echo 4321 ps; done; npx vitest run', 'Wait-Process -Id 4321; npm test',
     'for i in $(seq 1 120); do powershell -NoProfile -Command "Get-Process -Id 4321" && break; sleep 15; done; npm test']) expect(check(c, 'Bash', {}, LIVE_VITEST)).toContain('another heavy verify run is live')
 })
+
+test('an unknown PowerShell option with a value does not hide -Command', () => {
+  expect(['pwsh -SettingsFile s.json -Command "npm test"'].filter((c) => heavy(c, 'Bash').length === 0)).toEqual([])
+  expect(['pwsh -SettingsFile s.json -Command "git status"'].filter((c) => heavy(c, 'Bash').length > 0)).toEqual([])
+})

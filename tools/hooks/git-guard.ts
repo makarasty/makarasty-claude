@@ -108,7 +108,7 @@ const skipsConfig = (s: string): boolean => {
 }
 // A pathspec that means the whole tree: `.`, `./`, `:/`, `:/.`.
 // `*` stages the whole top folder (the shell expands it, or git matches it); `:(top)` is the root by magic.
-const ALLPATH = /^(\.\/?|:\/\.?|:|\*|:\((?:top|glob|literal|icase)(?:,[^)]*)?\)(?:\.\/?|\*)?)$/
+const ALLPATH = /^(\.\/?|:\/\.?|:|(?:\.\/|:\/)?\*+|:\((?:top|glob|literal|icase)(?:,[^)]*)?\)(?:\.\/?|\*)?)$/
 // A pathspec that only excludes (`:!x`, `:^x`, `:(exclude)x`) takes everything else: a list made of excludes alone is the whole tree.
 const EXCL = /^:(?:[!^]|\((?:[^)]*,)?exclude(?:,[^)]*)?\))/
 const wholeTree = (ops: string[]): boolean => ops.some((o) => ALLPATH.test(o)) || (ops.length > 0 && ops.every((o) => EXCL.test(o)))
@@ -211,14 +211,18 @@ const SHELL_CMD = /^-\w*c$|^-command$|^\/{1,2}[ck]$/i
 const WINPS = /(^|[\\/])(pwsh|powershell)(\.exe)?$/i
 // Windows PowerShell runs the first word past its own options as the command (`powershell git stash`); -c/-Command, any prefix, takes the
 // rest. Returns where the command starts in `w`, or -1 (-File, -EncodedCommand: nothing readable).
-const psStart = (w: string[], from: number): number => {
+const psStart = (w: string[], from = 0): number[] => {
+  const out: number[] = []
   for (let k = from; k < w.length; k++) {
-    if (/^-c(o(m(m(a(nd?)?)?)?)?)?$/i.test(w[k]!)) return k + 1
-    if (/^-(f(ile)?|e(c|nc\w*))$/i.test(w[k]!)) return -1
-    if (!w[k]!.startsWith('-')) return k
-    if (/^-(ex\w*|ep|w\w*|i\w*|o\w*|v\w*|conf\w*)$/i.test(w[k]!)) k++
+    if (/^-c(o(m(m(a(nd?)?)?)?)?)?$/i.test(w[k]!)) return [...out, k + 1] // the options end here; a later -c is the command's own
+    if (/^-(f(ile)?|e(c|nc\w*)?)$/i.test(w[k]!)) return out
+    if (!w[k]!.startsWith('-')) return [...out, k]
+    if (/^-(no\w*|sta|mta|l(ogin)?)$/i.test(w[k]!)) continue
+    if (/^-(ex\w*|ep|w\w*|i(f|nputformat)|o(f|utputformat)|v(e\w*)?|conf\w*|settingsfile|psconsolefile|custompipename)$/i.test(w[k]!)) k++
+    // An unknown option: its next word is its value or the command. Both are read; a guard that checks more is safe.
+    else if (w[k + 1] !== undefined && !w[k + 1]!.startsWith('-')) out.push(k + 1), k++
   }
-  return -1
+  return out
 }
 const MARK = /^\u0001(\d+)\u0001$/
 // Redirections (2>&1, > /dev/null, &>f, *> $null, < f) are not part of the command.
@@ -326,7 +330,7 @@ function heredocs(cmd: string, nested: string[]): string {
 type Sub = { sub: string; via?: string; dir: string; idx?: boolean }
 // `cwd` is the tree a command runs in until a `cd`, `pushd` or `Set-Location` before it moves it.
 // shortcut: a cd inside a subshell `(cd x; git ..)` is read as lasting to the end of the line; upgrade if that bites.
-function subcommands(cmd: string, ps: boolean, depth = 0, cwd = ''): Sub[] {
+function subcommands(cmd: string, ps: boolean, depth = 0, cwd = '', husky = false): Sub[] {
   if (depth > 4) return []
   // A line continuation (PowerShell backtick, Bash backslash before the newline) is one command, not two.
   cmd = cmd.replace(ps ? /`\r?\n/g : /\\\r?\n/g, ' ')
@@ -342,7 +346,7 @@ function subcommands(cmd: string, ps: boolean, depth = 0, cwd = ''): Sub[] {
   const cleaned = lex(text, lits, nested, ps)
     .replace(/<<<\s*((?:\\.|[^\s;&|()<>\\])+)/g, (_, w: string) => ` \u0004${w.replace(/\\(\s)/g, '\u0005')} `).replace(REDIR, ' ')
   const out: Sub[] = []
-  let idxPs = false
+  let idxPs = false, huskyOff = husky // huskyOff: an earlier segment (or the line this one is nested in) exported HUSKY=0
   // A quoted word as the shell hands it on: `"git"`, `& "C:\Program Files\Git\cmd\git.exe"`.
   // Spliced quotes (`st''ash`, `"st"ash`) are one word to the shell.
   const unq = (w: string): string => w.replace(/\u0001(\d+)\u0001/g, (_, n) => lits[+n]!)
@@ -364,6 +368,8 @@ function subcommands(cmd: string, ps: boolean, depth = 0, cwd = ''): Sub[] {
     const last = words.pop()!.replace(/(?<!\{)\}$/, '')
     if (last) words.push(last)
     let at = 0, wrapped = false
+    // `export HUSKY=0; git commit`, `$env:HUSKY=0; git commit`: the variable set in a segment before git turns the hooks off for it.
+    if (/^(export\s+(\S+\s+)*|\$env:|set\s+)(HUSKY\s*=\s*(0|false)|HUSKY_SKIP_HOOKS\s*=\s*[^0\s]\S*)(\s|$)/i.test(words.map(unq).join(' '))) huskyOff = true
     // PowerShell `$env:GIT_INDEX_FILE='x'` on its own line points every later git of the command at a scratch index.
     if (ps) {
       const t = words.map(unq).join(' ')
@@ -407,9 +413,9 @@ function subcommands(cmd: string, ps: boolean, depth = 0, cwd = ''): Sub[] {
     }
     // bash -c "..." / eval "..." / iex "...": the string is a command line of its own.
     // Unquoted (`cmd /c git stash`), the rest of the line is that command, its quoted words put back in quotes.
-    const flag = /^(eval|iex|invoke-expression)$/i.test(head) ? at
-      : WINPS.test(head) ? ((s) => s < 0 ? -1 : s - 1)(psStart(words.map(unq), at + 1)) : SHELL.test(head) ? words.findIndex((w, k) => k > at && SHELL_CMD.test(w)) : -1
-    if (flag >= 0) handOn(words.slice(flag + 1))
+    const flags = /^(eval|iex|invoke-expression)$/i.test(head) ? [at]
+      : WINPS.test(head) ? psStart(words.map(unq), at + 1).map((s) => s - 1) : SHELL.test(head) ? [words.findIndex((w, k) => k > at && SHELL_CMD.test(w))] : []
+    for (const flag of flags) if (flag >= 0) handOn(words.slice(flag + 1))
     // find -exec / -execdir runs the words after it, up to `\;` or `+`, once per file.
     const exec = words.findIndex((w, k) => k > at && /^-exec(dir)?$/.test(w))
     if (exec >= 0) handOn(words.slice(exec + 1))
@@ -442,6 +448,8 @@ function subcommands(cmd: string, ps: boolean, depth = 0, cwd = ''): Sub[] {
       // Inline, hooksPath of any value is a one-off skip; gpg.program only when it is a stand-in.
       const hooks = `${ci('core.hookspath')}|${ci('gpg.program')}`, sign = `(${ci('commit')}|${ci('tag')})${ci('.gpgsign')}`
       if (new RegExp(`(^|\\s)(-c\\s*(${ci('core.hookspath')}|${ci('gpg.program')}=(${GPG_BAD}|\\u0003|)(?=\\s|$)|${sign}${FALSY})|--config-env[=\\s](${hooks}|${sign}))`).test(glob)) out.push({ sub: '-c hooks', dir })
+      // HUSKY=0 exported earlier on the line matters only to a subcommand that runs hooks; `export HUSKY=0 && npm ci && git status` is fine.
+      if (huskyOff && /^(commit|push|merge|am|rebase|pull|cherry-pick|revert|checkout|switch|worktree|clone|gc)$/.test(unq(words[i] ?? ''))) out.push({ sub: '-c hooks', dir })
     }
     if (i < words.length) out.push({ sub: words.slice(i).map(arg).filter(Boolean).join(' '), via, dir, idx })
     // `git submodule foreach [--recursive] <command>` runs that command in every submodule.
@@ -452,7 +460,7 @@ function subcommands(cmd: string, ps: boolean, depth = 0, cwd = ''): Sub[] {
   }
   // shortcut: a string one shell hands another (`powershell -Command` from Bash) is lexed by the outer shell's
   // escapes; lex nested by the inner shell if that ever hides a command.
-  nested.forEach((n, k) => out.push(...subcommands(n, ps, depth + 1, nestedDir[k] ?? cwd)))
+  nested.forEach((n, k) => out.push(...subcommands(n, ps, depth + 1, nestedDir[k] ?? cwd, huskyOff)))
   return out
 }
 

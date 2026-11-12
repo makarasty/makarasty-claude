@@ -772,6 +772,11 @@ function* operatorEntries(file: string): Generator<Words> {
     if (tr) {
       const t = typeof tr.content === 'string' ? tr.content : Array.isArray(tr.content) ? (tr.content as Array<{ text?: string }>).map((x) => x.text || '').join('\n') : '';
       if (t.startsWith('The user answered:')) yield { ts, body: `ASKED, ANSWERED:\n${t.replace(/\. Read the answers carefully[\s\S]*$/, '')}` };
+      // A rejected tool call carries what he typed: "The user doesn't want to proceed ... the user said:\n<text>". No real sample on this box (none of 125+ rejections had text), so the format is the caller's description.
+      else if (t.startsWith("The user doesn't want to proceed")) {
+        const said = /\bthe user said:\s*([\s\S]*?)\s*(?:\n\nNote: The user's next message[\s\S]*)?$/.exec(t)?.[1];
+        if (said) yield { ts, body: `OPERATOR:\n${said}` };
+      }
       continue;
     }
     const texts = blocks.filter((b) => b.type === 'text' && typeof b.text === 'string').map((b) => (b.text as string))

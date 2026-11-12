@@ -5,7 +5,8 @@
 //   node inbox.mjs on | off | status        switch the inbox for every chat of this Claude config dir; status says when it last got an item, woke, carried an answer
 //   node inbox.mjs test                     a check item from a pretend chat: the inbox chat should wake with it by itself
 //   node inbox.mjs watchdog                 run in the inbox chat in the background; exits (and wakes it) only when the wake broke
-//   node inbox.mjs list                     pending items, explained, oldest first; marks this chat as the inbox
+//   node inbox.mjs list [--take]            pending items, explained, oldest first; marks this chat as the inbox (not while
+//                                           another inbox chat is alive, unless --take)
 //   node inbox.mjs show <id>               the whole item as JSON (a card's full brief)
 //   node inbox.mjs answer <id> [text]       answer one item (text, or a JSON map on stdin); first answer wins
 //   node inbox.mjs done <id>                the chat answered it itself (dialog, box button, card click, Esc)
@@ -27,7 +28,7 @@ import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, 
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { REPORT_TTL_MS, expired, normalizeAnswer, pushText, render, renderReports, safe } from './core.mjs'
+import { REPORT_TTL_MS, TTL_MS, UNSEEN_REPORT_TTL_MS, expired, normalizeAnswer, pushText, render, renderReports, safe } from './core.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const base = join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'makarasty')
@@ -42,14 +43,24 @@ function create(/** @type {string} */ path, /** @type {string} */ text) {
 }
 const stdin = () => { try { return readFileSync(0, 'utf8').trim() } catch { return '' } }
 
+function sweepable(/** @type {any} */ it, /** @type {string} */ f) {
+  const now = Date.now()
+  if (!answered(it.id)) return expired(it, now)
+  if (now - it.at > 14 * 24 * 3600e3) return true // hard cap, delivered or not
+  const ans = readJSON(join(root, 'answers', f))
+  const needsDelivery = ans?.by === 'inbox' && it.kind !== 'ask'
+  return now - (Number(ans?.at) || it.at) > TTL_MS[it.kind] && (!needsDelivery || existsSync(join(root, 'delivered', it.id)))
+}
+
 function items() {
   const out = []
   for (const f of readdirSync(dir('items'))) {
     if (!f.endsWith('.json')) continue
     const it = readJSON(join(root, 'items', f))
     if (!it) continue
-    // Swept lazily: a question a dead chat left waits at most a day, a card at most its 7-day life.
-    if (expired(it)) { for (const d of ['items', 'answers', 'pushed', 'delivered']) rmSync(join(root, d, d === 'items' || d === 'answers' ? f : f.slice(0, -5)), { force: true }); continue }
+    // Swept lazily: an unanswered one after 7 days (the night and the weekend); an answered one a day after its ANSWER (not
+    // after the question: one answered late is still to be delivered), and an inbox answer to a box or card only once delivered.
+    if (sweepable(it, f)) { for (const d of ['items', 'answers', 'pushed', 'delivered']) rmSync(join(root, d, d === 'items' || d === 'answers' ? f : f.slice(0, -5)), { force: true }); continue }
     out.push(it)
   }
   return out.sort((a, b) => a.at - b.at)
@@ -130,18 +141,18 @@ function pick(/** @type {string} */ project, now = Date.now()) {
 // outlives a /compact, a restart and the night.
 const tasksFile = () => join(base, 'coord', 'tasks.json')
 const loadTasks = () => /** @type {{ chat: string, profile: string, project: string, task: string, status: string, at: string, notes: string[] }[]} */ (readJSON(tasksFile()) ?? [])
-const saveTasks = (/** @type {ReturnType<typeof loadTasks>} */ t) => { mkdirSync(join(base, 'coord'), { recursive: true }); writeFileSync(`${tasksFile()}.tmp`, JSON.stringify(t, null, 1)); renameSync(`${tasksFile()}.tmp`, tasksFile()) }
+const saveTasks = (/** @type {ReturnType<typeof loadTasks>} */ t) => { mkdirSync(join(base, 'coord'), { recursive: true }); const tmp = `${tasksFile()}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`; writeFileSync(tmp, JSON.stringify(t, null, 1)); renameSync(tmp, tasksFile()) }
 
 const answered = (/** @type {string} */ id) => existsSync(join(root, 'answers', `${id}.json`))
 
-// Finish reports, oldest first. Swept after 3 days with their markers; a chat's switch after 30 days untouched.
+// Finish reports, oldest first. Swept after 3 days (7 if never shown) with their markers; a chat's switch after 30 days untouched.
 function reports() {
   const out = [], d = dir('reports'), now = Date.now()
   for (const f of readdirSync(d)) {
     if (!f.endsWith('.json')) continue
     const r = readJSON(join(d, f))
     if (!r) continue
-    if (now - r.at > REPORT_TTL_MS) { for (const p of [f, join('seen', f.slice(0, -5)), join('announced', f.slice(0, -5))]) rmSync(join(d, p), { force: true }); continue }
+    if (now - r.at > (shown(r.id) ? REPORT_TTL_MS : UNSEEN_REPORT_TTL_MS)) { for (const p of [f, join('seen', f.slice(0, -5)), join('announced', f.slice(0, -5))]) rmSync(join(d, p), { force: true }); continue }
     out.push(r)
   }
   for (const f of readdirSync(dir(join('reports', 'on')))) { const p = join(d, 'on', f); if (now - statSync(p).mtimeMs > 30 * 24 * 3600e3) rmSync(p, { force: true }) }
@@ -292,7 +303,12 @@ async function main() {
 
   if (cmd === 'list') {
     const self = process.env.CLAUDE_CODE_SESSION_ID
-    if (self) { mkdirSync(root, { recursive: true }); writeFileSync(join(root, 'self'), self) }
+    // Another chat that is the inbox and alive (its timer wrote `beat` in the last 2 minutes) is not taken over by a plain
+    // list: this one lists read-only. `--take` moves the inbox here.
+    const was = readOr(join(root, 'self')), beatAge = Date.now() - (Number(readOr(join(root, 'beat'))) || 0)
+    const readOnly = !!was && was !== self && !rest.includes('--take') && id !== '--take' && beatAge < 120000
+    if (readOnly) say(`inbox: ${was} is the inbox chat (beat ${Math.round(beatAge / 1000)}s ago); run \`inbox.mjs list --take\` to move it here`)
+    else if (self) { mkdirSync(root, { recursive: true }); writeFileSync(join(root, 'self'), self) }
     const open = items().filter((i) => !answered(i.id) && i.session !== self)
     const done = reports().filter((r) => !shown(r.id) && r.session !== self)
     if (!open.length && !done.length) { say('inbox: nothing pending'); return 0 }
@@ -302,7 +318,7 @@ async function main() {
       // Shown once: the next list leaves them out (`reports` shows them again for 3 days).
       say(`## Finished: ${new Set(done.map((r) => r.session)).size} chats, ${done.length} reports\n`)
       say(`${renderReports(done, Date.now(), process.env.CLAUDE_CODE_ACCOUNT_UUID)}\n`)
-      for (const r of done) writeFileSync(join(dir(join('reports', 'seen')), r.id), '')
+      if (!readOnly) for (const r of done) writeFileSync(join(dir(join('reports', 'seen')), r.id), '')
     }
     return 0
   }
@@ -354,8 +370,14 @@ async function main() {
 
   if (cmd === 'push') {
     if (!item || answered(item.id)) return 0
-    if (!create(join(dir('pushed'), item.id), '')) return 0
-    try { execFileSync(process.execPath, [join(here, '..', '..', 'hooks', 'notify.mjs'), 'send', pushText(item)], { stdio: ['ignore', 'pipe', 'pipe'], timeout: 20000 }) } catch (e) { console.error(`inbox: push failed: ${/** @type {Error} */ (e).message.split('\n')[0]}`); return 1 }
+    // The marker is empty once pushed; while notify has failed it holds {fails, at}: tried again after 5 min, 3 times at most.
+    const mark = join(dir('pushed'), item.id), now = Date.now(), prev = existsSync(mark) ? readJSON(mark) : undefined
+    if (existsSync(mark) && !prev) return 0
+    if (prev && (prev.fails >= 3 || now - prev.at < 5 * 60e3)) return 0
+    const attempt = JSON.stringify({ fails: (prev?.fails ?? 0) + 1, at: now })
+    if (prev) writeFileSync(mark, attempt); else if (!create(mark, attempt)) return 0
+    try { execFileSync(process.execPath, [join(here, '..', '..', 'hooks', 'notify.mjs'), 'send', pushText(item)], { stdio: ['ignore', 'pipe', 'pipe'], timeout: 20000 }) } catch (e) { console.error(`inbox: push failed: ${/** @type {Error} */ (e).message.split('\n')[0]}`); return 1 } // the attempt record stays: a later tick retries
+    writeFileSync(mark, '')
     say('inbox: pushed')
     return 0
   }

@@ -38,6 +38,7 @@ const BROWSER = /^(brave|chrome|chromium|msedge|headless_shell)(\.exe)?$/i, AUTO
 
 export function classOf(p, listens = false) {
     const cmd = p.cmd ?? '', name = p.name ?? '';
+    if (/^claude(.exe)?$/i.test(name)) return null; // a chat's own process is never a candidate
     if (BROWSER.test(name)) return AUTOMATION.test(cmd) ? 'automation browser' : null; // the operator's own Brave is never listed
     if (/[\\/]heavy\.mjs/i.test(cmd)) return 'heavy.mjs wrapper'; // names the test run it wraps, so before the one-shot test below
     if (/vitest|jest/i.test(cmd) && !WATCH.test(cmd)) return null; // a one-shot run is the census's
@@ -63,15 +64,18 @@ export function ownerOf(p, byPid, chatByPid, chatList) {
         if (c) return { kind: 'chat', chat: c };
         q = par;
     }
-    const byId = chatList.find(c => c.id && (p.cmd ?? '').includes(c.id));
+    const withId = chatList.filter(c => c.id && (p.cmd ?? '').includes(c.id)), byId = withId.find(c => c.state !== 'dead') ?? withId[0]; // a chat resumed after a crash is listed dead and live: the live one owns it
     if (byId) return { kind: 'chat', chat: byId };
-    for (let a = byPid.get(p.ppid), i = 0; a && i < 40; i++) {
-        if (TERMINAL.test(a.name ?? '')) return { kind: 'terminal', name: a.name, pid: a.pid };
+    let term = null; // a Claude chat's shell (or any claude ancestor) is the chat's or the app's, never the operator's terminal
+    const first = byPid.get(p.ppid);
+    for (let a = first && first.created && p.created && first.created > p.created ? null : first, i = 0; a && i < 40; i++) {
+        if (/^claude(.exe)?$/i.test(a.name ?? '')) return { kind: 'chatapp' };
+        if (!term && TERMINAL.test(a.name ?? '')) { if (CHATSHELL.test(a.cmd ?? '')) return { kind: 'chatapp' }; term = a; }
         const next = byPid.get(a.ppid);
         if (!next || (next.created && a.created && next.created > a.created)) break;
         a = next;
     }
-    return { kind: 'unknown' };
+    return term ? { kind: 'terminal', name: term.name, pid: term.pid } : { kind: 'unknown' };
 }
 
 // ---- the pure part: a snapshot in, rows out ---------------------------------------------------------------------
@@ -79,6 +83,7 @@ export function ownerOf(p, byPid, chatByPid, chatList) {
 // later: Map pid -> cpu (100 ns) from the second sample. chatList: live.mjs chats().
 export function analyse(snap, later, chatList, now = Date.now(), lim = LIMITS) {
     const procs = snap.procs, byPid = new Map(procs.map(p => [p.pid, p]));
+    const chatPids = new Set(chatList.filter(c => c.pid && c.state !== 'dead').map(c => c.pid)); // live and idle chat CLIs; a dead chat's pid is reused by anything (claude.exe is excluded by name)
     const chatByPid = new Map(chatList.filter(c => c.state !== 'dead' && c.pid).map(c => [c.pid, c]));
     const listen = new Map(), est = new Map(); // pid -> ports ; local port -> established count
     for (const t of snap.tcp) {
@@ -90,9 +95,9 @@ export function analyse(snap, later, chatList, now = Date.now(), lim = LIMITS) {
     const tree = (p, seen = new Set()) => {
         if (seen.has(p.pid)) return [];
         seen.add(p.pid);
-        return [p, ...(kids.get(p.pid) ?? []).filter(k => !k.created || !p.created || k.created >= p.created).flatMap(k => tree(k, seen))];
+        return [p, ...(kids.get(p.pid) ?? []).filter(k => !chatPids.has(k.pid) && (!k.created || !p.created || k.created >= p.created)).flatMap(k => tree(k, seen))];
     };
-    const kindOf = new Map(procs.map(p => [p.pid, classOf(p, listen.has(p.pid))]));
+    const kindOf = new Map(procs.map(p => [p.pid, chatPids.has(p.pid) ? null : classOf(p, listen.has(p.pid))]));
     const rows = [];
     for (const p of procs) {
         const kind = kindOf.get(p.pid);
@@ -108,24 +113,24 @@ export function analyse(snap, later, chatList, now = Date.now(), lim = LIMITS) {
         const row = { pid: p.pid, kind, mb: Math.round(all.reduce((s, x) => s + (x.priv ?? x.ws ?? 0), 0) / MB), commitMb: Math.round(all.reduce((s, x) => s + (x.commit ?? 0), 0) / MB),
             has: [...new Set(all.map(x => kindOf.get(x.pid)).filter(k => k && k !== kind))], ageMin: ageMin == null ? null : Math.round(ageMin),
             ports, conns, cpuMs: Math.round(cpuMs), owner: owner.kind === 'chat' ? { kind: 'chat', id: owner.chat.id, title: owner.chat.title, state: owner.chat.state, idleMin: owner.chat.idleMin == null ? null : Math.round(owner.chat.idleMin), root: owner.chat.root } : owner,
-            cmd: (p.cmd ?? p.name ?? '').slice(0, 140), pids: all.map(x => x.pid).reverse() /* leaves first */, verdict: 'KEEP', why: [] };
+            cmd: (p.cmd ?? p.name ?? '').slice(0, 140), pids: all.map(x => x.pid).reverse() /* leaves first */, created: p.created || null, pidCreated: Object.fromEntries(all.map(x => [x.pid, x.created || null])) /* ms since epoch: pid reuse check before taskkill */, verdict: 'KEEP', why: [] };
         const w = row.why;
         if (ageMin != null && ageMin < lim.ageMin) w.push(`started ${Math.round(ageMin)} min ago, under ${lim.ageMin}`);
         if (row.cpuMs > lim.cpuMs) w.push(`working: ${row.cpuMs} ms of CPU in the ${lim.sampleSec} s sample`);
         if (conns) w.push(`${conns} connection(s) on its port ${ports.join(',')}: somebody is using it`);
         const o = row.owner;
         if (o.kind === 'chat') {
-            const done = o.state === 'ended' || (o.state === 'idle' && o.idleMin >= lim.idleMin);
+            const done = o.state === 'ended' || o.state === 'dead' || (o.state === 'idle' && o.idleMin >= lim.idleMin);
             if (!done) w.push(o.state === 'idle' ? `owner chat idle ${o.idleMin} min, under ${lim.idleMin}` : 'owner chat is live');
             else { // another chat working in the same repo may use it
                 const mate = chatList.find(c => c.id !== o.id && c.root && c.root === o.root && (c.state === 'live' || (c.state === 'idle' && c.idleMin < lim.idleMin)));
                 if (mate) { row.verdict = w.length ? 'KEEP' : 'ASK'; w.push(`chat ${mate.id.slice(0, 8)} works in the same repo`); }
                 else if (!w.length) row.verdict = 'CANDIDATE';
-                if (row.verdict === 'CANDIDATE') w.push(`owner chat ${o.state === 'ended' ? 'ended' : `idle ${o.idleMin} min`}; no CPU, ${ports.length ? `port ${ports.join(',')} has no connection` : 'no port'}`);
+                if (row.verdict === 'CANDIDATE') w.push(`owner chat ${o.state === 'ended' || o.state === 'dead' ? 'ended' : `idle ${o.idleMin} min`}; no CPU, ${ports.length ? `port ${ports.join(',')} has no connection` : 'no port'}`);
             }
         } else if (!w.length) {
             row.verdict = 'ASK';
-            w.push(o.kind === 'terminal' ? `started from a terminal or IDE (${o.name} pid ${o.pid}): the operator's` : 'owner not found (parent gone or link broken)');
+            w.push(o.kind === 'chatapp' ? 'owner is a Claude chat or the desktop app (chat not identified)' : o.kind === 'terminal' ? `started from a terminal or IDE (${o.name} pid ${o.pid}): the operator's` : 'owner not found (parent gone or link broken)');
         }
         rows.push(row);
     }
@@ -171,7 +176,7 @@ export function scan(lim = LIMITS) {
 }
 
 export const line = r => {
-    const o = r.owner, who = o.kind === 'chat' ? `chat ${o.id.slice(0, 8)}${o.title ? ` "${o.title}"` : ''} (${o.state}${o.idleMin != null ? `, idle ${o.idleMin} min` : ''})` : o.kind === 'terminal' ? `terminal ${o.name} ${o.pid}` : 'owner unknown';
+    const o = r.owner, who = o.kind === 'chat' ? `chat ${o.id.slice(0, 8)}${o.title ? ` "${o.title}"` : ''} (${o.state}${o.idleMin != null ? `, idle ${o.idleMin} min` : ''})` : o.kind === 'terminal' ? `terminal ${o.name} ${o.pid}` : o.kind === 'chatapp' ? 'a Claude chat or the desktop app (chat not identified)' : 'owner unknown';
     return [`${r.verdict.padEnd(9)} pid ${r.pid}  ${r.kind}  ${r.mb} MB (commit ${r.commitMb} MB)  ${r.ageMin ?? '?'} min  cpu ${r.cpuMs} ms  ${r.ports.length ? `port ${r.ports.join(',')} conns ${r.conns}` : 'no port'}  owner: ${who}`,
         `          ${r.cmd}${r.has.length ? `  [runs: ${r.has.join(', ')}]` : ''}`, `          ${r.why.join('; ')}`, ...(r.verdict === 'KEEP' ? [] : [`          pids leaves first: ${r.pids.join(' ')}`])].join('\n');
 };
@@ -238,6 +243,20 @@ function selftest() {
     // a session id in the command line names the chat when the parent link broke (Git Bash)
     const viaId = analyse({ procs: [P(41, 999, 'node.exe', 'node C:\\Temp\\claude\\x\\f-1\\vite.js --watch', 90)], tcp: [] }, new Map(), [{ id: 'f-1', pid: 7, state: 'ended', idleMin: 1, root: 'C:\\x' }], now);
     assert.equal(viaId[0].owner.kind, 'chat');
+    // a chat's shell or a claude ancestor is the chat's or the app's, never "the operator's terminal"; a chat CLI is no candidate and no tree member
+    const app = analyse({ procs: [P(1, 0, 'Claude.exe', 'Claude.exe', 500), P(60, 1, 'bash.exe', 'bash -c source C:/Users/x/.claude/shell-snapshots/snapshot-bash-1.sh', 400), P(61, 60, 'node.exe', 'node vite.js', 300), P(62, 0, 'bash.exe', 'bash -c source C:/Users/x/.claude/shell-snapshots/snapshot-bash-2.sh', 400), P(63, 62, 'node.exe', 'node vite.js', 300)], tcp: [] }, new Map(), [], now);
+    assert.deepEqual(app.map(r => [r.pid, r.verdict, r.owner.kind]), [[61, 'ASK', 'chatapp'], [63, 'ASK', 'chatapp']]); assert.match(app[0].why[0], /Claude chat or the desktop app/); assert.equal(app.some(r => r.pid === 1), false, 'claude.exe is never a row');
+    const cli = analyse({ procs: [P(70, 0, 'node.exe', 'node vite.js', 300, 100), P(71, 70, 'node.exe', 'node claude-cli.js', 300, 900)], tcp: [] }, new Map(), [{ id: 'g-1', pid: 71, state: 'live', idleMin: 1, root: 'C:/g' }], now);
+    assert.deepEqual(cli[0].pids, [70], 'the tree does not descend into a chat CLI'); assert.equal(cli[0].mb, 100);
+    // a fallback match (session id in the command line) to a dead chat is an ended owner, not "owner chat is live"
+    const deadId = analyse({ procs: [P(72, 999, 'node.exe', 'node C:/Temp/claude/x/h-1/vite.js', 90)], tcp: [] }, new Map(), [{ id: 'h-1', pid: 7, state: 'dead', idleMin: null, root: 'C:/h' }], now);
+    assert.equal(deadId[0].verdict, 'CANDIDATE'); assert.doesNotMatch(deadId[0].why.join(), /is live/);
+    // a dead chat's pid reused by a dev server: still listed; a crash-resumed chat (dead + live, same id) is the live one's
+    const reused = analyse({ procs: [P(80, 0, 'node.exe', 'node vite.js', 300)], tcp: [] }, new Map(), [{ id: 'k-1', pid: 80, state: 'dead', idleMin: null, root: 'C:/k' }], now);
+    assert.equal(reused.length, 1, 'a dead chat\'s old pid is no chat'); assert.equal(reused[0].created, min(300)); assert.equal(reused[0].pidCreated[80], min(300));
+    const resumed = analyse({ procs: [P(81, 999, 'node.exe', 'node C:/Temp/claude/x/m-1/vite.js', 90)], tcp: [] }, new Map(), [{ id: 'm-1', pid: 7, state: 'dead', idleMin: null, root: 'C:/m' }, { id: 'm-1', pid: 8, state: 'live', idleMin: 1, root: 'C:/m' }], now);
+    assert.equal(resumed[0].verdict, 'KEEP'); assert.match(resumed[0].why.join(), /is live/);
+    assert.equal(classOf({ name: 'claude.exe', cmd: 'claude --watch vite' }), null);
     assert.equal(classOf({ name: 'node.exe', cmd: 'node vitest.js' }), null); assert.equal(classOf({ name: 'node.exe', cmd: 'node C:\\x\\vitest watch --watch' }) , null, 'vitest is the census\'s, even watching');
     console.log('residents.mjs selftest: ok');
 }

@@ -23,7 +23,7 @@ Needs the makarasty plugin (its `fleet-naive-user` agent) and a browser pane. Wi
 - **Screen**: the route, reached logged in (`/makarasty:fleet-login` first when the pane is not), with the
   data a user would see, in this chat's foreground tab.
 - **Users**: three fresh `makarasty:fleet-naive-user` agents, one `sonnet` and two `haiku`, each call with
-  its `model`, `effort: medium` and `run_in_background: false`, one after another, since one chat has one
+  its `model`, `effort: high` for the sonnet and `effort: medium` for the haiku ones and `run_in_background: false`, one after another, since one chat has one
   live pane. Each gets only the start URL, the `tabId`, the viewport, the role and the tasks, the order
   rotated per user; never a file path, the code or another user's results.
 - **Before each user**: navigate to the start URL, reload, and run the frame check twice a second apart

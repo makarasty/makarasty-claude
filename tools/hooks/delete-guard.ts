@@ -43,16 +43,20 @@ const WRAPPER = /^(env|command|sudo|nohup|time|exec|builtin|nice|xargs|timeout|w
 const SHELL_CMD = /^(-\w*c|-c(o(m(m(a(nd?)?)?)?)?)?|\/{1,2}[ck])$/i // `cmd //c` is Git Bash's spelling of cmd /c
 // Windows PowerShell runs the first word past its own options as the command (`powershell Remove-Item -Recurse -Force ..`); -c/-Command, any
 // prefix, takes the rest. Returns where the command starts in `w`, or -1 (-File, -EncodedCommand: read apart).
-const psStart = (w: string[]): number => {
-  for (let k = 0; k < w.length; k++) {
-    if (/^-c(o(m(m(a(nd?)?)?)?)?)?$/i.test(w[k]!)) return k + 1
-    if (/^-(f(ile)?|e(c|nc\w*))$/i.test(w[k]!)) return -1
-    if (!w[k]!.startsWith('-')) return k
-    if (/^-(ex\w*|ep|w\w*|i\w*|o\w*|v\w*|conf\w*)$/i.test(w[k]!)) k++
+const psStart = (w: string[], from = 0): number[] => {
+  const out: number[] = []
+  for (let k = from; k < w.length; k++) {
+    if (/^-c(o(m(m(a(nd?)?)?)?)?)?$/i.test(w[k]!)) return [...out, k + 1] // the options end here; a later -c is the command's own
+    if (/^-(f(ile)?|e(c|nc\w*)?)$/i.test(w[k]!)) return out
+    if (!w[k]!.startsWith('-')) return [...out, k]
+    if (/^-(no\w*|sta|mta|l(ogin)?)$/i.test(w[k]!)) continue
+    if (/^-(ex\w*|ep|w\w*|i(f|nputformat)|o(f|utputformat)|v(e\w*)?|conf\w*|settingsfile|psconsolefile|custompipename)$/i.test(w[k]!)) k++
+    // An unknown option: its next word is its value or the command. Both are read; a guard that checks more is safe.
+    else if (w[k + 1] !== undefined && !w[k + 1]!.startsWith('-')) out.push(k + 1), k++
   }
-  return -1
+  return out
 }
-const ENCODED = /^-e(c|nc[a-z]*)$/i
+const ENCODED = /^-e(c|nc[a-z]*)?$/i
 // Node's rimraf and del-cli (and trash) delete recursively without a flag; they unlink links, as rm does.
 const NODE_DEL = new Set(['rimraf', 'del-cli', 'trash'])
 const DEL = new Set(['rm', 'rmdir', 'rd', 'del', 'erase', 'remove-item', 'ri', 'find', ...NODE_DEL])
@@ -274,8 +278,8 @@ function command(w: string[], ps: boolean, out: Cmd[], depth: number): void {
   if (b === 'nix-shell') { const r = rest.findIndex((y) => /^--(run|command)$/.test(y)); if (r >= 0 && rest[r + 1]) nest(rest[r + 1]!, ps, out, depth + 1) }
   if (SHELL.test(head)) {
     const inner = WINSH.test(head)
-    const f = /(^|[\\/])(pwsh|powershell)(\.exe)?$/i.test(head) ? psStart(rest) : ((k) => k < 0 ? -1 : k + 1)(rest.findIndex((y) => SHELL_CMD.test(y)))
-    if (f >= 0 && rest[f] !== undefined) nest(inner ? rest.slice(f).join(' ') : rest[f]!, inner, out, depth + 1)
+    const fs = /(^|[\\/])(pwsh|powershell)(\.exe)?$/i.test(head) ? psStart(rest) : [((k) => k < 0 ? -1 : k + 1)(rest.findIndex((y) => SHELL_CMD.test(y)))]
+    for (const f of fs) if (f >= 0 && rest[f] !== undefined) nest(inner ? rest.slice(f).join(' ') : rest[f]!, inner, out, depth + 1)
     const e = rest.findIndex((y) => ENCODED.test(y))
     if (e >= 0 && rest[e + 1] !== undefined) nest(decode(rest[e + 1]!), true, out, depth + 1)
   } else if (/^(eval|iex|invoke-expression)$/.test(b)) lex(rest.join(' '), ps, out, depth + 1)

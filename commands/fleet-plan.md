@@ -164,10 +164,11 @@ into the pace line yourself (never leave the word out):**
 
 These two are the person's standing policy, not this run's. One their profile already answers (the session text
 carries `profile.md`, lines `Fleet foreign code: wait|fix|leave` and `Fleet crash watch: no|yes`) is not asked:
-take its value and name it in one line. Each question asked says in its text that the answer is kept for every
-later run; once answered, append that line to `<config>/makarasty/profile.md` (create it if missing) and say so
-in one line. Seen 2026-11-12: the same two questions, asked by the darkkitty fleet on 11-11 and answered,
-came back from the LifeLines fleet the next day, and the operator asked why he had to answer them again.
+take its value and name it in one line. The session text cuts `profile.md` at 2000 characters, so read
+`<config>/makarasty/profile.md` yourself before deciding the line is missing. Each question asked says in its text
+that the answer is kept for every later run; once answered, write that line to the same file (create it if
+missing), replacing an existing `Fleet ...:` line of the same name and never appending a duplicate, and say so in
+one line. A question the person already answered once is not asked again in a later run.
 
 5. **Another chat's code blocks the commit**: "Wait, at most 60 min, then leave it (Recommended)" / "Fix it, only
    code that is already committed (not another chat's open work)" / "Leave the files and list them". Stored in the
@@ -334,10 +335,15 @@ broke a third.
 Each task header carries `hold: 03, 07` (the item numbers it serves, as the person numbered them) and the body
 carries the paths of those `NN.md` files and their `img/NN-*` screenshots: the verbatim quote and the picture,
 never your retelling, since workers that got a retelling fixed another object or a narrower scope. Add the
-`means:` lines of those items as the task's assertions, and for a screen item a last step: save the after-shot as
-`<dir>/img/NN-after.<ext>` (the worker does not judge it; a separate `fleet-design-eye` or `fleet-scenario`
-agent does, per the hold skill). Before the first claim or chip run
-`node "<tools plugin>/skills/hold/hold.mjs" --dir <hold dir> cover <run dir>`: while it exits 1 the run does not
+`means:` lines of those items as the task's assertions. A screen item (`img:` or `visual: yes`) lists
+`<hold dir>/img/NN-after.png` in its `owns:` and ends with a step: the worker saves the after-shot there with the
+proof skill, which is the only way a pane picture reaches a file (the pane's own screenshot cannot be saved):
+its own receiver dir per task, since tasks in parallel would share one `.port` and a `stop` would kill another's receiver:
+`node "<tools plugin>/skills/proof/proof.mjs" serve "<hold dir>/img/.shots-NN"` in the background, then run the output of
+`proof.mjs snippet "<hold dir>/img/.shots-NN" NN-after ['selector']` in the pane's `javascript_tool`, move
+`.shots-NN/NN-after.png` to `<hold dir>/img/NN-after.png`, run `proof.mjs stop "<hold dir>/img/.shots-NN"` and remove that dir.
+The worker does not judge it; `fleet-collect` has a separate `fleet-design-eye` agent do that. Before the first claim or chip run
+`node "<tools plugin>/skills/hold/hold.mjs" --dir "<hold dir>" cover "<run dir>"`: while it exits 1 the run does not
 start; file a task for each item it lists, or ask the person to drop it. Fix tasks that a review files have no
 `hold:` line and need none.
 
@@ -487,7 +493,7 @@ You are the one session the whole run depends on, and the one nothing restarts. 
   line, the plan path, the run directory, the slot or worker count
   `n`, the slots or chips by lane, the integration checkout's path and URL (opt-in worktrees), any extra URLs the watch
   checks, whether `tasks/queue-open` is held, the merged branches in order, the reviews in flight, the fix
-  tasks filed and why, the operator's decisions and the questions still open to them, and the pane check tasks filed and their state. Update it on
+  tasks filed and why, the operator's decisions and the questions still open to them, and the pane check tasks filed and their state, and a `hold: <hold dir>` line when the run comes from a hold list (a relaunched coordinator finds the person's items only by it). Update it on
   every finish in one chat, and on every merge with opt-in worktrees. It is what a fresh coordinator reads, and what you read after a compaction; the first six are
   exactly what re-arming the watch and judging the lanes need, and nobody else has them. Stamp each entry
   with the time from the `== now` line of `fleet.sh status`, never an estimate: a coordinator that guessed

@@ -38,7 +38,8 @@ one line and restart it. A watchdog missing from the task list means this chat r
 ## Review
 
 1. `inbox.mjs list`. It marks this chat as the inbox, so its own asks never enter the inbox. "nothing pending": say so
-   in one line and stop.
+   in one line and stop. When another inbox chat is alive (beat under 2 min) `list` prints one line naming it and lists
+   read-only; `inbox.mjs list --take` moves the inbox to this chat (only when the person wants it here).
 2. Under "## Finished" `list` prints finish reports, one block per chat (its newest report in full, earlier recaps a
    line each); they are shown once, `inbox.mjs reports` shows the last 3 days again. Give each chat four plain lines:
    what it did, what it found, what it found beyond its task (first, when there is any), what is left, plus its

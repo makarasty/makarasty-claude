@@ -42,6 +42,7 @@ const SK_BUILTIN = /^(loop|simplify|code-review|security-review|review|init|run|
 const SECRETS = [
     /\b(?:sk|pk|rk)-[A-Za-z0-9_-]{12,}/g, /\bgh[pousr]_[A-Za-z0-9]{16,}/g, /\bgithub_pat_[A-Za-z0-9_]{16,}/g, /\bxox[abprs]-[A-Za-z0-9-]{8,}/g,
     /\bAKIA[0-9A-Z]{12,}/g, /\bBearer\s+[A-Za-z0-9._~+\/=-]{8,}/gi,
+    /(?<![a-z0-9+.-])[a-z][a-z0-9+.-]*:\/\/[^\s/@:]+:[^\s]*@(?=[^\s@]*(?:[\s/]|$))/gi, // scheme://user:pass@ up to the last '@' before the host (a password may hold '@' or '/')
     /\b(?:password|passwd|pwd|secret|token|api[_-]?key)\s*[=:]\s*\S+/gi,
     /[A-Za-z0-9+\/=_-]{32,}/g,
 ];
@@ -398,6 +399,9 @@ async function selftest() {
         assert.ok(!/sk-abcdef|hunter2|abcdefghijklmnopqrstuvwxyz123456/.test(text + JSON.stringify(r)), 'secrets are masked');
         assert.ok(text.includes('strict corrections %') && text.includes('Headline'));
         assert.equal(mask('Authorization: Bearer abcdefgh12345678 ghp_' + 'a'.repeat(20) + ' AKIA' + 'B'.repeat(16)).includes('abcdefgh12345678'), false);
+        assert.equal(mask('see postgres://admin:p4ss@db.prod:5432/x'), 'see [redacted]db.prod:5432/x', 'URL credentials go, host stays');
+        assert.equal(mask('postgres://u:p@ss@db/x'), '[redacted]db/x', "an '@' in the password");
+        assert.equal(mask('https://u:ab/cd@host'), '[redacted]host', "a '/' in the password");
         assert.ok(safe('x'.repeat(300)).length <= 120);
         // end to end: --save twice, the second shows the change since the first
         const env = { ...process.env, CLAUDE_CONFIG_DIR: cfg }, me = fileURLToPath(import.meta.url);

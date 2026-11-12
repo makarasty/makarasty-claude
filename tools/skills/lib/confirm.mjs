@@ -210,8 +210,10 @@ export function grant(tool, o = {}) {
 
 // Called by the script that deletes, with the ids it is about to act on. Throws unless the person granted every one.
 export function check(tool, ids, o = {}) { // o.scope: the scope this run acts under, a string or a list of them
-    // Unset: a person at their own terminal. Set but empty is what a model types to skip the check: refused.
-    if (!o.sid && process.env.CLAUDE_CODE_SESSION_ID === '') throw new Error('not confirmed by the person: CLAUDE_CODE_SESSION_ID is set but empty. Do not act');
+    // Unset outside Claude: a person at their own terminal. Set but empty, or unset inside a Claude shell (CLAUDECODE / CLAUDE_CODE_ENTRYPOINT
+    // are set there), is what a model does to skip the check: refused.
+    const inClaude = !!(process.env.CLAUDECODE || process.env.CLAUDE_CODE_ENTRYPOINT);
+    if (!o.sid && (process.env.CLAUDE_CODE_SESSION_ID === '' || (inClaude && !process.env.CLAUDE_CODE_SESSION_ID))) throw new Error('not confirmed by the person: CLAUDE_CODE_SESSION_ID is missing or empty inside a Claude session. Do not act. Ask the person to run this from their own terminal, or with ! in the prompt');
     if (!o.sid && !process.env.CLAUDE_CODE_SESSION_ID) return;
     if (!ids.length) return;
     const p = load(tool, o), want = [].concat(o.scope ?? ''), fresh = p && nowOf(o) - p.grantedAt <= TTL, ok = new Set(fresh ? p.granted : []);
@@ -227,7 +229,7 @@ export function check(tool, ids, o = {}) { // o.scope: the scope this run acts u
 function selftest() {
     const tmp = mkdtempSync(join(tmpdir(), 'confirm-selftest-')), saved = { ...process.env };
     try {
-        delete process.env.CLAUDE_CODE_SESSION_ID;
+        delete process.env.CLAUDE_CODE_SESSION_ID; delete process.env.CLAUDECODE; delete process.env.CLAUDE_CODE_ENTRYPOINT; // outside Claude, unless a line sets them
         process.env.CLAUDE_CONFIG_DIR = join(tmp, 'claude');
         const tr = join(tmp, 't.jsonl'), B = Date.parse('2026-11-09T10:00:00Z'), GB = 2 ** 30;
         let t = B;
@@ -291,8 +293,13 @@ function selftest() {
         t += 2e3;
         assert.equal(select('x', ob()).code, 0, 'an answer at the end of a transcript longer than the tail is read');
         process.env.CLAUDE_CODE_SESSION_ID = '';
-        assert.throws(() => check('x', ['b'], { ...o(), sid: undefined }), /set but empty/, 'an empty session id is no way round the grant');
+        assert.throws(() => check('x', ['b'], { ...o(), sid: undefined }), /missing or empty/, 'an empty session id is no way round the grant');
         delete process.env.CLAUDE_CODE_SESSION_ID;
+        for (const v of ['CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT']) {
+            process.env[v] = '1';
+            assert.throws(() => check('x', ['b'], { ...o(), sid: undefined }), /missing or empty/, `an unset session id inside Claude (${v}) is no way round the grant`);
+            delete process.env[v];
+        }
         r = go('Delete forever: 2\nRemove, undoable: 1, 3'); assert.equal(r.code, 0); assert.match(r.out, /^GRANTED: b\nNOT GRANTED: a$/); // "1, 3" is no label for 1
         r = go('Delete forever: 2 и Remove, undoable: 1'); assert.equal(r.code, 2, 'two labels on one line are no label');
         r = go('Remove, undoable: 1, 3 - нет, не надо, отмена'); assert.equal(r.code, 2, 'the label with more on its line');
