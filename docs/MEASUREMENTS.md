@@ -1041,6 +1041,14 @@ with a dev mod.
   from the first) simulated on them: 1/5 min woke 4.8 times an active hour with 1.4 reports a wake (delay max 134 s);
   2/10 min 3.9 and 1.8; 5/15 min 2.8 and 2.5 (delay p50 305 s, max 900 s); 10/30 min 1.7 and 4.0 (max 1800 s, past
   the operator's p90 answer gap of 23 min). All chats counted: an upper bound for chats switched on for reports.
+- **A started session's dialog is not always shown in the inbox chat (11-12):** the hold-review session (a side
+  session the inbox chat started, not detached) asked at 12:38:25; the plugin woke the inbox chat at 12:38:40, which
+  was busy in that turn until 12:39:19; 1.19.11 refused its re-ask at 12:39:08, so it wrote the question as text at
+  12:39:14; the operator answered in the asking chat at 12:39:29 ("странно, вот сейчас вопрос пришёл"). Earlier
+  that day he answered such a question unprompted in its own chat ("вопросы остались, и ты мне о них не написал").
+  In the morning the same app did show a started session's dialog in the inbox chat (above). So: sometimes, likely
+  only while the parent chat is idle; the transcript does not record what the app draws, so the condition is not
+  proven. The inbox asks every item itself since 1.19.18; a second copy the app draws closes with it.
 - **Not measured:** whether a plugin-submitted box answer counts as approval for a delete or a push.
 - **Rule produced:** finish reports (makarasty-tools 1.19.14) wake the inbox chat at 5 min quiet or 15 min from the
   first. makarasty-tools inbox (1.17.0): an ask answered from the inbox goes back as the dialog's own

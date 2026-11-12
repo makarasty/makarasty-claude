@@ -1,5 +1,21 @@
 # Changelog
 
+## makarasty-tools 1.19.18 — 2026-11-12
+
+- **inbox: a started session's question is asked in the inbox:** 1.19.11 refused re-asking an AskUserQuestion of a
+  session the inbox chat had started, assuming the app shows that dialog there; the operator did not see it, and
+  answered it in its own chat unprompted. The app draws that dialog in the inbox chat only sometimes (seen once in
+  the morning; at 12:38-12:39 not while the inbox chat was busy in a turn) [M63], so no rule may count on it: the
+  inbox chat asks every item itself, ask, box and card alike, with the `inbox:<id>` flag, so its dialog closes when he
+  answers in the asking chat and an answer here closes the asking chat's dialog; asking without the flag is still
+  refused. Tests for a started session's ask, a box and a card in one dialog in `tools/hooks/inbox.test.ts`.
+- **inbox: no box from a hold or from a "?" mid-reply:** a chat collecting complaints in hold mode files no box and
+  no finish report until the codeword (one "«…counted» (?" became a box and woke the inbox per complaint). A
+  question in prose counts only when the reply ends with it: a fleet coordinator's question to its own reviewer,
+  followed by more text, was filed as a box for the operator.
+- **inbox: several finishes of one chat read as such:** the Finished block says "N finishes of one chat" when it
+  carries earlier recaps (two finishes of one chat were taken for a duplicate).
+
 ## makarasty-tools 1.19.17 — 2026-11-12
 
 - **inbox: a box asked again is asked once:** in 46 items of 20 chats (2026-11-12) a chat asked its end-of-turn box

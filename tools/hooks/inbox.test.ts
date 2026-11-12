@@ -193,26 +193,22 @@ test('the inbox chat asking without the flag while items are open is refused, wi
   expect(((await q).result as { answers: Record<string, string> }).answers).toEqual({ [Q]: 'SQLite' })
 })
 
-// 2026-11-12: the inbox re-asked, reworded, a question of a session it had started (Vize), whose own dialog the app
-// already showed in the inbox chat, so the person saw it twice.
-test('the inbox chat never re-asks an ask item of a session it started, with or without the flag', async ($, on) => {
+// 2026-11-12: 1.19.11 refused re-asking a question of a session the inbox chat started, assuming the app shows that
+// session's dialog there; the person did not see it and answered it in its own chat unprompted. It is asked like any.
+test('the inbox chat asks a question of a session it started like any other: with the flag it goes, without it is refused', async ($, on) => {
   const w = world(on, { self: 'chatA', children: ['local_bbbb'] })
   const item = { kind: 'ask', at: 1, cwd: 'C:/work/lifelines', chat: 'c', questions: [{ question: 'Что обновлять в LifeLines? Vize и tsrs, oxlint, prettier только проверяют код. Vite, plugin-vue, sass, firebase, axios попадают в бандл.', options: [{ label: 'A: только проверки' }, { label: 'B: A + vite и plugin-vue' }] }] }
   w.disk.set('/cfg/makarasty/inbox/items/chatB~t1.json', JSON.stringify({ ...item, id: 'chatB~t1', session: 'chatB', host: 'local_bbbb' }))
   const reworded = [{ question: 'Vize-сессия составила план для LifeLines: vize, tsrs, oxlint, prettier проверяют код; vite, plugin-vue, sass, firebase, axios идут в сайт. Что обновляем?', header: 'LifeLines', multiSelect: false, options: [{ label: 'A: только проверки (Recommended)', description: '' }, { label: 'B: A + vite и plugin-vue', description: '' }] }]
-  for (const source of ['inbox:chatB~t1', 'inbox', undefined]) {
-    const r = await $.tool.call({ tool: 'AskUserQuestion', questions: reworded, ...(source ? { metadata: { source } } : {}), tool_use_id: `t-${source}` })
-    expect(`${source}: ${r.deny}`).toContain(`${source}: chatB~t1 is a question from a session this chat started`)
-    expect(r.deny).toContain('answer it in its own dialog above')
-    expect(r.deny).toContain('chatB~t1')
-  }
+  const bare = await $.tool.call({ tool: 'AskUserQuestion', questions: reworded, tool_use_id: 't-bare' })
+  expect(bare.deny).toContain('"inbox:<the ids')
+  expect(bare.deny).toContain('chatB~t1')
   expect(w.dialog.shown).toBe(0)
-  // The same question from a chat it did not start goes through with the flag; a question of its own too.
-  w.disk.set('/cfg/makarasty/inbox/items/chatC~t2.json', JSON.stringify({ ...item, id: 'chatC~t2', session: 'chatC', host: 'local_cccc' }))
-  const q = $.tool.call({ tool: 'AskUserQuestion', questions: QUESTIONS, metadata: { source: 'inbox' }, tool_use_id: 't12' })
-  await w.until(() => w.dialog.shown === 1, 'own question shown')
-  w.answerDialog({ result: { questions: QUESTIONS, answers: { [Q]: 'SQLite' } } })
-  await q
+  const q = $.tool.call({ tool: 'AskUserQuestion', questions: reworded, metadata: { source: 'inbox:chatB~t1' }, tool_use_id: 't-flag' })
+  await w.until(() => w.dialog.shown === 1, 'asked with the flag')
+  w.inboxAnswers('chatB~t1', { by: 'chat' }) // answered in its own chat: this dialog closes by itself
+  const r = await q
+  expect((r.result as { answers: Record<string, string> }).answers).toEqual({ [reworded[0].question]: '[answered in its own chat]' })
 })
 
 test('the inbox chat is woken once per new item from another chat, never for its own or answered ones', async ($, on) => {
@@ -230,4 +226,26 @@ test('the inbox chat is woken once per new item from another chat, never for its
   expect(wake).not.toContain('chatA')
   await w.clock.advance(15000)
   expect(w.submitted.filter((s) => s.startsWith('Inbox:')).length).toBe(1) // once per item
+})
+
+// One path for every kind: the inbox chat asks a box and a card with the flag too, and its dialog closes by itself once
+// the person answered both in their own chats (a button there, a click on the card).
+test('the inbox chat asks a box and a card with the flag; answered in their chats, its dialog closes by itself', async ($, on) => {
+  const w = world(on, { self: 'chatA', children: ['local_bbbb'] })
+  const put = (id: string, o: object) => w.disk.set(`/cfg/makarasty/inbox/items/${id}.json`, JSON.stringify({ id, at: 1, session: id.split('~')[0], cwd: 'C:/work/x', chat: 'c', host: 'local_bbbb', ...o }))
+  put('chatB~box1', { kind: 'choice', ask: 'Запушить ветку?', actions: ['Да', 'Нет'] })
+  put('chatC~card1', { kind: 'card', title: 'Чистка логов', taskId: 'task_1' })
+  const qs = [
+    { question: 'chatB: запушить ветку?', header: 'chatB', multiSelect: false, options: [{ label: 'Да', description: '' }, { label: 'Нет', description: '' }] },
+    { question: 'chatC: запустить «Чистка логов»?', header: 'chatC', multiSelect: false, options: [{ label: 'Запустить', description: '' }, { label: 'Отказаться', description: '' }] },
+  ]
+  expect((await $.tool.call({ tool: 'AskUserQuestion', questions: qs, tool_use_id: 'bare' })).deny).toContain('chatB~box1, chatC~card1')
+  const call = $.tool.call({ tool: 'AskUserQuestion', questions: qs, metadata: { source: 'inbox:chatB~box1,chatC~card1' }, tool_use_id: 'flagged' })
+  await w.until(() => w.dialog.shown === 1, 'shown')
+  w.inboxAnswers('chatB~box1', { by: 'chat' })
+  await new Promise((r) => setTimeout(r, 30))
+  expect(w.dialog.closed).toBe(0) // one of two answered: still open
+  w.inboxAnswers('chatC~card1', { by: 'chat' })
+  const r = await call
+  expect(Object.values((r.result as { answers: Record<string, string> }).answers)).toEqual(['[answered in its own chat]', '[answered in its own chat]'])
 })

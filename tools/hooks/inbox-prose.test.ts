@@ -11,7 +11,10 @@ test('the last question of a reply is found; code, statements and early question
   expect(proseQuestion('Готово, тесты зелёные.')).toBeUndefined()
   expect(proseQuestion('Почему так? Потому что кеш.\n\nДальше\n\nещё\n\nи ещё\n\nВсё сделано.')).toBeUndefined()
   expect(proseQuestion('Итог.\n\n```js\nconst a = b ? c : d\nif (x?) {}\n```\nГотово.')).toBeUndefined()
-  expect(proseQuestion('1. Нашёл ещё баг в `pdf.ts`. Сделать его тоже?\n2. Остальное готово.')).toBe('Сделать его тоже?')
+  expect(proseQuestion('1. Остальное готово.\n2. Нашёл ещё баг в `pdf.ts`. Сделать его тоже?')).toBe('Сделать его тоже?')
+  // 2026-11-12: a question to the chat's own reviewer with more text after it, and a hold chat's «…» (?
+  expect(proseQuestion('Отдал на ревью Opus с одним вопросом. Проиграется ли финальная цитата или пропадёт совсем? Если пропадёт, тест был прав.\n\n`z99-fix-static` ещё работает.')).toBeUndefined()
+  expect(proseQuestion('02. «Patience» → лейбл «123 patients counted» (? "Patience"). Записал, скриншот сохранён.')).toBeUndefined()
 })
 
 function world(on: On, o: { self?: string } = {}) {

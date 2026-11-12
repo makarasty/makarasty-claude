@@ -109,7 +109,7 @@ export const register: Register = (on) => {
     const flagged = source.startsWith('inbox:') ? source.slice(6).split(',').filter(Boolean) : []
     const me = await inboxSelf($).catch(() => undefined)
     if (me) {
-      const deny = await inboxChatDeny($, me, e.questions, source, flagged)
+      const deny = await inboxChatDeny($, me, source)
       if (deny) return { deny }
     }
     if (source === 'inbox' || source.startsWith('inbox:')) return inboxAsk($, e, next, flagged)
@@ -184,7 +184,7 @@ export const register: Register = (on) => {
     if (me) { await $.fs.write(`${me.root}/turn`, `idle ${await $.clock.now()}`).catch(() => undefined); return r }
     if (e.isAborted || (e.reason !== 'answer' && e.reason !== 'error')) return r
     const a = await active($).catch(() => undefined)
-    if (!a) return r
+    if (!a || (await holding($, a).catch(() => false))) return r
     const q = e.reason === 'answer' ? proseQuestion(e.answer ?? '') : undefined
     const reports = (recap !== undefined || e.reason === 'error') && turnOrigin !== 'scheduled-trigger' && (await enrolled($, a))
     if (!q && !reports) return r
@@ -247,21 +247,14 @@ async function inboxAsk($: D, e: { questions: readonly { question: string }[] },
   return d.r as never
 }
 
-// Two ways the inbox chat made the person answer one question twice (2026-11-12), refused here, not left to SKILL.md:
-// 1. It re-asked an ask item from a session it started: the app already shows that session's own dialog in this chat
-//    (items f37427f1~toolu_01S3Tj1aZ3HdUmHSudiqDzxf, Vize; prompt-health; Value). Refused with or without the flag.
-// 2. It asked without the inbox flag, so its dialog stayed open after the person answered in the asking chat.
-async function inboxChatDeny($: D, me: { dir: string; root: string; session: string }, questions: readonly { question: string; options?: readonly { label: string }[] }[], source: string, flagged: string[]): Promise<string | undefined> {
+// The inbox chat asked a chat's question without the inbox flag, so its dialog stayed open after the person answered in
+// the asking chat, and they answered twice (2026-11-12): refused here, not left to SKILL.md. A question of a session the
+// inbox chat started is asked here like any other (1.19.11 refused it, assuming the app shows that session's dialog in
+// this chat; the operator did not see it there and answered it in its own chat unprompted).
+async function inboxChatDeny($: D, me: { dir: string; root: string; session: string }, source: string): Promise<string | undefined> {
+  if (source) return undefined
   const open = await openItems($, me, false)
   if (!open.length) return undefined
-  const host = await $.env.get('CLAUDE_CODE_HOST_SESSION_ID')
-  const r = host && open.some((it) => it.kind === 'ask') ? await cli($, me.dir, ['children', host]).catch(() => undefined) : undefined
-  const kids = new Set(r?.exitCode === 0 ? r.stdout.split(/\s+/).filter(Boolean) : [])
-  const asked = questions.map((q) => `${q.question} ${(q.options ?? []).map((o) => o.label).join(' ')}`).join(' ')
-  const linked = open.filter((it) => it.kind === 'ask' && it.host && kids.has(it.host)
-    && (flagged.includes(it.id) || sameQuestion(asked, (it.questions ?? []).map((q) => `${q.question} ${(q.options ?? []).map((o) => o.label).join(' ')}`).join(' '))))
-  if (linked.length) return `${linked.map((it) => it.id).join(', ')} ${linked.length > 1 ? 'are questions' : 'is a question'} from a session this chat started: the app already shows that session's own dialog in this chat, so asking it here shows the person the same question twice. Do not ask it here; tell the person to answer it in its own dialog above. Ask again without it if anything else is left.`
-  if (source) return undefined
   const ids = open.map((it) => it.id)
   return `This chat is the inbox and ${ids.length} item${ids.length > 1 ? 's' : ''} from other chats ${ids.length > 1 ? 'are' : 'is'} open (${ids.join(', ')}). If this dialog asks any of them, call AskUserQuestion again with metadata {"source": "inbox:<the ids it asks, comma-separated>"}, so it closes by itself once the person answers in the asking chat. A question of this chat's own: metadata {"source": "inbox"}.`
 }
@@ -276,6 +269,17 @@ export function sameQuestion(a: string, b: string, min = 0.5): boolean {
   let n = 0
   for (const w of small) if (big.has(w)) n++
   return n / small.size >= min
+}
+
+// The hold command is collecting in this chat (its list starts with `collecting`, as gates.ts reads it): each turn only
+// files a complaint, so its reply is neither a question for the person nor a finish (2026-11-12: a hold chat's
+// "«123 patients counted» (?" filed as a box and woke the inbox per complaint).
+async function holding($: D, a: { dir: string; session: string }): Promise<boolean> {
+  for (const f of [`${a.dir}/makarasty/hold/${a.session}/index.md`, `${a.dir}/makarasty/hold/${a.session}.md`]) {
+    const t = await $.fs.read(f).catch(() => '')
+    if (t) return /^\s*collecting\b/.test(String(t))
+  }
+  return false
 }
 
 // Switched on for finish reports: by this chat's session id or its app id (the inbox knows the app id of what it starts).
@@ -353,16 +357,14 @@ async function openItems($: D, a: { root: string; session: string }, mine = true
   return out
 }
 
-// One pass over this chat's own items: deliver inbox answers to boxes and cards, explain and push the old ones.
-// A question asked only in prose at the end of a reply ("Удалить лог?", "нашёл ещё X, сделать?"): the last sentence
-// that ends with "?" in the reply's last three paragraphs, code left out. A rhetorical question also counts (shortcut:
-// the person would rather see one too many than miss one; upgrade if they say they are noise).
+// A question asked only in prose at the end of a reply ("Удалить лог?", "нашёл ещё X, сделать?"): the reply's last
+// sentence, when it ends with "?", code left out. A "?" earlier in the reply is not one: 2026-11-12 a fleet coordinator's
+// question to its own reviewer, followed by more text, and a hold chat's «…counted» (?" were filed as boxes.
 export function proseQuestion(answer: string): string | undefined {
-  const text = answer.replace(/```[\s\S]*?```/g, ' ').replace(/`[^`\n]*`/g, (m) => m)
-  const tail = text.trim().split(/\n\s*\n/).slice(-3).join('\n')
-  const qs = tail.match(/[^.!?\n]*[^\s.!?][^.!?\n]*\?(?=\s|$)/g)
-  const q = qs?.at(-1)?.replace(/^[\s*_\-\d.)]+/, '').trim()
-  return q && q.length > 3 ? q.slice(0, 400) : undefined
+  const text = answer.replace(/```[\s\S]*?```/g, ' ').trim()
+  if (!/\?\s*$/.test(text)) return undefined
+  const q = text.match(/[^.!?\n]*[^\s.!?(][^.!?\n]*\?\s*$/)?.[0].replace(/^[\s*_\-\d.)]+/, '').trim()
+  return q && /\p{L}{2,}/u.test(q) && q.length > 3 ? q.slice(0, 400) : undefined
 }
 
 // The inbox chat itself: wake it once per new item from another chat, so nothing waits for the person to ask. The

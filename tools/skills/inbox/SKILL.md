@@ -48,10 +48,8 @@ one line and restart it. A watchdog missing from the task list means this chat r
    why it asks, what each option does. Use the item's "Plainly" line when it has one; otherwise write it from
    its context, and copy its "Open the chat" link line as it stands (one click opens that chat). Never add facts the
    item does not hold.
-3. An ask item from a session this chat started (its app id is in `list_sessions {"linked": true}`): the app already
-   shows that session's own dialog in this chat, so a second copy reads as two questions [M63]. Explain it, say
-   "answer it in its own dialog just above", and do not ask it again (the plugin refuses a dialog here that asks it,
-   flag or not). Every other item:
+3. Every item, a session this chat started included (the person does not see that session's dialog here: on 11-12
+   he answered one in its own chat after this chat only pointed at it), is asked here:
    Ask in AskUserQuestion with `metadata: {"source": "inbox:<id>,<id>"}` naming the items of that call (the flag keeps
    the call out of the inbox, and the dialog closes by itself once the person has answered all of them in their own
    chats; the plugin refuses a dialog here without the flag while items are open), up to 4 questions per call,

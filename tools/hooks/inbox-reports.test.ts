@@ -233,3 +233,18 @@ test('a box asked again while the inbox answer to it waits in the queue is not f
   await $.tool.call(box(ASK2, 'q3'))
   expect(w.items().map((i) => i.id).sort()).toEqual(['chatA~q1', 'chatA~q3'])
 })
+
+// 2026-11-12: a chat collecting complaints in hold mode had each complaint's turn filed as a box, waking the inbox.
+test('a chat in hold mode files no box and no finish report until the codeword', async ($, on) => {
+  const w = world(on)
+  w.disk.set(`${R}/reports/on/chatA`, 'x')
+  w.disk.set('/cfg/makarasty/hold/chatA/index.md', 'collecting until абрикос\n')
+  await $.tool.call(wrap('Записал жалобу 2.'))
+  await $.turn.complete(turn('Записал. Это баг или так задумано?', { turnId: 'h1' }))
+  expect(w.items()).toEqual([])
+  expect(w.reports()).toEqual([])
+  w.disk.set('/cfg/makarasty/hold/chatA/index.md', 'fixing\n') // the codeword: the hold works the list, reports again
+  await $.tool.call(wrap('Починил 3 жалобы.'))
+  await $.turn.complete(turn('Готово, все три.', { turnId: 'h2' }))
+  expect(w.reports()).toHaveLength(1)
+})

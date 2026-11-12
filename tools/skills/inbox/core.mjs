@@ -174,7 +174,7 @@ export function renderReports(/** @type {Report[]} */ reports, now = Date.now(),
   const by = new Map()
   for (const r of [...reports].sort((a, b) => b.at - a.at)) by.set(r.session, [...(by.get(r.session) ?? []), r])
   return [...by.values()].map(([last, ...earlier]) => [
-    `### ${project(last.cwd)} — finished ${ago(now - last.at)} ago${last.error ? ', ended on an error' : ''}`,
+    `### ${project(last.cwd)} — finished ${ago(now - last.at)} ago${earlier.length ? `, ${earlier.length + 1} finishes of one chat` : ''}${last.error ? ', ended on an error' : ''}`,
     `Chat: ${last.chat}`,
     link(/** @type {Item} */ (/** @type {unknown} */ (last)), account),
     last.recap ? `Recap: ${last.recap}` : '',
