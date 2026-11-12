@@ -93,6 +93,17 @@ prove('task-001-area', 'after', 'grep -q two f.txt');
 out = gcheck('task-001-area');
 check('red before, green after, over a tree that changed', 'PROVEN task-001-area', out);
 
+// A command the shell cannot start (exit 127) is not a failing reproduction: a Git Bash `/usr/bin/x` that
+// arrived as `C:/Program Files/Git/usr/bin/x` ran `C:/Program` and recorded a false proof.
+mk(`${gate}/.fleet/r1/tasks/claimed/task-127-area`);
+out = prove('task-127-area', 'before', 'no-such-command-xyz').out;
+check('a before the shell could not start says so', 'exit 127 is the shell failing to start the command', out);
+write(`${gate}/f127.txt`, 'x\n');
+prove('task-127-area', 'after', 'true');
+check('and check refuses it as never run', 'never ran before the change', gcheck('task-127-area'));
+out = gn(['prove', '.fleet/r1', 'task-127-area', 'before', '--', 'C:/Program Files/Git/usr/bin/test', '-f', 'f.txt'], gate, { MSYSTEM: 'MINGW64', EXEPATH: 'C:\\Program Files\\Git\\bin' }).out;
+check('a /path Git Bash rewrote is recorded as typed', '"cmd":"/usr/bin/test -f f.txt"', read(`${gate}/.fleet/r1/tasks/claimed/task-127-area/proof`));
+
 git(gate, 'revert', '--no-edit', '-q', 'HEAD');
 write(`${gate}/f.txt`, 'two\n');
 out = prove('task-001-area', 'before', 'grep -q two f.txt').out;

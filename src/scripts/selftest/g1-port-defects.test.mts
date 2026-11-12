@@ -273,6 +273,21 @@ if (has('timeout')) {
   };
   const env = { CLAUDE_CODE_SESSION_ID: undefined, CLAUDE_PLUGIN_ROOT: ROOT };
   const watch = (dir: string, secs: number): string => sh(`timeout ${secs} sh loop.sh`, { cwd: dir, env }).out;
+  // A watch in the background, driven by what it prints (a TICK line per pass, a second apart) and ended by a
+  // FINISHED file, never by a fixed sleep or a short `timeout`: a slow box (the first pass runs `fleet.sh ctx`)
+  // only makes the waits longer. The 120 s poll limit is the deadline; the 150 s `timeout` is the backstop.
+  const live = (dir: string) => {
+    write(`${dir}/loop.sh`, read(`${dir}/loop.sh`).replace('\n  sleep 10\n', '\n  echo "TICK $tick"; sleep 1\n'));
+    const done = execAsync('sh', ['-c', 'timeout 150 sh loop.sh > live.out 2>&1'], { cwd: dir, env });
+    const out = (): string => read(`${dir}/live.out`);
+    const until = (ok: () => boolean): boolean => { for (let i = 0; i < 480 && !ok(); i++) sleep(0.25); return ok(); };
+    const ticks = (): number => Number([...out().matchAll(/TICK (\d+)/g)].pop()?.[1] ?? 0);
+    // `more` further passes: at least that many seconds, so longer than the quiet=3 a STALL waits for.
+    const passes = (more: number): boolean => { const t = ticks() + more; return until(() => ticks() >= t); };
+    const count = (prefix: string): number => out().split('\n').filter((l) => l.startsWith(prefix)).length;
+    const stop = async (): Promise<string> => { write(`${dir}/.fleet/r/FINISHED`, ''); await done; return out(); };
+    return { out, until, passes, count, stop };
+  };
 
   let ww = watchDir('twowatch', 99, 'tasks/done', 'tasks/ready');
   write(`${ww}/.fleet/r/tasks/done/d1`, '');
@@ -289,14 +304,18 @@ if (has('timeout')) {
   ww = watchDir('stalls', 99, 'tasks/done', 'tasks/ready', 'tasks/claimed/t1');
   write(`${ww}/.fleet/r/tasks/claimed/t1/owner`, 'chip 01\n');
   write(`${ww}/loop.sh`, read(`${ww}/loop.sh`).replace('quiet=600', 'quiet=3'));
-  const stallRun = execAsync('sh', ['-c', 'timeout 60 sh loop.sh > stall.out 2>&1'], { cwd: ww, env });
-  sleep(14);
+  const sw = live(ww);
+  sw.until(() => sw.count('STALL:') >= 1);
+  sw.passes(6); // still unchanged, longer than quiet: without the `stall` guard a second STALL prints here
   write(`${ww}/.fleet/r/tasks/done/d1`, '');
-  await stallRun;
-  const stalls = read(`${ww}/stall.out`);
+  sw.until(() => sw.out().includes('task finished: '));
+  sw.until(() => sw.count('STALL:') >= 2);
+  sw.passes(6); // and a third would print here
+  const stalls = await sw.stop();
   check('a stalled run says STALL', 'STALL: nothing on disk changed', stalls);
   check('and a change in between is announced', 'task finished: ', stalls);
-  check('STALL prints once per unchanged state, again after a change and a new stall', '2', String(stalls.split('\n').filter((l) => l.startsWith('STALL:')).length));
+  const nStall = stalls.split('\n').filter((l) => l.startsWith('STALL:')).length;
+  truthy('STALL prints once per unchanged state, again after a change and a new stall', nStall === 2, `${nStall} STALL lines`);
   rm(ww);
   // What an older watch marked seen, from the cwd (.fleet/r/...) or absolute, is not announced again.
   ww = watchDir('oldseen', 99, 'tasks/done', 'tasks/ready');
@@ -329,7 +348,10 @@ if (has('timeout')) {
   absent("the watch waits for a retire's replacement", 'run complete', read(`${ww}/repl.out`));
   // Nor while the run is paused: a relaunch hands workers back before their replacements exist.
   rm(`${ww}/.fleet/r/replaced/01`, `${ww}/.fleet/r/offered/02`); write(`${ww}/.fleet/r/PAUSED`, 'relaunch\n');
-  const paused = watch(ww, 6);
+  const pw = live(ww);
+  pw.until(() => /BUT THE RUN IS PAUSED|run complete/.test(pw.out())); // either ends the wait; a wrong "run complete" fails below
+  pw.passes(3); // a few more passes: the notice is said once, "run complete" never
+  const paused = await pw.stop();
   absent('the watch calls no run complete while it is paused', 'run complete', paused);
   check('but says once that every worker landed under the pause', 'BUT THE RUN IS PAUSED', paused);
   rm(ww);

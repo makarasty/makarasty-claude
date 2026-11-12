@@ -23,7 +23,7 @@
 // where the slug is the project root (the run dir's grandparent) with every non-alphanumeric character
 // replaced by '-'; a session not found there is searched for in every project folder.
 // `coordinator` holds only the latest coordinator, so earlier ones (after a relaunch, often in a worktree's
-// project folder `<slug>--claude-worktrees-<name>`) are found by their `<run> --take-over` text: all are priced.
+// project folder `<slug>--claude-worktrees-<name>`) are found by the tool call that ran `<run> --take-over` (forks and quotes do not count): all are priced.
 //
 // How a task's time is split (ported from the 2026-10-08 speed analysis behind M36): the gap before an
 // assistant line is model time (over five minutes it is a stall), the gap before a tool result is that
@@ -502,28 +502,41 @@ function locateSessions(sids, primary) {
     }
     return found;
 }
-// A relaunch overwrites `coordinator`, so the earlier coordinators are found by what they wrote: the relaunch prompt
-// `resume <run> --take-over`, printed by the coordinator that relaunched and run by the fresh one. They may sit in the
-// project folder of a worktree (`<slug>--claude-worktrees-<name>`), so scan the project folder and those siblings.
-// shortcut: a chat that merely quotes that command is counted too; transcripts older than the run dir are skipped.
-// A transcript past ~512 MB cannot be one string (ERR_STRING_TOO_LONG): a big file is scanned line by line.
-// shortcut: the pattern never spans two lines, which holds for the one-line JSON records of a transcript.
-async function mentions(file, re) {
-    if (statSync(file).size <= 64e6)
-        return re.test(readFileSync(file, 'latin1'));
-    const rl = createInterface({ input: createReadStream(file, { encoding: 'latin1' }), crlfDelay: Infinity });
-    for await (const line of rl)
-        if (re.test(line)) {
-            rl.close();
-            return true;
+// A relaunch overwrites `coordinator`, so the earlier coordinators are found by what they ran: the relaunch prompt
+// `resume <run> --take-over`, run by the fresh coordinator in a Bash call or handed to it by the relaunching one in a start_session/spawn_task prompt (`fleet.sh|fleet.mjs resume`). Text that
+// merely quotes it (a chat, a tool result) does not count. They may sit in the project folder of a worktree
+// (`<slug>--claude-worktrees-<name>`), so scan the project folder and those siblings. A fork (`claude --resume --fork-session`)
+// copies the source's whole history, take-over call included, so a call counts for the session that has it first by file
+// birth time (ties by session id); a session owning none of its calls is no coordinator. Transcripts older than the run dir are skipped.
+// shortcut: no fork marker exists in the jsonl, so "first by birth time" stands in for "the source"; on a filesystem
+// without birth time it falls back to mtime. Lines are read one at a time: a transcript can pass ~512 MB.
+async function takeOverCalls(file, re) {
+    const uuids = [];
+    const rl = createInterface({ input: createReadStream(file, { encoding: 'utf8' }), crlfDelay: Infinity });
+    for await (const line of rl) {
+        if (!line.includes('--take-over'))
+            continue;
+        let o;
+        try {
+            o = JSON.parse(line);
         }
-    return false;
+        catch {
+            continue;
+        }
+        const blocks = o.type === 'assistant' && Array.isArray(o.message?.content) ? o.message.content : [];
+        if (blocks.some((b) => b && b.type === 'tool_use' && re.test(JSON.stringify(b.input ?? {})))) {
+            uuids.push(str(o.uuid) || `line-${uuids.length}-${file}`);
+        }
+    }
+    return uuids;
 }
+// Returns session id -> project dir, ordered oldest file first (the source before its forks).
 async function findCoordinators(run, primary) {
-    const re = new RegExp(`(?<![A-Za-z0-9_-])${basename(run).replace(/[^A-Za-z0-9_-]/g, '\\$&')}\\W{0,8}--take-over`);
+    const name = basename(run).replace(/[^A-Za-z0-9_-]/g, '\\$&');
+    const re = new RegExp(String.raw `fleet\.(?:sh|mjs)\b[^\n]*?\bresume\b[^\n]*?(?<![A-Za-z0-9_-])${name}\W{0,8}--take-over`);
     const since = statSync(run).birthtimeMs || 0;
     const root = dirname(primary), base = basename(primary);
-    const found = new Map();
+    const cands = [];
     for (const d of listDir(root)) {
         if (d !== base && !d.startsWith(`${base}--claude-worktrees-`))
             continue;
@@ -532,13 +545,23 @@ async function findCoordinators(run, primary) {
             if (!f.endsWith('.jsonl') || !SID_RE.test(sid))
                 continue;
             try {
-                if (statSync(join(root, d, f)).mtimeMs >= since && await mentions(join(root, d, f), re))
-                    found.set(sid, join(root, d));
+                const st = statSync(join(root, d, f));
+                if (st.mtimeMs < since)
+                    continue;
+                const uuids = await takeOverCalls(join(root, d, f), re);
+                if (uuids.length)
+                    cands.push({ sid, dir: join(root, d), born: st.birthtimeMs || st.mtimeMs, uuids });
             }
             catch { /* unreadable: not ours */ }
         }
     }
-    return found;
+    cands.sort((a, b) => a.born - b.born || a.sid.localeCompare(b.sid));
+    const owner = new Map();
+    for (const c of cands)
+        for (const u of c.uuids)
+            if (!owner.has(u))
+                owner.set(u, c.sid);
+    return new Map(cands.filter((c) => c.uuids.some((u) => owner.get(u) === c.sid)).map((c) => [c.sid, c.dir]));
 }
 function walkJsonl(dir, out = []) {
     let entries;
@@ -826,6 +849,15 @@ async function main() {
     const missing = sids.filter((s) => !where.has(s));
     const sessions = new Map();
     await Promise.all([...where].map(async ([sid, dir]) => { sessions.set(sid, await loadSession(sid, dir)); }));
+    // A fork repeats the source's records, so one API message can sit in several sessions: count it once, in the
+    // oldest session first (workers, then coordinators source-first). Ids made up for lines with none are not compared.
+    const seenMsg = new Set();
+    for (const sid of new Set([...chips.keys(), ...scanned.keys(), ...coords])) {
+        const s = sessions.get(sid);
+        if (s)
+            for (const t of [s.parent, ...s.subs])
+                t.msgs = t.msgs.filter((m) => m.id.startsWith('line-') || (!seenMsg.has(m.id) && !!seenMsg.add(m.id)));
+    }
     // chip -> its sessions (a relaunched or compacted worker can have several)
     const byChip = new Map();
     for (const [sid, chip] of [...chips].sort((a, b) => a[1].localeCompare(b[1]))) {
@@ -964,12 +996,44 @@ async function main() {
     // ---- coordinator
     const coordSessions = [...coords].map((s) => sessions.get(s)).filter((s) => !!s);
     const coordTok = emptyTok();
-    for (const cs of coordSessions)
-        for (const t of [cs.parent, ...cs.subs])
+    // One-chat run (no worker chats): the coordinator's own subagents, at any depth, are the workers. Grouped by
+    // agent type and model; a subagent file reached twice (any session, any depth) is counted once.
+    const oneChat = byChip.size === 0;
+    const coordSubTok = emptyTok();
+    const coordSubBy = new Map();
+    const seenSub = new Set([...byChip.values()].flat().flatMap((s) => s.subs.map((t) => resolve(t.file))));
+    for (const cs of coordSessions) {
+        for (const m of cs.parent.msgs) {
+            addTok(coordTok, m);
+            add(models, m.model, 1);
+        }
+        for (const t of cs.subs) {
+            if (seenSub.has(resolve(t.file)))
+                continue;
+            seenSub.add(resolve(t.file));
+            const type = str(t.meta.agentType) || '?';
             for (const m of t.msgs) {
-                addTok(coordTok, m);
                 add(models, m.model, 1);
+                if (!oneChat) {
+                    addTok(coordTok, m);
+                    continue;
+                }
+                addTok(coordSubTok, m);
+                const key = `${type}\t${m.model}`;
+                const g = coordSubBy.get(key) ?? { type, model: m.model, agents: new Set(), tok: emptyTok() };
+                g.agents.add(t.file);
+                addTok(g.tok, m);
+                coordSubBy.set(key, g);
             }
+        }
+    }
+    // They are the workers now: fold into the worker totals (no separate-chat workers exist in this mode).
+    for (const dst of [workerTok, subTok])
+        for (const k of Object.keys(dst))
+            dst[k] += coordSubTok[k];
+    const coordSubRows = [...coordSubBy.values()].sort((a, b) => b.tok.cost - a.tok.cost)
+        .map((g) => ({ type: g.type, model: g.model, agents: g.agents.size, msgs: g.tok.msgs, cost: g.tok.cost, tokens: g.tok }));
+    const coordSubCount = new Set([...coordSubBy.values()].flatMap((g) => [...g.agents])).size;
     // ---- span
     const allT = [...byChip.values()].flat().flatMap((s) => [s.parent.first, s.parent.last]).filter((x) => x !== null);
     const spanA = Math.min(...tasks.map((t) => t.start), ...allT);
@@ -1014,7 +1078,9 @@ async function main() {
     const report = {
         run: basename(run), run_dir: run, projects_dir: primary, brief_mode: briefMode,
         span: { start: new Date(spanA * 1000).toISOString(), end: new Date(spanB * 1000).toISOString(), hours: (spanB - spanA) / 3600 },
-        workers_seen: byChip.size, coordinator: coord || null, coordinator_found: coordSessions.length > 0, coordinator_sessions: coordSessions.length,
+        workers_seen: byChip.size, one_chat: oneChat,
+        coordinator_subagents: { count: coordSubCount, cost: coordSubTok.cost, by_type_model: coordSubRows },
+        coordinator: coord || null, coordinator_found: coordSessions.length > 0, coordinator_sessions: coordSessions.length,
         missing_transcripts: missing.map((s) => ({ sid: s, chip: chips.get(s) ?? 'coordinator' })), bad_lines: badLines,
         tasks: { claimed: tasks.length, done: done.length, median_min: pct(mins, 0.5), p90_min: pct(mins, 0.9) },
         time: { total_min: totalSec / 60, buckets_min: Object.fromEntries(BUCKETS.map((b) => [b, +((bucketsTotal.get(b) ?? 0) / 60).toFixed(1)])),
@@ -1072,6 +1138,10 @@ async function main() {
     L.push(`tokens (workers): cache read ${Mt(workerTok.cr)}, cache write ${Mt(workerTok.cw)}, input ${Mt(workerTok.in)}, output ${Mt(workerTok.out)}`);
     L.push(`cost, list-price estimate: total ${usd(totalUsd)} = workers ${usd(workerTok.cost)} (parents ${usd(parentTok.cost)}, subagents ${usd(subTok.cost)}) + coordinator ${usd(coordTok.cost)}${coordSessions.length ? (coordSessions.length > 1 ? ` (${coordSessions.length} sessions)` : '') : ' (not found)'}`);
     L.push(`  per done task ${usd(perTask)} (worker spend / tasks done)`);
+    if (oneChat && coordSubRows.length) {
+        const sl = coordSubRows.slice(0, 8).map((g) => `${g.type.replace(/^makarasty:/, '')} ${g.model.replace(/^claude-/, '')} ${usd(g.cost)} (${g.agents})`);
+        L.push(`  one-chat workers = coordinator subagents ${coordSubCount}: ${sl.join('; ')}${coordSubRows.length > 8 ? ` ... ${coordSubRows.length - 8} more in --json` : ''}`);
+    }
     const wsorted = [...workers].sort((a, b) => Number(b.cost) - Number(a.cost));
     const wl = wsorted.slice(0, 8).map((w) => {
         const p = w.parent, s = w.subs;

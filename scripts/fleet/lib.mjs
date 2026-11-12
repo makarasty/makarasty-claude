@@ -4,6 +4,7 @@ import { closeSync, existsSync, fstatSync, mkdirSync, statfsSync, openSync, read
 import { spawnSync } from 'node:child_process';
 import { dirname, parse, resolve } from 'node:path';
 import { homedir, tmpdir, uptime } from 'node:os';
+import { StringDecoder } from 'node:string_decoder';
 // 2: `finish` asks an implement or design task with a `test:` line for a recorded run of it. A run stamped 1
 // was handed out before coders were told to record one, and is not asked.
 export const RUN_FORMAT = 2;
@@ -849,6 +850,114 @@ export function sessionCtx(sid) {
 }
 export const coordinatorSid = (c) => noCr(firstLine(`${c.run}/coordinator`));
 export const coordCtx = (c) => existsSync(`${c.run}/coordinator`) ? sessionCtx(coordinatorSid(c)) : '';
+// ---- the operator's own words, for the relaunch ----------------------------------------------------------
+// A relaunch hands over STATE.md, which holds only what the coordinator wrote down [M64]: the operator's own
+// wishes and bans were the part it lost. This reads them straight from the coordinators' transcripts, no summary.
+// The transcript of a session under <config>/projects/*/, or ''.
+function transcriptOf(sid) {
+    const base = `${configDir()}/projects`;
+    const d = names(base).find((p) => existsSync(`${base}/${p}/${sid}.jsonl`));
+    return d === undefined ? '' : `${base}/${d}/${sid}.jsonl`;
+}
+// A transcript line by line: a long session runs to tens of megabytes, none of it held at once.
+function* fileLines(p) {
+    const fd = openSync(p, 'r'), dec = new StringDecoder('utf8'), b = new Uint8Array(1 << 20);
+    let rest = '';
+    try {
+        for (let n = readSync(fd, b, 0, b.length, null); n > 0; n = readSync(fd, b, 0, b.length, null)) {
+            const parts = (rest + dec.write(b.subarray(0, n))).split('\n');
+            rest = parts.pop() ?? '';
+            yield* parts;
+        }
+    }
+    finally {
+        closeSync(fd);
+    }
+    rest += dec.end();
+    if (rest)
+        yield rest;
+}
+// Every coordinator session of this run: the one in `coordinator` and each fleet-sessions record naming the
+// run that is not a worker chip, so a second relaunch keeps the first coordinator's words.
+export function coordinatorSids(c) {
+    const norm = (s) => slashes(noCr(s).trim()).toLowerCase();
+    const want = norm(c.absrun), sids = new Set();
+    const cur = coordinatorSid(c);
+    if (cur)
+        sids.add(cur);
+    const dir = `${configDir()}/makarasty/fleet-sessions`;
+    for (const n of names(dir))
+        if (norm(read(`${dir}/${n}`)) === want && !existsSync(`${c.run}/chips/${n}`))
+            sids.add(n);
+    return [...sids].filter((s) => transcriptOf(s));
+}
+const NOT_OPERATOR = ['<system-reminder', '<task-notification', '<side-sessions-event', '<agent-message', '<cross-session', 'Caveat:', '[Request interrupted', '[Image: source:', 'You are the coordinator of fleet run'];
+const ELEMENT = /<launch-selected-element>[\s\S]*?<\/launch-selected-element>/g;
+function* operatorEntries(file) {
+    for (const l of fileLines(file)) {
+        if (!l.includes('"type":"user"'))
+            continue;
+        let o;
+        try {
+            o = JSON.parse(l);
+        }
+        catch {
+            continue;
+        }
+        const ts = o.timestamp || '', m = o.message?.content;
+        if (o.isMeta || o.isSidechain || o.isCompactSummary || (o.origin?.kind && o.origin.kind !== 'human') || m === undefined)
+            continue;
+        const blocks = typeof m === 'string' ? [{ type: 'text', text: m }] : m;
+        // An AskUserQuestion answer: the answers map names each question, the result text is the older form.
+        if (o.toolUseResult && typeof o.toolUseResult === 'object') {
+            const a = o.toolUseResult.answers;
+            if (a && typeof a === 'object') {
+                yield { ts, body: `ASKED, ANSWERED:\n${Object.entries(a).map(([q, v]) => `Q: ${q}\nA: ${v}`).join('\n')}` };
+                continue;
+            }
+        }
+        const tr = blocks.find((b) => b.type === 'tool_result');
+        if (tr) {
+            const t = typeof tr.content === 'string' ? tr.content : Array.isArray(tr.content) ? tr.content.map((x) => x.text || '').join('\n') : '';
+            if (t.startsWith('The user answered:'))
+                yield { ts, body: `ASKED, ANSWERED:\n${t.replace(/\. Read the answers carefully[\s\S]*$/, '')}` };
+            continue;
+        }
+        const texts = blocks.filter((b) => b.type === 'text' && typeof b.text === 'string').map((b) => b.text)
+            .filter((t) => !NOT_OPERATOR.some((p) => t.trimStart().startsWith(p)))
+            // The page element a browser pick attaches is data; its selector path stays, its dump goes.
+            .map((t) => t.replace(ELEMENT, (e) => `[selected element: ${/<path>(.*?)<\/path>/.exec(e)?.[1] ?? '?'}]`).trim())
+            .filter((t) => t && !/^\[selected element: [^\]]*\]$/.test(t));
+        if (texts.length)
+            yield { ts, body: `OPERATOR:\n${texts.join('\n')}` };
+    }
+}
+// The words as markdown, newest `cap` bytes kept, the count of older messages cut named.
+export function operatorWordsMd(files, cap = 120 * 1024) {
+    const all = [];
+    for (const f of files)
+        all.push(...operatorEntries(f));
+    all.sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0)); // stable: one session's order stays
+    const blocks = all.map((w) => `## ${w.ts}\n${w.body}\n`);
+    let size = 0, first = blocks.length;
+    // shortcut: one message above the cap is kept whole as the newest, no truncation inside a message.
+    while (first > 0 && (first === blocks.length || size + Buffer.byteLength(blocks[first - 1] ?? '') <= cap))
+        size += Buffer.byteLength(blocks[--first] ?? '');
+    const cut = first;
+    const head = `# Operator's own words in this run, verbatim, oldest first. Read all of it before you act; a wish or ban here outranks STATE.md.\n\n${blocks.length - cut} messages and answers from ${files.length} coordinator session(s).${cut ? ` ${cut} older ones were cut to keep this file under ${cap / 1024} KB.` : ''}\n\n`;
+    return { md: head + blocks.slice(cut).join('\n'), kept: blocks.length - cut, cut };
+}
+// <run>/operator-words.md, rewritten whole each call. Returns what it wrote, for the relaunch's report.
+export function writeOperatorWords(c) {
+    try {
+        const { md, kept, cut } = operatorWordsMd(coordinatorSids(c).map(transcriptOf));
+        writeFileSync(`${c.run}/operator-words.md`, md);
+        return { kept, cut, bytes: Buffer.byteLength(md) };
+    }
+    catch {
+        return undefined;
+    }
+}
 // `[ "$a" -gt "$b" ]` on a file's content: an unreadable number makes the test false, as it does in sh.
 export const gt = (a, b) => /^\s*-?[0-9]+\s*$/.test(b) && a > Number(b);
 export const STOP_WHAT_YOU_STARTED = 'First stop what you started: TaskStop your background shells, Monitors and servers, preview_stop your preview servers, tabs_close every tab, the last one too: this chat is not reused.';

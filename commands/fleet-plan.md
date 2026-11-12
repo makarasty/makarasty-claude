@@ -148,7 +148,8 @@ all at once, never more than four, the recommended option first in each:
 3. **Economy**: "Maximum economy (Recommended)" / "Balanced" / "Spend for speed".
 4. **Isolation and commits**: "One chat, main checkout, one commit at the end (Recommended)" / "One chat, a
    commit per wave" / "Worktrees for code tasks, commit per task branch" / "Separate chats for browser
-   workers, one commit at the end".
+   workers, one commit at the end". The answer sets when a commit is due; each commit to the main checkout is
+   still asked at its time, with its paths (`docs/ONECHAT.md`, "Commits").
 
 Write the answers as one `pace:` line in `STATE.md`, for example `pace: scale=plan speed=balanced
 economy=max isolation=onechat commits=end` (the other three: `isolation=onechat commits=wave`,
@@ -543,7 +544,9 @@ You are the one session the whole run depends on, and the one nothing restarts. 
   Three classes [M59] (`docs/PROTOCOL.md`, "Three classes of question"). Class 1 is always an `AskUserQuestion`, with
   no default: a delete, anything sent outside this machine, stopping processes, editing another chat's code, and
   scale, pace, what the mission means and a choice between mockups. Money is none of it: a reserved action is never
-  asked at all (`docs/PROTOCOL.md`). A real fork with no recommendation is an `AskUserQuestion` too. A **reversible
+  asked at all (`docs/PROTOCOL.md`). A real fork with no recommendation is an `AskUserQuestion` too. Whether to go
+  on with the run the operator launched (the next wave, the rest of the queue, "continue?") is never asked: the answer is yes,
+  so go on and report it [M67]. A drain that timed out, a budget or ceiling reached, and a relaunch stay asks. A **reversible
   question you have a recommendation for** is not asked
   blocking: `fleet.sh ask-operator <run> <id> <recommended answer>` (the question on stdin), notify with
   `/makarasty-tools:notify` (`PushNotification` when that skill is absent), and keep working. The watch prints

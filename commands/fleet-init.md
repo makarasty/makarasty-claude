@@ -10,6 +10,17 @@ confirm it with the operator; assume nothing.
 
 Run it once per project, and again when the answers change.
 
+## 0. Trust the root folders once
+
+A session started in a folder nobody trusted stops on "Trust this workspace?" until the operator clicks it, and a
+run that starts sessions in fresh folders (a relaunch, fixtures under the temp folder) raises it every time. Trust is
+kept per folder in `~/.claude.json` (`projects.<path>.hasTrustDialogAccepted`) and covers every folder under a trusted
+one: a trusted parent folder covers the projects inside it that have no entry of their own. So check that the
+project's parent folder and Claude's own temp root (`%LOCALAPPDATA%\Temp\claude` on Windows) are trusted, and if one is
+not, ask the operator to trust it once: open a session in that folder in the app, press "Trust workspace", archive
+the session. One click covers every account that shares this config folder. Trusting is the operator's own security
+setting: ask, never write the file yourself; and never suggest a folder others write into (Downloads, the whole Temp).
+
 ## 1. Find out what the project is
 
 Read the project's own index, its build scripts and its dev server configuration. You are looking for four
@@ -120,8 +131,8 @@ Then say the third number: how many the operator should actually run.
 
 **Those are two different numbers, and the second one is what matters.** A machine with memory compression
 enabled will carry ten workers without complaint while leaving nothing for the person who owns it.
-Measured 2026-08-26 on 32 GB with compression: ten workers ran, and five is what the operator chose so
-they could keep using the computer. Recommend the number that leaves them their machine.
+On one machine with compression, ten workers ran and its owner chose five so they could keep using the
+computer [M68]. Recommend the number that leaves them their machine.
 
 Also report the ceiling that is not about memory at all: five browser panes tile side by side at a
 readable width, further ones stack below at half height, and ten is where panes stop being usable. Say it

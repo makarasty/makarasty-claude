@@ -68,3 +68,4 @@ No diff, no file contents, no narration.
 
 The last line is exactly one of `DONE`, `DONE_WITH_CONCERNS: <one line>` or `BLOCKED: <one line>`. Use
 `BLOCKED` rather than guess when the task cannot be done as written.
+Started by a dispatch prompt (`Read <run>/tasks/claimed/<id>/prompt.md and follow it`)? The report goes to `<run>/reports/<id>.md` and the reply is at most 3 lines and 400 characters, the last one the status line: the stop gate blocks longer.

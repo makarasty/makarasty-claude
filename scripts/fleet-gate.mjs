@@ -456,7 +456,12 @@ function prove(runDir, taskId, phase, command) {
     if (!fs.existsSync(claim))
         die(`no claim at ${claim} - claim the task before proving it`);
     const shell = reproShell();
-    const line = commandLine(command, shell !== true || process.platform !== 'win32');
+    // Called as `node fleet-gate.mjs` from Git Bash (not through fleet.sh), a word starting with / arrived as a
+    // path under Git's install folder: `/usr/bin/test` became `C:/Program Files/Git/usr/bin/test`, which bash
+    // splits at the space and runs as `C:/Program`. Undone, so the recorded command is the one typed.
+    const gitRoot = process.env.MSYSTEM ? (process.env.EXEPATH || process.env.SHELL || '').split('\\').join('/').replace(/\/(usr\/)?bin(\/[^/]*\.exe)?$/i, '') : '';
+    const unmsys = (a) => (gitRoot && a.toLowerCase().startsWith(`${gitRoot.toLowerCase()}/`) ? a.slice(gitRoot.length) : a);
+    const line = commandLine(command.map(unmsys), shell !== true || process.platform !== 'win32');
     // One prove at a time per claim: a second one running inside the first's window put its own output in a
     // gap between runs, which `check` reads as the fix.
     // A lock whose prove was killed (a Bash timeout, a closed terminal) is taken over at once: its pid is gone.
@@ -506,6 +511,8 @@ function prove(runDir, taskId, phase, command) {
         // A `before` that passes means the reproduction does not reproduce, which is a refutation and a result.
         if (phase === 'before' && rec.exit === 0)
             console.log('the reproduction passes already - this finding is refuted, not fixed. Record that and move on.');
+        if (rec.exit === 126 || rec.exit === 127)
+            console.log(`exit ${rec.exit} is the shell failing to start the command (not found or not executable), not the defect: fix the command and prove again`);
     }
     finally {
         fs.rmSync(lock, { recursive: true, force: true });
@@ -565,6 +572,8 @@ function check(runDir, taskId) {
         fail('no reproduction was recorded after the change. `fleet-gate.mjs prove <run> <task> after -- <cmd>`');
     if (before.exit === 0)
         fail(`the reproduction passed before the change (exit 0), so it never reproduced the defect`);
+    if (before.exit === 126 || before.exit === 127)
+        fail(`the reproduction never ran before the change (exit ${before.exit}: the shell could not start the command), so its failure is not the defect's`);
     if (after.exit !== 0)
         fail(`the reproduction still fails after the change (exit ${after.exit})`);
     // The fix is a path that differs between the red run's end and the green run's start AND was changed in a

@@ -274,6 +274,10 @@ that is both in `dirty-at-start` and changed by a task is the operator's call: l
 
 Cadence, from the pace line: **one commit at the end of the run** (the default and the cheapest), or one per
 wave; with opt-in worktrees each task commits on its own branch. Reviews read the uncommitted diff of `owns:`, so none of them waits on a commit.
+The cadence says when a commit is due, not that the operator agreed to it: every commit to the main checkout is
+asked first. List the paths and end that turn with one yes/no (the desktop app's end-of-turn `ask`, else
+`AskUserQuestion`); the run does not wait for the answer. On yes the Haiku agent commits; on no or no answer the
+files stay uncommitted and the end report lists them. A "continue?" rule never answers this question.
 
 **A pre-commit failure that is not the run's [M59].** The commit agent does not fix, wait or retry: it returns
 the failed check names and the files they name, and stops. You apply the `foreign=` word of the `pace:` line
@@ -373,7 +377,29 @@ operator once; the click is the consent [M56], and a card not started in 30 minu
 with `AskUserQuestion`, at `DRAIN TIMED OUT` (`drain_cap_min`, 60 minutes [M57]) or when the drain ran out at the next step: those stop agents. On "no" run `fleet.sh undrain <run>`. On yes start `fleet.sh relaunch` **naming no chips**, `TaskStop`
 only the agents still running then, ack their slots, update `STATE.md` yourself, and start the one coordinator chip (`mcp__ccd_session__start_session`)
 (`docs/RELAUNCH.md`, "One chat"). The new coordinator takes over and re-spawns per held claim, as after a
-crash.
+crash. A manual `/compact` mid-run kept both agents in flight and the watch, and the run landed [M66], but the
+relaunch stays the rule: its brief keeps more of the operator's words [M64].
+
+## Opt-in: slot leads
+
+Off by default; a probe, not yet the rule. A lead can spawn, the pause holds its coder, and `TaskStop` on a lead
+stops its coder too [M61]. On a six-task fixture the coordinator grew 2.6K a task with leads against 8.2K
+without, at 0.90 x the cost and 1.4-1.7 x the wall clock [M65]. On only when the `pace:` line in
+`STATE.md` carries `leads: on`. Then each repo slot is one background `makarasty:fleet-lead` (`agents/fleet-lead.md`),
+and it replaces Card steps 1-5 for that slot: it dispatches, runs the coder and the reviewer in the foreground,
+the one fix round, `coded` and `finish`, and returns one line. Your context then grows by its spawn and that
+line per task instead of every Bash call and hand-back [M58]. Pane and verify slots stay as the Card says.
+
+- Spawn: `Agent`, `run_in_background: true`, `subagent_type: makarasty:fleet-lead`, model `sonnet`, effort `high`, prompt
+  `Lead slot NN lane repo, run <abs r>, f=<abs fleet.sh>. coder <model> <effort>; reviewer <model> <effort>; fix rounds 1; max 12.`
+  from the pace line. `max 12` stands in for a context mark the lead cannot read.
+- Its return line: `RETIRED NN`: spawn a fresh lead on the slot. `DRAINED NN`: the slot is done. `WAITING NN`: a
+  fresh lead on the next completion or watch line. `STOPPED NN`: paused or landed, as dispatch `8`/`9`/`13`.
+  `ESCALATE <id>: <line>`: route that line as the Card does for the same code or reply (the claim stays on `NN`),
+  then spawn a lead with ` resume <id>` added to the prompt.
+- `budget-elapsed-<id>`: the slot is in `tasks/claimed/<id>/owner`; `TaskStop` that lead and spawn one with
+  `resume <id>`, once.
+- Pause, crash, relaunch: `TaskStop` every lead, then re-spawn one with `resume <id>` per held claim.
 
 ## Opt-in: separate chats, worktrees
 

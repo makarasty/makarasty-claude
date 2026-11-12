@@ -268,6 +268,8 @@ as health: `fleet-wait` now emits a stall line on a quiet interval for exactly t
                        with `disk-stuck` (`memory-stuck` for memory): notify the operator, wait again
   cards                written by the coordinator at a relaunch: one `<task_id> <title>` line per `own_initiative` card it started;
                        the "запусти" fallback reads it to `dismiss_task` a card nobody started. Reset by the first call of the next relaunch, removed at FINISHED
+  operator-words.md    written by `relaunch` (calls 1 and 2, rewritten whole): the operator's own messages and AskUserQuestion answers from every
+                       coordinator transcript of the run, verbatim, oldest first, newest 120 KB. The fresh coordinator reads it beside STATE.md
   STATE.md             the coordinator's ledger, and what a fresh coordinator re-arms from: plan path, run dir,
                        worker count, chips offered by lane (one chat: slot ranges per lane and the pace line),
                        extra watched URLs, queue-open yes/no, reviews in flight, fix tasks and why, and with
@@ -692,7 +694,8 @@ carries the whole first run, paid for again on every turn of the second.
 ## Project configuration
 
 The plugin carries no project details. A project that runs fleets keeps a `FLEET.md` at its root, and
-every command reads it when present:
+every command reads it when present. One real project's file, as an example (`/makarasty:fleet-init` writes
+yours from your own machine):
 
 ```markdown
 # Fleet configuration

@@ -2,7 +2,7 @@
 import { appendFileSync, copyFileSync, existsSync, mkdirSync, readSync, realpathSync, renameSync, rmdirSync, rmSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { basename, dirname, resolve } from 'node:path';
-import { need, out, err, isDir, isFile, read, firstLine, names, field, NEEDS, now, slashes, configDir, calint, live, laneGaps, wakeLoop, openAsks, indent, noCr, mtimeMs, newer, chipFinished, recordedVersion, versionReadable, versionOlder, claimHolders, registerChip, recordFleetSession, coordinatorSid, STOP_WHAT_YOU_STARTED, nativePath, cksum, sub, lf, claimsOf, started, lockToRelease, afterIds, renameAfter, unsaved, writeWhole, walksOf } from './lib.mjs';
+import { need, out, err, isDir, isFile, read, firstLine, names, field, NEEDS, now, slashes, configDir, calint, live, laneGaps, wakeLoop, openAsks, indent, noCr, mtimeMs, newer, chipFinished, recordedVersion, versionReadable, versionOlder, claimHolders, registerChip, recordFleetSession, coordinatorSid, STOP_WHAT_YOU_STARTED, nativePath, cksum, sub, lf, claimsOf, started, lockToRelease, afterIds, renameAfter, unsaved, writeWhole, walksOf, writeOperatorWords } from './lib.mjs';
 // ---- the shared pieces -----------------------------------------------------------------------------------
 // The global marker is how hooks/run-dir.mjs finds a paused run without looking at the working directory:
 // one file per paused run, named by a checksum of its absolute path and holding that path.
@@ -693,6 +693,12 @@ function relaunch(c, a) {
     if (!again)
         for (const ch of list)
             handback(c, ch);
+    // The operator's own words, read from the coordinators' transcripts: written on each call, so the second
+    // one holds what he said while STATE.md was brought up to date. Not for --keep-coordinator: nobody new reads it.
+    if (!keep) {
+        const w = writeOperatorWords(c);
+        out(w ? `operator-words.md: ${w.kept} messages and answers, ${Math.ceil(w.bytes / 1024)} KB${w.cut ? `, ${w.cut} older cut` : ''} (${c.absrun}/operator-words.md)\n` : 'operator-words.md: could not be written\n');
+    }
     // 4. the chips - only from a STATE.md written after the pause and the handbacks, which is what makes the
     //    first call end here and the second one print.
     let ref = mtimeS(`${run}/PAUSED`);
@@ -715,7 +721,10 @@ function relaunch(c, a) {
         out('\n');
         out(`STATE.md NOT CURRENT: ${c.absrun}/STATE.md is ${stale}. No chips are printed yet.\n`);
         out('  Now update STATE.md - it must list the handed-back ids above and what replaced them (what is in flight,\n');
-        out('  branches awaiting review, decisions pending) - then run the same command again. It is idempotent:\n');
+        out('  branches awaiting review, decisions pending) and carry these sections, the operator\'s words quoted, not paraphrased:\n');
+        out('  "Operator\'s standing wishes and bans (quote him)", "Options he rejected", "Decisions and why". His own messages\n');
+        out(`  are saved verbatim in ${c.absrun}/operator-words.md for the fresh coordinator: add only what is not in them.\n`);
+        out('  Then run the same command again. It is idempotent:\n');
         out('  nothing already done is repeated, and the second call prints the chips.\n');
         return 1;
     }
@@ -798,7 +807,7 @@ function relaunch(c, a) {
         return 0;
     }
     writeFileSync(`${run}/coordinator-pending`, '');
-    out(`CHIP coordinator\ntitle: fleet ${runid} coordinator\nbackground: Fresh coordinator of fleet run ${runid}, taking over after a relaunch. Run dir: ${c.absrun}. Start this one first; it reads STATE.md and resumes the run.\nprompt: You are the coordinator of fleet run ${runid}, taking over. Read ${c.absrun}/STATE.md in full, then sections 3b and 8b of the makarasty fleet-plan command (invoke /makarasty:fleet-plan only to read it if needed; do not re-run its interview or offer chips except those STATE.md lists as pending), then run \`sh ${fsh} resume ${c.absrun} --take-over\`. If it prints SEAT TAKEN, another coordinator holds the run: end your turn and start nothing. After a successful take-over call mcp__ccd_session_mgmt__detach_session with "self" (the old coordinator started this chat, so every turn you end would wake it [M56]); if it is refused (shared worktree), say so in one line and go on. Then arm /makarasty:fleet-wait ${runid} ${total}.\n\n`);
+    out(`CHIP coordinator\ntitle: fleet ${runid} coordinator\nbackground: Fresh coordinator of fleet run ${runid}, taking over after a relaunch. Run dir: ${c.absrun}. Start this one first; it reads STATE.md and operator-words.md and resumes the run.\nprompt: You are the coordinator of fleet run ${runid}, taking over. Read ${c.absrun}/STATE.md AND ${c.absrun}/operator-words.md in full before you do anything else (the second holds the operator's own words, verbatim: a wish or ban there outranks STATE.md), then sections 3b and 8b of the makarasty fleet-plan command (invoke /makarasty:fleet-plan only to read it if needed; do not re-run its interview or offer chips except those STATE.md lists as pending), then run \`sh ${fsh} resume ${c.absrun} --take-over\`. If it prints SEAT TAKEN, another coordinator holds the run: end your turn and start nothing. After a successful take-over call mcp__ccd_session_mgmt__detach_session with "self" (the old coordinator started this chat, so every turn you end would wake it [M56]); if it is refused (shared worktree), say so in one line and go on. Then arm /makarasty:fleet-wait ${runid} ${total}.\n\n`);
     if (gap)
         out(`STILL WITHOUT A WORKER:\n${gap}\n`);
     out(`RELAUNCH READY for ${runid}: the run stays paused until the new coordinator resumes it.\n`);

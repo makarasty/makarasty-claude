@@ -234,7 +234,7 @@ if (rp) check('ambiguous notes: no pause, an outage', [rp.time.buckets_min['paus
 
 // ---- a relaunched run: `coordinator` names only the last coordinator. Two earlier ones are found by their
 // `<run> --take-over` text, one in the project folder, one in a worktree's folder (with a subagent); a chat
-// that only mentions the run is not a coordinator.
+// that only mentions the run is not a coordinator (a quote in text is not a call, nor is a call for another run).
 const K1 = 'f1111111-0000-4000-8000-000000000011', K2 = 'f2222222-0000-4000-8000-000000000012';
 const K3 = 'f3333333-0000-4000-8000-000000000013', DECOY = 'f4444444-0000-4000-8000-000000000014';
 const rrun = join(root, '.fleet', 'rel');
@@ -242,20 +242,21 @@ mkdirSync(join(rrun, 'chips'), { recursive: true });
 writeFileSync(join(rrun, 'chips', P), '05\n'); // a worker with a transcript, so there is something to analyze
 writeFileSync(join(rrun, 'coordinator'), K3 + '\n');
 const wt = `${projects}--claude-worktrees-wt`;
-const coordRows = (text: string): string => jsonl([
+// With `cmd` the coordinator ran it in a Bash call (what makes a coordinator); `text` alone is only said or quoted.
+const coordRows = (text: string, id: string, cmd?: string): string => jsonl([
   user('09:00:00', text),
-  asst('09:00:30', 'k', OPUS, { input_tokens: 100, output_tokens: 1000 }, { type: 'text', text: 'ok' }, 'end_turn'),
+  asst('09:00:30', id, OPUS, { input_tokens: 100, output_tokens: 1000 }, cmd ? tool('t' + id, 'Bash', { command: cmd }) : { type: 'text', text: 'ok' }, 'end_turn'),
 ]);
-writeFileSync(join(projects, `${K1}.jsonl`), coordRows(`sh fleet.sh resume ${rrun} --take-over`));
+writeFileSync(join(projects, `${K1}.jsonl`), coordRows('relaunch', 'k1', `sh fleet.sh resume ${rrun} --take-over`));
 mkdirSync(join(wt, K2, 'subagents'), { recursive: true });
-writeFileSync(join(wt, `${K2}.jsonl`), coordRows(`sh fleet.sh resume ${rrun}" --take-over`)); // quoted: a Windows path is JSON-escaped in the transcript
+writeFileSync(join(wt, `${K2}.jsonl`), coordRows('relaunch', 'k2', `sh fleet.sh resume "${rrun}" --take-over`)); // quoted: a Windows path is JSON-escaped in the transcript
 writeFileSync(join(wt, K2, 'subagents', 'agent-k.jsonl'), jsonl([
   user('09:01:00', 'review'),
   asst('09:01:10', 'ks', SONNET, { output_tokens: 50 }, { type: 'text', text: 'ok' }, 'end_turn'),
 ]));
-writeFileSync(join(wt, `${K3}.jsonl`), coordRows('the latest coordinator, named by the coordinator file'));
-writeFileSync(join(projects, `${DECOY}.jsonl`), coordRows(`please look at ${rrun}`));
-writeFileSync(join(projects, 'f5555555-0000-4000-8000-000000000015.jsonl'), coordRows(`resume ${rrun}2 --take-over`)); // another run's name
+writeFileSync(join(wt, `${K3}.jsonl`), coordRows('the latest coordinator, named by the coordinator file', 'k3'));
+writeFileSync(join(projects, `${DECOY}.jsonl`), coordRows(`please look at ${rrun} --take-over`, 'k4'));
+writeFileSync(join(projects, 'f5555555-0000-4000-8000-000000000015.jsonl'), coordRows('relaunch', 'k5', `sh fleet.sh resume ${rrun}2 --take-over`)); // another run's name
 const xr = spawnSync(process.execPath, [script, rrun, '--json'], { encoding: 'utf8', env, maxBuffer: 64e6 });
 try {
   const rr = JSON.parse(xr.stdout) as Report & { coordinator_sessions: number };
@@ -271,7 +272,7 @@ writeFileSync(join(brun, 'chips', P), '05\n');
 writeFileSync(join(brun, 'coordinator'), 'f6666666-0000-4000-8000-000000000016\n');
 const pad = `{"type":"x","pad":"${'x'.repeat(1e6)}"}\n`;
 const KB = 'f7777777-0000-4000-8000-000000000017';
-writeFileSync(join(projects, `${KB}.jsonl`), coordRows(`sh fleet.sh resume ${brun} --take-over`) + pad.repeat(66));
+writeFileSync(join(projects, `${KB}.jsonl`), coordRows('relaunch', 'kb', `sh fleet.sh resume ${brun} --take-over`) + pad.repeat(66));
 const br = spawnSync(process.execPath, [script, brun, '--json'], { encoding: 'utf8', env, maxBuffer: 64e6 });
 try { check('a transcript over 64 MB is still searched for its take-over line', (JSON.parse(br.stdout) as { coordinator_sessions: number }).coordinator_sessions, 1); }
 catch { console.log(`FAIL big transcript: ${br.stderr}`); failed++; }
@@ -284,6 +285,71 @@ writeFileSync(join(nrun, 'chips', P), '05\n');
 writeFileSync(join(nrun, 'coordinator'), 'not-a-session\n');
 const nr = spawnSync(process.execPath, [script, nrun], { encoding: 'utf8', env });
 check('a coordinator file naming no session is noted', nr.stdout.includes('note: the coordinator file names "not-a-session"'), true);
+
+// ---- a fork of a coordinator repeats its records (same uuids and message ids), take-over call included; a chat
+// quoting the command is no coordinator either. One source, one fork, one quoter: one coordinator session, counted once.
+const SRC = 'a9999999-0000-4000-8000-000000000019', FRK = 'b9999999-0000-4000-8000-000000000020', QUO = 'c9999999-0000-4000-8000-000000000021';
+const frun = join(root, '.fleet', 'fork');
+mkdirSync(join(frun, 'chips'), { recursive: true });
+writeFileSync(join(frun, 'chips', P), '05\n');
+const withUuid = (text: string, id: string, cmd: string): string => jsonl([
+  { ...user('09:00:00', text), uuid: 'u-' + id + '-1' },
+  { ...asst('09:00:30', id, OPUS, { input_tokens: 100, output_tokens: 1000 }, tool('t' + id, 'Bash', { command: cmd }), 'end_turn'), uuid: 'u-' + id + '-2' },
+]);
+const takeOver = `sh fleet.sh resume ${frun} --take-over`;
+const srcText = withUuid('relaunch', 'fs', takeOver);
+writeFileSync(join(projects, `${SRC}.jsonl`), srcText);
+writeFileSync(join(projects, `${FRK}.jsonl`), srcText + jsonl([{ ...user('09:05:00', 'judge this'), uuid: 'u-fork-own' }]));
+writeFileSync(join(projects, `${QUO}.jsonl`), jsonl([
+  user('09:00:00', `the old coordinator ran ${takeOver}`),
+  result('09:00:10', 'tq', takeOver),
+  asst('09:00:30', 'fq', OPUS, { input_tokens: 100, output_tokens: 1000 }, { type: 'text', text: takeOver }, 'end_turn'),
+]));
+const fr = spawnSync(process.execPath, [script, frun, '--json'], { encoding: 'utf8', env, maxBuffer: 64e6 });
+try {
+  const f = JSON.parse(fr.stdout) as Report & { coordinator_sessions: number };
+  check('fork + quote: one coordinator session', f.coordinator_sessions, 1);
+  check('fork + quote: cost counted once', [f.tokens.coordinator.msgs, f.tokens.coordinator.cost], [1, (100 * 4 + 1000 * 20) / 1e6], 1e-9);
+} catch { console.log(`FAIL fork run: ${fr.stderr}`); failed++; }
+
+// ---- a one-chat run: no worker chats, the coordinator's subagents are the workers. Two subagents (a fleet-coder on
+// Opus, a fleet-reviewer on Sonnet); the reviewer has a grandchild (a fleet-coder on Sonnet) one level down.
+const OC = 'f8888888-0000-4000-8000-000000000018';
+const orun = join(root, '.fleet', 'one');
+mkdirSync(join(orun, 'chips'), { recursive: true });
+writeFileSync(join(orun, 'coordinator'), OC + '\n');
+mkdirSync(join(orun, 'tasks', 'claimed', 'o1'), { recursive: true });
+mkdirSync(join(orun, 'tasks', 'done'), { recursive: true });
+writeFileSync(join(orun, 'tasks', 'claimed', 'o1', 'owner'), `chip 09\nclaimed ${at('09:00:00')}\n`);
+writeFileSync(join(orun, 'tasks', 'done', 'o1'), '');
+utimesSync(join(orun, 'tasks', 'done', 'o1'), sec('09:10:00'), sec('09:10:00'));
+const subDir = join(projects, OC, 'subagents');
+mkdirSync(join(subDir, 'agent-y', 'subagents'), { recursive: true });
+const oneMsg = (id: string, model: string, out: number): string => jsonl([
+  user('09:01:00', 'go'),
+  asst('09:01:30', id, model, { output_tokens: out }, { type: 'text', text: 'ok' }, 'end_turn'),
+]);
+writeFileSync(join(projects, `${OC}.jsonl`), coordRows('coordinate', 'oc'));
+writeFileSync(join(subDir, 'agent-x.jsonl'), oneMsg('ox', OPUS, 100));
+writeFileSync(join(subDir, 'agent-x.meta.json'), JSON.stringify({ agentType: 'makarasty:fleet-coder' }));
+writeFileSync(join(subDir, 'agent-y.jsonl'), oneMsg('oy', SONNET, 200));
+writeFileSync(join(subDir, 'agent-y.meta.json'), JSON.stringify({ agentType: 'makarasty:fleet-reviewer' }));
+writeFileSync(join(subDir, 'agent-y', 'subagents', 'agent-z.jsonl'), oneMsg('oz', SONNET, 300));
+writeFileSync(join(subDir, 'agent-y', 'subagents', 'agent-z.meta.json'), JSON.stringify({ agentType: 'makarasty:fleet-coder' }));
+const orr = spawnSync(process.execPath, [script, orun, '--json'], { encoding: 'utf8', env, maxBuffer: 64e6 });
+try {
+  const o = JSON.parse(orr.stdout) as Report & { one_chat: boolean; coordinator_subagents: { count: number; by_type_model: { type: string; model: string; agents: number; cost: number }[] } };
+  const oc = o.coordinator_subagents;
+  check('one-chat: mode and subagent count', [o.one_chat, oc.count], [true, 3]);
+  check('one-chat: workers are the subagents', [o.tokens.workers_subagents.msgs, o.tokens.workers_subagents.out, o.tokens.workers_parent.msgs], [3, 600, 0]);
+  check('one-chat: worker $', o.tokens.workers_subagents.cost, (100 * 20 + 200 * 10 + 300 * 10) / 1e6, 1e-9);
+  check('one-chat: coordinator is only its own turns', [o.tokens.coordinator.msgs, o.tokens.coordinator.cost], [1, (100 * 4 + 1000 * 20) / 1e6]);
+  const row = (t: string, m: string) => oc.by_type_model.find((g) => g.type === t && g.model === m);
+  check('one-chat: fleet-coder on Opus', [row('makarasty:fleet-coder', OPUS)?.agents, row('makarasty:fleet-coder', OPUS)?.cost], [1, 100 * 20 / 1e6]);
+  check('one-chat: grandchild fleet-coder on Sonnet', [row('makarasty:fleet-coder', SONNET)?.agents, row('makarasty:fleet-coder', SONNET)?.cost], [1, 300 * 10 / 1e6]);
+  check('one-chat: fleet-reviewer on Sonnet', [row('makarasty:fleet-reviewer', SONNET)?.agents, row('makarasty:fleet-reviewer', SONNET)?.cost], [1, 200 * 10 / 1e6]);
+  check('one-chat: total $', o.cost.total_usd, (100 * 4 + 1000 * 20 + 100 * 20 + 200 * 10 + 300 * 10) / 1e6, 1e-9);
+} catch { console.log(`FAIL one-chat run: ${orr.stderr}`); failed++; }
 
 rmSync(tmp, { recursive: true, force: true });
 console.log(`${passed} passed, ${failed} failed`);

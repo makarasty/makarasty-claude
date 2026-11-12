@@ -1,5 +1,10 @@
 # Relaunch
 
+Compaction in place (background subagents and the watch's Monitor survive a `/compact` [M60]) lost on state and
+gave confident wrong answers; the relaunch wins overall [M64]. What the relaunch used to lose, the operator's own
+wishes and bans, it now carries in `<run>/operator-words.md`: his messages and answers, verbatim, read from the
+coordinators' transcripts (no summary) at call 1 of step 3 and again at call 2.
+
 ## One chat
 
 Only the coordinator crosses the 700 K mark: every subagent starts fresh per task, so there is no
@@ -59,7 +64,8 @@ directory.
    its wake loop; the retired worker is refused every call afterwards, resume or not). Then, when
    `STATE.md` is not newer than the pause, it prints "STATE.md NOT CURRENT: ..." (naming the file and why)
    and **exits 1 on purpose**: that is the expected stop, not a failure. Update `STATE.md` (fleet-plan 8b),
-   listing the handed-back ids and what replaced them. Call 2, the same command again, is idempotent, does
+   listing the handed-back ids and what replaced them, with the sections "Operator's standing wishes and bans (quote him)",
+   "Options he rejected" and "Decisions and why" (his words quoted; `operator-words.md` already holds his messages). Call 2, the same command again, is idempotent, does
    not wait for acks again (`acks: <k> of <n> (not waited again)`) and prints the chips: fresh workers
    numbered after the highest offered, in the same lanes, and one coordinator chip titled
    `fleet <run-id> coordinator`.
@@ -104,7 +110,7 @@ A worker has `pause_grace_seconds` (30), counted from its first call after the p
 then commits, stops its subagents and background shells and acknowledges; `status` shows a holder as "no
 ack yet" and, from 150 seconds after the pause (`pause_still_working_seconds`), as "still working", and
 you can message it by title.
-The new coordinator's chip prompt tells it to read `STATE.md` in full and sections 3b and 8b of fleet-plan and this file (without
+The new coordinator's chip prompt tells it to read `STATE.md` AND `operator-words.md` in full (a wish or ban there outranks `STATE.md`) and sections 3b and 8b of fleet-plan and this file (without
 re-running the interview or offering any chip `STATE.md` does not list as pending), run
 `fleet.sh resume <abs run> --take-over` (**only `--take-over` takes the coordinator seat**; a plain
 `resume`, from the operator's chat for instance, never does), and arm `/makarasty:fleet-wait <run-id> <n>`
