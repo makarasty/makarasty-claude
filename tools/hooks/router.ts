@@ -1,4 +1,5 @@
 import type { Register } from 'claude-code'
+import { startInboxTimer } from './inbox.ts'
 
 // Picks a cheaper model for a subagent only where the caller says it is safe.
 // Untagged work keeps the parent's model: on three replayed ports Sonnet tied twice
@@ -70,6 +71,7 @@ export const register: Register = on => {
   }).catch(($, e, next) => next(e))
 
   on('session.start', async ($, e, next) => {
+    await startInboxTimer($).catch(() => undefined) // first: a failed register must not leave the inbox without its wake
     await $.command.register({ name: 'router', description: 'What the model router changed: counts and the last 50 spawns' })
     return next(e)
   })
