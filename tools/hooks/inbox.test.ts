@@ -9,7 +9,7 @@ const plain = (p: string): string => p.replace(/^[A-Za-z]:/, '').replaceAll('\\'
 const Q = 'Какую базу взять для отчётов?'
 const QUESTIONS = [{ question: Q, header: 'База', multiSelect: false, options: [{ label: 'Postgres', description: 'та, что уже в проекте' }, { label: 'SQLite', description: 'файл рядом с отчётом' }] }]
 
-function world(on: On, o: { on?: boolean; session?: string; self?: string; children?: string[] } = {}) {
+function world(on: On, o: { on?: boolean; session?: string; self?: string; children?: string[]; now?: number } = {}) {
   const disk = new Map<string, string>()
   if (o.on !== false) disk.set('/cfg/makarasty/inbox.on', 'x')
   if (o.self) disk.set('/cfg/makarasty/inbox/self', o.self)
@@ -19,7 +19,7 @@ function world(on: On, o: { on?: boolean; session?: string; self?: string; child
   const dialog = { shown: 0, closed: 0 }
   let wake: (() => void) | undefined
   mock.env(on, { CLAUDE_CONFIG_DIR: '/cfg', CLAUDE_CODE_HOST_SESSION_ID: 'local_aaaa', CLAUDE_CODE_ACCOUNT_UUID: 'acc1' })
-  const clock = mock.clock(on, { now: 1_000_000 })
+  const clock = mock.clock(on, { now: o.now ?? 1_000_000 })
   on('session.id', () => ({ value: o.session ?? 'chatA' }))
   on('session.cwd', () => ({ value: 'C:\\work\\reports-app' }))
   on('session.messages', () => ({ value: [
@@ -217,9 +217,9 @@ test('the inbox chat asking without the flag while items are open is refused, wi
 // session's dialog there; the person did not see it and answered it in its own chat unprompted. It is asked like any.
 test('the inbox chat asks a question of a session it started like any other: with the flag it goes, without it is refused', async ($, on) => {
   const w = world(on, { self: 'chatA', children: ['local_bbbb'] })
-  const item = { kind: 'ask', at: 1, cwd: 'C:/work/lifelines', chat: 'c', questions: [{ question: 'Что обновлять в LifeLines? Vize и tsrs, oxlint, prettier только проверяют код. Vite, plugin-vue, sass, firebase, axios попадают в бандл.', options: [{ label: 'A: только проверки' }, { label: 'B: A + vite и plugin-vue' }] }] }
+  const item = { kind: 'ask', at: 1, cwd: 'C:/work/proj-gamma', chat: 'c', questions: [{ question: 'Что обновлять в Gamma? Vize и tsrs, oxlint, prettier только проверяют код. Vite, plugin-vue, sass, firebase, axios попадают в бандл.', options: [{ label: 'A: только проверки' }, { label: 'B: A + vite и plugin-vue' }] }] }
   w.disk.set('/cfg/makarasty/inbox/items/chatB~t1.json', JSON.stringify({ ...item, id: 'chatB~t1', session: 'chatB', host: 'local_bbbb' }))
-  const reworded = [{ question: 'Vize-сессия составила план для LifeLines: vize, tsrs, oxlint, prettier проверяют код; vite, plugin-vue, sass, firebase, axios идут в сайт. Что обновляем?', header: 'LifeLines', multiSelect: false, options: [{ label: 'A: только проверки (Recommended)', description: '' }, { label: 'B: A + vite и plugin-vue', description: '' }] }]
+  const reworded = [{ question: 'Vize-сессия составила план для Gamma: vize, tsrs, oxlint, prettier проверяют код; vite, plugin-vue, sass, firebase, axios идут в сайт. Что обновляем?', header: 'Gamma', multiSelect: false, options: [{ label: 'A: только проверки (Recommended)', description: '' }, { label: 'B: A + vite и plugin-vue', description: '' }] }]
   const bare = await $.tool.call({ tool: 'AskUserQuestion', questions: reworded, tool_use_id: 't-bare' })
   expect(bare.deny).toContain('"inbox:<the ids')
   expect(bare.deny).toContain('chatB~t1')
@@ -358,3 +358,82 @@ for (const labels of [['Остановиться', 'Сначала покажи 
 for (const rule of ['Continue questions: never answer yes for me, ask me.', 'Продолжать без спроса: нет, спрашивай.', 'Продолжительность созвонов: да', 'Continue: yes, but never for deploys', 'Отвечай коротко и по делу.']) {
   test(`a negated or unrelated line is no standing rule: ${rule}`, ($, on) => notAnswered(on, $, rule, cont(YESNO), 'toolu_c2'))
 }
+
+// What the person types is kept in said.jsonl for the inbox chat: his own typing only, 24 hours, 200 lines.
+const SAID = '/cfg/makarasty/inbox/said.jsonl'
+const NL = String.fromCharCode(10)
+const SPACED = ['  Не трогай   прод', ''].join(NL) // whitespace is kept
+const said = (w: ReturnType<typeof world>) => (w.disk.get(SAID) ?? '').split(/\r?\n/).filter(Boolean).map((l) => JSON.parse(l))
+
+test('what the person types in a chat with the inbox on is kept, his own words only', async ($, on) => {
+  const w = world(on)
+  await $.prompt.submit({ text: SPACED, origin: { kind: 'composer' } } as never)
+  await $.prompt.submit({ text: 'Inbox: 1 new item waiting', origin: { kind: 'composer' } } as never)
+  await $.prompt.submit({ text: 'The person answered your question', origin: { kind: 'bridge' } } as never)
+  await $.prompt.submit({ text: '<cross-session-message from="x">hi</cross-session-message>', origin: { kind: 'composer' } } as never)
+  await $.prompt.submit({ text: 'Another Claude session sent a message: hi', origin: { kind: 'composer' } } as never)
+  await $.prompt.submit({ text: 'from a task', origin: { kind: 'task' } } as never)
+  await $.prompt.submit({ text: 'x'.repeat(5000), origin: { kind: 'bridge' } } as never)
+  const s = said(w)
+  expect(s.map((x) => x.text.length)).toEqual([SPACED.length, 4000])
+  expect(s[0]).toEqual({ at: 1_000_000, session: 'chatA', text: SPACED })
+})
+
+test('said.jsonl drops entries older than 24 hours', async ($, on) => {
+  const w = world(on)
+  const line = (ago: number, text: string) => JSON.stringify({ at: 1_000_000 - ago, session: 's', text })
+  w.disk.set(SAID, [line(25 * 3600000, 'old'), line(3600000, 'recent'), ''].join(NL))
+  await $.prompt.submit({ text: 'new', origin: { kind: 'composer' } } as never)
+  expect(said(w).map((x) => x.text)).toEqual(['recent', 'new'])
+})
+
+test('off: nothing is kept', async ($, on) => {
+  const w = world(on, { on: false })
+  await $.prompt.submit({ text: 'hi', origin: { kind: 'composer' } } as never)
+  expect(w.disk.has(SAID)).toBe(false)
+})
+
+test('the inbox chat finishes queued starts: once within a minute, and not at all with none queued', async ($, on) => {
+  const w = world(on, { self: 'chatA', now: 20_000_000 })
+  const drains = () => w.cli.filter((c) => c[0] === 'start' && c[1] === '--drain').length
+  await $.prompt.submit({ text: 'hi' } as never) // starts the timer
+  await w.clock.advance(15000)
+  expect(drains()).toBe(0) // nothing queued
+  w.disk.set('/cfg/makarasty/inbox/starts/s1.json', JSON.stringify({ state: 'done' }))
+  w.disk.set('/cfg/makarasty/inbox/starts/s2.json', JSON.stringify({ state: 'queued' }))
+  await w.clock.advance(15000)
+  await w.until(() => drains() === 1, 'drained')
+  await w.clock.advance(15000)
+  await w.clock.advance(15000)
+  expect(drains()).toBe(1) // 30 s later: not again
+  await w.clock.advance(30000)
+  await w.until(() => drains() === 2, 'drained again after a minute')
+})
+
+test('a chat that is not the inbox never drains', async ($, on) => {
+  const w = world(on, { now: 30_000_000 })
+  w.disk.set('/cfg/makarasty/inbox/starts/s2.json', JSON.stringify({ state: 'cli-done' }))
+  await $.prompt.submit({ text: 'hi' } as never)
+  await w.clock.advance(15000)
+  expect(w.cli.filter((c) => c[0] === 'start').length).toBe(0)
+})
+
+test('the inbox chat itself keeps what the person types too', async ($, on) => {
+  const w = world(on, { self: 'chatA' })
+  await $.prompt.submit({ text: 'start a chat in repo X', origin: { kind: 'composer' } } as never)
+  expect(said(w).map((x) => x.text)).toEqual(['start a chat in repo X'])
+})
+
+test('a failed start with attempts left drains once its journal is 10 min old; a fresh one, or one out of attempts, does not', async ($, on) => {
+  const w = world(on, { self: 'chatA', now: 40_000_000 })
+  const drains = () => w.cli.filter((c) => c[0] === 'start' && c[1] === '--drain').length
+  const journal = (id: string, o: object) => w.disk.set(`/cfg/makarasty/inbox/starts/${id}.json`, JSON.stringify({ state: 'failed', ...o }))
+  journal('fresh', { attempts: 1, updated: 40_000_000 - 60_000 })
+  journal('spent', { attempts: 3, updated: 40_000_000 - 3_600_000 })
+  await $.prompt.submit({ text: 'hi' } as never)
+  await w.clock.advance(15000)
+  expect(drains()).toBe(0)
+  journal('old', { attempts: 1, updated: 40_000_000 - 3_600_000 })
+  await w.clock.advance(15000)
+  await w.until(() => drains() === 1, 'retried')
+})

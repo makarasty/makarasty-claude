@@ -329,7 +329,12 @@ Three more hooks change behaviour without refusing:
 - **Your profile.** Facts about you that no shipped tool should guess (the language you want, your machine,
   your notify channels, standing answers such as "always run the tests") go in
   `~/.claude/makarasty/profile.md` (under `CLAUDE_CONFIG_DIR` when that is set), plain text. Every session start reads it when it exists, first 2,000
-  characters. Subagents do not see it; a skill that briefs one passes what it needs.
+  characters. Subagents do not see it; a skill that briefs one passes what it needs. Lines the tools read:
+  `Language: <name>, plain and short` (replies in that language, short), `Continue questions about work already
+  asked are answered yes` (the inbox answers such asks itself; never a commit, push, delete or money question),
+  `Fleet foreign code: wait|fix|leave` and `Fleet crash watch: yes|no` (fleet-plan asks once, then reads them).
+  With no line, each tool asks or uses its own default. Standing answers the inbox records go in
+  `~/.claude/makarasty/answers.md` (one `<topic>: <answer> (<date>)` line each, first 4,000 characters read).
 
 ## All commands
 

@@ -65,19 +65,42 @@ test('opt-in: a chat not switched on writes no report; switched on, a working tu
   expect(renderReports(w.reports(), w.reports()[0].at + 60e3, 'acc1')).toContain('Open the chat: [Сделай выгрузку отчётов (chatA)](#local_aaaa)')
 })
 
-test('switched on by its app id; no wrap_up, a subagent wrap_up, a /loop tick: no report; a dead turn: one', async ($, on) => {
+test('switched on by its app id: a plain reply with no wrap_up is a finish; a subagent writes none and leaves no recap; a /loop tick is no finish', async ($, on) => {
   const w = world(on)
   w.disk.set(`${R}/reports/on/local_aaaa`, 'x')
   await $.turn.complete(turn('Просто ответ.', { turnId: 'a' }))
   await $.tool.call(wrap('сабагент', { agentId: 'sub1' }))
-  await $.turn.complete(turn('Ответ.', { turnId: 'b' }))
+  await $.turn.complete(turn('Работа сабагента закончена.', { turnId: 'sub', agentId: 'sub1' }))
+  await $.turn.complete(turn('Ответ без вызова wrap_up.', { turnId: 'b' }))
   await $.prompt.submit({ text: '/loop tick', origin: { kind: 'scheduled-trigger' } } as never)
   await $.tool.call(wrap('тик'))
-  await $.turn.complete(turn('Тик.', { turnId: 'c' }))
-  expect(w.reports()).toEqual([])
+  await $.turn.complete(turn('Тик закончен.', { turnId: 'c' }))
+  expect(w.reports().map((r) => r.id).sort()).toEqual(['chatA~turn-a', 'chatA~turn-b'])
+  expect(w.reports().find((r) => r.id === 'chatA~turn-b')?.recap).toBeUndefined() // not the subagent's wrap_up
+})
+
+test('a turn the person typed (composer, bridge) writes no report, errors included; the next one from elsewhere does', async ($, on) => {
+  const w = world(on)
+  w.disk.set(`${R}/reports/on/chatA`, 'started 1')
   await $.prompt.submit({ text: 'дальше', origin: { kind: 'composer' } } as never)
-  await $.turn.complete(turn('', { turnId: 'd', reason: 'error' }))
-  expect(w.reports()).toMatchObject([{ id: 'chatA~turn-d', error: true }])
+  await $.turn.complete(turn('Сделал, всё прошло хорошо.', { turnId: 'd1' }))
+  await $.prompt.submit({ text: 'ещё', origin: { kind: 'bridge' } } as never)
+  await $.turn.complete(turn('', { turnId: 'd2', reason: 'error' }))
+  expect(w.reports()).toEqual([])
+  await $.prompt.submit({ text: 'task finished', origin: { kind: 'task-notification' } } as never)
+  await $.turn.complete(turn('', { turnId: 'd3', reason: 'error' }))
+  expect(w.reports()).toMatchObject([{ id: 'chatA~turn-d3', error: true, urgent: true }])
+})
+
+test('an empty or one-word final message with no recap is no report; with a recap, or ending on an error, it is', async ($, on) => {
+  const w = world(on)
+  w.disk.set(`${R}/reports/on/chatA`, 'x')
+  await $.turn.complete(turn('', { turnId: 'q1' }))
+  await $.turn.complete(turn('Готово.', { turnId: 'q2' }))
+  expect(w.reports()).toEqual([])
+  await $.tool.call(wrap('Выгрузка записана.'))
+  await $.turn.complete(turn('Готово.', { turnId: 'q3' }))
+  expect(w.reports().map((r) => r.id)).toEqual(['chatA~turn-q3'])
 })
 
 test('no duplicate with a pending question: a turn that asked writes its item and no report', async ($, on) => {
@@ -115,7 +138,7 @@ test('the batching window: quiet 5 min or 15 min from the first, whichever comes
 test('the inbox chat: reports never wake one by one; one wake per batch, none again for the same reports', async ($, on) => {
   const w = world(on, { self: 'inbox', session: 'inbox' })
   const now = 10_000_000 // the mock clock's start
-  const put = (id: string, at: number) => w.disk.set(`${R}/reports/${id}.json`, JSON.stringify({ id, at, session: id.split('~')[0], cwd: 'C:/work/oxi-yapper', chat: 'c' }))
+  const put = (id: string, at: number) => w.disk.set(`${R}/reports/${id}.json`, JSON.stringify({ id, at, session: id.split('~')[0], cwd: 'C:/work/proj-alpha', chat: 'c' }))
   await $.prompt.submit({ text: 'hi' } as never) // starts the timer
   put('chatB~turn-1', now)
   put('chatC~turn-1', now + 60e3)
@@ -126,7 +149,7 @@ test('the inbox chat: reports never wake one by one; one wake per batch, none ag
   await w.until(() => w.submitted.some((s) => s.startsWith('Inbox:')), 'woken')
   const wakes = w.submitted.filter((s) => s.startsWith('Inbox:'))
   expect(wakes).toHaveLength(1)
-  expect(wakes[0]).toContain('2 chats finished work (2 finish reports: oxi-yapper)')
+  expect(wakes[0]).toContain('2 chats finished work (2 finish reports: proj-alpha)')
   for (let i = 0; i < 40; i++) await w.clock.advance(15000)
   expect(w.submitted.filter((s) => s.startsWith('Inbox:'))).toHaveLength(1)
   expect(w.disk.has(`${R}/beat`)).toBe(true)
@@ -141,9 +164,9 @@ test('the inbox chat: an item wake carries the waiting reports; a typed prompt c
   await w.clock.advance(15000)
   await w.until(() => w.submitted.some((s) => s.startsWith('Inbox: 1 new item')), 'item wake')
   expect(w.submitted.find((s) => s.startsWith('Inbox: 1 new item'))).toContain('Also: 1 chat finished work (1 finish report: vize)')
-  w.disk.set(`${R}/reports/chatE~turn-1.json`, JSON.stringify({ id: 'chatE~turn-1', at: now, session: 'chatE', cwd: 'C:/work/lifelines', chat: 'c' }))
+  w.disk.set(`${R}/reports/chatE~turn-1.json`, JSON.stringify({ id: 'chatE~turn-1', at: now, session: 'chatE', cwd: 'C:/work/proj-gamma', chat: 'c' }))
   await $.prompt.submit({ text: 'что нового?', origin: { kind: 'composer' } } as never)
-  expect(w.contexts.at(-1)?.join(' ')).toContain('1 chat finished work (1 finish report: lifelines)')
+  expect(w.contexts.at(-1)?.join(' ')).toContain('1 chat finished work (1 finish report: proj-gamma)')
   for (let i = 0; i < 80; i++) await w.clock.advance(15000) // shown with the prompt: no batch wake later
   expect(w.submitted.filter((s) => s.startsWith('Inbox:'))).toHaveLength(1)
 })
@@ -151,7 +174,7 @@ test('the inbox chat: an item wake carries the waiting reports; a typed prompt c
 test('the inbox chat switches on every session it starts, and marks its turns busy and idle for the watchdog', async ($, on) => {
   const w = world(on, { self: 'inbox', session: 'inbox' })
   await $.tool.call({ tool: 'mcp__ccd_session__start_session', initiation: 'user_asked', title: 'Деплой', prompt: 'p', tool_use_id: 's1' } as never)
-  expect(w.disk.has(`${R}/reports/on/local_12345678-aaaa-bbbb-cccc-1234567890ab`)).toBe(true)
+  expect(w.disk.get(`${R}/reports/on/local_12345678-aaaa-bbbb-cccc-1234567890ab`)).toMatch(/^started /)
   await $.turn.start({ text: 'x', turnId: 'u1' } as never)
   expect(w.disk.get(`${R}/turn`)).toMatch(/^busy \d+$/)
   await $.turn.complete(turn('ok', { turnId: 'u1' }))
@@ -289,7 +312,7 @@ test('items that came in during a long turn of the inbox chat wake it the moment
   const now = 10_000_000 // the mock clock's start
   await $.prompt.submit({ text: 'hi' } as never) // starts the timer
   await $.turn.start({ text: 'x', turnId: 'dialog' } as never)
-  for (const id of ['chatB~t1', 'chatC~t2']) w.disk.set(`${R}/items/${id}.json`, JSON.stringify({ id, kind: 'ask', at: now, session: id.split('~')[0], cwd: 'C:/work/oxi-yapper', chat: 'c', account: 'acc2', questions: [{ question: `${id}?`, options: [] }] }))
+  for (const id of ['chatB~t1', 'chatC~t2']) w.disk.set(`${R}/items/${id}.json`, JSON.stringify({ id, kind: 'ask', at: now, session: id.split('~')[0], cwd: 'C:/work/proj-alpha', chat: 'c', account: 'acc2', questions: [{ question: `${id}?`, options: [] }] }))
   for (let i = 0; i < 240; i++) await w.clock.advance(15000) // an hour in the dialog
   expect(w.submitted.filter((s) => s.startsWith('Inbox:'))).toEqual([])
   await $.turn.complete(turn('ok', { turnId: 'dialog' }))
@@ -298,4 +321,102 @@ test('items that came in during a long turn of the inbox chat wake it the moment
   const wakes = w.submitted.filter((s) => s.startsWith('Inbox:'))
   expect(wakes).toHaveLength(1)
   expect(wakes[0]).toContain('Inbox: 2 new items')
+})
+
+// 2026-11-12: a tests session started by the inbox chat finished a first turn with a wrap_up, then a second one with a plain
+// reply after its 6 min test limit ran out: no wrap_up, so no report, no wake. Every finish of an enrolled chat is a report;
+// a started chat's, an error's and a waiting one's wake the inbox chat at once; the rest keep the batch.
+const wakes = (w: ReturnType<typeof world>) => w.submitted.filter((s) => s.startsWith('Inbox:'))
+const asChat = (o: { session: string }, id: string) => { o.session = id } // the mock reads the session id on every call
+
+test('a started chat finishing twice 2 min apart: the first wakes at once, the second (inside the 10 min limit) waits for the batch, both shown whole', async ($, on) => {
+  const o = { self: 'inbox', session: 'child' }
+  const w = world(on, o)
+  w.disk.set(`${R}/reports/on/child`, 'started 1')
+  await $.tool.call(wrap('Прогон запущен в фоне.'))
+  await $.turn.complete(turn('Прогон запущен, результата пока нет.', { turnId: 't1' }))
+  asChat(o, 'inbox')
+  await $.prompt.submit({ text: 'hi' } as never) // starts the timer in the inbox chat
+  await w.clock.advance(15000)
+  await w.until(() => wakes(w).length === 1, 'the first finish wakes at once')
+  expect(wakes(w)[0]).toContain('1 chat finished work (1 finish report')
+  asChat(o, 'child')
+  await w.clock.advance(105000) // 2 min after the first finish
+  await $.turn.complete(turn('Тесты не дали результата: прогон оставлен незаконченным.', { turnId: 't2' }))
+  asChat(o, 'inbox')
+  await w.clock.advance(270000)
+  expect(wakes(w)).toHaveLength(1) // one urgent wake per chat per 10 min
+  await w.clock.advance(30000)
+  await w.until(() => wakes(w).length === 2, 'batch wake')
+  expect(wakes(w)[1]).toContain('1 chat finished work (1 finish report')
+  expect(w.reports().map((r) => [r.started, r.urgent])).toEqual([[true, true], [true, undefined]])
+  const shown = renderReports(w.reports(), 10_000_000 + 600e3)
+  expect(shown).toContain('2 finishes of one chat')
+  expect(shown).toContain('Прогон запущен, результата пока нет.')
+  expect(shown).toContain('прогон оставлен незаконченным')
+  expect(shown.match(/Last message:/g)).toHaveLength(2) // the earlier finish of a started chat is not folded to a line
+})
+
+test('at most one urgent wake per chat per 10 min: a second error in the window waits for the batch', async ($, on) => {
+  const w = world(on)
+  w.disk.set(`${R}/reports/on/chatA`, 'x')
+  await $.turn.complete(turn('', { turnId: 'u1', reason: 'error' }))
+  await w.clock.advance(120000)
+  await $.turn.complete(turn('', { turnId: 'u2', reason: 'error' }))
+  await w.clock.advance(600000)
+  await $.turn.complete(turn('', { turnId: 'u3', reason: 'error' }))
+  expect(w.reports().map((r) => [r.id, r.urgent ?? false])).toEqual([['chatA~turn-u1', true], ['chatA~turn-u2', false], ['chatA~turn-u3', true]])
+})
+
+test('a negated or conditional mention of a step is no waiting; a plain one is', async ($, on) => {
+  const w = world(on)
+  w.disk.set(`${R}/reports/on/chatA`, 'x')
+  const nots = ['Готово. Ничего делать не нужно, тебе нужно только прочитать.', 'Готово. Если тебе нужно, запусти ещё раз.', 'All green. Nothing you need to do here.', 'All green. If you must, run it again.']
+  for (const [i, t] of nots.entries()) await $.turn.complete(turn(t, { turnId: `n${i}` }))
+  expect(w.reports().map((r) => r.urgent)).toEqual([undefined, undefined, undefined, undefined])
+  await $.turn.complete(turn('Готово. Тебе нужно запустить миграцию самому.', { turnId: 'y1' }))
+  expect(w.reports().find((r) => r.id === 'chatA~turn-y1')?.urgent).toBe(true)
+})
+
+test('shown: the three newest urgent or started finishes of a chat in full, the rest a line each', () => {
+  const at = (n: number) => ({ id: `x~${n}`, at: n * 1000, session: 'x', cwd: 'C:/work/proj', chat: 'c', excerpt: `finish ${n}`, urgent: true })
+  const shown = renderReports([1, 2, 3, 4, 5, 6].map(at), 7000)
+  expect(shown.match(/Last message:/g)).toHaveLength(4) // the newest and three more
+  expect(shown.match(/Earlier, /g)).toHaveLength(2)
+})
+
+test('a finish that ends on a timeout error: a report, and the inbox chat is woken at once', async ($, on) => {
+  const o = { self: 'inbox', session: 'chatB' }
+  const w = world(on, o)
+  w.disk.set(`${R}/reports/on/chatB`, '2026-11-12T10:00:00Z') // switched on by `report on`: not a started chat
+  await $.turn.complete(turn('', { turnId: 'e1', reason: 'error' }))
+  expect(w.reports()).toMatchObject([{ id: 'chatB~turn-e1', error: true, urgent: true }])
+  asChat(o, 'inbox')
+  await $.prompt.submit({ text: 'hi' } as never)
+  await w.clock.advance(15000)
+  await w.until(() => wakes(w).length === 1, 'woken')
+})
+
+test('a last message that names a step for the person wakes at once; an ordinary finish of the same chat keeps the batch', async ($, on) => {
+  const o = { self: 'inbox', session: 'chatB' }
+  const w = world(on, o)
+  w.disk.set(`${R}/reports/on/chatB`, '2026-11-12T10:00:00Z')
+  await $.turn.complete(turn('Готово. Тебе нужно запустить миграцию самому.', { turnId: 'w1' }))
+  await $.turn.complete(turn('Готово, всё зелёное.', { turnId: 'w2' }))
+  expect(w.reports().map((r) => [r.id, r.urgent ?? false])).toEqual([['chatB~turn-w1', true], ['chatB~turn-w2', false]])
+})
+
+test('a batch-only chat still batches: nothing for 5 min, then one wake', async ($, on) => {
+  const o = { self: 'inbox', session: 'chatB' }
+  const w = world(on, o)
+  w.disk.set(`${R}/reports/on/chatB`, '2026-11-12T10:00:00Z')
+  await $.turn.complete(turn('Готово, всё зелёное.', { turnId: 'b1' }))
+  expect(w.reports()).toMatchObject([{ id: 'chatB~turn-b1' }])
+  expect(w.reports()[0].urgent).toBeUndefined()
+  asChat(o, 'inbox')
+  await $.prompt.submit({ text: 'hi' } as never)
+  for (let i = 0; i < 19; i++) await w.clock.advance(15000)
+  expect(wakes(w)).toEqual([])
+  for (let i = 0; i < 3; i++) await w.clock.advance(15000)
+  await w.until(() => wakes(w).length === 1, 'batch wake')
 })

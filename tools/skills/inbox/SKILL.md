@@ -45,7 +45,11 @@ one line and restart it. A watchdog missing from the task list means this chat r
    what it did, what it found, what it found beyond its task (first, when there is any), what is left, plus what
    the person can see now and where (a page, a file, a command; not a hidden localhost route), and its "Open the
    chat" line. A task of several items lists each item's status, so none goes missing between reports. Only what the report says. A report is not a question: no AskUserQuestion for it, except a
-   step only the person can do (rule below). A chat with a "noted" task: `inbox.mjs note <chat> <status> <one line>`.
+   step only the person can do (rule below). Every finished turn of a chat this one started is reported to the
+   person at once, each time, never held until its sibling sessions are idle (the app continues this chat only when
+   all of them are, so a session that ended on a timeout while another still ran went unreported): what it did,
+   what it did not do, what the person must do (or "nothing"). A note that arrived with their message is reported
+   first, before their request. A chat with a "noted" task: `inbox.mjs note <chat> <status> <one line>`.
    Show each item as the person would want it cold, in the person's language, plain and short: which project and chat, what happened and
    why it asks, what each option does. Use the item's "Plainly" line when it has one; otherwise write it from
    its context, and copy its "Open the chat" link line as it stands (one click opens that chat). Never add facts the
@@ -63,7 +67,8 @@ one line and restart it. A watchdog missing from the task list means this chat r
    oldest first, grouped by chat, more calls straight after for the rest. Commit and push asks from several chats go
    together in one call, one question per chat (that chat's file list, the tracked files it did not change, another
    chat active in that folder in the last 30 minutes), so the person answers each chat on its own in one pass. Each call opens with one line: how many
-   questions are open in how many chats, and which call of how many this is. Every answer reading "[not answered
+   questions are open in how many chats, and which call of how many this is, and right before the call the text
+   gives each asking chat's link (`[title](#local_<id>)`): the dialog itself cannot hold a link. Every answer reading "[not answered
    yet: more items came in ...]" means the person was away: the plugin closed that dialog after 10 minutes because
    a new item came in. Run `inbox.mjs list` again and ask every open item anew, those questions first:
    - an ask item: each of its questions as one question, the option labels copied exactly (the asking chat matches
@@ -110,13 +115,20 @@ Messages reach chats of other accounts too: a fleet coordinator on another accou
      like, its `model` and `effort` set (judgement, design, diagnosis: the top model; execution: Sonnet, high
      effort; mechanical: Haiku; a started session is never above this chat, so this chat runs on the top
      model); its turns then report here, and the plugin switches its finish reports on. Work sent with `SendMessage`
-     to a running chat: `inbox.mjs report on <its app id>` (`track` with the app id does it too). None, on another account: `inbox.mjs start <profile> <project folder> <short
-     name> --model <m> --effort <e> --switches-window` makes the chat there with no click (a one-word CLI turn on this machine's CLI login, then that account's
-     app imports it), then `SendMessage` to that name with the brief; every turn from the brief on runs on that
-     account [M70]. The chat keeps the model of that CLI turn (hence `--model`); it cannot be renamed or messaged by
-     app id from here, only by name. The import shows that account's window and switches it to the new chat (it
-     replaced the chat the operator was dictating into): never while the person may be using that window; until a
-     quiet path exists, ask him first.
+     to a running chat: `inbox.mjs report on <its app id>` (`track` with the app id does it too). None, on another
+     account (or this account on a turn the person did not start): `inbox.mjs start <profile> <project folder>
+     <short name> --said "<his words that asked for it>" --model <m> [--effort <e>] [--mode auto]` makes the chat
+     there with no click (a one-word turn on that profile's own CLI, then that account's app imports it), then
+     `SendMessage` to that name with the brief; every turn from the brief on runs on that account [M70]. `--said`
+     must be his own typed words from the last 24 h (the plugin keeps them; one quote starts one chat): without them,
+     offer a card. The chat keeps the model of that CLI turn (hence `--model`; effort is not carried over [M71]); it
+     cannot be renamed or messaged by app id from here, only by name. The import switches that account's window to
+     the new chat and back to its old one in about 2 s, and raises it when a Claude window is in front [M71], so
+     `start` waits (exit 4, "queued") while any Claude window is in front or memory is low, and this chat's timer
+     starts it later; `inbox.mjs status` shows queued starts and the last automatic actions. The file
+     `<config>/makarasty/dispatch.off` turns all of this off: then offer a card. A project's task runs in a chat
+     of that project, never routed through another project's chat, and the person is never asked to sign in, paste
+     or click instead; say the window flip in one line.
   3. `inbox.mjs track <chat> <profile> <project> <task>`; each reply: `inbox.mjs note <chat> <status> <one line>`.
 - **Status** ("что с задачами"): `inbox.mjs tasks`, plus `list_events` for a chat whose last note is old. Then
   `inbox.mjs followed`: a chat in its "busy, not followed" part that is not this one and not tracked gets one line,
@@ -129,9 +141,11 @@ Messages reach chats of other accounts too: a fleet coordinator on another accou
   Track the untracked ones too (task "running at night"), then `note <chat> paused`. Report who confirmed and who
   did not answer. In auto mode the classifier may refuse these messages ("Interfere With Workloads") [M63]: then
   list the chats with their links and ask the person to approve the sends in one line; never route around it.
-- **Morning** ("проснулся", "я тут", "возобнови всё"): after a night with the computer off no chat runs and
-  `ListAgents` lists none; `inbox.mjs open <app id>` of each paused chat starts it in its own account's window, and
-  it is listed seconds later [M63]. Track the app id at night for that (`inbox.mjs chats --live`). A night reply
+- **Morning** ("проснулся", "я тут", "возобнови всё"): resume one chat at a time (memory: heavy runs at once push
+  this machine into the pagefile), by message where the chat is listed; messages never switch a window [M71].
+  After a night with the computer off no chat runs and `ListAgents` lists none; `inbox.mjs open <app id>` of each
+  paused chat starts it in its own account's window (it raises that window: one at a time), and it is listed
+  seconds later [M63]. Track the app id at night for that (`inbox.mjs chats --live`). A night reply
   sent after this chat closed is lost: read the chat's last message (its transcript) before the resume. Then every chat
   noted `paused` gets «Продолжай с того места, где
   остановился; если ты координатор флита: сними флит с паузы», then `note <chat> working`.
@@ -139,6 +153,11 @@ Messages reach chats of other accounts too: a fleet coordinator on another accou
 
 A case none of these fits uses the same verbs: pick, send, track, note. When one case keeps coming back, it gets
 its own rule here.
+
+A complaint from the person about how this chat behaved ("why didn't you…", "again", "never again", in any
+language) becomes a rule in the tool, not only a memory note: say in one line what went wrong, then hand the fix to the plugin's code
+or this file (a session in the plugin's repository, or the person's go-ahead to edit it), and name the file and
+line that now holds the rule. A memory note alone does not reach the next inbox chat or other people's.
 
 The inbox only carries the person's own picks. It never answers an item by itself, not even with the asking chat's
 recommendation: people say no or answer in their own words often enough that a guess is wrong. One exception, the default for

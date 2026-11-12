@@ -190,7 +190,7 @@ export const expired = (/** @type {Item} */ item, now = Date.now(), answered = f
 
 /**
  * @typedef {{ id: string, at: number, session: string, cwd: string, chat: string, recap?: string, excerpt?: string,
- *   error?: boolean, host?: string, account?: string }} Report
+ *   error?: boolean, urgent?: boolean, started?: boolean, host?: string, account?: string }} Report
  */
 
 // Finish reports wake the inbox chat in batches: once 5 min passed with no new one, or 15 min after the first, whichever
@@ -201,9 +201,11 @@ export const MAX_MS = 15 * 60 * 1000
 export const REPORT_TTL_MS = 3 * 24 * 3600 * 1000
 export const UNSEEN_REPORT_TTL_MS = 7 * 24 * 3600 * 1000 // a report the person never saw is kept longer
 
-/** Whether the waiting reports (not woken about yet) are due for one wake. */
+/** Whether the waiting reports (not woken about yet) are due for one wake. An urgent one (a chat the inbox started, a turn
+ *  that died on an error, a last message that waits on the person) is due at once: only the rest wait for the batch. */
 export function dueReports(/** @type {Report[]} */ waiting, now = Date.now()) {
   if (!waiting.length) return false
+  if (waiting.some((r) => r.urgent)) return true
   const ats = waiting.map((r) => r.at)
   return now - Math.max(...ats) >= QUIET_MS || now - Math.min(...ats) >= MAX_MS
 }
@@ -219,13 +221,22 @@ export function renderReports(/** @type {Report[]} */ reports, now = Date.now(),
   /** @type {Map<string, Report[]>} */
   const by = new Map()
   for (const r of [...reports].sort((a, b) => b.at - a.at)) by.set(r.session, [...(by.get(r.session) ?? []), r])
-  return [...by.values()].map(([last, ...earlier]) => [
-    `### ${project(last.cwd)} — finished ${ago(now - last.at)} ago${earlier.length ? `, ${earlier.length + 1} finishes of one chat` : ''}${last.error ? ', ended on an error' : ''}`,
+  return [...by.values()].map(([last, ...all]) => {
+    // An urgent finish, or one of a chat the inbox started, is not folded into a line at once: the newest three of them are
+    // shown whole, as the newest one is; the rest are a line each.
+    const kept = all.filter((r) => r.urgent || r.started).slice(0, 3)
+    const earlier = all.filter((r) => !kept.includes(r))
+    const whole = [last, ...kept]
+    return [
+    `### ${project(last.cwd)} — finished ${ago(now - last.at)} ago${all.length ? `, ${all.length + 1} finishes of one chat` : ''}${last.error ? ', ended on an error' : ''}`,
     `Chat: ${last.chat}`,
     link(/** @type {Item} */ (/** @type {unknown} */ (last)), account),
-    last.recap ? `Recap: ${last.recap}` : '',
-    last.excerpt ? `Last message:\n${last.excerpt}` : '',
+    ...whole.flatMap((r, i) => [
+      i ? `Earlier finish, ${ago(now - r.at)} ago${r.error ? ' (ended on an error)' : ''}:` : '',
+      r.recap ? `Recap: ${r.recap}` : '',
+      r.excerpt ? `Last message:\n${r.excerpt}` : '',
+    ]),
     ...earlier.slice(0, 4).map((r) => `Earlier, ${ago(now - r.at)} ago: ${cut(r.recap || r.excerpt || '', 300)}`),
     earlier.length > 4 ? `${earlier.length - 4} earlier reports more: inbox.mjs reports` : '',
-  ].filter(Boolean).join('\n')).join('\n\n')
+  ].filter(Boolean).join('\n') }).join('\n\n')
 }

@@ -1,5 +1,27 @@
 # Changelog
 
+## makarasty-tools 1.19.27 — 2026-11-12
+
+Phase 2 of the rebuild plan: the inbox starts chats on any account by itself, behind a gate and the person's words.
+- **inbox `start` is gated, consented and journaled:** `--said "<his words>"` must match a prompt the person typed
+  in the last 24 h (the hook keeps them in `inbox/said.jsonl`, 24 h, 200 entries; one typed prompt starts one chat;
+  15+ characters and 3+ words); `--mode` only `default|plan|auto`; the profile's own bundled CLI makes the bootstrap
+  turn [M71]; a journal per start (`inbox/starts/`) makes a retry continue instead of starting twice; a per-profile
+  lock; the start waits (exit 4, queued) while any Claude window is in front or free memory is under 2 GiB, because
+  the import raises that window then [M71]; the inbox chat's timer runs `start --drain` once a minute (one start per
+  run, failed ones retried after 10 min, 3 attempts). `inbox.mjs status` shows queued starts and the ledger
+  `coord/dispatch.jsonl`; `<config>/makarasty/dispatch.off` turns it all off. `--switches-window` is no longer needed.
+- **Every finish of a reporting chat is a report:** a turn that ended with a plain reply (no wrap_up) wrote nothing,
+  so a started tests session that hit a timeout went unreported while another session still ran. Now each such
+  turn writes one; an error, a timeout or a last message that waits on the person wakes the inbox chat at once
+  (at most once per chat per 10 min); a chat the inbox started is never folded away; turns the person typed in that
+  chat write none.
+- **inbox SKILL:** every finished child turn is reported at once (did, did not, what the person must do); a
+  complaint about the coordinator becomes a rule in the tool; chat links before each ask; a project's task runs in
+  that project's chat. README lists the profile lines the tools read and answers.md; PERF.md: check `claude auth
+  status` before `claude -p` experiments.
+- **Tests and fixtures carry no person's project or account names.**
+
 ## makarasty-tools 1.19.26 — 2026-11-12
 
 Phase 1 of the rebuild plan (rebuild-plan.md in the coordinator's side-session notes).

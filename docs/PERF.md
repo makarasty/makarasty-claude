@@ -10,6 +10,10 @@ costs more to disprove than it cost to generate.
 **Three runs, median and spread.** A single number is not a measurement. When the spread exceeds the
 difference being claimed, the finding is "too noisy to call", and that is a result worth writing.
 
+**Check who pays for `claude -p` first.** Before an experiment that runs `claude -p` or `--print`, run `claude auth
+status`: when it shows an API key rather than a subscription login, every run bills that key. Use subagents or
+desktop sessions instead, or ask.
+
 **Record machine load beside every number.** Process count and free memory, sampled before and after each
 batch. A slow reading taken with eleven node processes live is a hypothesis.
 

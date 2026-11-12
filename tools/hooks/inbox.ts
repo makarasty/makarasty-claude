@@ -190,7 +190,7 @@ export const register: Register = (on) => {
     // A session the inbox chat starts reports its finishes here (the operator's rule: reports from the coordinator's chats).
     const started = !r.isError && !r.deny && input.initiation !== 'own_initiative' ? /local_[0-9a-f]{8}-[0-9a-f-]{27}/.exec(text)?.[0] : undefined
     const me = started ? await inboxSelf($).catch(() => undefined) : undefined
-    if (me && started) await $.fs.write(`${me.root}/reports/on/${started}`, String(await $.clock.now())).catch(() => undefined)
+    if (me && started) await $.fs.write(`${me.root}/reports/on/${started}`, `started ${await $.clock.now()}`).catch(() => undefined)
     if (input.initiation !== 'own_initiative' || !taskId || r.isError || r.deny) return r
     const a = await active($)
     if (a) startTimer($)
@@ -228,7 +228,10 @@ export const register: Register = (on) => {
     const a = await active($).catch(() => undefined)
     if (!a || (await holding($, a).catch(() => false))) return r
     const q = e.reason === 'answer' ? proseQuestion(e.answer ?? '') : undefined
-    const reports = (recap !== undefined || e.reason === 'error') && origin !== 'scheduled-trigger' && (await enrolled($, a))
+    // Every working turn of an enrolled chat: a plain reply with no wrap_up is a finish too (2026-11-12: a started tests session's second finish, a 6 min timeout, wrote nothing).
+    // Not a turn the person typed (he is in that chat and sees it), not a /loop tick, and not a one-word reply with no recap.
+    const quiet = e.reason !== 'error' && !recap && (e.answer ?? '').trim().split(/\s+/).filter(Boolean).length < 2
+    const reports = origin !== 'scheduled-trigger' && origin !== 'composer' && origin !== 'bridge' && !quiet && (await enrolled($, a))
     if (!q && !reports) return r
     const since = (await $.clock.now()) - (e.durationMs ?? 0) - 1000
     const asked = (await openItems($, a)).some((it) => it.at >= since && it.kind !== 'card') // a card is no question and no finish
@@ -236,7 +239,10 @@ export const register: Register = (on) => {
       startTimer($)
       const tail = (e.answer ?? '').trim()
       if ((await reasked($, a, q).catch(() => 'new')) === 'new') await newItem($, a, `turn-${e.turnId}`, { kind: 'choice', ask: q, recap: tail.length > 700 ? `…${tail.slice(-700)}` : tail, actions: [] }).catch(() => undefined)
-    } else if (reports && !asked) await finishReport($, a, e, recap).catch(() => undefined)
+    } else if (reports && !asked) {
+      const started = await startedBy($, a)
+      await finishReport($, a, e, recap, started || e.reason === 'error' || waitsOnPerson(e.answer ?? ''), started).catch(() => undefined)
+    }
     return r
   }).catch(($, e, next) => next(e))
 
@@ -246,6 +252,7 @@ export const register: Register = (on) => {
     if (!e.turnId) turnOrigin = e.origin?.kind // a prompt that starts a turn (one delivered into a running turn does not)
     const started = /started your suggested background task (task_\w+)/.exec(e.text)?.[1]
     const typed = e.origin?.kind === 'composer' || e.origin?.kind === 'bridge'
+    if (typed) await capture($, e.text).catch(() => undefined)
     if (typed) {
       // The person writes to the inbox chat: the finish reports waiting for their batch go with this prompt.
       const me = await inboxSelf($).catch(() => undefined)
@@ -338,6 +345,37 @@ async function holding($: D, a: { dir: string; session: string }): Promise<boole
   return false
 }
 
+// A chat the inbox chat started (reports/on/<id> holds "started ..." when `start` or a start_session child wrote it, not a
+// timestamp alone as `report on` and `follow` leave): its finishes are urgent (the person asked to hear of each at once) and
+// never folded into an earlier one when shown. The per-chat limit (urgentRecently) keeps a chat that finishes on every
+// notification, a fleet coordinator, from waking more than once in 10 min.
+async function startedBy($: D, a: { root: string; session: string }): Promise<boolean> {
+  for (const id of [a.session, await $.env.get('CLAUDE_CODE_HOST_SESSION_ID')]) {
+    if (id && String(await $.fs.read(`${a.root}/reports/on/${safe(id)}`).catch(() => '')).startsWith('started')) return true
+  }
+  return false
+}
+
+// A last message that waits on the person: it ends in a question, or names a step only he can do. shortcut: a few
+// phrases in English and Russian over the last 500 chars; upgrade if a waiting finish is seen going to the batch.
+const HIS_STEP = /(?<!\p{L})(you need to|you must|your turn|please run|run (this|it) (yourself|in your)|waiting for you|need(s)? your|нужно (тебе|вам|от тебя)|тебе нужно|твой ход|ваш ход|жду (тебя|твоего|вас)|запусти(те)? (сам|у себя)|сделай(те)? сам)/iu
+// Said of nobody's duty: "nothing you need to do", "if you must", «если тебе нужно», «ничего делать не нужно».
+const NOT_HIS_STEP = /(?<!\p{L})(nothing|no need|not need|don't need|do not need|if|unless|when|whether|ничего|не нужно|не надо|если|когда)(?!\p{L})/iu
+function waitsOnPerson(answer: string): boolean {
+  return proseQuestion(answer) !== undefined || answer.slice(-500).split(/[.;!?\n]+/).some((sentence) => HIS_STEP.test(sentence) && !NOT_HIS_STEP.test(sentence))
+}
+
+// One urgent wake per chat per 10 min: its later urgent reports in the window wait for the batch.
+const URGENT_EVERY_MS = 10 * 60 * 1000
+async function urgentRecently($: D, a: { root: string; session: string }, now: number): Promise<boolean> {
+  for (const f of await $.fs.list(`${a.root}/reports`).catch(() => [])) {
+    if (!f.name.endsWith('.json') || !ownedBy(f.name, a.session)) continue
+    const r = await readJSON<Report>($, `${a.root}/reports/${f.name}`)
+    if (r?.urgent && now - r.at < URGENT_EVERY_MS) return true
+  }
+  return false
+}
+
 // Switched on for finish reports: by this chat's session id or its app id (the inbox knows the app id of what it starts).
 async function enrolled($: D, a: { root: string; session: string }): Promise<boolean> {
   if (await $.fs.exists(`${a.root}/reports/on/${safe(a.session)}`)) return true
@@ -347,13 +385,15 @@ async function enrolled($: D, a: { root: string; session: string }): Promise<boo
 
 // One file per finish, written once: the wrap_up recap and the final message cut short. A reply that holds a secret is
 // not copied: the report says to open the chat.
-async function finishReport($: D, a: { root: string; session: string }, e: { answer?: string; turnId: string; reason: string }, recap: string | undefined): Promise<void> {
+async function finishReport($: D, a: { root: string; session: string }, e: { answer?: string; turnId: string; reason: string }, recap: string | undefined, urgent: boolean, started: boolean): Promise<void> {
   const answer = e.answer ?? ''
+  const now = await $.clock.now()
+  if (urgent && (await urgentRecently($, a, now).catch(() => false))) urgent = false
   const hit = secretIn(`${recap ?? ''}\n${answer}`)
   const rep: Report = {
-    id: itemId(a.session, `turn-${e.turnId}`), at: await $.clock.now(), ...(await origin($, a, await $.session.messages().catch(() => []))),
+    id: itemId(a.session, `turn-${e.turnId}`), at: now, ...(await origin($, a, await $.session.messages().catch(() => []))),
     ...(hit ? { excerpt: `[a ${hit.kind} in the reply: open the chat]` } : { recap: recap || undefined, excerpt: excerptOf(answer) || undefined }),
-    ...(e.reason === 'error' ? { error: true } : {}),
+    ...(e.reason === 'error' ? { error: true } : {}), ...(urgent ? { urgent: true } : {}), ...(started ? { started: true } : {}),
   }
   await $.fs.write(`${a.root}/reports/${rep.id}.json`, JSON.stringify(rep))
 }
@@ -463,10 +503,52 @@ async function wake($: D, me: { root: string; session: string }): Promise<void> 
   await $.prompt.submit({ text: `Inbox: ${fresh.length} new item${fresh.length > 1 ? 's' : ''} waiting for the person:\n${lines.join('\n')}${reports.length ? `\nAlso: ${finishedLine(reports)}` : ''}\nReview them now with the makarasty-tools inbox skill.` })
 }
 
+// What the person types in a chat where the inbox is on (the inbox chat too: it is where he asks for a start) goes to said.jsonl, the inbox chat's source for who he is and what he
+// answered. Only his own typing: not what the plugin submits and not a message from another session.
+export const SAID_KEEP_MS = 86400000
+const SAID_MAX = 200
+const NOT_SAID = /^\s*(Inbox:|The person answered your|<cross-session-message|Another Claude session sent a message)/
+async function capture($: D, text: string): Promise<void> {
+  if (!text.trim() || NOT_SAID.test(text)) return
+  const a = (await active($)) ?? (await inboxSelf($))
+  if (!a) return
+  const now = await $.clock.now()
+  // shortcut: read-and-rewrite (no append in $.fs); two chats typing within milliseconds can lose a line.
+  const old = String(await $.fs.read(`${a.root}/said.jsonl`).catch(() => '')).split(/\r?\n/).filter((l) => {
+    try { return now - (JSON.parse(l) as { at: number }).at < SAID_KEEP_MS } catch { return false }
+  })
+  old.push(JSON.stringify({ at: now, session: a.session, text: text.slice(0, 4000) }))
+  await $.fs.write(`${a.root}/said.jsonl`, `${old.slice(-SAID_MAX).join('\n')}\n`)
+}
+
+// Chats started for the person leave a journal in starts/; the inbox chat's timer finishes the queued ones (`start --drain`),
+// at most once a minute and never two at once.
+const DRAIN_EVERY_MS = 60000
+const RETRY_AFTER_MS = 600000 // a failed start is tried again (attempts < 3) once its journal is this old
+let lastDrain: number | undefined
+let draining = false
+async function drainStarts($: D, me: { dir: string; root: string }): Promise<void> {
+  if (draining) return
+  const now = await $.clock.now()
+  if (lastDrain !== undefined && now - lastDrain < DRAIN_EVERY_MS) return
+  let queued = false
+  for (const f of await $.fs.list(`${me.root}/starts`).catch(() => [])) {
+    if (!f.name.endsWith('.json')) continue
+    const j = await readJSON<{ state?: string; attempts?: number; updated?: number | string }>($, `${me.root}/starts/${f.name}`)
+    const upd = Number(j?.updated) || Date.parse(String(j?.updated ?? '')) || 0
+    if (j?.state === 'queued' || j?.state === 'cli-done' || (j?.state === 'failed' && (j.attempts ?? 0) < 3 && now - upd > RETRY_AFTER_MS)) { queued = true; break }
+  }
+  if (!queued) return
+  draining = true
+  lastDrain = now
+  try { await cli($, me.dir, ['start', '--drain'], 300000) } finally { draining = false }
+}
+
 export async function tick($: D): Promise<void> {
   const me = await inboxSelf($)
   if (me) {
     await $.fs.write(`${me.root}/beat`, String(await $.clock.now())).catch(() => undefined) // the watchdog's sign the timer runs
+    void drainStarts($, me).catch(() => undefined) // not awaited: it can run minutes, and the beat and the wake must not wait for it
     return wakeOnce($, me)
   }
   const a = await active($)

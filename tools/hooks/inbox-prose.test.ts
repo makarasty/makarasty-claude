@@ -64,7 +64,7 @@ test('no item for a statement, a subagent turn, the inbox chat itself, or a turn
 
 test('the inbox chat does not file its own prose questions', async ($, on) => {
   const w = world(on, { self: 'chatA' })
-  await $.turn.complete(turn('Отправить это в darkkitty?'))
+  await $.turn.complete(turn('Отправить это в proj-beta?'))
   expect(w.items().length).toBe(0)
 })
 

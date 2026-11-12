@@ -13,8 +13,13 @@
 //   node inbox.mjs wait <id>[,<id>...] <ms> block until every item is answered; prints the answer JSON (exit 3: timed out)
 //   node inbox.mjs push <id>                one phone message for the item through notify.mjs, once
 //   node inbox.mjs open <id>|local_<id>     bring that chat up in the app window of its own account (profile)
-//   node inbox.mjs start <profile> <folder> <name> [--model m] [--effort e]  a new chat in that folder on that
-//                                           profile's account, named <name>; then SendMessage the brief to <name>
+//   node inbox.mjs start <profile> <folder> <name> --said "<his words>" [--model m] [--effort e] [--mode default|plan|auto]
+//                                           a new chat in that folder on that profile's account, named <name>; then SendMessage
+//                                           the brief to <name>. Refused (2) when <config>/makarasty/dispatch.off exists or --said
+//                                           (15+ chars, 3+ words) is not in the person's own prompts of the last 24 h (said.jsonl; one prompt, one
+//                                           start). Queued (4) while a Claude window is in front or under 2 GiB RAM is free.
+//   node inbox.mjs start --drain            retry queued starts, oldest first (and failed ones under 3 tries, 10 min apart); stops after the first that runs
+//   node inbox.mjs starts                   queued and recent starts
 //   node inbox.mjs children <local_id>     app ids of the chats that chat started, one per line
 //   node inbox.mjs report on|off [chat id]  that chat (default: the one running this) sends finish reports, or stops
 //   node inbox.mjs reports                  every finish report of the last 3 days, shown or not
@@ -26,9 +31,9 @@
 // Exit 0 ok, 1 refused (already answered, unknown id, bad answer), 2 bad arguments, 3 wait timed out.
 
 import { execFileSync, spawn } from 'node:child_process'
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync, writeSync } from 'node:fs'
-import { randomUUID } from 'node:crypto'
-import { homedir } from 'node:os'
+import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync, writeSync } from 'node:fs'
+import { createHash, randomUUID } from 'node:crypto'
+import { freemem, homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { REPORT_TTL_MS, TTL_MS, UNSEEN_REPORT_TTL_MS, expired, normalizeAnswer, pushText, render, renderReports, safe } from './core.mjs'
@@ -197,6 +202,205 @@ function autoAnswers() {
 }
 const readOr = (/** @type {string} */ p) => { try { return readFileSync(p, 'utf8').trim() } catch { return '' } }
 
+// ---- start: a new chat on another account, gated, consented, journaled ----
+// Journal <root>/starts/<key>.json, key = sha1(profile|folder|name): queued -> cli-done -> imported -> done | failed. A start that
+// finds its journal imported/done (updated in the last 24 h) only prints the host; cli-done skips the CLI turn. Consent: the words
+// the person typed (<root>/said.jsonl, written by the hook), one typed prompt = one start. Gate: no Claude window of ours in front.
+// Env for tests: INBOX_FG=claude|other|unknown (a comma list: the 1st, 2nd... read), INBOX_FREEMEM (bytes), INBOX_CLAUDE (the CLI).
+const dispatchOff = () => existsSync(join(base, 'dispatch.off'))
+const MIN_FREE = 2 * 1024 ** 3, MODES = ['default', 'plan', 'auto']
+const sha1 = (/** @type {string} */ s) => createHash('sha1').update(s).digest('hex')
+const squash = (/** @type {string} */ s) => s.toLowerCase().replace(/\s+/g, ' ').trim()
+// A failed start is retried by --drain up to 3 attempts in all, 10 min apart; then it stays failed (status shows it).
+const retryable = (/** @type {any} */ j) => j.state === 'queued' || j.state === 'cli-done' || (j.state === 'failed' && (j.attempts || 1) < 3 && Date.now() - Date.parse(j.updated) > 10 * 60e3)
+const journals = () => { try { return readdirSync(join(root, 'starts')).filter((f) => f.endsWith('.json')).map((f) => readJSON(join(root, 'starts', f))).filter(Boolean) } catch { return [] } }
+const saveJournal = (/** @type {any} */ j) => { j.updated = new Date().toISOString(); writeFileSync(join(dir('starts'), `${j.key}.json`), JSON.stringify(j, null, 1)) }
+const ledgerFile = () => join(base, 'coord', 'dispatch.jsonl')
+const bundledCli = (/** @type {{name: string, dir: string}} */ prof) => {
+  if (process.env.INBOX_CLAUDE) return process.env.INBOX_CLAUDE
+  const top = join(prof.dir, 'claude-code'), ver = (/** @type {string} */ v) => v.split('.').map((n) => Number(n) || 0)
+  try {
+    const vs = readdirSync(top).sort((a, b) => { const x = ver(a), y = ver(b); for (let i = 0; i < Math.max(x.length, y.length); i++) if ((x[i] ?? 0) !== (y[i] ?? 0)) return (y[i] ?? 0) - (x[i] ?? 0); return 0 }) // newest first
+    for (const v of vs) for (const h of readdirSync(join(top, v))) { const exe = join(top, v, h, 'claude.exe'); if (existsSync(exe)) return exe }
+  } catch { /* no bundled CLI */ }
+  return 'claude'
+}
+// {id} when the words are the person's own: a substring of a composer prompt of the last 24 h (15+ chars, 3+ words) that has
+// not started a chat yet. The prompt is the unit, not the words: another cut of the same prompt is the same mark. Else {why}.
+// `mark` false (a dry run) only looks.
+function consent(/** @type {string} */ said, /** @type {boolean} */ mark) {
+  const none = 'no matching words of the person in the last 24 h (15+ characters, 3+ words): offer a card', q = squash(said)
+  if (q.length < 15 || q.split(' ').length < 3) return { why: none }
+  let reused = false
+  if (mark) dir('said-used')
+  for (const l of readOr(join(root, 'said.jsonl')).split(/\r?\n/)) {
+    let id = ''
+    try { const e = JSON.parse(l), at = typeof e.at === 'number' ? e.at : Date.parse(e.at); if (Date.now() - at < 24 * 3600e3 && squash(String(e.text ?? '')).includes(q)) id = `${e.at}|${e.session}` } catch { continue }
+    if (!id) continue
+    const used = join(root, 'said-used', sha1(id))
+    if (mark ? create(used, new Date().toISOString()) : !existsSync(used)) return { id }
+    reused = true
+  }
+  return { why: reused ? 'that typed prompt already started a chat (one prompt, one start): offer a card' : none }
+}
+// The window in front: 'other' = open; 'claude' = one of our app windows (--user-data-dir under the profiles folder); 'unknown' = the read failed.
+const FG_PS = 'Add-Type \'using System;using System.Runtime.InteropServices;public class FG{[DllImport("user32.dll")]public static extern IntPtr GetForegroundWindow();[DllImport("user32.dll")]public static extern uint GetWindowThreadProcessId(IntPtr h,out uint p);}\'; $p=[uint32]0; [void][FG]::GetWindowThreadProcessId([FG]::GetForegroundWindow(),[ref]$p); $w=Get-CimInstance Win32_Process -Filter "ProcessId=$p"; $w.ExecutablePath+\'|\'+$w.CommandLine'
+let fgCalls = 0
+let drainStop = false // set once a start went past the gates (or hit a gate/RAM wait that holds for all): --drain stops there
+function gateVerdict() {
+  const fg = process.env.INBOX_FG // test override; a comma list answers the 1st, 2nd... call (the last repeats)
+  if (fg) { const seq = fg.split(','); return seq[Math.min(fgCalls++, seq.length - 1)] }
+  let out
+  try { out = execFileSync('powershell', ['-NoProfile', '-Command', FG_PS], { encoding: 'utf8', timeout: 8e3, stdio: ['ignore', 'pipe', 'ignore'] }).trim() } catch { return 'unknown' }
+  const [exe = '', ...c] = out.split('|')
+  if (!exe) return 'unknown'
+  if (!/^claude[^\\/]*\.exe$/i.test(exe.split(/[\\/]/).pop() ?? '')) return 'other'
+  const m = /--user-data-dir=(?:"([^"]*)"|(\S+))/i.exec(c.join('|')), flat = (/** @type {string} */ s) => s.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
+  const udd = flat(m?.[1] ?? m?.[2] ?? ''), top = flat(profilesDir())
+  return udd && (udd === top || udd.startsWith(`${top}/`)) ? 'claude' : 'other'
+}
+// One lock per profile, held from the gate check to the flip-back; stale after 5 min. The file holds a random token: after a
+// takeover it is read back, and only the one whose token is in it goes on (two takeovers at once leave one winner).
+function lockTake(/** @type {string} */ profile) {
+  const f = join(dir('starts'), `${safe(profile)}.lock`), token = randomUUID()
+  for (let i = 0; i < 2; i++) {
+    try { const fd = openSync(f, 'wx'); writeSync(fd, `${token} ${process.pid} ${new Date().toISOString()}`); closeSync(fd); return readOr(f).startsWith(token) ? { f, token } : undefined } catch (e) { if (/** @type {NodeJS.ErrnoException} */ (e).code !== 'EEXIST') throw e }
+    try {
+      if (Date.now() - statSync(f).mtimeMs <= 5 * 60e3) return undefined
+      const gone = `${f}.stale-${randomUUID()}`
+      renameSync(f, gone); rmSync(gone, { force: true }) // one rename wins; a loser throws ENOENT
+    } catch { return undefined } // busy: someone else is taking it over, or it is fresh
+  }
+  return undefined
+}
+const nextLine = (/** @type {string} */ name, /** @type {string} */ profile) => say(`next: SendMessage to "${name}" with the brief; that turn runs on ${profile}'s account`)
+
+async function startOne(/** @type {{profile: string, folder: string, name: string, said: string, model?: string, effort?: string, mode?: string}} */ a) {
+  const { profile, folder, name, said, model, effort, mode } = a, t0 = Date.now(), key = sha1(`${profile}|${folder}|${name}`), dry = !!process.env.INBOX_DRY_OPEN
+  // The ledger keeps the prompt's id and 60 characters of the words, not the words.
+  const led = { at: new Date().toISOString(), verb: 'start', profile, folder, name, key, said: said.slice(0, 60), saidId: '', gate: '', freemem: /** @type {number | string} */ (''), result: '', ms: 0 }
+  const end = (/** @type {number} */ code, /** @type {string} */ result) => {
+    led.result = result; led.ms = Date.now() - t0
+    if (!dry) {
+      mkdirSync(join(base, 'coord'), { recursive: true }); appendFileSync(ledgerFile(), `${JSON.stringify(led)}\n`)
+      const rows = readOr(ledgerFile()).split(/\r?\n/).filter(Boolean)
+      if (rows.length > 2500) writeFileSync(ledgerFile(), `${rows.slice(-2000).join('\n')}\n`)
+    }
+    return code
+  }
+  if (dispatchOff()) { console.error('inbox: dispatch is off: offer a card'); return end(2, 'refused: dispatch.off') }
+  const prof = { name: profile, dir: join(profilesDir(), profile) }
+  /** @type {any} */ let j = readJSON(join(root, 'starts', `${key}.json`))
+  if (j && (j.state === 'imported' || j.state === 'done')) {
+    if (Date.now() - Date.parse(j.updated) < 24 * 3600e3) {
+      say(`inbox: already started local_${j.sid} in profile ${profile}, folder ${folder} (${j.state})`); nextLine(name, profile)
+      return end(0, `already ${j.state}`)
+    }
+    j = undefined // a day later the same name is a new start
+  }
+  if (j) {
+    if (j.mode && !MODES.includes(j.mode)) {
+      console.error(`inbox: the journal of "${name}" has mode ${j.mode}: only ${MODES.join(', ')}`)
+      if (!dry) { j.state = 'failed'; j.attempts = 3; j.note = `mode ${j.mode} is not allowed`; saveJournal(j) } // no retry can fix it: out of attempts, so it blocks nobody
+      return end(2, 'refused: mode')
+    }
+    if ((model ?? '') !== (j.model ?? '') || (effort ?? '') !== (j.effort ?? '') || (mode ?? '') !== (j.mode ?? '')) {
+      console.error(`inbox: "${name}" is already ${j.state} with model "${j.model}", effort "${j.effort}", mode "${j.mode}"; the flags passed now differ: repeat it as it was, or use another name`)
+      return end(2, 'refused: flags differ')
+    }
+    led.said = j.said; led.saidId = j.saidId ?? ''
+  } else {
+    const c = consent(said, !dry)
+    if (c.why) { console.error(`inbox: ${c.why}`); return end(2, 'refused: consent') }
+    led.saidId = c.id ?? ''
+    j = { key, profile, folder, name, said: said.slice(0, 60), saidId: c.id, model: model ?? '', effort: effort ?? '', mode: mode ?? '', sid: randomUUID(), state: 'queued', at: new Date().toISOString(), updated: '', note: '' }
+    if (!dry) saveJournal(j)
+  }
+  const urlOf = () => `claude://resume?session=${j.sid}`
+  const cliArgv = () => [bundledCli(prof), '-p', 'Reply with the single word READY.', '--session-id', j.sid, '-n', name, ...(j.model ? ['--model', j.model] : []), ...(j.effort ? ['--effort', j.effort] : []), ...(j.mode ? ['--permission-mode', j.mode] : [])]
+  // The chat that window shows (the app stamps lastFocusedAt): opened again after the import, so the window flips to the new
+  // chat and straight back. Read after the CLI turn (up to 180 s): the person may have switched chats meanwhile.
+  const backOf = () => {
+    const shown = chats().filter((c) => c.profile === profile).sort((x, y) => y.focused - x.focused)[0]
+    return shown?.focused ? { host: shown.host, url: `claude://claude.ai/epitaxy/${shown.host}` } : undefined
+  }
+  const argv = linkArgv(prof, urlOf())
+  if (dry) { // writes nothing: no journal, no mark, no ledger row
+    if (!argv) { console.error(noWindow(prof)); return 1 }
+    say(`cd ${folder}`); say(cliArgv().join(' ')); say(argv.join(' ')); const b = backOf(); if (b) say(`back: ${b.url}`)
+    return 0
+  }
+  const queue = (/** @type {string} */ why) => { j.note = why; if (j.state !== 'cli-done') j.state = j.cliDone ? 'cli-done' : 'queued'; saveJournal(j); say(`inbox: queued: ${why}`); return end(4, `queued: ${why}`) }
+  const lock = lockTake(profile)
+  if (!lock) return queue(`another start of ${profile} is running`)
+  try {
+    const host = () => `local_${j.sid}`, doneLine = (/** @type {string} */ flip) => { say(`inbox: started ${host()} in profile ${profile}, folder ${folder}${flip}`); nextLine(name, profile) }
+    const imported = () => { j.state = 'imported'; saveJournal(j); writeFileSync(join(dir(join('reports', 'on')), host()), `started ${new Date().toISOString()}`) } // its finish reports come
+    // A retry whose link already took effect (the import was only slow): done, and no link fired again.
+    if ((j.state === 'cli-done' || j.cliDone) && profileOf(host())?.name === profile) {
+      imported(); j.state = 'done'; j.note = 'imported meanwhile; no flip-back'; saveJournal(j); doneLine('; no flip-back (imported meanwhile)')
+      return end(0, 'done: imported meanwhile')
+    }
+    const free = process.env.INBOX_FREEMEM !== undefined ? Number(process.env.INBOX_FREEMEM) : freemem()
+    led.freemem = free
+    if (free < MIN_FREE) return drainStop = true, queue(`only ${Math.round(free / 2 ** 20)} MiB of RAM free (floor ${MIN_FREE / 2 ** 20})`)
+    const closed = (/** @type {string} */ g) => `a Claude window is in front; it starts when none is${g === 'unknown' ? ' (the foreground window could not be read)' : ''}`
+    led.gate = gateVerdict()
+    if (led.gate !== 'other') { drainStop = true; return queue(closed(led.gate)) }
+    if (!argv) { j.state = 'failed'; j.attempts = (j.attempts || 0) + 1; j.note = noWindow(prof); saveJournal(j); console.error(j.note); return end(1, 'failed: no window') }
+    drainStop = true // from here the start works (CLI turn or import)
+    if (j.state !== 'cli-done' && !j.cliDone) {
+      j.sid = randomUUID(); j.state = 'queued'; saveJournal(j) // a failed turn may have left its id used: a new one each try
+      const cli = cliArgv()
+      try { execFileSync(cli[0], cli.slice(1), { cwd: folder, stdio: ['ignore', 'pipe', 'pipe'], timeout: 180e3 }) } catch (e) {
+        j.state = 'failed'; j.attempts = (j.attempts || 0) + 1; j.note = `the CLI turn failed: ${/** @type {Error} */ (e).message.split('\n')[0]}`; saveJournal(j); console.error(`inbox: ${j.note}`); return end(1, 'failed: cli')
+      }
+      j.state = 'cli-done'; j.cliDone = true; j.note = ''; saveJournal(j)
+    }
+    const back = backOf(), g2 = gateVerdict()
+    if (g2 !== 'other') { led.gate += `,${g2}`; return queue(closed(g2)) }
+    launch(prof, urlOf())
+    for (let i = 0, n = Math.ceil((Number(process.env.INBOX_IMPORT_WAIT) || 30e3) / 500); i < n && profileOf(host())?.name !== profile; i++) await new Promise((r) => setTimeout(r, 500)) // INBOX_IMPORT_WAIT (ms): the selftest
+    if (profileOf(host())?.name !== profile) {
+      // An attempt, like a failed CLI turn: the same 3 tries 10 min apart; a retry first looks whether it was imported after all.
+      j.state = 'failed'; j.cliDone = true; j.attempts = (j.attempts || 0) + 1; j.note = 'not imported in 30 s'; saveJournal(j)
+      console.error(`inbox: ${profile} did not import ${j.sid} within 30 s (is that account's window running?)`); return end(1, 'failed: import')
+    }
+    imported()
+    // the flip-back always runs: it restores the chat that window showed (measured 2 s [M71])
+    const flip = back ? (launch(prof, back.url), `; window sent back to ${back.host}`) : ''
+    j.state = 'done'; j.note = ''; saveJournal(j)
+    doneLine(flip)
+    return end(0, 'done')
+  } finally { if (readOr(lock.f).startsWith(lock.token)) rmSync(lock.f, { force: true }) }
+}
+
+async function startCmd(/** @type {string | undefined} */ id, /** @type {string[]} */ rest) {
+  if (dispatchOff()) { console.error('inbox: dispatch is off: offer a card'); return 2 }
+  if (id === '--drain') {
+    // Oldest first, up to the first start that gets past the gates: a run does one CLI turn at most, under the hook's time limit (180 s).
+    const todo = journals().filter(retryable).sort((x, y) => (Date.parse(x.at) || 0) - (Date.parse(y.at) || 0))
+    say(`inbox: ${todo.length} queued start${todo.length === 1 ? '' : 's'}${todo.length > 1 ? '; oldest first, this run stops after the first that gets past the gates' : ''}`)
+    let code = 0
+    // One that fails for its own reason (no window of its profile, a bad mode) is marked failed and the next is tried: it blocks nobody.
+    for (const j of todo) { drainStop = false; code = await startOne(j); if (drainStop) break }
+    return code
+  }
+  const [folder, ...args] = rest, words = [], o = /** @type {Record<string, string>} */ ({})
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--switches-window') continue // accepted, ignored: the gate replaced it
+    if (['--said', '--model', '--effort', '--mode'].includes(args[i]) && args[i + 1] !== undefined) o[args[i].slice(2)] = args[++i]
+    else words.push(args[i])
+  }
+  const name = words.join(' ').trim()
+  if (!id || !existsSync(join(profilesDir(), id, 'claude-code-sessions')) || !folder || !existsSync(folder) || !name || !o.said) {
+    console.error('inbox: usage: start <profile> <folder> <chat name> --said "<his words>" [--model m] [--effort e] [--mode default|plan|auto]  |  start --drain  (a profile under Claude-Profiles, an existing folder)'); return 2
+  }
+  if (o.mode && !MODES.includes(o.mode)) { console.error(`inbox: --mode ${o.mode} refused: only ${MODES.join(', ')}`); return 2 }
+  return startOne({ profile: id, folder, name, said: o.said, model: o.model, effort: o.effort, mode: o.mode })
+}
+
+
 async function main() {
   const [cmd, id, ...rest] = process.argv.slice(2)
   if (cmd === 'on') { mkdirSync(base, { recursive: true }); writeFileSync(join(base, 'inbox.on'), `${new Date().toISOString()}\n`); say('inbox: on for every chat that loads makarasty-tools (running chats after their next restart or plugin reload)'); return 0 }
@@ -212,6 +416,20 @@ async function main() {
     say(`last wake of the inbox chat: ${ago(newest('announced'))}; last answer: ${ago(newest('answers'))}`)
     say(`inbox chat: ${existsSync(join(root, 'self')) ? readFileSync(join(root, 'self'), 'utf8').trim() : 'none yet (run list once)'}`)
     say(`finish reports not shown yet: ${reports().filter((r) => !shown(r.id)).length}`)
+    const rows = readOr(ledgerFile()).split(/\r?\n/).filter(Boolean).slice(-10)
+    say(`dispatch ledger, last ${rows.length}:`)
+    for (const l of rows) { try { const e = JSON.parse(l); say(`  ${e.at} ${e.verb} ${e.profile} ${e.name}: ${e.result} (gate ${e.gate || '-'}, ${e.ms} ms)`) } catch { /* torn line */ } }
+    const q = journals().filter((j) => j.state === 'queued' || j.state === 'cli-done')
+    say(`queued starts: ${q.length}${dispatchOff() ? ' (dispatch is off)' : ''}`)
+    for (const j of q) say(`  ${j.state}	${j.profile}	${j.name}	${j.note}`)
+    for (const j of journals().filter((x) => x.state === 'failed')) say(`  failed (${j.attempts || 1} attempt${(j.attempts || 1) === 1 ? '' : 's'}${retryable(j) ? ', drain retries it' : ''})	${j.profile}	${j.name}	${j.note}`)
+    return 0
+  }
+  if (cmd === 'starts') {
+    // queued starts and the ones of the last day
+    const all = journals().filter((j) => j.state === 'queued' || j.state === 'cli-done' || Date.now() - Date.parse(j.updated) < 24 * 3600e3)
+    if (!all.length) say('inbox: no starts')
+    for (const j of all.sort((a, b) => Date.parse(b.updated) - Date.parse(a.updated))) say(`${j.state}	${j.profile}	${j.name}	${j.folder}	${j.updated}	${j.note}`)
     return 0
   }
   if (cmd === 'watchdog') {
@@ -319,7 +537,7 @@ async function main() {
     if (!id || !profile || !project || !task.length) { console.error('inbox: track <chat> <profile> <project> <task>'); return 2 }
     const t = loadTasks().filter((x) => x.chat !== id)
     t.push({ chat: id, profile, project, task: task.join(' '), status: 'started', at: new Date().toISOString(), notes: [] })
-    if (/^local_[0-9a-f-]{36}$/.test(id)) writeFileSync(join(dir(join('reports', 'on')), id), new Date().toISOString()) // handed work: it reports its finish
+    if (/^local_[0-9a-f-]{36}$/.test(id)) writeFileSync(join(dir(join('reports', 'on')), id), `started ${new Date().toISOString()}`) // handed work: it reports its finish
     saveTasks(t); say(`inbox: tracking ${id}`); return 0
   }
   if (cmd === 'note') {
@@ -439,47 +657,7 @@ async function main() {
     return 0
   }
 
-  if (cmd === 'start') {
-    // A new chat on another account, no click: a one-word CLI turn makes a transcript with a known id and name, the
-    // profile's app imports it through claude://resume (its own route), and the caller sends the brief with SendMessage
-    // to that name; the turns from there on run in that profile's app, on its account.
-    // --model / --effort go to the CLI turn: the imported chat keeps that turn's model (a Haiku bootstrap stayed Haiku).
-    const [folder, ...args] = rest, flags = [], words = []
-    let switches = false
-    for (let i = 0; i < args.length; i++) {
-      if (args[i] === '--switches-window') switches = true
-      else if ((args[i] === '--model' || args[i] === '--effort') && args[i + 1]) flags.push(args[i], args[++i])
-      else words.push(args[i])
-    }
-    const name = words.join(' ').trim()
-    const prof = id && existsSync(join(profilesDir(), id, 'claude-code-sessions')) ? { name: id, dir: join(profilesDir(), id) } : undefined
-    if (!prof || !folder || !existsSync(folder) || !name) { console.error('inbox: usage: start <profile> <folder> <chat name> --switches-window (a profile under Claude-Profiles, an existing folder)'); return 2 }
-    // The resume route always shows the window and switches it to the new chat (setFocusedSession): it replaced the chat
-    // the operator was dictating into [M70]. Refused unless the caller says that window is not in use.
-    if (!switches) { console.error(`inbox: start switches ${prof.name}'s window to the new chat; run it only when nobody uses that window, with --switches-window`); return 2 }
-    const sid = randomUUID(), host = `local_${sid}`
-    const cli = [process.env.INBOX_CLAUDE || 'claude', '-p', 'Reply with the single word READY.', '--session-id', sid, '-n', name, ...flags]
-    const url = `claude://resume?session=${sid}`
-    const argv = linkArgv(prof, url)
-    if (!argv) { console.error(noWindow(prof)); return 1 }
-    // The chat that window shows (the app stamps lastFocusedAt when a chat is shown): opened again after the import, so
-    // the window flips to the new chat and straight back. Read after the CLI turn (up to 180 s), when the person may have
-    // switched chats in that window meanwhile: a flip-back to the chat shown before the turn would force a stale one.
-    const backOf = () => {
-      const shown = chats().filter((c) => c.profile === prof.name).sort((a, b) => b.focused - a.focused)[0]
-      return shown?.focused ? { host: shown.host, url: `claude://claude.ai/epitaxy/${shown.host}` } : undefined
-    }
-    if (process.env.INBOX_DRY_OPEN) { say(`cd ${folder}`); say(cli.join(' ')); say(argv.join(' ')); const b = backOf(); if (b) say(`back: ${b.url}`); return 0 }
-    try { execFileSync(cli[0], cli.slice(1), { cwd: folder, stdio: ['ignore', 'pipe', 'pipe'], timeout: 180e3 }) } catch (e) { console.error(`inbox: the CLI turn failed: ${/** @type {Error} */ (e).message.split('\n')[0]}`); return 1 }
-    const back = backOf()
-    launch(prof, url)
-    for (let i = 0; i < 60 && profileOf(host)?.name !== prof.name; i++) await new Promise((r) => setTimeout(r, 500))
-    if (profileOf(host)?.name !== prof.name) { console.error(`inbox: ${prof.name} did not import ${sid} within 30 s (is that account's window running?)`); return 1 }
-    if (back) launch(prof, back.url)
-    say(`inbox: started ${host} in profile ${prof.name}, folder ${folder}${back ? `; window sent back to ${back.host}` : ''}`)
-    say(`next: SendMessage to "${name}" with the brief; that turn runs on ${prof.name}'s account`)
-    return 0
-  }
+  if (cmd === 'start') return startCmd(id, rest)
 
   console.error(`inbox: unknown command ${cmd}`)
   return 2
