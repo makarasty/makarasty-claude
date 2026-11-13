@@ -220,7 +220,7 @@ test('the inbox chat asks a question of a session it started like any other: wit
   const w = world(on, { self: 'chatA', children: ['local_bbbb'] })
   const item = { kind: 'ask', at: 1, cwd: 'C:/work/proj-gamma', chat: 'c', questions: [{ question: 'Что обновлять в Gamma? Vize и tsrs, oxlint, prettier только проверяют код. Vite, plugin-vue, sass, firebase, axios попадают в бандл.', options: [{ label: 'A: только проверки' }, { label: 'B: A + vite и plugin-vue' }] }] }
   w.disk.set('/cfg/makarasty/inbox/items/chatB~t1.json', JSON.stringify({ ...item, id: 'chatB~t1', session: 'chatB', host: 'local_bbbb' }))
-  const reworded = [{ question: 'Vize-сессия составила план для Gamma: vize, tsrs, oxlint, prettier проверяют код; vite, plugin-vue, sass, firebase, axios идут в сайт. Что обновляем?', header: 'Gamma', multiSelect: false, options: [{ label: 'A: только проверки (Recommended)', description: '' }, { label: 'B: A + vite и plugin-vue', description: '' }] }]
+  const reworded = [{ question: 'proj-gamma · c: Vize-сессия составила план для Gamma: vize, tsrs, oxlint, prettier проверяют код; vite, plugin-vue, sass, firebase, axios идут в сайт. Что обновляем?', header: 'Gamma', multiSelect: false, options: [{ label: 'A: только проверки (Recommended)', description: '' }, { label: 'B: A + vite и plugin-vue', description: '' }] }]
   const bare = await $.tool.call({ tool: 'AskUserQuestion', questions: reworded, tool_use_id: 't-bare' })
   expect(bare.deny).toContain('"inbox:<the ids')
   expect(bare.deny).toContain('chatB~t1')
@@ -243,7 +243,7 @@ test('the inbox chat is woken once per new item from another chat, never for its
   await w.clock.advance(15000)
   await w.until(() => w.submitted.some((s) => s.startsWith('Inbox: 1 new item')), 'woken')
   const wake = w.submitted.find((s) => s.startsWith('Inbox:'))!
-  expect(wake).toContain('- reports-app: Какую базу взять для отчётов?')
+  expect(wake).toContain('- reports-app · c: Какую базу взять для отчётов?') // the chat named, not only its project
   expect(wake).not.toContain('chatA')
   await w.clock.advance(15000)
   expect(w.submitted.filter((s) => s.startsWith('Inbox:')).length).toBe(1) // once per item
@@ -257,8 +257,8 @@ test('the inbox chat asks a box and a card with the flag; answered in their chat
   put('chatB~box1', { kind: 'choice', ask: 'Запушить ветку?', actions: ['Да', 'Нет'] })
   put('chatC~card1', { kind: 'card', title: 'Чистка логов', taskId: 'task_1' })
   const qs = [
-    { question: 'chatB: запушить ветку?', header: 'chatB', multiSelect: false, options: [{ label: 'Да', description: '' }, { label: 'Нет', description: '' }] },
-    { question: 'chatC: запустить «Чистка логов»?', header: 'chatC', multiSelect: false, options: [{ label: 'Запустить', description: '' }, { label: 'Отказаться', description: '' }] },
+    { question: 'x · c: запушить ветку?', header: 'chatB', multiSelect: false, options: [{ label: 'Да', description: '' }, { label: 'Нет', description: '' }] },
+    { question: 'x · c: запустить «Чистка логов»?', header: 'chatC', multiSelect: false, options: [{ label: 'Запустить', description: '' }, { label: 'Отказаться', description: '' }] },
   ]
   expect((await $.tool.call({ tool: 'AskUserQuestion', questions: qs, tool_use_id: 'bare' })).deny).toContain('chatB~box1, chatC~card1')
   const call = $.tool.call({ tool: 'AskUserQuestion', questions: qs, metadata: { source: 'inbox:chatB~box1,chatC~card1' }, tool_use_id: 'flagged' })
@@ -280,7 +280,8 @@ test('the queue: a dialog open 10 min when a new item comes in is closed to be a
   await $.prompt.submit({ text: 'hi' } as never) // the timer
   await $.turn.start({ text: 'x', turnId: 'q' } as never)
   w.disk.set('/cfg/makarasty/inbox/announced/chatB~t1', '')
-  const call = $.tool.call({ tool: 'AskUserQuestion', questions: QUESTIONS, metadata: { source: 'inbox:chatB~t1' }, tool_use_id: 'q1' })
+  const QX = [{ ...QUESTIONS[0], question: `x · c: ${Q}` }] // each inbox question starts with its source
+  const call = $.tool.call({ tool: 'AskUserQuestion', questions: QX, metadata: { source: 'inbox:chatB~t1' }, tool_use_id: 'q1' })
   await w.until(() => w.dialog.shown === 1, 'shown')
   for (let i = 0; i < 8; i++) await w.clock.advance(15000) // 2 min
   put('chatC~t2') // comes in while he is away
@@ -288,7 +289,7 @@ test('the queue: a dialog open 10 min when a new item comes in is closed to be a
   expect(w.dialog.closed).toBe(0)
   for (let i = 0; i < 6; i++) await w.clock.advance(15000) // past 10 min
   const r = await call
-  expect((r.result as { answers: Record<string, string> }).answers).toEqual({ [Q]: '[not answered yet: more items came in while this dialog waited; ask again with every open item, these first]' })
+  expect((r.result as { answers: Record<string, string> }).answers).toEqual({ [QX[0].question]: '[not answered yet: more items came in while this dialog waited; ask again with every open item, these first]' })
   await w.until(() => w.dialog.closed === 1, 'closed')
   expect(w.disk.has('/cfg/makarasty/inbox/answers/chatB~t1.json')).toBe(false) // still open, asked again
   expect(w.submitted.filter((s) => s.startsWith('Inbox:'))).toEqual([]) // no prompt queued behind the turn

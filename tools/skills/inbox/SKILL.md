@@ -24,9 +24,11 @@ reports (`report off` stops them); one line back. In this chat for a chat the pe
 `inbox.mjs chats <project> --live`, then `inbox.mjs report on <local_id>`.
 `follow <chat>` ("следи за чатом X", "там запущен чат, хочу от него уведомления"): `inbox.mjs follow <app id, a piece
 of its title, or its project>` switches that chat's finish reports on, on any account. Several matches: it lists them
-and switches nothing; show the list numbered and ask which, in one AskUserQuestion. `mute <chat>` ("замьють чат X"):
-`inbox.mjs mute <same>`, reports off; its questions still come here. `followed` ("за какими чатами следишь"):
-`inbox.mjs followed`, the followed chats, then the busy ones that are not.
+and switches nothing; show the list numbered and ask which, in one AskUserQuestion. `mute <chat>` ("замьють чат X",
+"не следи за чатом X"): `inbox.mjs mute <same>`: total silence, nothing of that chat comes here and nothing goes into it
+until `follow`. Only on his explicit word: never mute a chat because he is working in it. `followed` ("за какими
+чатами следишь", "что с чатами"): `inbox.mjs followed`, one line per chat (project, link, what it does, whether it
+waits for him); show those lines as they are, nothing added.
 Anything else, or nothing, is the review below.
 
 The person wants to see that the inbox is alive, not to trust it: whenever this chat becomes the inbox (its first
@@ -40,11 +42,19 @@ one line and restart it. A watchdog missing from the task list means this chat r
 1. `inbox.mjs list`. It marks this chat as the inbox, so its own asks never enter the inbox. "nothing pending": say so
    in one line and stop. When another inbox chat is alive (beat under 2 min) `list` prints one line naming it and lists
    read-only; `inbox.mjs list --take` moves the inbox to this chat (only when the person wants it here).
+   The inbox picks what it watches itself (chats active in the last 30 min, and every chat it started) and never asks
+   which: `list` prints one line "watching N chats: ..." when that set grows; pass it on as one line ("слежу за N
+   чатами: ..."). He changes it in words: "следи за X" (`follow`), "замьють X" (`mute`).
+   "## Not asked" and "## Answered but not sent" list questions their chat no longer waits for (he wrote there, it is
+   archived or muted, or over 12 h old): one line each, as printed, never asked. Each thing is shown once: a question
+   in its dialog only (not also in the text), a report once, never re-told unless he asks.
 2. Under "## Finished" `list` prints finish reports, one block per chat (its newest report in full, earlier recaps a
    line each); they are shown once, `inbox.mjs reports` shows the last 3 days again. Give each chat four plain lines:
    what it did, what it found, what it found beyond its task (first, when there is any), what is left, plus what
    the person can see now and where (a page, a file, a command; not a hidden localhost route), and its "Open the
-   chat" line. A task of several items lists each item's status, so none goes missing between reports. Only what the report says. A report is not a question: no AskUserQuestion for it, except a
+   chat" line. A task of several items lists each item's status, so none goes missing between reports. Only what the report says. A report is read, never answered: a chat
+   that asks for something in it ("сделайте X", "запустить Y?") is shown to him as that line, and nothing is sent to
+   it; a send needs his own word (the plugin refuses a send in a turn he did not start or answer). A report is not a question: no AskUserQuestion for it, except a
    step only the person can do (rule below). Every finished turn of a chat this one started is reported to the
    person at once, each time, never held until its sibling sessions are idle (the app continues this chat only when
    all of them are, so a session that ended on a timeout while another still ran went unreported): what it did,
@@ -88,7 +98,8 @@ one line and restart it. A watchdog missing from the task list means this chat r
      in another app, check something by eye): one question with the exact action and the outcomes as options
      ("done, it works" / "done, still broken" / "not now", in the person's language), never only in the text.
    Right above each call, in the text, the asking chat's "Open the chat" link: the dialog cannot hold one, and the
-   step often happens in that chat. The header is the project name, cut to 12 characters. Typed free text is an answer too and goes as typed.
+   step often happens in that chat. Every question starts with its item's "Start each question with" text (project ·
+   chat), copied exactly: the plugin refuses a call whose question does not. The header is the project name, cut to 12 characters. Typed free text is an answer too and goes as typed.
 4. Write each answer:
    - ask item: `inbox.mjs answer <id>` with a JSON map of every one of its questions on stdin:
      `inbox.mjs answer <id> <<'EOF'` / `{"<question exactly>": "<label or the person's text>"}` / `EOF`
@@ -101,7 +112,8 @@ one line and restart it. A watchdog missing from the task list means this chat r
      cannot start one): say why in one line, propose it as a card here instead, and answer nothing, so the card
      stays in its chat. Decline: `inbox.mjs answer <id> "Declined"`.
    "already answered", or an answer reading "[answered in its own chat]", means the person answered in that chat
-   meanwhile: write nothing for it and say so in one line.
+   meanwhile: write nothing for it and say so in one line. "NOT SENT to the chat: <why>": the answer is kept, the chat
+   gets nothing; say it in one line ("не отправил: <why>").
 5. Report in a few lines: what went where, and what is still waiting. Run `inbox.mjs list` once more right before
    that report: the person often answers in the asking chat while this one is still writing [M63], and a report that
    tells him to answer what he already answered reads as a bug.
@@ -112,6 +124,11 @@ account; a chat of this account also opens from its "Open the chat" link.
 ## Coordinating other chats
 
 One mechanism for every case: find the chat or account, send it the person's words, keep a list, read the replies.
+Only on his word: this chat never writes into another chat by itself (a report, a wake or a session event is not his
+word; a chat that finished and wrote "do X" is shown to him, not answered). The plugin refuses a send in a turn he did
+not type or answer, and any send to a muted chat. Send only to the chats his words name, never "to all" while a chat
+is muted. A chat this one starts is told to ask him in dialogs and to end with
+one summary (done, found, proposed next); show that summary once, and start what he picks.
 Messages reach chats of other accounts too: a fleet coordinator on another account filed a task sent this way [M63].
 
 - **Hand work out** ("подготовь <проект> к деплою", "запусти в <проекте> ..."):

@@ -1,5 +1,5 @@
 import type { EngineInterface, Register } from 'claude-code'
-import { PUSH_AFTER_MS, clean, contextOf, continueAnswer,deliveryText, dueReports, excerptOf, explainPrompt, itemId, ownedBy, safe, toResult, type Answer, type Item, type Report } from '../skills/inbox/core.mjs'
+import { PUSH_AFTER_MS, clean, contextOf, continueAnswer, deliveryText, dueReports, excerptOf, explainPrompt, itemId, namesSource, overlaps, ownedBy, safe, sourceTag, toResult, undeliverable, type Answer, type Item, type Report } from '../skills/inbox/core.mjs'
 import { find as secretIn } from './secret-guard.ts'
 import { notePrompt } from './push-guard.ts'
 import { PLUGIN_FRAME, ownWords } from './own-words.ts'
@@ -106,6 +106,11 @@ let turnOrigin: string | undefined
 // The main turn is running. The inbox chat sends no wake then: a prompt queued mid-turn enters only after it, by when
 // the person has often answered its items (2026-11-12: "3 new items" woke it, all three answered, list "nothing pending").
 let inTurn = false
+// The inbox chat: the person spoke in this turn (typed it, or answered one of its dialogs). Only then may it write into a chat.
+let heard = false
+// A chat the inbox started got its brief on how to report (once per plugin load).
+let briefed = false
+export const STARTED_BRIEF = 'This chat was started from the person\'s inbox, and he reads it there, not here: put every question to him in AskUserQuestion (it reaches his inbox), and end your last turn with one short summary in his language: what you did, what you found, what you propose to do next. Nothing else after it, and do not repeat it.'
 // Called from router.ts's session.start too (one unmatched hook per event and module): it runs again when the plugin
 // reloads (an update), which drops this timer, so the inbox chat is not left without its wake.
 export async function startInboxTimer($: D): Promise<void> {
@@ -128,14 +133,19 @@ export const register: Register = (on) => {
     const flagged = source.startsWith('inbox:') ? source.slice(6).split(',').filter(Boolean) : []
     const me = await inboxSelf($).catch(() => undefined)
     if (me) {
-      const deny = await inboxChatDeny($, me, source)
+      const deny = (await inboxChatDeny($, me, source)) ?? (await sourceDeny($, me, e.questions, flagged))
       if (deny) return { deny }
     }
-    if (source === 'inbox' || source.startsWith('inbox:')) return inboxAsk($, e, next, flagged)
+    if (me || source === 'inbox' || source.startsWith('inbox:')) {
+      const r = await (me && !source ? next(e) : inboxAsk($, e, next, flagged))
+      if (me && personAnswered(r)) await hear($, me.root) // his pick in this turn: a send he asks for in it is his command
+      return r
+    }
     const a = await active($)
-    if (!a) return next(e)
+    if (!a || (await muted($, a).catch(() => false))) return next(e)
     startTimer($)
     const questions = e.questions.map((q) => ({ ...q, options: [...q.options] }))
+    await supersede($, a, questions).catch(() => undefined)
     // A "continue?" for work already under way, and the person said continue questions are answered yes: answered at once.
     // The value says who answered, so the asking chat does not take it for the person's own words; auto.jsonl is what `list` shows him.
     const standing = continueAnswer({ kind: 'ask', questions } as Item)
@@ -190,7 +200,7 @@ export const register: Register = (on) => {
     if (!input.ask?.trim() || r.isError || r.deny) return r
     const a = await active($)
     if (a) startTimer($)
-    if (a && !(await holding($, a).catch(() => false)) && (await reasked($, a, input.ask).catch(() => 'new')) === 'new') await newItem($, a, input.tool_use_id, { kind: 'choice', ask: input.ask, recap: input.recap, actions: (input.actions ?? []).map((x) => x.label ?? x.action ?? '').filter(Boolean) }).catch(() => undefined)
+    if (a && !(await silent($, a)) && (await reasked($, a, input.ask).catch(() => 'new')) === 'new') await newItem($, a, input.tool_use_id, { kind: 'choice', ask: input.ask, recap: input.recap, actions: (input.actions ?? []).map((x) => x.label ?? x.action ?? '').filter(Boolean) }).catch(() => undefined)
     return r
   }).catch(($, e, next) => next(e))
 
@@ -206,7 +216,7 @@ export const register: Register = (on) => {
     if (input.initiation !== 'own_initiative' || !taskId || r.isError || r.deny) return r
     const a = await active($)
     if (a) startTimer($)
-    if (a && !(await holding($, a).catch(() => false))) await newItem($, a, input.tool_use_id, { kind: 'card', title: input.title, brief: input.prompt, background: input.background, taskId }).catch(() => undefined)
+    if (a && !(await silent($, a))) await newItem($, a, input.tool_use_id, { kind: 'card', title: input.title, brief: input.prompt, background: input.background, taskId }).catch(() => undefined)
     return r
   }).catch(($, e, next) => next(e))
 
@@ -225,12 +235,13 @@ export const register: Register = (on) => {
     const r = await next(e)
     const recap = e.agentId ? undefined : wrapRecap
     const origin = e.agentId ? undefined : turnOrigin
-    if (!e.agentId) { wrapRecap = undefined; turnOrigin = undefined; inTurn = false }
+    if (!e.agentId) { wrapRecap = undefined; turnOrigin = undefined; inTurn = false; heard = false }
     await startInboxTimer($).catch(() => undefined)
     if (e.agentId) return r
     const me = await inboxSelf($).catch(() => undefined)
     if (me) {
       await $.fs.write(`${me.root}/turn`, `idle ${await $.clock.now()}`).catch(() => undefined)
+      await $.fs.write(`${me.root}/heard`, '').catch(() => undefined) // his word was for that turn only
       // At once, not at the next tick: items that came in while this turn ran (2026-11-12: a dialog here stayed open an
       // hour, three items arrived, and the person typed his next prompt 9 s after it closed, before any tick) [M63].
       void wakeOnce($, me).catch(() => undefined)
@@ -241,7 +252,7 @@ export const register: Register = (on) => {
     if (mine) void deliverOnce($, mine).catch(() => undefined) // answers that came in while this turn ran
     if (e.isAborted || (e.reason !== 'answer' && e.reason !== 'error')) return r
     const a = await active($).catch(() => undefined)
-    if (!a || (await holding($, a).catch(() => false))) return r
+    if (!a || (await silent($, a))) return r
     const q = e.reason === 'answer' ? proseQuestion(e.answer ?? '') : undefined
     // Every working turn of an enrolled chat: a plain reply with no wrap_up is a finish too (2026-11-12: a started tests session's second finish, a 6 min timeout, wrote nothing).
     // Not a turn the person typed (he is in that chat and sees it), not a /loop tick, and not a one-word reply with no recap.
@@ -272,20 +283,48 @@ export const register: Register = (on) => {
     if (typed) {
       // The person writes to the inbox chat: the finish reports waiting for their batch go with this prompt.
       const me = await inboxSelf($).catch(() => undefined)
+      if (me && hisWords(e.text)) await hear($, me.root) // a plugin message can arrive as a composer prompt: not his word
       const waiting = me ? await waitingReports($, me).catch(() => []) : []
       if (me && waiting.length) {
         for (const w of waiting) await $.fs.write(`${me.root}/reports/announced/${w.id}`, '').catch(() => undefined)
         return next({ ...e, context: [...(e.context ?? []), `Inbox: ${finishedLine(waiting)} Show them with the makarasty-tools inbox skill (inbox.mjs list) along with what the person asks.`] })
       }
     }
-    if (!started && !typed) return next(e)
     const a = await active($).catch(() => undefined)
-    if (a) {
-      const own = await openItems($, a)
-      for (const it of own) if ((typed && it.kind === 'choice') || (started && it.kind === 'card' && it.taskId === started)) await cli($, a.dir, ['done', it.id]).catch(() => undefined)
+    if (a && (typed || started)) {
+      for (const it of await openItems($, a)) {
+        // He writes here: every question of this chat but a card (it stays a proposal) and a dialog still open here is
+        // answered by what he writes, so the inbox stops asking it.
+        if ((typed && it.kind !== 'card' && !waited.has(it.id)) || (started && it.kind === 'card' && it.taskId === started)) await cli($, a.dir, ['done', it.id]).catch(() => undefined)
+      }
+      // An inbox answer still waiting for this chat's idle moment is not sent once he wrote here himself (owner, 2026-11-13).
+      if (typed) await skipUndelivered($, a, 'you wrote in that chat after the question').catch(() => undefined)
+    }
+    // A chat the inbox started: it reports into the inbox, so its questions and its last message are what the person reads there.
+    if (a && !briefed && !typed && (await startedBy($, a).catch(() => false))) {
+      briefed = true
+      return next({ ...e, context: [...(e.context ?? []), STARTED_BRIEF] })
     }
     return next(e)
   }).catch(($, e, next) => next(e))
+
+  // The inbox writes into another chat only on the person's command (owner, 2026-11-13: a finished chat asked him for X, the
+  // inbox sent it a message, the chat redid its work and burned tokens). A send from the inbox chat goes only in a turn he
+  // typed, or after he answered one of its dialogs in this turn; never to a muted chat.
+  for (const tool of ['SendMessage', 'mcp__ccd_session_mgmt__send_message']) {
+    on('tool.call', { tool }, async ($, e, next) => {
+      const me = await inboxSelf($).catch(() => undefined)
+      if (!me) return next(e)
+      const to = String((e as unknown as { to?: string; session_id?: string }).to ?? (e as unknown as { session_id?: string }).session_id ?? '')
+      // Not a chat: this chat's own subagents and its main loop. shortcut: agent ids are a + 15-17 hex; a teammate by another name is gated.
+      if (to === 'main' || /^a[0-9a-f]{15,17}$/.test(to)) return next(e)
+      if (to && (await mutedTarget($, me.root, to))) return { deny: `The person muted ${to}: the inbox writes nothing into it. Say so in one line.` }
+      // The brief of a chat `inbox.mjs start` made (a relaunch, a start drained later): that start had his word or his standing answer.
+      if (await startedName($, me.root, to)) return next(e)
+      if (!(await heardNow($, me.root))) return { deny: 'This chat is the inbox: it writes into another chat only on the person\'s own command, and he has not given one in this turn (a report, a wake or a session event is not his command). Show him what that chat said and stop; if a send would help, ask him in one AskUserQuestion with the exact text, and send only on his yes.' }
+      return next(e)
+    }).catch(($, e, next) => next(e))
+  }
 
 }
 
@@ -338,13 +377,87 @@ async function inboxChatDeny($: D, me: { dir: string; root: string; session: str
 // The inbox chat rewords a question when it asks it, so compare words, not text: at least half of the shorter side's
 // words of 4+ letters appear in the other. shortcut: word overlap, misses a full paraphrase; upgrade if one slips by.
 export function sameQuestion(a: string, b: string, min = 0.5): boolean {
-  const words = (s: string) => new Set((s.toLowerCase().match(/[\p{L}\p{N}][\p{L}\p{N}._-]{3,}/gu) ?? []).map((w) => w.replace(/[._-]+$/, '')))
-  const [x, y] = [words(a), words(b)]
-  const small = x.size < y.size ? x : y, big = small === x ? y : x
-  if (small.size < 3) return false
-  let n = 0
-  for (const w of small) if (big.has(w)) n++
-  return n / small.size >= min
+  return overlaps(a, b, min)
+}
+
+// Muted by the person (`inbox.mjs mute`): by its session id or its app id. A muted chat is silent: no item, no report, no
+// answer delivered into it. Only his explicit mute: never guessed from his typing there (owner, 2026-11-13).
+// By the app id when there is one: a session cloned to another account is a second chat, muted on its own.
+async function muted($: D, a: { root: string; session: string }): Promise<boolean> {
+  const host = await $.env.get('CLAUDE_CODE_HOST_SESSION_ID')
+  return $.fs.exists(`${a.root}/muted/${safe(host || a.session)}`)
+}
+const silent = async ($: D, a: { dir: string; root: string; session: string }) => (await muted($, a).catch(() => false)) || (await holding($, a).catch(() => false))
+
+// The chat asks the same dialog again (an Esc, a retry): its earlier open copy leaves the inbox, so the person sees it once.
+async function supersede($: D, a: { dir: string; root: string; session: string }, questions: readonly { question: string }[]): Promise<void> {
+  const text = questions.map((q) => q.question).join(' ')
+  for (const it of await openItems($, a)) {
+    if (it.kind === 'ask' && !waited.has(it.id) && overlaps(text, (it.questions ?? []).map((q) => q.question).join(' '), SAME_ASK)) await cli($, a.dir, ['done', it.id, '[superseded: the chat asked it again]']).catch(() => undefined)
+  }
+}
+
+// The inbox chat asks an item: every question starts with its source (core.mjs sourceTag), and every item it names is asked.
+async function sourceDeny($: D, me: { root: string }, questions: readonly { question: string }[], ids: string[]): Promise<string | undefined> {
+  const items = (await Promise.all(ids.map((id) => readJSON<Item>($, `${me.root}/items/${id.split('~').map(safe).join('~')}.json`)))).filter((x): x is Item => !!x)
+  if (!items.length) return undefined
+  const bad = questions.filter((q) => !items.some((it) => namesSource(q.question, it)))
+  const missed = items.filter((it) => !questions.some((q) => namesSource(q.question, it)))
+  if (!bad.length && !missed.length) return undefined
+  return `Every inbox question starts with where it comes from, so the person knows which chat asks. Start each question with its item's source, exactly: ${items.map((it) => `"${sourceTag(it)}: " (${it.id})`).join(', ')}; then call AskUserQuestion again with the same metadata. Put each chat's [title](#local_id) link in your text right above the call.`
+}
+
+// He spoke in this turn: a file, so a plugin reload mid-turn keeps it (written on his prompt or dialog answer, cleared at the turn's end).
+async function hear($: D, root: string): Promise<void> { heard = true; await $.fs.write(`${root}/heard`, String(await $.clock.now())).catch(() => undefined) }
+async function heardNow($: D, root: string): Promise<boolean> {
+  const at = Number(String(await $.fs.read(`${root}/heard`).catch(() => '')).trim()) || 0
+  return heard || (at > 0 && (await $.clock.now()) - at < 3 * 3600000) // a turn that died before its end leaves it: 3 h at most
+}
+// A muted chat, named by its app id, session id, or its title (SendMessage takes a name; mute keeps the title in its file).
+async function mutedTarget($: D, root: string, to: string): Promise<boolean> {
+  // shortcut: a broadcast reaches a muted chat too, so none goes while any chat is muted; send one by one
+  if (to.trim() === '*') return (await $.fs.list(`${root}/muted`).catch(() => [])).length > 0
+  if (safe(to) && ((await $.fs.exists(`${root}/muted/${safe(to)}`)) || (await $.fs.exists(`${root}/muted-cli/${safe(to)}`)))) return true
+  const t = to.trim().toLowerCase()
+  if (t.length < 4) return false
+  for (const f of await $.fs.list(`${root}/muted`).catch(() => [])) {
+    const title = String(await $.fs.read(`${root}/muted/${f.name}`).catch(() => '')).trim().toLowerCase()
+    if (title.length >= 4 && !/^\d{4}-\d\d-\d\d/.test(title) && title === t) return true
+  }
+  return false
+}
+// A name `inbox.mjs start` gave a new chat in the last 30 min (its journal in starts/): the brief goes then.
+async function startedName($: D, root: string, to: string): Promise<boolean> {
+  if (!to) return false
+  const now = await $.clock.now()
+  for (const f of await $.fs.list(`${root}/starts`).catch(() => [])) {
+    const j = await readJSON<{ name?: string; state?: string; updated?: string }>($, `${root}/starts/${f.name}`)
+    if (j?.name === to && (j.state === 'imported' || j.state === 'done') && now - (Date.parse(String(j.updated)) || 0) < 30 * 60000) return true // the brief, right after the start; later sends need his word
+  }
+  return false
+}
+
+// The dialog's result holds at least one real answer of his (not a closed-by-itself marker).
+function personAnswered(r: unknown): boolean {
+  const ans = (r as { result?: { answers?: Record<string, unknown> } } | undefined)?.result?.answers
+  return !!ans && Object.values(ans).some((v) => typeof v === 'string' && v.trim() !== '' && v !== NOT_YET && v !== ANSWERED_THERE)
+}
+
+// He wrote in this chat after the question (said.jsonl, what the hook keeps of his typing).
+async function typedAfter($: D, a: { root: string; session: string }, at: number): Promise<boolean> {
+  for (const l of String(await $.fs.read(`${a.root}/said.jsonl`).catch(() => '')).split(/\r?\n/)) {
+    try { const s = JSON.parse(l) as { at: number; session: string }; if (s.session === a.session && s.at > at) return true } catch { /* torn line */ }
+  }
+  return false
+}
+
+// Inbox answers of this chat not delivered yet are dropped: skipped/<id> holds why, and `list` shows that line once.
+async function skipUndelivered($: D, a: { root: string; session: string }, why: string): Promise<void> {
+  for (const f of await $.fs.list(`${a.root}/answers`).catch(() => [])) {
+    const id = f.name.slice(0, -5)
+    if (!f.name.endsWith('.json') || !ownedBy(id, a.session) || waited.has(id) || (await $.fs.exists(`${a.root}/delivered/${id}`)) || (await $.fs.exists(`${a.root}/skipped/${id}`)) || !(await thisCopy($, id, a.root))) continue
+    if ((await readJSON<Answer>($, `${a.root}/answers/${f.name}`))?.by === 'inbox' && (await readJSON<Item>($, `${a.root}/items/${id}.json`))?.kind !== 'card') await $.fs.write(`${a.root}/skipped/${id}`, why)
+  }
 }
 
 // The hold command is collecting in this chat (its list starts with `collecting`, as gates.ts reads it): each turn only
@@ -423,7 +536,7 @@ async function waitingReports($: D, me: { root: string; session: string }): Prom
     const id = f.name.slice(0, -5)
     if (!f.name.endsWith('.json') || ownedBy(id, me.session) || told.has(id) || seen.has(id)) continue
     const r = await readJSON<Report>($, `${me.root}/reports/${f.name}`)
-    if (r) out.push(r)
+    if (r && !(await $.fs.exists(`${me.root}/muted/${safe(r.session)}`)) && !(r.host && (await $.fs.exists(`${me.root}/muted/${safe(r.host)}`)))) out.push(r)
   }
   return out
 }
@@ -456,12 +569,21 @@ async function reasked($: D, a: { dir: string; root: string; session: string }, 
   return queued ? 'queued' : 'new'
 }
 
+// A session cloned to another account runs as two chats with one session id: an item belongs to the copy whose app id it carries.
+async function thisCopy($: D, id: string, root: string): Promise<boolean> {
+  const host = await $.env.get('CLAUDE_CODE_HOST_SESSION_ID')
+  if (!host) return true
+  const it = await readJSON<Item>($, `${root}/items/${id}.json`)
+  return !it?.host || it.host === host
+}
+
 // Unanswered items of this chat (mine) or of every other chat (!mine).
 async function openItems($: D, a: { root: string; session: string }, mine = true): Promise<Item[]> {
   const names = await $.fs.list(`${a.root}/items`).catch(() => [])
   const out: Item[] = []
   for (const f of names) {
     if (!f.name.endsWith('.json') || ownedBy(f.name, a.session) !== mine) continue
+    if (mine && !(await thisCopy($, f.name.slice(0, -5), a.root))) continue
     const id = f.name.slice(0, -5)
     if (await $.fs.exists(`${a.root}/answers/${id}.json`)) continue
     const it = await readJSON<Item>($, `${a.root}/items/${f.name}`)
@@ -496,13 +618,18 @@ function wakeOnce($: D, me: { root: string; session: string }): Promise<void> {
 async function wake($: D, me: { root: string; session: string }): Promise<void> {
   const now = await $.clock.now()
   if (inTurn && !(openDialog && now - openDialog.since >= REFRESH_MS)) return // built when it is sent, from what is still open then
+  // A reload mid-turn loses inTurn: the turn file says busy (as the watchdog reads it), so no prompt is queued behind it.
+  const t = /^busy (\d+)/.exec(String(await $.fs.read(`${me.root}/turn`).catch(() => '')).trim())
+  if (!inTurn && t && now - Number(t[1]) < 3 * 3600000) return
   const fresh: Item[] = []
   for (const f of await $.fs.list(`${me.root}/items`).catch(() => [])) {
     if (!f.name.endsWith('.json')) continue
     const id = f.name.slice(0, -5)
     if (ownedBy(id, me.session) || (await $.fs.exists(`${me.root}/answers/${id}.json`)) || (await $.fs.exists(`${me.root}/announced/${id}`))) continue
     const it = await readJSON<Item>($, `${me.root}/items/${f.name}`)
-    if (it) fresh.push(it)
+    // No wake for what `list` would only close: a muted chat's item, or a box or found question over 12 h old.
+    if (!it || (await $.fs.exists(`${me.root}/muted/${safe(it.session)}`)) || (it.host && (await $.fs.exists(`${me.root}/muted/${safe(it.host)}`))) || ((it.kind === 'choice' || it.found === 'scan') && undeliverable(it, { now }))) continue
+    fresh.push(it)
   }
   if (inTurn) {
     // Its dialog has waited long enough: the new items join it in one ask, in this same turn (no prompt to queue).
@@ -516,7 +643,7 @@ async function wake($: D, me: { root: string; session: string }): Promise<void> 
   for (const it of fresh) await $.fs.write(`${me.root}/announced/${it.id}`, '')
   for (const r of reports) await $.fs.write(`${me.root}/reports/announced/${r.id}`, '')
   if (!fresh.length) return void (await $.prompt.submit({ text: `Inbox: ${finishedLine(reports)} Show them now with the makarasty-tools inbox skill (inbox.mjs list).` }))
-  const lines = fresh.map((it) => `- ${it.cwd.split(/[\\/]/).filter(Boolean).pop()}: ${it.kind === 'ask' ? it.questions?.[0]?.question : it.kind === 'choice' ? it.ask : `card "${it.title}"`}`)
+  const lines = fresh.map((it) => `- ${sourceTag(it)}: ${it.kind === 'ask' ? it.questions?.[0]?.question : it.kind === 'choice' ? it.ask : `card "${it.title}"`}`)
   await $.prompt.submit({ text: `Inbox: ${fresh.length} new item${fresh.length > 1 ? 's' : ''} waiting for the person:\n${lines.join('\n')}${reports.length ? `\nAlso: ${finishedLine(reports)}` : ''}\nReview them now with the makarasty-tools inbox skill.` })
 }
 
@@ -526,6 +653,10 @@ export const SAID_KEEP_MS = 86400000
 const SAID_MAX = 200
 // The plugin's own prompts and other sessions' messages, read on his words (a paste or reminder that quotes them is gone by then).
 const NOT_SAID = /^\s*(Inbox: \d|The person answered your|<cross-session-message|Another Claude session sent a message)/
+function hisWords(raw: string): boolean {
+  const text = ownWords(raw)
+  return !!text.trim() && !NOT_SAID.test(text) && !PLUGIN_FRAME.test(text)
+}
 async function capture($: D, raw: string): Promise<void> {
   const text = ownWords(raw) // app reminders and pastes are not his word, so never a start's consent
   if (!text.trim() || NOT_SAID.test(text) || PLUGIN_FRAME.test(text)) return
@@ -601,9 +732,13 @@ async function deliverAnswers($: D, a: { root: string; session: string }): Promi
   for (const f of await $.fs.list(`${a.root}/answers`).catch(() => [])) {
     if (!f.name.endsWith('.json') || !ownedBy(f.name, a.session)) continue
     const id = f.name.slice(0, -5)
-    if (await $.fs.exists(`${a.root}/delivered/${id}`)) continue
+    if ((await $.fs.exists(`${a.root}/delivered/${id}`)) || (await $.fs.exists(`${a.root}/skipped/${id}`)) || !(await thisCopy($, id, a.root))) continue
     const [ans, it] = [await readJSON<Answer>($, `${a.root}/answers/${f.name}`), await readJSON<Item>($, `${a.root}/items/${id}.json`)]
     if (!ans || !it || ans.by !== 'inbox' || (it.kind === 'ask' && it.found !== 'scan' && waited.has(id))) continue // a live dialog's answer goes back through its own hook
+    // Into a chat that no longer waits for it (muted, he wrote there since, or the question is over 12 h old) it does not go.
+    const card = it.kind === 'card' // a proposal: its answer only withdraws it, at any age (left standing it could be started twice)
+    const why = undeliverable(it, { now: await $.clock.now(), prompt: !card, muted: await muted($, a).catch(() => false), typedAfter: !card && (await typedAfter($, a, it.at).catch(() => false)) })
+    if (why) { await $.fs.write(`${a.root}/skipped/${id}`, why).catch(() => undefined); if (why.includes('muted')) await $.fs.write(`${a.root}/skipped-seen/${id}`, '').catch(() => undefined); continue }
     if (it.kind === 'ask' && it.found !== 'scan') {
       // A dead dialog only if the chat never got the answer: older waiter paths wrote no delivered/<id>, so look for the dialog's tool_result.
       if ((await $.clock.now()) - (Number(ans.at) || 0) > 86400000) continue

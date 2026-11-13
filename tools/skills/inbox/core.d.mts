@@ -5,7 +5,7 @@ export type Item = {
   id: string; kind: 'ask' | 'choice' | 'card'; at: number; session: string; cwd: string; chat: string
   questions?: Question[]; ask?: string; actions?: string[]; recap?: string
   title?: string; brief?: string; background?: string; taskId?: string
-  context?: string; explain?: string; host?: string; account?: string
+  context?: string; explain?: string; host?: string; account?: string; found?: string
 }
 export type Answer = { id: string; at: number; by: 'inbox' | 'chat'; answers?: Record<string, string>; choice?: string }
 export const PUSH_AFTER_MS: number
@@ -33,3 +33,9 @@ export const UNSEEN_REPORT_TTL_MS: number
 export function dueReports(waiting: Report[], now?: number): boolean
 export function excerptOf(answer: string): string
 export function renderReports(reports: Report[], now?: number, account?: string): string
+export function continueAnswer(item: Item): Record<string, string> | undefined
+export function sourceTag(item: { cwd: string; chat: string }): string
+export function namesSource(question: string, item: { cwd: string; chat: string }): boolean
+export const STALE_MS: number
+export function undeliverable(item: Item, o?: { now?: number; typedAfter?: boolean; archived?: boolean; muted?: boolean; prompt?: boolean }): string | undefined
+export function overlaps(a: string, b: string, min?: number): boolean

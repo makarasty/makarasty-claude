@@ -1,5 +1,34 @@
 # Changelog
 
+## makarasty-tools 1.19.38 — 2026-11-13
+
+The inbox, reworked to the concept agreed with the operator on 11-13 (docs/COMPLAINTS.md C19-C21):
+- **Every question names its chat:** an inbox dialog whose question does not start with "project · chat" is refused,
+  with the exact text to use; the wake lines name the chat too.
+- **Nothing goes into a chat that stopped waiting:** an answer is kept but not sent when he wrote in that chat after
+  the question, the chat is archived or muted, or a box or found question is over 12 h old. `list` does not ask such
+  questions; it says so in one line per chat, once. A live dialog and a card keep only the muted and archived rules.
+- **The inbox never writes into a chat by itself:** a send from the inbox chat goes only in a turn he typed or after
+  he answered one of its dialogs (a plugin message typed as composer text is not his word; kept on disk across a
+  reload), never to a muted chat, by id or by name. Its own subagents and the brief of a chat `start` made pass.
+  11-13: it messaged SkullDogsBot and two fleet chats by itself, ~787K tokens per turn there.
+- **Mute is silence:** a muted chat files no question, box, card or report, gets no answer, is not scanned or woken
+  for; mute closes its open items. Mute and follow go by app id, so a session cloned to another account is muted on
+  its own; a clone never delivers the other copy's answer.
+- **The inbox picks what it watches:** chats active in the last 30 min and the chats it started; not muted, archived,
+  FINISHED or inbox chats, one per session. One line when the set grows; `followed` shows the watched chats one line
+  each (project, link, what it does, whether it waits for him) and one count line. `report off` sticks. Never asked:
+  his 11-13 words on a 13-chat multiSelect, «слишком много букв ... бесполезно».
+- **A chat the inbox starts** is told to ask in dialogs and to end with one summary (done, found, next); its report
+  shows that summary once.
+- **No duplicates:** a dialog asked again replaces its open copy; a recap that adds nothing to the last message is
+  not shown; typing in a chat closes its open boxes and found questions in the inbox.
+- `inbox.mjs`: a long `list` was cut mid-way on Windows (exit before stdout drained), and one malformed item file
+  hid every item after it; both fixed. A read-only `list` (another inbox is alive) says to ask and answer nothing.
+
+Not checked live: a real send refusal in the inbox chat, the result shape of AskUserQuestion that `heard` reads, a
+started chat's summary in a real run.
+
 ## makarasty-tools 1.19.37, makarasty 1.18.8 — 2026-11-13
 
 All of the operator's complaints about how chats behave, 2026-06..11 (181 in transcripts plus 11-11..13), are one

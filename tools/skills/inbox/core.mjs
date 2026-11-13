@@ -94,12 +94,39 @@ export function link(/** @type {Item} */ item, /** @type {string | undefined} */
   return `Chat on another account: open it with \`inbox.mjs open ${item.id}\` (in that account's window)`
 }
 
+/** Where a question comes from, as every inbox question must start: "<project> · <chat title, short>". The hook refuses an
+ *  inbox dialog whose question does not start with it (the owner could not tell which chat asked, 2026-11-13). */
+export function sourceTag(/** @type {{ cwd: string, chat: string }} */ item) {
+  const title = String(item.chat ?? '').replace(/\s*\([^()]{1,12}\)\s*$/, '').replace(/[[\]]/g, '').trim() // the "(1a2b3c4d)" session suffix
+  const short = title.length > 40 ? `${title.slice(0, 40).replace(/\s+\S*$/, '')}…` : title
+  return short ? `${project(item.cwd)} · ${short}` : project(item.cwd)
+}
+const squash = (/** @type {string} */ s) => s.toLowerCase().replace(/[\s…]+/g, ' ').trim()
+/** Whether a question the inbox chat asks names its source: it starts with the tag (case and spaces aside). */
+export const namesSource = (/** @type {string} */ question, /** @type {{ cwd: string, chat: string }} */ item) => squash(question).startsWith(squash(sourceTag(item)))
+
+// The owner's rule (2026-11-13): an answer goes into a chat as a new message only while that chat still waits for it.
+export const STALE_MS = 12 * 3600 * 1000
+/**
+ * Why an answer must not go into the asking chat as a message, or undefined. `typedAfter`: the person wrote in that chat after
+ * the question; `archived`: the chat is archived; `muted`: the person muted it. A live dialog (an ask the chat still waits on in
+ * its own window) is no message, so `prompt: false` drops the age rule for it.
+ */
+export function undeliverable(/** @type {Item} */ item, /** @type {{ now?: number, typedAfter?: boolean, archived?: boolean, muted?: boolean, prompt?: boolean }} */ o = {}) {
+  if (o.muted) return 'the chat is muted'
+  if (o.archived) return 'the chat is archived'
+  if (o.typedAfter) return 'you wrote in that chat after the question'
+  if (o.prompt !== false && (o.now ?? Date.now()) - item.at > STALE_MS) return `the question is ${ago((o.now ?? Date.now()) - item.at)} old`
+  return undefined
+}
+
 /** One item as the inbox chat shows it: where from, how long it waits, the plain explanation, the thing itself. */
 export function render(/** @type {Item} */ item, now = Date.now(), /** @type {string | undefined} */ account = undefined) {
   return [
     `### ${project(item.cwd)} — ${KIND[item.kind]}, waiting ${ago(now - item.at)}`,
     `id: ${item.id}`,
     `Chat: ${item.chat}`,
+    `Start each question with: ${sourceTag(item)}: `,
     link(item, account),
     `Folder: ${item.cwd}`,
     item.explain ? `Plainly: ${item.explain}` : `Context: ${cut(item.context ?? '(none)', 900)}`,
@@ -220,6 +247,28 @@ export function excerptOf(/** @type {string} */ answer) {
   return t.length > 2000 ? `${t.slice(0, 600)}\n[…]\n${t.slice(-1400)}` : t
 }
 
+/** Whether most words of the shorter text (4+ letters) are in the other: the same thing said twice. */
+export function overlaps(/** @type {string} */ a, /** @type {string} */ b, min = 0.7) {
+  const words = (/** @type {string} */ s) => new Set((s.toLowerCase().match(/[\p{L}\p{N}][\p{L}\p{N}._-]{3,}/gu) ?? []).map((w) => w.replace(/[._-]+$/, '')))
+  const [x, y] = [words(a), words(b)]
+  const small = x.size < y.size ? x : y, big = small === x ? y : x
+  if (small.size < 3) return false
+  let n = 0
+  for (const w of small) if (big.has(w)) n++
+  return n / small.size >= min
+}
+/** Whether the text `a` says nothing beyond `b`: most of a's own words (4+ letters) are in b. A recap that adds a finding is not. */
+export function covered(/** @type {string} */ a, /** @type {string} */ b, min = 0.8) {
+  const words = (/** @type {string} */ s) => new Set((s.toLowerCase().match(/[\p{L}\p{N}][\p{L}\p{N}._-]{3,}/gu) ?? []).map((w) => w.replace(/[._-]+$/, '')))
+  const [x, y] = [words(a), words(b)]
+  if (!x.size) return true
+  let n = 0
+  for (const w of x) if (y.has(w)) n++
+  return n / x.size >= min
+}
+// The same line twice in a row (two finishes with one recap) is shown once; the "N min ago" prefix aside.
+const uniq = (/** @type {string[]} */ lines) => lines.filter((l, i) => !lines.slice(0, i).some((p) => p.replace(/^[^:]*: /, '') === l.replace(/^[^:]*: /, '')))
+
 /** Reports grouped by chat, newest chat first: the newest report in full, up to 4 earlier recaps a line each. */
 export function renderReports(/** @type {Report[]} */ reports, now = Date.now(), /** @type {string | undefined} */ account = undefined) {
   /** @type {Map<string, Report[]>} */
@@ -237,10 +286,12 @@ export function renderReports(/** @type {Report[]} */ reports, now = Date.now(),
     link(/** @type {Item} */ (/** @type {unknown} */ (last)), account),
     ...whole.flatMap((r, i) => [
       i ? `Earlier finish, ${ago(now - r.at)} ago${r.error ? ' (ended on an error)' : ''}:` : '',
-      r.recap ? `Recap: ${r.recap}` : '',
+      // The recap usually restates the last message: shown once, not twice.
+      // A started chat ends with its summary as the last message (STARTED_BRIEF): its recap would say it twice.
+      r.recap && !(r.excerpt && (r.started || covered(r.recap, r.excerpt))) ? `Recap: ${r.recap}` : '',
       r.excerpt ? `Last message:\n${r.excerpt}` : '',
     ]),
-    ...earlier.slice(0, 4).map((r) => `Earlier, ${ago(now - r.at)} ago: ${cut(r.recap || r.excerpt || '', 300)}`),
+    ...uniq(earlier.slice(0, 4).map((r) => `Earlier, ${ago(now - r.at)} ago: ${cut(r.recap || r.excerpt || '', 300)}`)),
     earlier.length > 4 ? `${earlier.length - 4} earlier reports more: inbox.mjs reports` : '',
   ].filter(Boolean).join('\n') }).join('\n\n')
 }

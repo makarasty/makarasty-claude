@@ -79,5 +79,5 @@ test('a session start or plugin reload starts the inbox chat timer, so a new ite
   await $.session.start({ cwd: 'C:/work/app', surface: null, isInteractive: true } as never)
   await clock.advance(15000)
   for (let i = 0; i < 100 && !woke.length; i++) await new Promise((r) => setTimeout(r, 5))
-  expect(woke[0]).toContain('- app: Запушить?')
+  expect(woke[0]).toContain('- app · c: Запушить?')
 })

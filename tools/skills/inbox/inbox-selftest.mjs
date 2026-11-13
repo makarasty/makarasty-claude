@@ -16,7 +16,7 @@ const cli = join(dirname(fileURLToPath(import.meta.url)), 'inbox.mjs')
 const tmp = join(tmpdir(), `inbox-selftest-${process.pid}`)
 const root = join(tmp, 'makarasty', 'inbox')
 const sink = join(tmp, 'sent')
-const env = { ...process.env, CLAUDE_CONFIG_DIR: tmp, NOTIFY_DRY_RUN: sink, CLAUDE_CODE_SESSION_ID: 'inboxChat', CLAUDE_CODE_ACCOUNT_UUID: 'my-account' }
+const env = { ...process.env, CLAUDE_CONFIG_DIR: tmp, NOTIFY_DRY_RUN: sink, CLAUDE_CODE_SESSION_ID: 'inboxChat', CLAUDE_CODE_ACCOUNT_UUID: 'my-account', INBOX_PROFILES_DIR: join(tmp, 'no-profiles'), CLAUDE_CODE_HOST_SESSION_ID: '' } // never the machine's real chats
 let pass = 0, fail = 0
 const check = (/** @type {string} */ name, /** @type {boolean} */ ok, detail = '') => { ok ? pass++ : fail++; console.log(`${ok ? 'ok  ' : 'FAIL'} ${name}${ok ? '' : `  ${detail}`}`) }
 const run = (/** @type {string[]} */ args, input = '') => spawnSync(process.execPath, [cli, ...args], { env, input, encoding: 'utf8' })
@@ -314,15 +314,15 @@ try {
   titled('main', '99999999-9999-9999-9999-999999999999', 'C:\\work\\proj-gamma', 'Gamma отчёты', 2 * 3600e3)
   titled('main', 'aaaaaaaa-9999-9999-9999-999999999999', 'C:\\work\\proj-gamma', 'Gamma линтеры', 2 * 3600e3)
   const f1 = r(['follow', 'превью']) // a piece of the title, any case, another account
-  check('follow by a piece of the title switches that chat on by app id and session id', f1.status === 0 && f1.stdout.includes('following Превью и баги (local_77777777-7777-7777-7777-777777777777, acct2)') &&
-    existsSync(join(root, 'reports', 'on', 'local_77777777-7777-7777-7777-777777777777')) && existsSync(join(root, 'reports', 'on', 'cli-7777')), f1.stdout)
+  check('follow by a piece of the title switches that chat on by its app id only (a clone on another account is another chat)', f1.status === 0 && f1.stdout.includes('following Превью и баги (local_77777777-7777-7777-7777-777777777777, acct2)') &&
+    existsSync(join(root, 'reports', 'on', 'local_77777777-7777-7777-7777-777777777777')) && !existsSync(join(root, 'reports', 'on', 'cli-7777')), f1.stdout)
   const f2 = r(['follow', 'Gamma'])
   check('an ambiguous name lists the candidates and switches nothing', f2.status === 1 && f2.stdout.includes('2 chats match "Gamma"') && f2.stdout.includes('Gamma линтеры') &&
     !existsSync(join(root, 'reports', 'on', 'local_99999999-9999-9999-9999-999999999999')), f2.stdout)
   check('a project with one chat active now picks that one', r(['mute', 'proj-beta']).stdout.includes('muted Превью и баги') && !existsSync(join(root, 'reports', 'on', 'cli-7777')))
   r(['follow', 'local_99999999-9999-9999-9999-999999999999'])
   const fl = r(['followed']).stdout
-  check('followed lists the followed chats, then the busy ones that are not', /^followed \(1\):\nmain\tlocal_9999.*Gamma отчёты/.test(fl) && /busy in the last 30 min, not followed \(\d+\):[\s\S]*Превью и баги/.test(fl) && !fl.includes('Старый деплой'), fl)
+  check('followed: only the chats watched now (one he followed by name: 3 h), then one count line; a muted chat not listed', fl.startsWith('watching 1 chat: proj-gamma') && !fl.includes('Gamma линтеры') && /not watched: \d+ active.*, 1 muted/.test(fl) && !fl.includes('Старый деплой') && !fl.includes('Превью и баги'), fl)
   check('a name nothing matches is refused', r(['follow', 'нет-такого']).status === 1)
   // The watchdog: an item waiting while the inbox chat is inside a turn is no broken wake; the same item while idle is.
   put(item({ id: 'chatW~t1', at: Date.now() - 70e3 }))
@@ -366,7 +366,8 @@ try {
   // A day-old question nobody answered stays; the night does not eat it.
   rmSync(join(root, 'turn'), { force: true })
   put(item({ id: 'chatN~t1', at: Date.now() - 25 * 3600e3 }))
-  check('an unanswered item a day old is kept', run(['list']).stdout.includes('chatN~t1') && existsSync(join(root, 'items', 'chatN~t1.json')))
+  const dayOld = run(['list']).stdout // owner, 2026-11-13: a question over 12 h old is no longer asked; one line says so
+  check('a live dialog a day old is still asked (it waits in its chat; only boxes and found questions age out)', dayOld.includes('id: chatN~t1'), dayOld)
   put(item({ id: 'chatN~t2', at: Date.now() - 8 * 24 * 3600e3 }))
   run(['list'])
   check('an unanswered item 8 days old is swept', !existsSync(join(root, 'items', 'chatN~t2.json')))
@@ -374,7 +375,7 @@ try {
   const beat = (/** @type {number} */ ago) => writeFileSync(join(root, 'beat'), String(Date.now() - ago))
   writeFileSync(join(root, 'self'), 'otherChat'); beat(10e3)
   const ro = run(['list'])
-  check('list leaves a live inbox chat alone and says how to take over', ro.status === 0 && ro.stdout.includes('inbox: otherChat is the inbox chat (beat ') && ro.stdout.includes('inbox.mjs list --take') && readFileSync(join(root, 'self'), 'utf8') === 'otherChat', ro.stdout)
+  check('list leaves a live inbox chat alone and says how to take over', ro.status === 0 && ro.stdout.includes('inbox: READ-ONLY, ask and answer nothing here: otherChat is the inbox chat (beat ') && ro.stdout.includes('inbox.mjs list --take') && readFileSync(join(root, 'self'), 'utf8') === 'otherChat', ro.stdout)
   check('a dead inbox chat (no beat for 3 min) is taken over', (beat(180e3), run(['list']).status === 0) && readFileSync(join(root, 'self'), 'utf8') === 'inboxChat')
   writeFileSync(join(root, 'self'), 'otherChat'); beat(10e3)
   check('--take moves the inbox here', run(['list', '--take']).status === 0 && readFileSync(join(root, 'self'), 'utf8') === 'inboxChat')
@@ -470,6 +471,65 @@ try {
   spawnSync(process.execPath, [cli, 'list'], { env: meEnv, encoding: 'utf8' })
   check('a plain list by the chat that already is the inbox does not scan', !itemOf(lateChat2, 'toolu_L2'))
   writeFileSync(join(root, 'self'), 'inboxChat')
+
+  // ---- the 2026-11-13 concept: source, no send into a chat that stopped waiting, mute is silence, first run, one line per chat
+  {
+    const P = join(tmp, 'concept-profiles'), reg = join(P, 'main', 'claude-code-sessions', 'my-account', 'org')
+    mkdirSync(reg, { recursive: true })
+    const H = (/** @type {number} */ n) => `local_${String(n).repeat(8)}-0000-0000-0000-000000000000`
+    const regChat = (/** @type {number} */ n, /** @type {Record<string, unknown>} */ o = {}) => writeFileSync(join(reg, `${H(n)}.json`), JSON.stringify({ cliSessionId: `cs${n}`, cwd: `C:/work/proj${n}`, lastActivityAt: Date.now() - 60e3, title: `Чат номер ${n}`, ...o }))
+    regChat(1); regChat(2); regChat(3, { isArchived: true }); regChat(4); regChat(5)
+    regChat(6, { title: 'FINISHED старый деплой' }); regChat(7, { cliSessionId: 'cs1', lastActivityAt: Date.now() - 5 * 60e3, title: 'Чат номер 1 (копия на dev)' }); regChat(8, { lastActivityAt: Date.now() - 2 * 3600e3 }); regChat(9, { title: 'Инбокс' })
+    const C = (/** @type {string[]} */ a, input = '') => spawnSync(process.execPath, [cli, ...a], { env: { ...env, INBOX_PROFILES_DIR: P, CLAUDE_CODE_SESSION_ID: 'conceptInbox' }, input, encoding: 'utf8' })
+    const box = (/** @type {number} */ n, /** @type {Record<string, unknown>} */ o = {}) => put({ id: `cs${n}~b${n}`, kind: 'choice', at: Date.now() - 5 * 60e3, session: `cs${n}`, host: H(n), cwd: `C:/work/proj${n}`, chat: `Чат номер ${n} (cs${n})`, ask: `Запушить ветку ${n}?`, actions: ['Да', 'Нет'], ...o })
+    rmSync(join(root, 'self'), { force: true })
+
+    // 5. the inbox picks what to watch itself, never asks (owner, 2026-11-13): active in 30 min, not archived, FINISHED, an inbox, a copy
+    const f1 = C(['list']), on5 = (/** @type {number} */ n) => existsSync(join(root, 'reports', 'on', H(n)))
+    check('5. the first list asks nothing and says in one line which chats it watches', !f1.stdout.includes('First run') && !f1.stdout.includes('AskUserQuestion') && /inbox: watching 4 chats: .*proj1/.test(f1.stdout), f1.stdout)
+    check('5. watched: the chats active in 30 min; not archived, FINISHED, idle 2 h, an inbox chat, nor a second copy of one session', on5(1) && on5(2) && on5(4) && on5(5) && ![3, 6, 7, 8, 9].some(on5))
+    check('5. the line comes only when the watched set grows', !C(['list']).stdout.includes('inbox: watching'))
+    const bd = C(['followed'])
+    check('5. followed: one line per watched chat and a count line, nothing more', bd.stdout.startsWith('watching 4 chats') && bd.stdout.includes(`- proj1 · [Чат номер 1](#${H(1)})`) && !bd.stdout.includes('Чат номер 8') && bd.stdout.split(/\r?\n/).filter(Boolean).length === 6, bd.stdout)
+
+    // 1. every item names its source, as the question must start
+    box(1)
+    const l1 = C(['list'])
+    check('1. list gives each item the source its question must start with', l1.stdout.includes('Start each question with: proj1 · Чат номер 1: '), l1.stderr + l1.status)
+    check('5. a chat waiting for him says so on its line', C(['followed']).stdout.includes('WAITS FOR YOU: Запушить ветку 1?'))
+
+    // 2. not sent into a chat that no longer waits
+    box(2)
+    appendFileSync(join(root, 'said.jsonl'), `${JSON.stringify({ at: Date.now(), session: 'cs2', text: 'сам запушу' })}\n`)
+    const a2 = C(['answer', 'cs2~b2', 'Да'])
+    check('2. an answer after he wrote in that chat is kept but not sent, and says so', a2.status === 0 && a2.stdout.includes('NOT SENT') && a2.stdout.includes('you wrote in that chat') && existsSync(join(root, 'skipped', 'cs2~b2')), a2.stdout)
+    box(4, { at: Date.now() - 13 * 3600e3 })
+    box(3)
+    const l2 = C(['list'])
+    check('2. a box 13 h old and one of an archived chat are not asked: one line each, and they close', l2.stdout.includes('## Not asked') && l2.stdout.includes('proj4 · Чат номер 4: the question is over 12 h old') && l2.stdout.includes('the chat is archived') && !l2.stdout.includes('id: cs4~b4') && answered4(), l2.stdout)
+    function answered4() { return existsSync(join(root, 'answers', 'cs4~b4.json')) && existsSync(join(root, 'answers', 'cs3~b3.json')) }
+    check('2. a card stays a proposal even 13 h old', (put({ id: 'cs5~c5', kind: 'card', at: Date.now() - 13 * 3600e3, session: 'cs5', host: H(5), cwd: 'C:/work/proj5', chat: 'Чат номер 5 (cs5)', title: 'Чистка логов', brief: 'x' }), C(['list']).stdout.includes('id: cs5~c5')))
+    C(['done', 'cs5~c5'])
+    writeFileSync(join(root, 'skipped', 'cs1~old'), 'you wrote in that chat after the question')
+    const l3 = C(['list']), l4 = C(['list'])
+    check('7. an unsent answer is told once, then never again', l3.stdout.includes('## Answered but not sent') && l3.stdout.includes('cs1~old') && !l4.stdout.includes('cs1~old') && !l4.stdout.includes('cs2~b2'), `${l3.stdout}\n---\n${l4.stdout}`)
+
+    // 4. mute is silence
+    put({ id: 'cs1~r1', kind: 'ask', at: Date.now() - 60e3, session: 'cs1', host: H(1), cwd: 'C:/work/proj1', chat: 'Чат номер 1 (cs1)', questions: [{ question: 'Какую базу?', options: [{ label: 'A' }, { label: 'B' }] }] })
+    mkdirSync(join(root, 'reports'), { recursive: true }); writeFileSync(join(root, 'reports', 'cs1~turn-9.json'), JSON.stringify({ id: 'cs1~turn-9', at: Date.now(), session: 'cs1', host: H(1), cwd: 'C:/work/proj1', chat: 'x', recap: 'Сделал миграцию' }))
+    const m = C(['mute', H(1)])
+    check('4. mute: its open questions leave the inbox, its reports switch off', m.stdout.includes('nothing of it comes here') && existsSync(join(root, 'muted', H(1))) && !existsSync(join(root, 'muted', 'cs1')) && !existsSync(join(root, 'reports', 'on', H(1))) && JSON.parse(readFileSync(join(root, 'answers', 'cs1~r1.json'), 'utf8')).by === 'chat', m.stdout)
+    const lm = C(['list'])
+    check('4. a muted chat shows nothing in list: no question, no report, no "not asked" line', !lm.stdout.includes('proj1') && !lm.stdout.includes('Сделал миграцию'), lm.stdout)
+    box(1, { id: 'cs1~b9' })
+    check('4. an answer for a muted chat is not sent', C(['answer', 'cs1~b9', 'Да']).stdout.includes('the chat is muted'))
+    check('4. mute also names the session id for a send by it, without muting a clone (muted/ holds the app id only)', readFileSync(join(root, 'muted-cli', 'cs1'), 'utf8') === H(1) && !existsSync(join(root, 'muted', 'cs1')))
+    writeFileSync(join(root, 'reports', 'on', 'cs2'), 'old switch'); writeFileSync(join(root, 'reports', 'on', H(2)), 'auto')
+    spawnSync(process.execPath, [cli, 'report', 'off'], { env: { ...env, INBOX_PROFILES_DIR: P, CLAUDE_CODE_SESSION_ID: 'cs2', CLAUDE_CODE_HOST_SESSION_ID: H(2) }, encoding: 'utf8' })
+    check('report off with no id switches off both the app id and an older session-id switch, and sticks', !existsSync(join(root, 'reports', 'on', 'cs2')) && !existsSync(join(root, 'reports', 'on', H(2))) && existsSync(join(root, 'reports', 'off', H(2))))
+    check('4. follow lifts the mute', C(['follow', H(1)]).status === 0 && !existsSync(join(root, 'muted', H(1))) && existsSync(join(root, 'reports', 'on', H(1))))
+    writeFileSync(join(root, 'self'), 'inboxChat')
+  }
   check('off removes the switch', run(['off']).status === 0 && !existsSync(join(tmp, 'makarasty', 'inbox.on')))
 } finally {
   rmSync(tmp, { recursive: true, force: true })
