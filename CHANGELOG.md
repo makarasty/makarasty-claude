@@ -1,5 +1,16 @@
 # Changelog
 
+## makarasty-tools 1.19.34, makarasty 1.18.7 — 2026-11-13
+
+- **An answer to a dialog that died still arrives:** an AskUserQuestion answered from the inbox after the asking
+  chat restarted (or its plugin reloaded) waited forever, because only the dead dialog could take it. Now a chat
+  delivers such an answer to itself as a prompt between turns; a dialog this process is still waiting on keeps its
+  own path, and an answer given in the dialog is never sent again.
+- **A local commit is not a question anywhere:** the commit skill commits on the default branch without asking
+  (a push stays asked; a person who wants a branch says so); fleet-collect lands a one-chat run's end commit
+  without a yes; ask-guard's refusal no longer names a commit as the person's decision. A profile line
+  `Commit: ask` brings the questions back.
+
 ## makarasty-tools 1.19.33 — 2026-11-13
 
 - **Every question is screened before it reaches the person:** ask-guard refuses an AskUserQuestion once unless

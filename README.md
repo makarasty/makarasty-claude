@@ -334,7 +334,8 @@ Three more hooks change behaviour without refusing:
   asked are answered yes` (the inbox answers such asks itself; never a commit, push, delete or money question),
   `Fleet foreign code: wait|fix|leave` and `Fleet crash watch: yes|no` (fleet-plan asks once, then reads them),
   `Effort: <when medium, when high>` (overrides the plugin's effort defaults for spawned agents and sessions; the
-  default is high for Sonnet coders and finders, medium for Opus reviewers).
+  default is high for Sonnet coders and finders, medium for Opus reviewers), `Commit: ask` (a chat asks before
+  its local commit; by default it commits its own files when its task is done, and only a push is asked).
   With no line, each tool asks or uses its own default. Standing answers the inbox records go in
   `~/.claude/makarasty/answers.md` (one `<topic>: <answer> (<date>)` line each, first 4,000 characters read).
 

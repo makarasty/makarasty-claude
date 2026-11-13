@@ -42,9 +42,9 @@ Cyrillic or spaced file name prints as itself, not as octal escapes `git add` ca
 ## Default branch
 
 The default branch is `git symbolic-ref -q --short refs/remotes/origin/HEAD` without its `origin/`, or
-`main`/`master` when that prints nothing. On it, ask whether to branch first. A request that already said
-to commit here, or to push, is the answer, and so is an earlier answer in this chat. Run from ship or
-finish, this question is not asked: their push rule settles the default branch once for the whole run.
+`main`/`master` when that prints nothing. A local commit there needs no question: it leaves the machine
+only with a push, and the push is what stays asked. A person who wants a branch first says so (in the
+request, an earlier answer or their profile), and then the commit goes on a new branch.
 
 ## The message
 

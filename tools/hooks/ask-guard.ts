@@ -11,7 +11,7 @@ import type { Register } from 'claude-code'
 
 export const MESSAGE =
   'Not asked: whether to go on with work the person already asked for is answered yes, always. Carry on and report at the end. ' +
-  'Ask only what is theirs to decide (a commit or a push with its files, a delete, a real choice between approaches) and name that decision.'
+  'Ask only what is theirs to decide (a push with its commits, a delete, a real choice between approaches) and name that decision.'
 export const BOX = `${MESSAGE} Call wrap_up again without the ask.`
 
 // A question that sends the person elsewhere by pointing "above" ("в чате по ссылке выше", "the link above") reaches

@@ -117,9 +117,10 @@ the failure it was written for.
 ## Land the run: notify, then stop the watch
 
 These are one act, done once, when the run is **genuinely** finished. In one chat, the commit the `pace:` line
-still owes (one commit at the end by default) is asked, never made unasked: list its paths and end the landing
-turn with one yes/no `ask`; landing does not wait for it, and without a yes the paths stay uncommitted and are
-listed in the report (`docs/ONECHAT.md`, "Commits"). On yes: one Haiku `[mech]` agent, given the union of
+still owes (one commit at the end by default) is made without a question: a local commit leaves the machine only
+with a push, and the push stays asked. When the person's profile has `Commit: ask`, list its paths and end the
+landing turn with one yes/no `ask` instead; landing does not wait for it, and without a yes the paths stay
+uncommitted and are listed in the report (`docs/ONECHAT.md`, "Commits"). The commit: one Haiku `[mech]` agent, given the union of
 the done tasks' `tasks/claimed/<id>/files` lists minus `dirty-at-start`. Those paths are relative to the
 git top, not to the folder holding `.fleet`, so it runs `git -C "$(git rev-parse --show-toplevel)" add --`
 on the new paths only and then `git -C "<top>" commit --only -m <msg> -- <paths>`, so the operator's staged

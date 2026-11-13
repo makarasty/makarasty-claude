@@ -93,6 +93,8 @@ async function newItem($: D, a: { root: string; session: string }, toolUseId: st
 
 // The timer starts with the chat's first prompt or watched tool call: session.start is router.ts's (one unmatched hook per
 // event and module). shortcut: a chat restarted with a delivered-to-it answer waiting gets it after its next prompt.
+// Ask items this process has a live dialog and waiter for; an answered ask not in it is a dead dialog (chat restarted, plugin reloaded).
+const waited = new Set<string>()
 let timer: ReturnType<D['clock']['every']> | undefined
 // This main turn's wrap_up recap (set once the call went through, cleared when the turn starts and ends) and where the
 // turn's prompt came from. shortcut: a plugin reload between the wrap_up and the turn's end loses the mark, so that one
@@ -149,9 +151,12 @@ export const register: Register = (on) => {
       const old = String(await $.fs.read(`${a.root}/auto.jsonl`).catch(() => ''))
       const lines = Object.entries(standing).map(([question, label]) => JSON.stringify({ at: auto.at, id: item.id, chat: item.chat, question, label, rule }))
       await $.fs.write(`${a.root}/auto.jsonl`, `${old}${old && !old.endsWith('\n') ? '\n' : ''}${lines.join('\n')}\n`).catch(() => undefined)
+      await $.fs.write(`${a.root}/delivered/${item.id}`, String(await $.clock.now())).catch(() => undefined) // returned here, not to be delivered again
       return { result: toResult(item, auto) }
     }
     let settled = false
+    waited.add(item.id)
+    try {
     const dialog = next(e).then((r) => { settled = true; return { r } }, (err: unknown) => { settled = true; return { err } })
     const inbox = (async (): Promise<Answer | undefined> => {
       while (!settled) {
@@ -162,12 +167,18 @@ export const register: Register = (on) => {
       return undefined
     })()
     const won = await Promise.race([dialog.then((d) => ({ d })), inbox.then((ans) => ({ ans }))])
-    if ('ans' in won && won.ans && won.ans.by === 'inbox') return { result: toResult(item, won.ans) }
+    if ('ans' in won && won.ans && won.ans.by === 'inbox') {
+      await $.fs.write(`${a.root}/delivered/${item.id}`, String(await $.clock.now())).catch(() => undefined) // the chat has it: the tick must not send it again
+      return { result: toResult(item, won.ans) }
+    }
     const d = 'd' in won ? won.d : await dialog
     // Answered here (or Esc): the item leaves the inbox; the waiter sees the answer file and exits.
     await cli($, a.dir, ['done', item.id]).catch(() => undefined)
+    // An inbox answer that landed as the dialog closed is not the chat's answer: mark it taken so the tick does not deliver it.
+    if (await $.fs.exists(`${a.root}/answers/${item.id}.json`)) await $.fs.write(`${a.root}/delivered/${item.id}`, String(await $.clock.now())).catch(() => undefined)
     if ('err' in d) throw d.err
     return d.r
+    } finally { waited.delete(item.id) }
   }).catch(($, e, next) => next(e))
 
   on('tool.call', { tool: 'mcp__ccd_turn__wrap_up' }, async ($, e, next) => {
@@ -584,7 +595,7 @@ async function deliverAnswers($: D, a: { root: string; session: string }): Promi
     const id = f.name.slice(0, -5)
     if (await $.fs.exists(`${a.root}/delivered/${id}`)) continue
     const [ans, it] = [await readJSON<Answer>($, `${a.root}/answers/${f.name}`), await readJSON<Item>($, `${a.root}/items/${id}.json`)]
-    if (!ans || !it || ans.by !== 'inbox' || (it.kind === 'ask' && it.found !== 'scan')) continue // a live dialog's answer goes back through its own hook
+    if (!ans || !it || ans.by !== 'inbox' || (it.kind === 'ask' && it.found !== 'scan' && waited.has(id))) continue // a live dialog's answer goes back through its own hook
     if (await chatBusy($, a)) return
     try { await $.prompt.submit({ text: deliveryText(it, ans) }) } catch { return }
     await $.fs.write(`${a.root}/delivered/${id}`, String(await $.clock.now())).catch(() => undefined)

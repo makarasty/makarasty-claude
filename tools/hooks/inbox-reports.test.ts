@@ -7,7 +7,7 @@ declare const setTimeout: (f: (v?: unknown) => void, ms: number) => unknown // t
 // batches. Kept apart from inbox.test.ts, which other chats edit.
 
 const R = '/cfg/makarasty/inbox'
-function world(on: On, o: { self?: string; session?: string; failSubmits?: number } = {}) {
+function world(on: On, o: { self?: string; session?: string; failSubmits?: number; dialog?: Promise<void> } = {}) {
   const disk = new Map<string, string>([['/cfg/makarasty/inbox.on', 'x']])
   if (o.self) disk.set(`${R}/self`, o.self)
   const plain = (p: string): string => p.replace(/^[A-Za-z]:/, '').replaceAll('\\', '/')
@@ -30,10 +30,11 @@ function world(on: On, o: { self?: string; session?: string; failSubmits?: numbe
   on('process.run', (_$, e) => {
     const [, , cmd, id, ...rest] = e.argv as string[]
     const ans = `${R}/answers/${id}.json`
+    if (cmd === 'wait') return { value: { exitCode: 1, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } } // no waiter here: the dialog alone answers
     if (cmd === 'done' && !disk.has(ans)) disk.set(ans, JSON.stringify({ id, at: 0, by: 'chat', ...(rest.length ? { choice: rest.join(' ') } : {}) }))
     return { value: { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
   })
-  on('tool.call', (_$, e) => (e.tool === 'mcp__ccd_session__start_session'
+  on('tool.call', async (_$, e) => (e.tool === 'AskUserQuestion' && o.dialog ? (await o.dialog, { result: 'Пользователь выбрал: SQLite' }) : e.tool === 'mcp__ccd_session__start_session'
     ? { result: 'Started session "Деплой" (local_12345678-aaaa-bbbb-cccc-1234567890ab) in C:/work/x (task_id: task_abc123)' }
     : { result: 'Shown in the next-step box.' }))
   const submitted: string[] = []
@@ -483,7 +484,6 @@ test('an ask the scan found is answered as a prompt with the questions and the p
   w.disk.set(`${R}/turns/chatA`, 'idle 1')
   const ask = (id: string, o: object) => w.disk.set(`${R}/items/${id}.json`, JSON.stringify({ id, kind: 'ask', at: 1, session: 'chatA', cwd: 'C:/work/x', chat: 'c', questions: [{ question: 'Какую базу взять?', options: [] }], ...o }))
   const answer = (id: string) => w.disk.set(`${R}/answers/${id}.json`, JSON.stringify({ id, at: 2, by: 'inbox', answers: { 'Какую базу взять?': 'SQLite' } }))
-  ask('chatA~live', {}); answer('chatA~live')
   ask('chatA~scan', { found: 'scan' }); answer('chatA~scan')
   await $.prompt.submit({ text: 'hi' } as never) // starts the timer
   await w.clock.advance(15000)
@@ -493,7 +493,40 @@ test('an ask the scan found is answered as a prompt with the questions and the p
   expect(sent()[0]).toContain('from the inbox')
   await w.clock.advance(60000)
   expect(sent()).toHaveLength(1)
-  expect(delivered(w, 'chatA~live')).toBe(false) // its own hook returns that one
+})
+
+// 2026-11-13: an AskUserQuestion answered from the inbox after its dialog died (chat restarted, plugin reloaded) never reached the chat.
+test('an ask no live dialog waits on, answered by the inbox, is delivered once as a prompt; a by:chat answer never', async ($, on) => {
+  const w = world(on)
+  w.disk.set(`${R}/turns/chatA`, 'idle 1')
+  const ask = (id: string) => w.disk.set(`${R}/items/${id}.json`, JSON.stringify({ id, kind: 'ask', at: 1, session: 'chatA', cwd: 'C:/work/x', chat: 'c', questions: [{ question: 'Что делаем?', options: [] }] }))
+  const answer = (id: string, by: string) => w.disk.set(`${R}/answers/${id}.json`, JSON.stringify({ id, at: 2, by, answers: { 'Что делаем?': 'Коммит' } }))
+  ask('chatA~dead'); answer('chatA~dead', 'inbox')
+  ask('chatA~own'); answer('chatA~own', 'chat')
+  await $.prompt.submit({ text: 'hi' } as never)
+  await w.clock.advance(15000)
+  const sent = () => w.submitted.filter((x) => x !== 'hi')
+  await w.until(() => sent().length === 1 && delivered(w, 'chatA~dead'), 'delivered')
+  expect(sent()[0]).toContain('"Что делаем?": "Коммит"')
+  expect(sent()[0]).toContain('in place of the dialog here')
+  await w.clock.advance(60000)
+  expect(sent()).toHaveLength(1)
+  expect(delivered(w, 'chatA~own')).toBe(false)
+})
+
+test('an ask whose dialog is open here is not delivered by the tick: its waiter returns it', async ($, on) => {
+  let close = () => {}
+  const w = world(on, { dialog: new Promise<void>((r) => { close = r }) })
+  w.disk.set(`${R}/turns/chatA`, 'idle 1')
+  const q = { question: 'Какую базу взять?', header: 'База', multiSelect: false, options: [{ label: 'SQLite', description: 'a' }, { label: 'Postgres', description: 'b' }] }
+  const call = $.tool.call({ tool: 'AskUserQuestion', questions: [q], tool_use_id: 'live1' } as never)
+  await w.until(() => w.disk.has(`${R}/items/chatA~live1.json`), 'item filed')
+  w.disk.set(`${R}/answers/chatA~live1.json`, JSON.stringify({ id: 'chatA~live1', at: 2, by: 'inbox', answers: { 'Какую базу взять?': 'SQLite' } }))
+  for (let i = 0; i < 3; i++) await w.clock.advance(15000)
+  expect(w.submitted).toEqual([])
+  expect(delivered(w, 'chatA~live1')).toBe(false)
+  close()
+  await call
 })
 
 test('the turn state is on disk: a plugin reload mid-turn does not let a tick deliver; the turn end does', async ($, on) => {
