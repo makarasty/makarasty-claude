@@ -1,5 +1,9 @@
 # Changelog
 
+## makarasty-tools 1.19.39 — 2026-11-13
+
+- inbox: a question's source, the "Chat:" line, the "Open the chat" link and the finish reports name the chat by its title in the app, not by its first prompt. A chat started from another session opens with that session's brief, so two started chats both read "Background (from the session that…" and could not be told apart. `list` also writes the title into the item file, so the hook's tag check agrees with what it showed.
+
 ## makarasty-tools 1.19.38 — 2026-11-13
 
 The inbox, reworked to the concept agreed with the operator on 11-13 (docs/COMPLAINTS.md C19-C21):

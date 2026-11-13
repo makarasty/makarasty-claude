@@ -210,6 +210,12 @@ function stale(/** @type {any} */ it, /** @type {Map<string, any>} */ byHost) {
   return undeliverable(it, { muted: isMuted(it), archived: !!(it.host && byHost.get(it.host)?.archived), typedAfter: !live && typedSince(it.session, it.at), prompt: !live })
 }
 const hosts = () => new Map(chats().map((c) => [c.host, c]))
+// The chat's name as the app's sidebar shows it, not its first prompt: a chat started from another session opens with that
+// session's brief ("Background (from the session that…"), so two started chats got one name (2026-11-13).
+const named = (/** @type {any} */ x, /** @type {Map<string, any>} */ byHost) => {
+  const t = clean(byHost.get(x?.host)?.title || '')
+  return t ? { ...x, chat: `${t.length > 70 ? `${t.slice(0, 69)}…` : t} (${String(x.session).slice(0, 8)})` } : x
+}
 
 // One line per chat, for the person: project, a link, what it does, whether it waits for him.
 function boardLine(/** @type {any} */ c, /** @type {any[]} */ open, /** @type {any[]} */ reps, /** @type {string | undefined} */ account) {
@@ -707,7 +713,7 @@ async function main() {
     return 0
   }
   if (cmd === 'reports') {
-    const all = reports()
+    const byHost = hosts(), all = reports().map((r) => named(r, byHost))
     say(all.length ? renderReports(all, Date.now(), process.env.CLAUDE_CODE_ACCOUNT_UUID) : 'inbox: no finish reports in the last 3 days')
     return 0
   }
@@ -765,7 +771,12 @@ async function main() {
     const perChat = (/** @type {Map<string, Set<string>>} */ m, /** @type {any} */ it, /** @type {string} */ why) => { if (!isMuted(it)) m.set(sourceTag(it), (m.get(sourceTag(it)) ?? new Set()).add(why)) }
     const lines = (/** @type {Map<string, Set<string>>} */ m) => [...m].map(([tag, whys]) => `- ${tag}: ${[...whys].join('; ')}`).join('\n')
     const byHost = hosts(), closed = new Map()
-    const open = items().filter((i) => {
+    const open = items().map((i) => {
+      const n = named(i, byHost)
+      // on disk too: the hook checks each question's tag against the item file
+      if (n.chat !== i.chat && !readOnly && /^[\w~-]+$/.test(i.id)) writeFileSync(join(root, 'items', `${i.id}.json`), JSON.stringify(n))
+      return n
+    }).filter((i) => {
       if (answered(i.id) || i.session === self) return false
       if (i.session === 'inboxcheck' && Date.now() - i.at > 10 * 60e3) { if (!readOnly) create(join(dir('answers'), `${i.id}.json`), JSON.stringify({ id: i.id, at: Date.now(), by: 'chat' })); return false } // a leftover `test` item
       const why = stale(i, byHost)
@@ -775,14 +786,14 @@ async function main() {
       perChat(closed, i, why.replace(/\d+ (h|min) old/, 'over 12 h old'))
       return false
     })
-    const done = reports().filter((r) => !shown(r.id) && r.session !== self && !isMuted(r))
+    const done = reports().filter((r) => !shown(r.id) && r.session !== self && !isMuted(r)).map((r) => named(r, byHost))
     const auto = autoAnswers()
     // Answers written but not sent (he wrote there, it was archived or too old), once.
     const unsent = new Map()
     for (const f of existsSync(join(root, 'skipped')) ? readdirSync(join(root, 'skipped')) : []) {
       if (existsSync(join(root, 'skipped-seen', f))) continue
       const it = readJSON(join(root, 'items', `${f}.json`))
-      perChat(unsent, it ?? { cwd: '?', chat: f }, readOr(join(root, 'skipped', f)).replace(/\d+ (h|min) old/, 'over 12 h old'))
+      perChat(unsent, it ? named(it, byHost) : { cwd: '?', chat: f },readOr(join(root, 'skipped', f)).replace(/\d+ (h|min) old/, 'over 12 h old'))
       if (!readOnly) writeFileSync(join(dir('skipped-seen'), f), '')
     }
     if (!open.length && !done.length && !auto.length && !closed.size && !unsent.size) { say('inbox: nothing pending'); return 0 }

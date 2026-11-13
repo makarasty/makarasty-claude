@@ -497,6 +497,11 @@ try {
     const l1 = C(['list'])
     check('1. list gives each item the source its question must start with', l1.stdout.includes('Start each question with: proj1 · Чат номер 1: '), l1.stderr + l1.status)
     check('5. a chat waiting for him says so on its line', C(['followed']).stdout.includes('WAITS FOR YOU: Запушить ветку 1?'))
+    // A chat started from another session: its first prompt is that session's brief, its name is the app title (2026-11-13).
+    box(2, { id: 'cs2~bg', chat: 'Background (from the session that started you): the owner… (cs2)' })
+    const lb = C(['list'])
+    check('1. the source is the chat title from the app, not its first prompt (a started chat opens with a brief)', lb.stdout.includes('Start each question with: proj2 · Чат номер 2: ') && lb.stdout.includes(`Open the chat: [Чат номер 2 (cs2)](#${H(2)})`) && !lb.stdout.includes('Background (from') && JSON.parse(readFileSync(join(root, 'items', 'cs2~bg.json'), 'utf8')).chat === 'Чат номер 2 (cs2)', lb.stdout)
+    C(['done', 'cs2~bg'])
 
     // 2. not sent into a chat that no longer waits
     box(2)
