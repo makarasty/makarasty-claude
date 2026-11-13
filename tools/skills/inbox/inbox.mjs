@@ -32,6 +32,7 @@
 //                                           its title, or its project (several matches: the candidates, exit 1)
 //   node inbox.mjs mute <chat>              silence: nothing of it comes here, nothing goes into it, until follow
 //   node inbox.mjs followed                 one line per chat: followed, active not followed, muted
+//   node inbox.mjs names <id>...            "id<TAB>chat" by its app title (the hook's wake lines)
 //
 // Exit 0 ok, 1 refused (already answered, unknown id, bad answer), 2 bad arguments, 3 wait timed out.
 
@@ -74,7 +75,7 @@ function items() {
     if (!it || typeof it.id !== 'string' || typeof it.cwd !== 'string' || typeof it.at !== 'number') continue
     // Swept lazily: an unanswered one after 7 days (the night and the weekend); an answered one a day after its ANSWER (not
     // after the question: one answered late is still to be delivered), and an inbox answer to a box or card only once delivered.
-    if (sweepable(it, f)) { for (const d of ['items', 'answers', 'pushed', 'delivered']) rmSync(join(root, d, d === 'items' || d === 'answers' ? f : f.slice(0, -5)), { force: true }); continue }
+    if (sweepable(it, f)) { for (const d of ['items', 'answers', 'pushed', 'delivered', 'announced', 'skipped', 'skipped-seen', 'auto-seen']) rmSync(join(root, d, d === 'items' || d === 'answers' ? f : f.slice(0, -5)), { force: true }); continue }
     out.push(it)
   }
   return out.sort((a, b) => a.at - b.at)
@@ -215,6 +216,25 @@ const hosts = () => new Map(chats().map((c) => [c.host, c]))
 const named = (/** @type {any} */ x, /** @type {Map<string, any>} */ byHost) => {
   const t = clean(byHost.get(x?.host)?.title || '')
   return t ? { ...x, chat: `${t.length > 70 ? `${t.slice(0, 69)}…` : t} (${String(x.session).slice(0, 8)})` } : x
+}
+// The same, on disk too (the hook checks each question's tag against the item file). Only `chat` is written, onto the file as
+// it is now: the hook's tick may have added the explanation since this item was read.
+function rename(/** @type {any} */ i, /** @type {Map<string, any>} */ byHost) {
+  const n = named(i, byHost), p = join(root, 'items', `${i.id}.json`)
+  const cur = n.chat !== i.chat && /^[\w~-]+$/.test(i.id) ? readJSON(p) : undefined
+  if (cur) writeFileSync(p, JSON.stringify({ ...cur, chat: n.chat }))
+  return n
+}
+// Markers of items swept long ago (announced/, skipped/ ... grew past the item count) and spent consent marks: 7 days.
+function sweepOrphans() {
+  const now = Date.now()
+  for (const d of ['announced', 'skipped', 'skipped-seen', 'auto-seen', 'said-used', 'brief-sent']) {
+    const p = join(root, d)
+    for (const f of existsSync(p) ? readdirSync(p) : []) {
+      if (existsSync(join(root, 'items', `${f}.json`))) continue
+      try { if (now - statSync(join(p, f)).mtimeMs > 7 * 24 * 3600e3) rmSync(join(p, f), { force: true }) } catch { /* swept by another run */ }
+    }
+  }
 }
 
 // One line per chat, for the person: project, a link, what it does, whether it waits for him.
@@ -632,7 +652,7 @@ async function main() {
       for (const it of existsSync(join(root, 'items')) ? items() : []) {
         if (answered(it.id) || it.session === self || existsSync(join(root, 'announced', it.id))) continue
         const [state, since] = readOr(join(root, 'turn')).split(' ')
-        if (state === 'busy' && Date.now() - Number(since) < 2 * 3600e3) continue // a turn longer than 2 h: a lost end marker
+        if (state === 'busy' && Date.now() - Number(since) < 30 * 60e3) continue // older: a lost end marker (a crash), as the hook's CRASH_MS
         if (touched() > it.at) continue
         if (Date.now() - it.at > 60000) { const beat = Number(readOr(join(root, 'beat'))) || 0; say(`INBOX WATCHDOG: item ${it.id} has waited ${Math.round((Date.now() - it.at) / 1000)} s and the inbox chat was not woken: the wake is broken (plugin not loaded in this chat, or its timer stopped; its last tick ${beat ? `${Math.round((Date.now() - beat) / 1000)} s ago` : 'never'})`); return 1 }
       }
@@ -771,12 +791,8 @@ async function main() {
     const perChat = (/** @type {Map<string, Set<string>>} */ m, /** @type {any} */ it, /** @type {string} */ why) => { if (!isMuted(it)) m.set(sourceTag(it), (m.get(sourceTag(it)) ?? new Set()).add(why)) }
     const lines = (/** @type {Map<string, Set<string>>} */ m) => [...m].map(([tag, whys]) => `- ${tag}: ${[...whys].join('; ')}`).join('\n')
     const byHost = hosts(), closed = new Map()
-    const open = items().map((i) => {
-      const n = named(i, byHost)
-      // on disk too: the hook checks each question's tag against the item file
-      if (n.chat !== i.chat && !readOnly && /^[\w~-]+$/.test(i.id)) writeFileSync(join(root, 'items', `${i.id}.json`), JSON.stringify(n))
-      return n
-    }).filter((i) => {
+    if (!readOnly) sweepOrphans()
+    const open = items().map((i) => (readOnly ? named(i, byHost) : rename(i, byHost))).filter((i) => {
       if (answered(i.id) || i.session === self) return false
       if (i.session === 'inboxcheck' && Date.now() - i.at > 10 * 60e3) { if (!readOnly) create(join(dir('answers'), `${i.id}.json`), JSON.stringify({ id: i.id, at: Date.now(), by: 'chat' })); return false } // a leftover `test` item
       const why = stale(i, byHost)
@@ -835,15 +851,25 @@ async function main() {
     let norm
     try { norm = normalizeAnswer(item, raw) } catch (e) { console.error(`inbox: ${/** @type {Error} */ (e).message}`); return 1 }
     const ans = { id: item.id, at: Date.now(), by: 'inbox', ...norm }
+    // Kept, so the item closes, but not sent into a chat that no longer waits for it (owner, 2026-11-13). skipped/ goes first:
+    // a live dialog's waiter returns the answer the moment its file appears, and reads skipped/ to hold it back.
+    const why = stale(item, hosts())
+    if (why) { writeFileSync(join(dir('skipped'), item.id), why); writeFileSync(join(dir('skipped-seen'), item.id), '') }
     if (!create(join(dir('answers'), `${item.id}.json`), JSON.stringify(ans))) {
+      if (why) for (const d of ['skipped', 'skipped-seen']) rmSync(join(root, d, item.id), { force: true })
       const was = readJSON(join(root, 'answers', `${item.id}.json`))
       say(`inbox: already answered ${was?.by === 'chat' ? 'in the chat itself' : 'from the inbox'}; this answer was not used`)
       return 1
     }
-    // Kept, so the item closes, but not sent into a chat that no longer waits for it (owner, 2026-11-13).
-    const why = stale(item, hosts())
-    if (why) { writeFileSync(join(dir('skipped'), item.id), why); writeFileSync(join(dir('skipped-seen'), item.id), ''); say(`inbox: answered ${item.id}, NOT SENT to the chat: ${why}`); return 0 }
+    if (why) { say(`inbox: answered ${item.id}, NOT SENT to the chat: ${why}`); return 0 }
     say(`inbox: answered ${item.id}`)
+    return 0
+  }
+
+  if (cmd === 'names') {
+    // The hook's wake: each item's chat by its app title, one "id<TAB>chat" line each, renamed on disk as `list` does.
+    const byHost = hosts()
+    for (const i of [id, ...rest].filter(Boolean).map(norm)) { const it = readJSON(join(root, 'items', `${i}.json`)); if (it) say(`${i}\t${rename(it, byHost).chat}`) }
     return 0
   }
 

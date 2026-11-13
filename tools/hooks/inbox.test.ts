@@ -106,6 +106,28 @@ test('answered in the dialog first: the dialog\'s answer stands and the item lea
   expect(JSON.parse(w.disk.get('/cfg/makarasty/inbox/answers/chatA~toolu_2.json')!).by).toBe('chat')
 })
 
+test('an inbox answer `answer` kept but did not send (skipped: muted, archived) never reaches the live dialog; his own pick does', async ($, on) => {
+  const w = world(on)
+  const call = $.tool.call({ tool: 'AskUserQuestion', questions: QUESTIONS, tool_use_id: 'toolu_s1' })
+  await w.until(() => w.cli.some((c) => c[0] === 'wait'), 'wait')
+  w.disk.set('/cfg/makarasty/inbox/skipped/chatA~toolu_s1', 'the chat is muted')
+  w.inboxAnswers('chatA~toolu_s1', { answers: { [Q]: 'SQLite' } })
+  await w.until(() => w.cli.some((c) => c[0] === 'wait-returned'), 'returned')
+  await new Promise((r) => setTimeout(r, 30))
+  expect(w.dialog.closed).toBe(0)
+  w.answerDialog({ result: { questions: QUESTIONS, answers: { [Q]: 'Postgres' } } })
+  expect(((await call).result as { answers: Record<string, string> }).answers).toEqual({ [Q]: 'Postgres' })
+})
+
+test('a dialog answered in the chat itself writes no delivered mark (only an inbox answer that landed as it closed does)', async ($, on) => {
+  const w = world(on)
+  const call = $.tool.call({ tool: 'AskUserQuestion', questions: QUESTIONS, tool_use_id: 'toolu_d1' })
+  await w.until(() => w.items().length === 1)
+  w.answerDialog({ result: { questions: QUESTIONS, answers: { [Q]: 'Postgres' } } })
+  await call
+  expect(w.disk.has('/cfg/makarasty/inbox/delivered/chatA~toolu_d1')).toBe(false)
+})
+
 test('an end-of-turn box answered in the inbox reaches chat A as a prompt with the whole question and the pick', async ($, on) => {
   const w = world(on)
   w.disk.set('/cfg/makarasty/inbox/turns/chatA', 'idle 1') // between turns

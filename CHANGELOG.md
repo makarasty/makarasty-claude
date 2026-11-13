@@ -1,5 +1,25 @@
 # Changelog
 
+## makarasty-tools 1.19.41 — 2026-11-13
+
+The rest of the inbox review (operator's picks of 11-13). Each fix has a test that failed on 1.19.40.
+- **After a crash mid-turn the inbox chat recovers in 30 min, not 3 h:** a turn that never ended left it silent (no
+  wake) and its send open (his word still counted) for 3 h; now 30 min, in the hook and in the watchdog.
+- **The wake names a chat by its app title** (`inbox.mjs names`), not by the brief a started chat opened with.
+- **An answer kept but not sent never reaches a live dialog:** `answer` printed "NOT SENT" for a muted or archived
+  chat while that chat's dialog took the answer anyway. skipped/ is written first and the dialog's waiter reads it.
+- **The explanation and the app title no longer undo each other:** both writers re-read the item file and change only
+  their own field.
+- **A muted chat the inbox started gets no brief.**
+- **Markers of long-gone items are swept** (announced/, skipped/, skipped-seen/, auto-seen/, said-used/, brief-sent/
+  after 7 days; with the item when it goes).
+- A dialog answered in its own chat no longer writes a delivered mark (the check was always true).
+- **inbox SKILL.md is 29% smaller per inbox chat** (22.2 KB to 15.7 KB): handing work out, status, night, morning and
+  opening a chat moved to `coordinate.md`, read when one of them is asked.
+
+Not checked live: all of the above runs in tests only; a real crash, a real wake with app titles, the split skill in a
+real night/morning run.
+
 ## makarasty-tools 1.19.40 — 2026-11-13
 
 Review of the inbox's 13 versions (1.19.21..39): what holds, what layered wrong.

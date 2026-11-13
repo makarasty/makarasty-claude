@@ -108,6 +108,9 @@ let turnOrigin: string | undefined
 let inTurn = false
 // The inbox chat: the person spoke in this turn (typed it, or answered one of its dialogs). Only then may it write into a chat.
 let heard = false
+// How long the inbox chat's "busy" and "he spoke" files count once this copy has not seen the turn (a reload mid-turn, or a
+// crash that never ended it): after a crash the wake stays silent and a send stays open this long (owner, 2026-11-13: 30 min, not 3 h).
+const CRASH_MS = 30 * 60000
 // A chat the inbox started got its brief on how to report (once per plugin load).
 let briefed = false
 export const STARTED_BRIEF = 'This chat was started from the person\'s inbox, and he reads it there, not here: put every question to him in AskUserQuestion (it reaches his inbox), and end your last turn with one short summary in his language: what you did, what you found, what you propose to do next. Nothing else after it, and do not repeat it.'
@@ -173,7 +176,8 @@ export const register: Register = (on) => {
     const inbox = (async (): Promise<Answer | undefined> => {
       while (!settled) {
         const r = await cli($, a.dir, ['wait', item.id, String(WAIT_MS - 10000)], WAIT_MS).catch(() => undefined)
-        if (r?.exitCode === 0) return JSON.parse(r.stdout) as Answer
+        // An inbox answer `answer` kept but did not send (muted, archived: skipped/ is written first) never reaches the dialog.
+        if (r?.exitCode === 0) return (await $.fs.exists(`${a.root}/skipped/${item.id}`)) ? undefined : JSON.parse(r.stdout) as Answer
         if (!r || r.exitCode !== 3) return undefined // the waiter cannot run: the dialog alone answers, as without the inbox
       }
       return undefined
@@ -187,7 +191,7 @@ export const register: Register = (on) => {
     // Answered here (or Esc): the item leaves the inbox; the waiter sees the answer file and exits.
     await cli($, a.dir, ['done', item.id]).catch(() => undefined)
     // An inbox answer that landed as the dialog closed is not the chat's answer: mark it taken so the tick does not deliver it.
-    if (await $.fs.exists(`${a.root}/answers/${item.id}.json`)) await $.fs.write(`${a.root}/delivered/${item.id}`, String(await $.clock.now())).catch(() => undefined)
+    if ((await readJSON<Answer>($, `${a.root}/answers/${item.id}.json`))?.by === 'inbox') await $.fs.write(`${a.root}/delivered/${item.id}`, String(await $.clock.now())).catch(() => undefined)
     if ('err' in d) throw d.err
     return d.r
     } finally { waited.delete(item.id) }
@@ -302,7 +306,7 @@ export const register: Register = (on) => {
       if (his) await skipUndelivered($, a, 'you wrote in that chat after the question').catch(() => undefined)
     }
     // A chat the inbox started: it reports into the inbox, so its questions and its last message are what the person reads there.
-    if (a && !briefed && !typed && (await startedBy($, a).catch(() => false))) {
+    if (a && !briefed && !typed && (await startedBy($, a).catch(() => false)) && !(await muted($, a).catch(() => false))) {
       briefed = true
       return next({ ...e, context: [...(e.context ?? []), STARTED_BRIEF] })
     }
@@ -412,7 +416,7 @@ async function sourceDeny($: D, me: { root: string }, questions: readonly { ques
 async function hear($: D, root: string): Promise<void> { heard = true; await $.fs.write(`${root}/heard`, String(await $.clock.now())).catch(() => undefined) }
 async function heardNow($: D, root: string): Promise<boolean> {
   const at = Number(String(await $.fs.read(`${root}/heard`).catch(() => '')).trim()) || 0
-  return heard || (at > 0 && (await $.clock.now()) - at < 3 * 3600000) // a turn that died before its end leaves it: 3 h at most
+  return heard || (at > 0 && (await $.clock.now()) - at < CRASH_MS) // the file outlives a reload; a turn that died before its end leaves it
 }
 // A muted chat, named by its app id, session id, or its title (SendMessage takes a name; mute keeps the title in its file).
 async function mutedTarget($: D, root: string, to: string): Promise<boolean> {
@@ -613,19 +617,19 @@ export function proseQuestion(answer: string): string | undefined {
 
 // One wake at a time: the tick and a turn's end may both call it, and two would announce and submit the same items.
 let waking: Promise<void> | undefined
-function wakeOnce($: D, me: { root: string; session: string }): Promise<void> {
+function wakeOnce($: D, me: { dir: string; root: string; session: string }): Promise<void> {
   waking ??= wake($, me).finally(() => { waking = undefined })
   return waking
 }
 
 // The inbox chat itself: wake it once per new item from another chat, so nothing waits for the person to ask. The
 // prompt is English on purpose: the inbox chat answers him in his own language, and the plugin serves other people too.
-async function wake($: D, me: { root: string; session: string }): Promise<void> {
+async function wake($: D, me: { dir: string; root: string; session: string }): Promise<void> {
   const now = await $.clock.now()
   if (inTurn && !(openDialog && now - openDialog.since >= REFRESH_MS)) return // built when it is sent, from what is still open then
   // A reload mid-turn loses inTurn: the turn file says busy (as the watchdog reads it), so no prompt is queued behind it.
   const t = /^busy (\d+)/.exec(String(await $.fs.read(`${me.root}/turn`).catch(() => '')).trim())
-  if (!inTurn && t && now - Number(t[1]) < 3 * 3600000) return
+  if (!inTurn && t && now - Number(t[1]) < CRASH_MS) return
   const fresh: Item[] = []
   for (const f of await $.fs.list(`${me.root}/items`).catch(() => [])) {
     if (!f.name.endsWith('.json')) continue
@@ -645,6 +649,11 @@ async function wake($: D, me: { root: string; session: string }): Promise<void> 
   // Finish reports never wake one by one: they go with an item's wake, or as one batch once due (core.mjs dueReports).
   const reports = await waitingReports($, me)
   if (!fresh.length && !dueReports(reports, now)) return
+  // Each chat by its app title (`inbox.mjs names` renames the item files as `list` does): the first prompt of a started chat is its brief.
+  if (fresh.length) {
+    const r = await cli($, me.dir, ['names', ...fresh.map((it) => it.id)]).catch(() => undefined)
+    for (const l of r?.exitCode === 0 ? r.stdout.split('\n') : []) { const [id, chat] = l.split('\t'); const it = fresh.find((x) => x.id === id); if (it && chat?.trim()) it.chat = chat.trim() }
+  }
   const lines = fresh.map((it) => `- ${sourceTag(it)}: ${it.kind === 'ask' ? it.questions?.[0]?.question : it.kind === 'choice' ? it.ask : `card "${it.title}"`}`)
   await $.prompt.submit({ text: fresh.length
     ? `Inbox: ${fresh.length} new item${fresh.length > 1 ? 's' : ''} waiting for the person:\n${lines.join('\n')}${reports.length ? `\nAlso: ${finishedLine(reports)}` : ''}\nReview them now with the makarasty-tools inbox skill.`
@@ -781,7 +790,9 @@ export async function tick($: D): Promise<void> {
     }
     if (!it.explain) {
       const r = await $.model.complete({ model: 'haiku', prompt: explainPrompt(it), maxTokens: 600, timeoutMs: 60000 }).catch(() => undefined)
-      if (r?.isAnswered && r.text.trim()) await $.fs.write(`${a.root}/items/${it.id}.json`, JSON.stringify({ ...it, explain: r.text.trim() }))
+      // Re-read after the model's wait (up to 60 s): `list` may have renamed the chat meanwhile, and an old copy would undo it.
+      const cur = r?.isAnswered && r.text.trim() ? await readJSON<Item>($, `${a.root}/items/${it.id}.json`) : undefined
+      if (cur) await $.fs.write(`${a.root}/items/${it.id}.json`, JSON.stringify({ ...cur, explain: r!.text.trim() }))
     }
     await cli($, a.dir, ['push', it.id]).catch(() => undefined)
   }

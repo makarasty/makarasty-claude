@@ -533,6 +533,17 @@ try {
     spawnSync(process.execPath, [cli, 'report', 'off'], { env: { ...env, INBOX_PROFILES_DIR: P, CLAUDE_CODE_SESSION_ID: 'cs2', CLAUDE_CODE_HOST_SESSION_ID: H(2) }, encoding: 'utf8' })
     check('report off with no id switches off both the app id and an older session-id switch, and sticks', !existsSync(join(root, 'reports', 'on', 'cs2')) && !existsSync(join(root, 'reports', 'on', H(2))) && existsSync(join(root, 'reports', 'off', H(2))))
     check('4. follow lifts the mute', C(['follow', H(1)]).status === 0 && !existsSync(join(root, 'muted', H(1))) && existsSync(join(root, 'reports', 'on', H(1))))
+
+    // Review of 1.19.21..39: the wake's names, the explanation kept on a rename, markers of long-swept items.
+    box(2, { id: 'cs2~n1', chat: 'Background (from the session that started this one) (cs2)', explain: 'Чат спрашивает про пуш.' })
+    const nm = C(['names', 'cs2~n1', 'no~such'])
+    const n1 = JSON.parse(readFileSync(join(root, 'items', 'cs2~n1.json'), 'utf8'))
+    check('1. names prints each item\'s app title and renames it on disk, keeping its explanation', nm.stdout.trim() === 'cs2~n1\tЧат номер 2 (cs2)' && n1.chat === 'Чат номер 2 (cs2)' && n1.explain === 'Чат спрашивает про пуш.', nm.stdout + nm.stderr)
+    for (const d of ['announced', 'skipped']) { mkdirSync(join(root, d), { recursive: true }); for (const f of ['gone~old', 'gone~new']) writeFileSync(join(root, d, f), '') }
+    const old = (Date.now() - 8 * 24 * 3600e3) / 1000
+    for (const d of ['announced', 'skipped']) utimesSync(join(root, d, 'gone~old'), old, old)
+    C(['list'])
+    check('9. list sweeps markers of items gone over 7 days, keeps fresh ones', !existsSync(join(root, 'announced', 'gone~old')) && !existsSync(join(root, 'skipped', 'gone~old')) && existsSync(join(root, 'announced', 'gone~new')))
     writeFileSync(join(root, 'self'), 'inboxChat')
   }
   check('off removes the switch', run(['off']).status === 0 && !existsSync(join(tmp, 'makarasty', 'inbox.on')))

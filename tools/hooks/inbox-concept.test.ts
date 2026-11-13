@@ -9,7 +9,7 @@ declare const setTimeout: (f: (v?: unknown) => void, ms: number) => unknown // t
 
 const R = '/cfg/makarasty/inbox'
 const H = 3600e3
-function world(on: On, o: { self?: string; session?: string; now?: number; failSubmits?: number } = {}) {
+function world(on: On, o: { self?: string; session?: string; now?: number; failSubmits?: number; names?: Record<string, string> } = {}) {
   const disk = new Map<string, string>([['/cfg/makarasty/inbox.on', 'x']])
   if (o.self) disk.set(`${R}/self`, o.self)
   const plain = (p: string): string => p.replace(/^[A-Za-z]:/, '').replaceAll('\\', '/')
@@ -34,6 +34,7 @@ function world(on: On, o: { self?: string; session?: string; now?: number; failS
     if (e.argv[1] === '-e') return { value: { exitCode: 1, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } } // no tool_result: a dead dialog
     const [, , cmd, id, ...rest] = e.argv as string[]
     const ans = `${R}/answers/${id}.json`
+    if (cmd === 'names') return { value: { exitCode: 0, stdout: [id, ...rest].filter((i) => o.names?.[i]).map((i) => `${i}\t${o.names![i]}`).join('\n'), stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
     if (cmd === 'wait') return { value: { exitCode: 1, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
     if (cmd === 'done' && !disk.has(ans)) disk.set(ans, JSON.stringify({ id, at: 0, by: 'chat', ...(rest.length ? { choice: rest.join(' ') } : {}) }))
     return { value: { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
@@ -291,6 +292,55 @@ test('a wake whose submit failed is sent again on the next tick', async ($, on) 
   expect(w.submitted.filter((s) => s.startsWith('Inbox:'))).toEqual([])
   await w.clock.advance(15000)
   await w.until(() => w.submitted.some((s) => s.startsWith('Inbox: 1 new item')), 'woken after the failed submit')
+})
+
+test('6. a muted chat the inbox started gets no brief: nothing of the inbox goes into it', async ($, on) => {
+  const w = world(on)
+  w.disk.set(`${R}/reports/on/local_aaaa`, 'started 1')
+  w.disk.set(`${R}/muted/local_aaaa`, 'x')
+  await $.prompt.submit({ text: 'Бриф: расследуй падение', origin: { kind: 'plugin' } } as never)
+  expect(w.contexts[0] ?? []).not.toContain(STARTED_BRIEF)
+})
+
+test('3. after a crash mid-turn his word counts 30 min, not 3 h; the wake is silent for 30 min, not 3 h', async ($, on) => {
+  const w = world(on, { session: 'inboxChat', self: 'inboxChat' })
+  on('session.start', (_$, e) => ({ cwd: e.cwd }))
+  on('command.register', () => ({ value: undefined }) as never)
+  w.disk.set(`${R}/heard`, String(100 * H - 40 * 60e3))
+  expect((await $.tool.call({ tool: 'SendMessage', to: 'chat-x', message: 'x' } as never)).deny).toBeTruthy()
+  w.disk.set(`${R}/turn`, `busy ${100 * H - 40 * 60e3}`)
+  w.disk.set(`${R}/items/chatB~c1.json`, JSON.stringify({ id: 'chatB~c1', kind: 'choice', at: 100 * H - 60e3, session: 'chatB', cwd: 'C:/work/x', chat: 'x', ask: 'Ок?', actions: [] }))
+  await $.session.start({ cwd: 'C:/work/app', surface: null, isInteractive: true } as never)
+  await w.clock.advance(15000)
+  await w.until(() => w.submitted.some((s) => s.startsWith('Inbox: 1 new item')), 'woken after a 40 min old busy mark')
+})
+
+test('1. the wake names each chat by its app title, not the brief it started with', async ($, on) => {
+  const w = world(on, { session: 'inboxChat', self: 'inboxChat', names: { 'chatB~n1': 'Починка выгрузки (chatB)' } })
+  w.disk.set(`${R}/turn`, `idle ${100 * H - 60e3}`)
+  w.disk.set(`${R}/items/chatB~n1.json`, JSON.stringify({ id: 'chatB~n1', kind: 'choice', at: 100 * H - 60e3, session: 'chatB', cwd: 'C:/work/x', chat: 'Background (from the session that started this one) (chatB)', ask: 'Ок?', actions: [] }))
+  on('session.start', (_$, e) => ({ cwd: e.cwd }))
+  on('command.register', () => ({ value: undefined }) as never)
+  await $.session.start({ cwd: 'C:/work/app', surface: null, isInteractive: true } as never)
+  await w.clock.advance(15000)
+  await w.until(() => w.submitted.some((s) => s.startsWith('Inbox: 1 new item')), 'woken')
+  const wakeText = w.submitted.find((s) => s.startsWith('Inbox: 1 new item'))!
+  expect(wakeText).toContain('x · Починка выгрузки: Ок?')
+  expect(wakeText).not.toContain('Background')
+})
+
+test('1. the explanation written after the model\'s wait keeps a chat name `list` wrote meanwhile', async ($, on) => {
+  const w = world(on)
+  w.disk.set(`${R}/turns/chatA`, 'busy 1')
+  w.disk.set(`${R}/items/chatA~x1.json`, box('chatA~x1', 100 * H - 3 * 60e3))
+  on('model.complete', () => {
+    w.disk.set(`${R}/items/chatA~x1.json`, box('chatA~x1', 100 * H - 3 * 60e3, { chat: 'Выгрузка отчётов (chatA)' })) // `list` renamed it during the wait
+    return { value: { isAnswered: true as const, text: 'Чат спрашивает, пушить ли.', usage: { input_tokens: 1, output_tokens: 1, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 } } } as never
+  })
+  await $.prompt.submit({ text: 'tick start', origin: { kind: 'plugin' } } as never)
+  await w.clock.advance(15000)
+  await w.until(() => !!w.items()[0]?.explain, 'explained')
+  expect(w.items()[0].chat).toBe('Выгрузка отчётов (chatA)')
 })
 
 // Review round 2 (2026-11-13)
