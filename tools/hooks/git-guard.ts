@@ -477,7 +477,7 @@ export function check(cmd: string, tool = 'Bash', where: Where = {}): string | n
     .replace(/'[^']*'|"(?:[^"\\]|\\.)*"/g, '""').replace(REDIR, ' ')
   // The git subcommand of one pipe stage: the first non-option word after git, skipping -C <dir> and -c k=v.
   const stageSub = (p: string): string => {
-    const w = p.trim().split(/\s+/), g = w.findIndex((x) => GIT.test(x))
+    const w = p.replace(/^[\s({]+/, '').trim().split(/\s+/), g = w.findIndex((x) => GIT.test(x)) // `(git push | tail)`: a group opener is no word
     let k = g + 1
     while (g >= 0 && k < w.length && w[k]!.startsWith('-')) k += GLOBAL_WITH_VALUE.test(w[k]!) ? 2 : 1
     return g < 0 ? '' : w[k] ?? ''
@@ -513,6 +513,11 @@ export function check(cmd: string, tool = 'Bash', where: Where = {}): string | n
     for (const [rule, why, discard] of RULES) if (!(discard === 'sweep' ? own || isWt(dir) || made.has(norm(dir)) || idx : discard === 'tree' ? own || isWt(dir) || made.has(norm(dir)) : own && discard) && (typeof rule === 'function' ? rule(sub) : rule.test(sub))) return via ? `${via} ${name}: ${VARIABLE}` : `git ${name}: ${why}`
   }
   return null
+}
+// The git subcommands a shell line runs (`push origin main`), with the same lexer the guard uses: quotes, chains,
+// nested shells and heredocs read alike. `via` marks a variable standing in for git.
+export function gitSubs(cmd: string, tool = 'Bash'): { sub: string; via?: string }[] {
+  return subcommands(cmd, tool === 'PowerShell', 0, '').map(({ sub, via }) => ({ sub, via }))
 }
 // Worth lexing: names git, or holds a variable that may stand in for it.
 const MAYBE = /\bgit\b|\$/i

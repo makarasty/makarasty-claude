@@ -378,6 +378,8 @@ test('git commit or push piped into tail/head/tee/Select-Object is refused unles
   expect(['git push 2>&1 | tail -5', 'git commit -m x | Select-Object -Last 3', 'git commit -m x | select -Last 3', 'git push | tee out.log', 'git -C r push origin main | head',
     'git add a && git commit -m x 2>&1 | tail -3', 'git.exe push | Select-Object -First 2'].filter((c) => !check(c, c.includes('Select') || c.includes('select') ? 'PowerShell' : 'Bash', MAIN))).toEqual([])
   expect(check('git push 2>&1 | tail -5')).toContain('git ls-remote')
+  // inside a subshell or a group the pipe still hides the exit code
+  expect(['(git push | tail)', '{ git commit -m x | tail -3; }', '( git push 2>&1 | head )'].filter((c) => !check(c, 'Bash', MAIN))).toEqual([])
   expect(['set -o pipefail; git push | tail -3', 'git push | tail -3; echo ${PIPESTATUS[0]}', 'git log | head', 'git log --grep=push | head', 'git commit -m "x | tail"', 'git push || tail x',
     'git push && git log | head', 'git commit -m x | cat'].filter((c) => check(c, 'Bash', MAIN))).toEqual([])
 })

@@ -247,20 +247,26 @@ function standingConsent(/** @type {string} */ standing, /** @type {string} */ o
 // {id} when the words are the person's own: a substring of a composer prompt of the last 24 h (15+ chars, 3+ words) that has
 // not started a chat yet. The prompt is the unit, not the words: another cut of the same prompt is the same mark. Else {why}.
 // `mark` false (a dry run) only looks.
-function consent(/** @type {string} */ said, /** @type {boolean} */ mark) {
+// The prompt must ask for a start (a start verb) or name the chat: any sentence he typed is not consent (live 2026-11-12).
+// The inbox SKILL's own start phrases count («подготовь X к деплою», «перезапусти чат»).
+const START_VERB = /(?<![a-zа-яё])(запуст|запуск|перезапус|созда|начн|начин|откро|открой|заведи|подними|подготов|передай|поручи|стартан|нов(ый|ую|ого) (чат|сесси)|start|create|open|launch|relaunch|spin up|new (chat|session))/i
+function consent(/** @type {string} */ said, /** @type {boolean} */ mark, name = '') {
   const none = 'no matching words of the person in the last 24 h (15+ characters, 3+ words): offer a card', q = squash(said)
   if (q.length < 15 || q.split(' ').length < 3) return { why: none }
-  let reused = false
+  let reused = false, noVerb = false
   if (mark) dir('said-used')
   for (const l of readOr(join(root, 'said.jsonl')).split(/\r?\n/)) {
     let id = ''
-    try { const e = JSON.parse(l), at = typeof e.at === 'number' ? e.at : Date.parse(e.at); if (Date.now() - at < 24 * 3600e3 && squash(String(e.text ?? '')).includes(q)) id = `${e.at}|${e.session}` } catch { continue }
+    try {
+      const e = JSON.parse(l), at = typeof e.at === 'number' ? e.at : Date.parse(e.at), t = squash(String(e.text ?? ''))
+      if (Date.now() - at < 24 * 3600e3 && t.includes(q)) { if (START_VERB.test(t) || (squash(name).length >= 5 && !q.includes(squash(name)) && t.includes(squash(name)))) id = `${e.at}|${e.session}`; else noVerb = true }
+    } catch { continue }
     if (!id) continue
     const used = join(root, 'said-used', sha1(id))
     if (mark ? create(used, new Date().toISOString()) : !existsSync(used)) return { id }
     reused = true
   }
-  return { why: reused ? 'that typed prompt already started a chat (one prompt, one start): offer a card' : none }
+  return { why: reused ? 'that typed prompt already started a chat (one prompt, one start): offer a card' : noVerb ? 'those are his words, but that prompt asks for no start (no start verb, no chat name): offer a card' : none }
 }
 // The window in front: 'other' = open; 'claude' = one of our app windows (--user-data-dir under the profiles folder); 'unknown' = the read failed.
 const FG_PS = 'Add-Type \'using System;using System.Runtime.InteropServices;public class FG{[DllImport("user32.dll")]public static extern IntPtr GetForegroundWindow();[DllImport("user32.dll")]public static extern uint GetWindowThreadProcessId(IntPtr h,out uint p);}\'; $p=[uint32]0; [void][FG]::GetWindowThreadProcessId([FG]::GetForegroundWindow(),[ref]$p); $w=Get-CimInstance Win32_Process -Filter "ProcessId=$p"; $w.ExecutablePath+\'|\'+$w.CommandLine'
@@ -329,7 +335,7 @@ async function startOne(/** @type {{profile: string, folder: string, name: strin
     }
     led.said = j.said; led.saidId = j.saidId ?? ''
   } else {
-    const c = relaunchOf ? standingConsent(a.standing ?? '', relaunchOf, profile, folder, !dry) : consent(said, !dry)
+    const c = relaunchOf ? standingConsent(a.standing ?? '', relaunchOf, profile, folder, !dry) : consent(said, !dry, name)
     if (c.why) { console.error(`inbox: ${c.why}`); return end(2, 'refused: consent') }
     led.saidId = c.id ?? ''
     led.said = (c.line ?? said).slice(0, 60)

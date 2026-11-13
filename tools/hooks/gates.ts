@@ -68,8 +68,27 @@ export const levelFor = (tokens: number, at: number, step: number, lastIn: numbe
   return tokens >= at && level > last ? level : 0
 }
 
-export const reminder = (tokens: number): string => {
+// The person's standing answer for relaunches (an answers.md line naming a relaunch and the context size): with it the
+// reminder must not say "do not hand off unasked", the line he already answered (2026-11-12 «Да, все чаты»).
+export const RELAUNCH_LINE = /(relaunch|перезапус|handoff|хенд|хэнд)[^\n]*\b\d{3}\s?[kк](?![a-zа-я])|\b\d{3}\s?[kк](?![a-zа-я])[^\n]*(relaunch|перезапус|handoff|хенд|хэнд)/i
+// The last such line wins (a newer answer replaces an older one). Its verdict is the first word of its last quote
+// («Да, не спрашивай» is a yes); a line with no quote needs a yes word and no negation.
+const YES_W = /^\s*(да|yes|ok|ок|always|всегда|конечно|just do it|сразу)(?![a-zа-яё])/i
+export function standingRelaunch(answers: string): string | undefined {
+  const line = answers.split(/\r?\n/).filter((l) => RELAUNCH_LINE.test(l)).at(-1)
+  if (!line) return undefined
+  const quote = [...line.matchAll(/[«"“]([^»"”]*)[»"”]/g)].at(-1)?.[1]
+  const yes = quote !== undefined ? YES_W.test(quote) && !/(?<![a-zа-яё])(но|but|только если|only if)(?![a-zа-яё])/i.test(quote) // «да, но спроси сначала» is no standing yes
+    : /(?<![a-zа-яё])(да|yes|always|всегда|without asking|без вопроса|без спроса)(?![a-zа-яё])/i.test(line) && !/(?<![a-zа-яё])(не|нет|никогда|don['’]?t|do not|never|only if|только если|спрашивай|ask)(?![a-zа-яё])/i.test(line)
+  return yes ? line.trim() : undefined
+}
+
+export const reminder = (tokens: number, standing?: string): string => {
   const k = Math.round(tokens / 1000)
+  if (standing) return `This chat's context is at ${k}k tokens. The person's standing answer (answers.md) covers this: "${standing.slice(0, 200)}". ` +
+    `Answer the person's message as usual; then, at the end of this turn and without asking, relaunch: write the handoff (/makarasty-tools:handoff), ` +
+    `start the new chat in the same account and folder (start_session on a turn the person typed; otherwise the inbox skill's \`inbox.mjs start ... --standing ... --relaunch-of <this chat's id>\`), ` +
+    `and name the new chat with its link in your last message. Not while a commit, push or question of yours is open, a background task runs, or a fleet run you coordinate is live (its relaunch is fleet-plan 8b).`
   return `This chat's context is at ${k}k tokens. Answer the person's message as usual; then say the context size once, save the state and notes (progress, open items, decisions) where a new chat could pick them up, and keep working. ` +
     `Offer a handoff with /makarasty-tools:handoff only if the person asked for one: a handoff costs answer quality in the next chat's first prompts [M49]. ` +
     `A fleet worker or coordinator ignores this line; its marks come from the watch (COORDINATOR CONTEXT), and its relaunch is in fleet-plan 8b. Do not offer or run a handoff unasked.`
@@ -214,7 +233,8 @@ async function remind($: Dollar, e: { prompt: string; session_id: string; transc
   const level = levelFor(tokens, at, step, lastIn)
   if (!level) return undefined
   await $.fs.write(file, String(level))
-  return reminder(tokens)
+  const answers = String(await $.fs.read(`${dir}/answers.md`).catch(() => '')).replace(/^﻿/, '')
+  return reminder(tokens, standingRelaunch(answers))
 }
 
 export const register: Register = on => {

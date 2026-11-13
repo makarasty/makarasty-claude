@@ -1255,6 +1255,20 @@ question's context, the project's CLAUDE.md and the ports and processes running 
   Haiku, the borderline ones (a migration the project's docs assign to a maintenance page) need Sonnet.
 **Status:** one window of two days, one judge pass, no second rater.
 
+## M73 — The operator's complaints about chat behaviour, all history
+**2026-11-13**, every transcript under `~/.claude/projects` (all three accounts share it; 2026-06-25..11-13). A
+script kept his typed prompts (no tool results, no meta, no plugin or app text, under 4000 chars) that matched a
+loose Russian/English complaint regex: 1126 rows. Four Sonnet passes kept the rows about how the agent worked, not
+about his products: **181**, in themes. Plus 2026-11-11..13 from the inbox's `said.jsonl` and the coordinator notes.
+- **Claims with no check** («ты уверен?», «перепроверь», «я не верю, что ты всё починил»): about 47 (26%), the top one.
+- **Not plain, too long, too technical** («простым языком», «слишком длинно»): about 28.
+- **Asks what it could find or do, "dumb" questions, "continue?"**: about 17; **left work half done**: about 13.
+- **Machine hogs, no timeouts**: about 10; **UI built without looking or edge cases**: about 13 (UI and mockups).
+- One to three each: wrong model or effort, killing by name, destroying git work, other chats' work, context left
+  at 900K, red team arguing from effort, pressing keys on his machine, wrong project, noisy hook text.
+**Status:** one regex pass (complaints with none of its words are missed), one Sonnet rater per quarter of the rows,
+counts per theme approximate (a row counts once, under its main theme).
+
 ## Appendix: what a pull run spends
 
 Moved here from `PULL.md`, which workers read in full; none of it changes what a worker does.

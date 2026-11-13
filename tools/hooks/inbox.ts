@@ -1,6 +1,8 @@
 import type { EngineInterface, Register } from 'claude-code'
 import { PUSH_AFTER_MS, clean, contextOf, continueAnswer,deliveryText, dueReports, excerptOf, explainPrompt, itemId, ownedBy, safe, toResult, type Answer, type Item, type Report } from '../skills/inbox/core.mjs'
 import { find as secretIn } from './secret-guard.ts'
+import { notePrompt } from './push-guard.ts'
+import { PLUGIN_FRAME, ownWords } from './own-words.ts'
 
 // The cross-chat inbox (skill /makarasty-tools:inbox, layout in skills/inbox/core.mjs). Off unless
 // <config>/makarasty/inbox.on exists. In every chat it:
@@ -261,6 +263,7 @@ export const register: Register = (on) => {
 
   // The person answered here, or a card was started by a click: close those items so the inbox stops showing them.
   on('prompt.submit', async ($, e, next) => {
+    notePrompt(e) // push-guard's turn word: the engine takes one prompt.submit hook per module, and this is it
     if (!timer && ((await active($).catch(() => undefined)) || (await inboxSelf($).catch(() => undefined)))) startTimer($)
     if (!e.turnId) turnOrigin = e.origin?.kind // a prompt that starts a turn (one delivered into a running turn does not)
     const started = /started your suggested background task (task_\w+)/.exec(e.text)?.[1]
@@ -521,9 +524,11 @@ async function wake($: D, me: { root: string; session: string }): Promise<void> 
 // answered. Only his own typing: not what the plugin submits and not a message from another session.
 export const SAID_KEEP_MS = 86400000
 const SAID_MAX = 200
-const NOT_SAID = /^\s*(Inbox:|The person answered your|<cross-session-message|Another Claude session sent a message)/
-async function capture($: D, text: string): Promise<void> {
-  if (!text.trim() || NOT_SAID.test(text)) return
+// The plugin's own prompts and other sessions' messages, read on his words (a paste or reminder that quotes them is gone by then).
+const NOT_SAID = /^\s*(Inbox: \d|The person answered your|<cross-session-message|Another Claude session sent a message)/
+async function capture($: D, raw: string): Promise<void> {
+  const text = ownWords(raw) // app reminders and pastes are not his word, so never a start's consent
+  if (!text.trim() || NOT_SAID.test(text) || PLUGIN_FRAME.test(text)) return
   const a = (await active($)) ?? (await inboxSelf($))
   if (!a) return
   const now = await $.clock.now()

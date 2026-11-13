@@ -306,6 +306,10 @@ Blocked by makarasty-tools kill-guard: taskkill /IM (or /FI on a name): it kills
 | generated | An edit of a compiled file listed in `src/build.sha256` (only in a repo that has that file) | — |
 | loop | Never refuses. After the same failure three times it tells the chat to change approach | `MAKARASTY_LOOP_GUARD=off` |
 | ask | An `AskUserQuestion` question or end-of-turn box that only asks whether to go on with work you already asked for ("Continue?" with yes/stop answers). A push, delete, budget, relaunch or a real choice is still asked [M67] | `MAKARASTY_ASK_GUARD=off` |
+| push | `git push` with no word of yours in this turn: a typed "push", or a yes to the chat's push question. A brief, a plugin message or a standing answer is not your word. `--dry-run` runs | `MAKARASTY_PUSH_GUARD=off` |
+| verify | Once per turn, an end-of-turn box that says done, fixed or works after a code edit with no test, build or run after it; a recap that says what is not checked passes [M73] | `MAKARASTY_VERIFY_GUARD=off` |
+
+Every guard and the complaint behind it: `docs/COMPLAINTS.md`.
 
 The shell guards read the command inside `bash -c`, `cmd /c` (and Git Bash's `cmd //c`), `powershell -Command`
 and a bare `powershell <command>`. Text in single quotes, a heredoc or a PowerShell here-string is text: a

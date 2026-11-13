@@ -1,5 +1,32 @@
 # Changelog
 
+## makarasty-tools 1.19.37, makarasty 1.18.8 — 2026-11-13
+
+All of the operator's complaints about how chats behave, 2026-06..11 (181 in transcripts plus 11-11..13), are one
+library now: `docs/COMPLAINTS.md`, each row his words, the rule, the hook or text that holds it, and its test [M73].
+What was only text became code:
+- **push-guard (new):** `git push` (also in Monitor and the person's terminal, `subtree push`, `send-pack`, a push
+  alias set in the same line) runs only on his own word in this turn: a typed sentence that tells a push (not a
+  question, not negated, put off or conditional: «пушить не надо», «запушь завтра», «да, но сначала diff»), a
+  typed yes right after an end-of-turn ask that offers a push, a yes to a push dialog, or the inbox plugin's own
+  delivered answer. A brief, another session, a paste, an app reminder, a plugin message or a standing answer never
+  counts; «стой, не пушь» typed mid-turn withdraws it. `MAKARASTY_PUSH_GUARD=off`. His answer of 11-12: «Да, хук».
+- **verify-guard (new):** the end-of-turn box that says done, fixed or works after a code edit (Edit/Write, or
+  `sed -i`, `sg -U`, `Set-Content` in a shell) with no test, build, script run, subagent, skill or browser check
+  after it is refused once; a recap that says what is not checked passes, and so does a second call. The top
+  complaint («ты уверен?», «перепроверь»: about 47 of 181). `MAKARASTY_VERIFY_GUARD=off`.
+- **700K reminder follows his standing answer:** with a relaunch line in answers.md («Да, все чаты») it says
+  relaunch now with a handoff, no question, instead of "do not hand off unasked". The last relaunch line wins; its
+  verdict is the first word of its last quote.
+- **said.jsonl holds only his words:** app `<system-reminder>` blocks (nested, unclosed, any case), pastes, IDE
+  context, app commands and plugin prompts that arrive as composer text are dropped; they had been stored as his
+  words, the consent a chat start reads. A start also needs his prompt to ask for one (a start verb such as
+  запусти/создай/подготовь/перезапусти, or the chat's name).
+- **git-guard:** `(git push | tail)` inside a subshell or group is the same hidden exit code as without it.
+
+Not checked live: a real push asked and answered through the inbox, the verify refusal in a real turn, a 700K
+relaunch from the new reminder.
+
 ## makarasty-tools 1.19.36 — 2026-11-13
 
 - **A step in another chat is not a dialog:** while a dialog is open the person cannot click the link above it, a

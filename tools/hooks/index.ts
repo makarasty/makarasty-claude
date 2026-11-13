@@ -11,6 +11,8 @@ import { register as generatedGuard } from './generated-guard.ts'
 import { register as gates } from './gates.ts'
 import { register as inbox } from './inbox.ts'
 import { register as askGuard } from './ask-guard.ts'
+import { register as pushGuard } from './push-guard.ts'
+import { register as verifyGuard } from './verify-guard.ts'
 
 // The engine loads one hooks module per plugin: this is it.
 export const register: Register = (on, options) => {
@@ -24,6 +26,9 @@ export const register: Register = (on, options) => {
   budgetGuard(on, options)
   secretGuard(on, options)
   generatedGuard(on, options)
+  // Before ask-guard and the inbox: it reads the answer the dialog (or the inbox) returns.
+  pushGuard(on, options)
+  verifyGuard(on, options)
   gates(on, options)
   // Before the inbox: a refused question never becomes an inbox item.
   askGuard(on, options)

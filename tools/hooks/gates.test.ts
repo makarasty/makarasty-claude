@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
-import { PROFILE_MAX, afterCompact, asking, asksForHandoff, economy, findings, habits, levelFor, register, reminder } from './gates.ts'
+import { PROFILE_MAX, afterCompact, asking, asksForHandoff, economy, findings, habits, levelFor, register, reminder, standingRelaunch } from './gates.ts'
 
 const entry = { kind: 'file' as const, size: 1, mtimeMs: 0, isLink: false }
 const DAY = 86400000
@@ -236,6 +236,27 @@ test('past the threshold: one reminder and the level is kept', async ($, on) => 
   expect(r.additionalContext).toEqual([reminder(724400)])
   expect(w.writes).toEqual({ '/cfg/makarasty/context/s1': '700000' })
   expect(w.runs).toEqual([])
+})
+
+const RELAUNCH = 'Relaunch a chat at ~700K context: «Да, все чаты» — every chat relaunches itself with a handoff, no question (2026-11-12)'
+test('a standing relaunch answer in answers.md turns the reminder into a relaunch without a question', async ($, on) => {
+  world(on, { tokens: 724400, answers: `Other: x\n${RELAUNCH}\n` })
+  const [r] = (await $.classic.UserPromptSubmit(prompt())).additionalContext ?? []
+  expect(r).toBe(reminder(724400, RELAUNCH))
+  expect(r).toContain('without asking, relaunch')
+  expect(r).not.toContain('Do not offer or run a handoff unasked')
+})
+
+test('a relaunch line that says no, never or ask is no standing answer', () => {
+  expect(standingRelaunch(RELAUNCH)).toBe(RELAUNCH)
+  for (const l of ['Relaunch at 700K: «нет, спрашивай»', 'Relaunch at 700K: «never»', 'Перезапуск на 700к: «спрашивай меня»', 'Relaunch: yes', 'Отвечай коротко',
+    "Don't relaunch a chat at 700K", 'Не делай хенд-офф сам, контекст 700к', 'Handoff: quality drops after 150K tokens [M49]',
+    'Перезапуск на 700к: «не перезапускай сам»', 'Relaunch at 700K: «don\'t»', 'Relaunch at 700K: «да, но спроси сначала»', 'Q: "Relaunch at 700K?" A: нет'])
+    expect([l, standingRelaunch(l)]).toEqual([l, undefined])
+  for (const l of ['Перезапуск чата на 700к: «да»', 'Relaunch at 700K: «Да, никогда не спрашивай»', 'Relaunch at 700K: «Yes, don\'t ask»', '"Relaunch at 700K: ask first or just do it?" -> «just do it»'])
+    expect([l, standingRelaunch(l)]).toEqual([l, l])
+  // the last line wins: a newer no replaces an older yes
+  expect(standingRelaunch(`${RELAUNCH}\nRelaunch at 700K: «Нет, спрашивай» (2026-11-14)`)).toBeUndefined()
 })
 
 test('the same level on disk: no second reminder', async ($, on) => {

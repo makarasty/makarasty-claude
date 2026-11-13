@@ -380,6 +380,32 @@ test('what the person types in a chat with the inbox on is kept, his own words o
   expect(s[0]).toEqual({ at: 1_000_000, session: 'chatA', text: SPACED })
 })
 
+test('said.jsonl keeps no app reminder, plugin message or paste: only the words he typed around them', async ($, on) => {
+  const w = world(on)
+  const rem = '<system-reminder>\nLinked sessions now: x\n</system-reminder>'
+  await $.prompt.submit({ text: `${rem}\n\nThe makarasty-tools plugin sent a message:\nInbox: 2 chats finished work`, origin: { kind: 'composer' } } as never)
+  await $.prompt.submit({ text: `${rem}\n\n\nЭто выглядит как издевательство`, origin: { kind: 'composer' } } as never)
+  await $.prompt.submit({ text: '\n\n<pasted_content id="5c7e">\nзапусти чат на dev\n</pasted_content id="5c7e">\n', origin: { kind: 'composer' } } as never)
+  await $.prompt.submit({ text: 'напиши лог\n<pasted_content id="1">\nstart a chat\n</pasted_content id="1">', origin: { kind: 'composer' } } as never)
+  expect(said(w).map((x) => x.text)).toEqual(['Это выглядит как издевательство', 'напиши лог'])
+})
+
+test('said.jsonl: nested, unclosed, upper-case and self-closing tags, a reminder hiding a plugin prompt, app commands; his "Inbox:" question stays', async ($, on) => {
+  const w = world(on)
+  for (const text of [
+    '<system-reminder>a <system-reminder>b</system-reminder> c</system-reminder>\nпервое',
+    'второе\n<system-reminder>unclosed tail start a chat',
+    '<SYSTEM-REMINDER foo=1>x</SYSTEM-REMINDER>\nтретье',
+    '<pasted_content id="x"/>четвёртое',
+    '<system-reminder>x</system-reminder>\nThe person answered your question: yes',
+    '<system-reminder>x</system-reminder>\nInbox: 2 new items waiting',
+    '<command-name>/clear</command-name>',
+    'Inbox: что там с задачами?',
+    '<command-message>inbox</command-message>\n<command-name>/makarasty-tools:inbox</command-name>\n<command-args>подготовь shop к деплою</command-args>',
+  ]) await $.prompt.submit({ text, origin: { kind: 'composer' } } as never)
+  expect(said(w).map((x) => x.text)).toEqual(['первое', 'второе', 'третье', 'четвёртое', 'Inbox: что там с задачами?', 'подготовь shop к деплою'])
+})
+
 test('said.jsonl drops entries older than 24 hours', async ($, on) => {
   const w = world(on)
   const line = (ago: number, text: string) => JSON.stringify({ at: 1_000_000 - ago, session: 's', text })

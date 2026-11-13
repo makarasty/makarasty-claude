@@ -103,7 +103,10 @@ try {
   const wrote = (/** @type {string} */ text, /** @type {number} */ ago = 1000) => { mkdirSync(root, { recursive: true }); appendFileSync(join(root, 'said.jsonl'), `${JSON.stringify({ at: Date.now() - ago, session: `chatP${++wn}`, text })}\n`) }
   wrote('Please   start a NEW chat for the Cross-Account work, thanks')
   wrote('an ancient request to start the oldest chat', 25 * 3600e3)
-  for (const w of ['second quote words here', 'third quote words here', 'fourth quote words here', 'fifth quote words here', 'sixth quote words here', 'eighth quote words here', 'please start a chat for me okay']) wrote(w)
+  for (const w of ['second quote words here', 'third quote words here', 'fourth quote words here', 'fifth quote words here', 'sixth quote words here', 'eighth quote words here']) wrote(`запусти чат: ${w}`)
+  wrote('please start a chat for me okay')
+  wrote('these words ask for nothing in particular') // his, but no start verb and no chat name
+  wrote('worker-zz needs the report numbers fixed') // names the chat
   const LONG = 'this is a deliberately long request to start a chat on the other account, with many many words in it, please'
   wrote(LONG)
   const Q1 = 'start a new chat for the cross-account'
@@ -136,6 +139,10 @@ try {
   const oldQ = S(['start', 'acct2', tmp, 'old', '--said', 'start the oldest chat'], OPEN)
   check('words older than 24 h are refused', oldQ.status === 2 && oldQ.stderr.includes('no matching words of the person in the last 24 h') && !existsSync(jfile('old')), oldQ.stderr)
   check('words the person never typed are refused', S(['start', 'acct2', tmp, 'nope', '--said', 'deploy it to production'], OPEN).status === 2 && !existsSync(jfile('nope')))
+  const noVerb = runP(['start', 'acct2', tmp, 'nv', '--said', 'ask for nothing in particular'])
+  check('his words with no start verb and no chat name are refused', noVerb.status === 2 && noVerb.stderr.includes('asks for no start') && !existsSync(jfile('nv')), noVerb.stderr)
+  const named = runP(['start', 'acct2', tmp, 'worker-zz', '--said', 'needs the report numbers fixed'])
+  check('words in a prompt that names the chat count (dry run: nothing written)', named.status === 0 && !existsSync(jfile('worker-zz')) && usedN() === 0, named.stdout + named.stderr)
   const badMode = S(['start', 'acct2', tmp, 'bm', '--said', Q1, '--mode', 'bypassPermissions'], OPEN)
   check('a mode outside default|plan|auto is refused', badMode.status === 2 && badMode.stderr.includes('--mode') && !existsSync(jfile('bm')), badMode.stderr)
   writeFileSync(join(tmp, 'makarasty', 'dispatch.off'), '')
