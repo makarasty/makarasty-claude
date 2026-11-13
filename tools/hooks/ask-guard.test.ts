@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
-import { BOX, COMMAND, ELSEWHERE, MESSAGE, SELF, SCREEN, continueBox, continueQuestions, holdsCommand, onlyContinue, pointsAbove } from './ask-guard.ts'
+import { BOX, COMMAND, ELSEWHERE, MESSAGE, OTHER_CHAT, SELF, SCREEN, continueBox, continueQuestions, holdsCommand, onlyContinue, pointsAbove, sendsToChat } from './ask-guard.ts'
 
 const q = (question: string, ...labels: string[]) => ({ question, header: 'h', multiSelect: false, options: labels.map((label) => ({ label, description: '' })) })
 
@@ -70,9 +70,17 @@ test('a question pointing at a link "above" without naming the place is refused;
   for (const t of ['В чате по ссылке выше напиши «запусти тест». Написал?', 'Open the chat linked above and type go. Done?', 'Нажми в окне выше Allow. Готово?'])
     expect(await $.tool.call({ tool: 'AskUserQuestion', questions: [q(t, 'Написал', 'Не сейчас')] } as never)).toEqual({ deny: ELSEWHERE })
   expect(pointsAbove([{ question: 'В чате «Coordinator» (аккаунт main, [чат](#local_339c936f-797e)) по ссылке выше напиши go. Написал?' }])).toBe(false)
-  await $.tool.call({ tool: 'AskUserQuestion', questions: [q('В чате «Coordinator» на аккаунте main напиши `go`. Написал?', 'Написал', 'Не сейчас')] } as never)
   await $.tool.call({ tool: 'AskUserQuestion', questions: [q('Какой вариант выше нравится больше?', 'A', 'B')] } as never)
-  expect(passed).toEqual(['AskUserQuestion', 'AskUserQuestion'])
+  expect(passed).toEqual(['AskUserQuestion'])
+})
+
+test('a step in another chat is never a dialog', async ($, on) => {
+  const passed = world(on)
+  for (const [t, a, b] of [['Нажми карточку в чате «Relaunch». Нажал?', 'Нажал', 'Не сейчас'], ['В чате «Coordinator» на аккаунте dev ответь «да». Ответил?', 'Открой мне этот чат', 'Ответил'], ['Answer in the chat "Fleet B". Done?', 'Done', 'Not now']])
+    expect(await $.tool.call({ tool: 'AskUserQuestion', questions: [q(t!, a!, b!)] } as never)).toEqual({ deny: OTHER_CHAT })
+  expect(sendsToChat([{ question: 'Какую базу берём в этом чате?' }])).toBe(false)
+  await $.tool.call({ tool: 'AskUserQuestion', questions: [q('Какую базу берём в этом чате?', 'Postgres', 'SQLite')] } as never)
+  expect(passed).toEqual(['AskUserQuestion'])
 })
 
 test('a command in a question or an option is refused; a short title or a bare tool name passes', async ($, on) => {

@@ -1,5 +1,15 @@
 # Changelog
 
+## makarasty-tools 1.19.36 — 2026-11-13
+
+- **A step in another chat is not a dialog:** while a dialog is open the person cannot click the link above it, a
+  link cannot go inside it, and opening the chat for him does not help. ask-guard refuses an AskUserQuestion that
+  sends him into another chat ("нажми карточку в чате «…»", "answer in the chat …"); the chat ends its turn with one
+  line on what to do and that chat's link and account, and his "done" comes as the next message.
+- **A 700K relaunch can start without a click:** `inbox.mjs start … --standing "<piece of the answers.md line>"
+  --relaunch-of <old app id>` takes his standing answer for relaunches as consent, only for the same account and
+  folder as the old chat, once per old chat (the app refuses `start_session` on an automated turn).
+
 ## makarasty-tools 1.19.35 — 2026-11-13
 
 - **Old answers are not sent again:** 1.19.34 delivered every inbox answer to a dialog with no `delivered` mark as a

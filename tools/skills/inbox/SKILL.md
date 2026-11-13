@@ -73,6 +73,9 @@ one line and restart it. A watchdog missing from the task list means this chat r
    gives each asking chat's link (`[title](#local_<id>)`): the dialog itself cannot hold a link. An item that asks the
    person to act in yet another chat or app gets that place too: its title, account and link (`inbox.mjs chats
    <title>`), or the exact path or command, and the action in a code span, in the text right above the call. A
+   step in another chat (press its card, answer there) is never a dialog: while one is open he cannot click a link,
+   and opening that chat for him does not help. End the turn with one line on what to do there and the chat's
+   `[title](#local_<id>)` link with its account; his "done" comes as the next message. A
    command an item asks him to run moves out of the question into a code block above the call (on Windows in a form
    Windows PowerShell 5.1 runs: `;` instead of `&&`, tagged powershell); the question stays a short title. Every answer reading "[not answered
    yet: more items came in ...]" means the person was away: the plugin closed that dialog after 10 minutes because
@@ -132,7 +135,10 @@ Messages reach chats of other accounts too: a fleet coordinator on another accou
      the new chat and back to its old one in about 2 s, and raises it when a Claude window is in front [M71], so
      `start` waits (exit 4, "queued") while any Claude window is in front or memory is low, and this chat's timer
      starts it later; `inbox.mjs status` shows queued starts and the last automatic actions. The file
-     `<config>/makarasty/dispatch.off` turns all of this off: then offer a card. A project's task runs in a chat
+     `<config>/makarasty/dispatch.off` turns all of this off: then offer a card. A relaunch of a chat near 700K
+     context, when answers.md holds his standing answer for it, needs no typed words: `inbox.mjs start <same
+     profile> <same folder> <name> --standing "<a piece of that answers.md line>" --relaunch-of <old app id>`
+     (one relaunch per old chat), then the handoff brief by `SendMessage`. A project's task runs in a chat
      of that project, never routed through another project's chat, and the person is never asked to sign in, paste
      or click instead; say the window flip in one line.
   3. `inbox.mjs track <chat> <profile> <project> <task>`; each reply: `inbox.mjs note <chat> <status> <one line>`.

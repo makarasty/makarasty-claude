@@ -19,6 +19,10 @@
 //                                           the brief to <name>. Refused (2) when <config>/makarasty/dispatch.off exists or --said
 //                                           (15+ chars, 3+ words) is not in the person's own prompts of the last 24 h (said.jsonl; one prompt, one
 //                                           start). Queued (4) while a Claude window is in front or under 2 GiB RAM is free.
+//   node inbox.mjs start <profile> <folder> <name> --standing "<words>" --relaunch-of <local_app id>
+//                                           the other consent, for a chat relaunching itself at ~700K context: <words> (15+ chars) must be
+//                                           in a line of <config>/makarasty/answers.md about a relaunch at 700K; the old chat must be live,
+//                                           on <profile>, in <folder>; one standing start per old chat. Not together with --said.
 //   node inbox.mjs start --drain            retry queued starts, oldest first (and failed ones under 3 tries, 10 min apart); stops after the first that runs
 //   node inbox.mjs starts                   queued and recent starts
 //   node inbox.mjs children <local_id>     app ids of the chats that chat started, one per line
@@ -226,6 +230,20 @@ const bundledCli = (/** @type {{name: string, dir: string}} */ prof) => {
   } catch { /* no bundled CLI */ }
   return 'claude'
 }
+// The standing answer: {id, line} when `standing` is in a line of answers.md that is about a relaunch at 700K, and `old` is a live
+// chat of this profile and folder that has not been relaunched yet (<root>/standing-used/<its app id>, one per old chat). Else {why}.
+function standingConsent(/** @type {string} */ standing, /** @type {string} */ old, /** @type {string} */ profile, /** @type {string} */ folder, /** @type {boolean} */ mark) {
+  const q = squash(standing), flat = (/** @type {string} */ s) => s.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
+  const line = q.length < 15 ? '' : readOr(join(base, 'answers.md')).split(/\r?\n/).find((l) => /relaunch|перезапус/i.test(l) && /700/.test(l) && squash(l).includes(q))
+  if (!line) return { why: 'no line of answers.md about a relaunch at 700K contains those words (15+ characters): offer a card' }
+  const chat = chats().find((c) => !c.archived && c.host === old)
+  if (!chat) return { why: `--relaunch-of ${old} is no live chat: offer a card` }
+  if (chat.profile !== profile || flat(chat.cwd) !== flat(folder)) return { why: `${old} is in profile ${chat.profile}, folder ${chat.cwd}: a relaunch stays on its account and folder: offer a card` }
+  const used = join(root, 'standing-used', sha1(old))
+  if (mark) dir('standing-used')
+  if (mark ? !create(used, new Date().toISOString()) : existsSync(used)) return { why: `${old} was relaunched already (one standing start per chat): offer a card` }
+  return { id: `standing|${old}`, line: line.trim() }
+}
 // {id} when the words are the person's own: a substring of a composer prompt of the last 24 h (15+ chars, 3+ words) that has
 // not started a chat yet. The prompt is the unit, not the words: another cut of the same prompt is the same mark. Else {why}.
 // `mark` false (a dry run) only looks.
@@ -276,10 +294,10 @@ function lockTake(/** @type {string} */ profile) {
 }
 const nextLine = (/** @type {string} */ name, /** @type {string} */ profile) => say(`next: SendMessage to "${name}" with the brief; that turn runs on ${profile}'s account`)
 
-async function startOne(/** @type {{profile: string, folder: string, name: string, said: string, model?: string, effort?: string, mode?: string}} */ a) {
-  const { profile, folder, name, said, model, effort, mode } = a, t0 = Date.now(), key = sha1(`${profile}|${folder}|${name}`), dry = !!process.env.INBOX_DRY_OPEN
+async function startOne(/** @type {{profile: string, folder: string, name: string, said?: string, standing?: string, relaunchOf?: string, model?: string, effort?: string, mode?: string}} */ a) {
+  const { profile, folder, name, model, effort, mode, relaunchOf } = a, said = a.said ?? '', t0 = Date.now(), key = sha1(`${profile}|${folder}|${name}`), dry = !!process.env.INBOX_DRY_OPEN
   // The ledger keeps the prompt's id and 60 characters of the words, not the words.
-  const led = { at: new Date().toISOString(), verb: 'start', profile, folder, name, key, said: said.slice(0, 60), saidId: '', gate: '', freemem: /** @type {number | string} */ (''), result: '', ms: 0 }
+  const led = { at: new Date().toISOString(), verb: 'start', profile, folder, name, key, consent: relaunchOf ? 'standing' : 'said', relaunchOf: relaunchOf ?? '', said: said.slice(0, 60), saidId: '', gate: '', freemem: /** @type {number | string} */ (''), result: '', ms: 0 }
   const end = (/** @type {number} */ code, /** @type {string} */ result) => {
     led.result = result; led.ms = Date.now() - t0
     if (!dry) {
@@ -311,10 +329,11 @@ async function startOne(/** @type {{profile: string, folder: string, name: strin
     }
     led.said = j.said; led.saidId = j.saidId ?? ''
   } else {
-    const c = consent(said, !dry)
+    const c = relaunchOf ? standingConsent(a.standing ?? '', relaunchOf, profile, folder, !dry) : consent(said, !dry)
     if (c.why) { console.error(`inbox: ${c.why}`); return end(2, 'refused: consent') }
     led.saidId = c.id ?? ''
-    j = { key, profile, folder, name, said: said.slice(0, 60), saidId: c.id, model: model ?? '', effort: effort ?? '', mode: mode ?? '', sid: randomUUID(), state: 'queued', at: new Date().toISOString(), updated: '', note: '' }
+    led.said = (c.line ?? said).slice(0, 60)
+    j = { key, profile, folder, name, said: led.said, saidId: c.id, ...(relaunchOf ? { standing: led.said, relaunchOf } : {}), model: model ?? '', effort: effort ?? '', mode: mode ?? '', sid: randomUUID(), state: 'queued', at: new Date().toISOString(), updated: '', note: '' }
     if (!dry) saveJournal(j)
   }
   const urlOf = () => `claude://resume?session=${j.sid}`
@@ -390,15 +409,15 @@ async function startCmd(/** @type {string | undefined} */ id, /** @type {string[
   const [folder, ...args] = rest, words = [], o = /** @type {Record<string, string>} */ ({})
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--switches-window') continue // accepted, ignored: the gate replaced it
-    if (['--said', '--model', '--effort', '--mode'].includes(args[i]) && args[i + 1] !== undefined) o[args[i].slice(2)] = args[++i]
+    if (['--said', '--standing', '--relaunch-of', '--model', '--effort', '--mode'].includes(args[i]) && args[i + 1] !== undefined) o[args[i].slice(2)] = args[++i]
     else words.push(args[i])
   }
   const name = words.join(' ').trim()
-  if (!id || !existsSync(join(profilesDir(), id, 'claude-code-sessions')) || !folder || !existsSync(folder) || !name || !o.said) {
-    console.error('inbox: usage: start <profile> <folder> <chat name> --said "<his words>" [--model m] [--effort e] [--mode default|plan|auto]  |  start --drain  (a profile under Claude-Profiles, an existing folder)'); return 2
+  if (!id || !existsSync(join(profilesDir(), id, 'claude-code-sessions')) || !folder || !existsSync(folder) || !name || !(o.said || (o.standing && o['relaunch-of'])) || (o.said && (o.standing || o['relaunch-of'])) || (!o.standing !== !o['relaunch-of'])) {
+    console.error('inbox: usage: start <profile> <folder> <chat name> --said "<his words>" | --standing "<words of answers.md>" --relaunch-of <app id> [--model m] [--effort e] [--mode default|plan|auto]  |  start --drain  (a profile under Claude-Profiles, an existing folder)'); return 2
   }
   if (o.mode && !MODES.includes(o.mode)) { console.error(`inbox: --mode ${o.mode} refused: only ${MODES.join(', ')}`); return 2 }
-  return startOne({ profile: id, folder, name, said: o.said, model: o.model, effort: o.effort, mode: o.mode })
+  return startOne({ profile: id, folder, name, said: o.said, standing: o.standing, relaunchOf: o['relaunch-of'], model: o.model, effort: o.effort, mode: o.mode })
 }
 
 

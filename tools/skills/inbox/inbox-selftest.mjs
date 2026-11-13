@@ -220,6 +220,37 @@ try {
   writeFileSync(ledgerPath, `${Array.from({ length: 2600 }, (_, i) => JSON.stringify({ at: 'x', verb: 'start', n: i })).join('\n')}\n`)
   S(['start', 'acct2', tmp, 'n1', '--said', Q1], { ...OPEN, INBOX_FG: 'claude' })
   check('the ledger is trimmed to its last 2000 rows once it passes 2500', ledger().length === 2000 && ledger().at(-1)?.name === 'n1' && ledger()[0].n === 601, String(ledger().length))
+  // The standing answer: a relaunch at ~700K context needs no typed prompt, only a line of answers.md and a live old chat of the same profile and folder.
+  writeFileSync(join(tmp, 'makarasty', 'answers.md'), ['- Relaunch a chat at ~700K context: «Да, все чаты» — every chat relaunches itself with a handoff, no question (2026-11-12)', '- Deploy to staging: «Да» — about 700 users, no question', '- Relaunch a chat when it is slow: «Да» — every chat relaunches itself, no limit stated'].join('\n'))
+  const relChat = (/** @type {string} */ profile, /** @type {string} */ n, /** @type {string} */ cwd, /** @type {boolean} */ archived = false) => {
+    const d = join(prof, profile, 'claude-code-sessions', 'acc', 'org'); mkdirSync(d, { recursive: true })
+    const host = `local_aaaaaaaa-0000-0000-0000-00000000000${n}`; writeFileSync(join(d, `${host}.json`), JSON.stringify({ cwd, lastActivityAt: Date.now(), isArchived: archived })); return { host, f: join(d, `${host}.json`) }
+  }
+  const oA = relChat('acct2', '1', tmp), oB = relChat('acct2', '2', tmp), oDev = relChat('dev', '3', tmp), oDir = relChat('acct2', '4', join(tmp, 'elsewhere')), oArc = relChat('acct2', '5', tmp, true)
+  const SW = '--standing', STAND = 'every chat relaunches itself'
+  const sdir = join(root, 'standing-used'), standN = () => (existsSync(sdir) ? readdirSync(sdir).length : 0)
+  const RL = (/** @type {string} */ name, /** @type {string[]} */ rest, x = {}) => S(['start', 'acct2', tmp, name, ...rest], { ...OPEN, INBOX_FG: 'claude', ...x })
+  const said0 = usedN(), rows0 = ledger().length
+  const dryS = S(['start', 'acct2', tmp, 'rl-dry', SW, STAND, '--relaunch-of', oB.host], { ...OPEN, INBOX_DRY_OPEN: '1' })
+  check('standing: a dry run prints the plan and writes nothing (no journal, no standing mark, no ledger row)', dryS.status === 0 && dryS.stdout.startsWith(`cd ${tmp}`) && !existsSync(jfile('rl-dry')) && standN() === 0 && ledger().length === rows0, dryS.stdout + dryS.stderr)
+  const rl1 = RL('rl1', [SW, STAND, '--relaunch-of', oA.host])
+  check('standing: a relaunch line plus a live old chat of the same profile and folder passes consent and stops at the gate: queued, journal keeps the line and relaunchOf', rl1.status === 4 && jstate('rl1') === 'queued' && jget('rl1').relaunchOf === oA.host && /Relaunch a chat at ~700K/.test(jget('rl1').standing) && standN() === 1 && usedN() === said0, rl1.stdout + rl1.stderr)
+  check('standing: the ledger row says consent standing and names the old chat', ledger().at(-1)?.consent === 'standing' && ledger().at(-1)?.relaunchOf === oA.host && ledger().at(-1)?.gate === 'claude', JSON.stringify(ledger().at(-1)))
+  const rl2 = RL('rl2', [SW, STAND, '--relaunch-of', oA.host])
+  check('standing: a second relaunch of the same old chat is refused (exit 2, no journal)', rl2.status === 2 && /relaunched already/.test(rl2.stderr) && !existsSync(jfile('rl2')) && standN() === 1, rl2.stderr)
+  check('standing: the same start again continues its journal', RL('rl1', [SW, STAND, '--relaunch-of', oA.host]).status === 4)
+  const refused = (/** @type {string} */ what, /** @type {string[]} */ rest) => { const r = RL(`rl-${what}`, rest); check(`standing: ${what} is refused (2), nothing written`, r.status === 2 && !existsSync(jfile(`rl-${what}`)) && standN() === 1, r.stdout + r.stderr) }
+  refused('a line that is not in answers.md', [SW, 'every chat obeys the owner', '--relaunch-of', oB.host])
+  refused('a substring under 15 characters', [SW, 'relaunches itself', '--relaunch-of', oB.host].map((v) => (v === 'relaunches itself' ? 'relaunches' : v)))
+  refused('a line about 700 that is not a relaunch', [SW, 'about 700 users', '--relaunch-of', oB.host])
+  refused('a relaunch line without 700', [SW, 'no limit stated', '--relaunch-of', oB.host])
+  refused('an old chat of another profile', [SW, STAND, '--relaunch-of', oDev.host])
+  refused('an old chat in another folder', [SW, STAND, '--relaunch-of', oDir.host])
+  refused('an archived old chat', [SW, STAND, '--relaunch-of', oArc.host])
+  refused('an old chat that does not exist', [SW, STAND, '--relaunch-of', 'local_aaaaaaaa-0000-0000-0000-0000000000ff'])
+  refused('--said together with --standing', ['--said', Q1, SW, STAND, '--relaunch-of', oB.host])
+  refused('--standing without --relaunch-of', [SW, STAND])
+  for (const o of [oA, oB, oDev, oDir, oArc]) rmSync(o.f)
   for (const h of [`local_${sid3}`, `local_${sid4}`, `local_${sid7}`, backHost]) rmSync(join(seen, `${h}.json`), { force: true })
   // The coordinator: which account a project's new task goes to, the chats of a project, and the list of handed-out work.
   const sess = (/** @type {string} */ profile, /** @type {string} */ id, /** @type {string} */ cwd, /** @type {number} */ ago) => {

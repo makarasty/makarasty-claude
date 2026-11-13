@@ -22,6 +22,18 @@ export const ELSEWHERE =
   'Name the place in the question itself (the chat title and its account, or the exact path or command) and the exact action, ' +
   'put the chat link [title](#local_<id>) in the text right above the call, then ask again.'
 const ABOVE = /(ссылк[аеиуой]*|чат[еау]?|окн[еоа]|link|chat|window)\s+(выше|сверху|above)|(выше|above)\s+(по ссылке|ссылк|link)|по ссылке (выше|сверху)|linked above/i
+// A step in another chat (press its card, answer there, check there) is not a dialog: while a dialog is open the person
+// cannot use the link above it, a link cannot go inside it, and opening the chat for them does not help (the dialog
+// stays in this chat). It goes in the turn's last message: one line on what to do, the chat's link and its account.
+export const OTHER_CHAT =
+  'Not asked: a step in another chat is not a dialog, since the person cannot click a link while one is open. End the ' +
+  'turn instead with one line on what to do there and the chat link [title](#local_<id>) with its account; their ' +
+  '"done" comes as the next message.'
+const IN_CHAT = /(в|во|из)\s+(том\s+|другом\s+|соседнем\s+)?чат[еау]?\s*[«"'“(\[]|(in|from)\s+(the\s+|that\s+|another\s+)?chat\s*[«"'“(\[]|карточк[уиае]\s+(в|во)\s+(чат|другом)|the card in/i
+export function sendsToChat(questions: readonly Q[]): boolean {
+  if (!Array.isArray(questions)) return false
+  return questions.some((q) => IN_CHAT.test(str(q?.question)))
+}
 // A command inside the dialog cannot be copied from it, and a `&&` chain fails in Windows PowerShell 5.1. A command
 // line: a known tool with an argument that is a flag, a path or a chain, `cd <path>`, or a `&&` / `||` chain.
 export const COMMAND =
@@ -147,6 +159,7 @@ export const register: Register = (on) => {
   on('tool.call', { tool: 'AskUserQuestion' }, async ($, e, next) => {
     if (e.tool !== 'AskUserQuestion' || (await $.env.get('MAKARASTY_ASK_GUARD')) === 'off') return next(e)
     if (pointsAbove(e.questions as readonly Q[])) return { deny: ELSEWHERE }
+    if (sendsToChat(e.questions as readonly Q[])) return { deny: OTHER_CHAT }
     if (holdsCommand(e.questions as readonly Q[])) return { deny: COMMAND }
     if (asksSelf(e.questions as readonly Q[])) return { deny: SELF }
     if ((await $.env.get('MAKARASTY_SCREEN')) !== 'off' && !staked(e.questions as readonly Q[]) && !screened((e as { metadata?: unknown }).metadata) && !continueQuestions(e.questions as readonly Q[]).length) return { deny: SCREEN }
