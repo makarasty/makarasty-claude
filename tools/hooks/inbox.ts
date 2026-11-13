@@ -587,6 +587,9 @@ async function chatBusy($: D, a: { root: string; session: string }): Promise<boo
   return !turnCompleted && now - firstSeen < UNKNOWN_BUSY_MS
 }
 
+// Exit 0: this chat's transcript (<config>/projects/*/<session>.jsonl), streamed whole, holds a tool_result for the tool use; 1: it does not; 2: no readable transcript.
+const TOOL_RESULT_SEEN = "const fs=require('fs'),p=require('path'),rl=require('readline'),[d,s,t]=process.argv.slice(1);let f;try{for(const x of fs.readdirSync(d+'/projects')){const c=p.join(d,'projects',x,s+'.jsonl');if(fs.existsSync(c)){f=c;break}}}catch{}if(!f)process.exit(2);const n='\"tool_use_id\":\"'+t+'\"',i=fs.createReadStream(f);i.on('error',()=>process.exit(2));const r=rl.createInterface({input:i});r.on('line',l=>{if(l.includes(n))process.exit(0)});r.on('close',()=>process.exit(1))"
+
 // One answer per call (the next goes when its turn ends or at a later idle tick), and the turn state is read again just
 // before the submit.
 async function deliverAnswers($: D, a: { root: string; session: string }): Promise<void> {
@@ -596,6 +599,14 @@ async function deliverAnswers($: D, a: { root: string; session: string }): Promi
     if (await $.fs.exists(`${a.root}/delivered/${id}`)) continue
     const [ans, it] = [await readJSON<Answer>($, `${a.root}/answers/${f.name}`), await readJSON<Item>($, `${a.root}/items/${id}.json`)]
     if (!ans || !it || ans.by !== 'inbox' || (it.kind === 'ask' && it.found !== 'scan' && waited.has(id))) continue // a live dialog's answer goes back through its own hook
+    if (it.kind === 'ask' && it.found !== 'scan') {
+      // A dead dialog only if the chat never got the answer: older waiter paths wrote no delivered/<id>, so look for the dialog's tool_result.
+      if ((await $.clock.now()) - (Number(ans.at) || 0) > 86400000) continue
+      if (/^\d+$/.test(id.slice(id.indexOf('~') + 1))) continue // a time-based id (the dialog had no tool use id) cannot be looked up: uncertain, skip
+      const seen = await $.process.run(['node', '-e', TOOL_RESULT_SEEN, a.dir, a.session, id.slice(id.indexOf('~') + 1)], { timeoutMs: 60000 }).catch(() => undefined)
+      if (seen?.exitCode === 0) await $.fs.write(`${a.root}/delivered/${id}`, String(await $.clock.now())).catch(() => undefined)
+      if (seen?.exitCode !== 1) continue // seen, or the transcript cannot be read: never deliver on uncertainty
+    }
     if (await chatBusy($, a)) return
     try { await $.prompt.submit({ text: deliveryText(it, ans) }) } catch { return }
     await $.fs.write(`${a.root}/delivered/${id}`, String(await $.clock.now())).catch(() => undefined)

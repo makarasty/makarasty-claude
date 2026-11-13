@@ -7,7 +7,7 @@ declare const setTimeout: (f: (v?: unknown) => void, ms: number) => unknown // t
 // batches. Kept apart from inbox.test.ts, which other chats edit.
 
 const R = '/cfg/makarasty/inbox'
-function world(on: On, o: { self?: string; session?: string; failSubmits?: number; dialog?: Promise<void> } = {}) {
+function world(on: On, o: { self?: string; session?: string; failSubmits?: number; dialog?: Promise<void>; transcript?: 'seen' | 'absent' | 'unreadable' } = {}) {
   const disk = new Map<string, string>([['/cfg/makarasty/inbox.on', 'x']])
   if (o.self) disk.set(`${R}/self`, o.self)
   const plain = (p: string): string => p.replace(/^[A-Za-z]:/, '').replaceAll('\\', '/')
@@ -28,6 +28,7 @@ function world(on: On, o: { self?: string; session?: string; failSubmits?: numbe
   on('fs.stat', (_$, e) => (disk.has(plain(e.path)) ? { value: { kind: 'file' as const, size: 1, mtimeMs: mtimes.get(plain(e.path)) ?? 10_000_000, isLink: false } } : { deny: 'ENOENT' }))
   // The CLI's `done`, played on the same disk: it closes an item only if nothing answered it yet.
   on('process.run', (_$, e) => {
+    if (e.argv[1] === '-e') return { value: { exitCode: { seen: 0, absent: 1, unreadable: 2 }[o.transcript ?? 'absent'], stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } } // the transcript look-up
     const [, , cmd, id, ...rest] = e.argv as string[]
     const ans = `${R}/answers/${id}.json`
     if (cmd === 'wait') return { value: { exitCode: 1, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } } // no waiter here: the dialog alone answers
@@ -512,6 +513,46 @@ test('an ask no live dialog waits on, answered by the inbox, is delivered once a
   await w.clock.advance(60000)
   expect(sent()).toHaveLength(1)
   expect(delivered(w, 'chatA~own')).toBe(false)
+})
+
+// Older waiter paths wrote no delivered/<id>: an old by:'inbox' answer whose dialog did get it must not come back as a prompt.
+const oldAsk = (w: ReturnType<typeof world>, id: string, at: number) => {
+  w.disk.set(`${R}/turns/chatA`, 'idle 1')
+  w.disk.set(`${R}/items/${id}.json`, JSON.stringify({ id, kind: 'ask', at: 1, session: 'chatA', cwd: 'C:/work/x', chat: 'c', questions: [{ question: 'Что делаем?', options: [] }] }))
+  w.disk.set(`${R}/answers/${id}.json`, JSON.stringify({ id, at, by: 'inbox', answers: { 'Что делаем?': 'Коммит' } }))
+}
+const idle = async (w: ReturnType<typeof world>, $: Parameters<Parameters<typeof test>[1]>[0]) => {
+  await $.prompt.submit({ text: 'hi' } as never)
+  for (let i = 0; i < 4; i++) await w.clock.advance(15000)
+  return w.submitted.filter((x) => x !== 'hi')
+}
+
+test('a dead-looking ask whose dialog has its tool_result in the transcript is marked delivered and never re-sent', async ($, on) => {
+  const w = world(on, { transcript: 'seen' })
+  oldAsk(w, 'chatA~old', 9_000_000)
+  expect(await idle(w, $)).toEqual([])
+  expect(delivered(w, 'chatA~old')).toBe(true)
+})
+
+test('an ask whose transcript cannot be read is not delivered, and not marked', async ($, on) => {
+  const w = world(on, { transcript: 'unreadable' })
+  oldAsk(w, 'chatA~old', 9_000_000)
+  expect(await idle(w, $)).toEqual([])
+  expect(delivered(w, 'chatA~old')).toBe(false)
+})
+
+test('an ask whose id is time-based (no tool use id) is never delivered as a dead dialog, even with no tool_result', async ($, on) => {
+  const w = world(on)
+  oldAsk(w, 'chatA~9999999', 9_000_000)
+  expect(await idle(w, $)).toEqual([])
+  expect(delivered(w, 'chatA~9999999')).toBe(false)
+})
+
+test('an ask answered more than 24 h ago is not delivered even with no tool_result', async ($, on) => {
+  const w = world(on)
+  oldAsk(w, 'chatA~old', 1)
+  await w.clock.advance(90_000_000)
+  expect(await idle(w, $)).toEqual([])
 })
 
 test('an ask whose dialog is open here is not delivered by the tick: its waiter returns it', async ($, on) => {

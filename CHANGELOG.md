@@ -1,5 +1,13 @@
 # Changelog
 
+## makarasty-tools 1.19.35 — 2026-11-13
+
+- **Old answers are not sent again:** 1.19.34 delivered every inbox answer to a dialog with no `delivered` mark as a
+  dead dialog, and the code before it never marked the answers its dialogs took, so chats got yesterday's answers
+  again. Now an answer goes out as a dead dialog only when it is under 24 h old, its question has a tool-use id,
+  and the chat's whole transcript holds no result for that dialog; a found result marks it delivered, and any doubt
+  (no transcript, a read error, a timeout) sends nothing. The 18 old answers already out were marked delivered by hand.
+
 ## makarasty-tools 1.19.34, makarasty 1.18.7 — 2026-11-13
 
 - **An answer to a dialog that died still arrives:** an AskUserQuestion answered from the inbox after the asking
