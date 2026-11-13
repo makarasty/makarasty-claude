@@ -291,14 +291,15 @@ export const register: Register = (on) => {
       }
     }
     const a = await active($).catch(() => undefined)
-    if (a && (typed || started)) {
+    const his = typed && hisWords(e.text) // a plugin message typed as composer text answers nothing
+    if (a && (his || started)) {
       for (const it of await openItems($, a)) {
         // He writes here: every question of this chat but a card (it stays a proposal) and a dialog still open here is
         // answered by what he writes, so the inbox stops asking it.
-        if ((typed && it.kind !== 'card' && !waited.has(it.id)) || (started && it.kind === 'card' && it.taskId === started)) await cli($, a.dir, ['done', it.id]).catch(() => undefined)
+        if ((his && it.kind !== 'card' && !waited.has(it.id)) || (started && it.kind === 'card' && it.taskId === started)) await cli($, a.dir, ['done', it.id]).catch(() => undefined)
       }
       // An inbox answer still waiting for this chat's idle moment is not sent once he wrote here himself (owner, 2026-11-13).
-      if (typed) await skipUndelivered($, a, 'you wrote in that chat after the question').catch(() => undefined)
+      if (his) await skipUndelivered($, a, 'you wrote in that chat after the question').catch(() => undefined)
     }
     // A chat the inbox started: it reports into the inbox, so its questions and its last message are what the person reads there.
     if (a && !briefed && !typed && (await startedBy($, a).catch(() => false))) {
@@ -426,13 +427,17 @@ async function mutedTarget($: D, root: string, to: string): Promise<boolean> {
   }
   return false
 }
-// A name `inbox.mjs start` gave a new chat in the last 30 min (its journal in starts/): the brief goes then.
+// A name `inbox.mjs start` gave a new chat in the last 30 min (its journal in starts/): its one brief goes then, once.
 async function startedName($: D, root: string, to: string): Promise<boolean> {
   if (!to) return false
   const now = await $.clock.now()
   for (const f of await $.fs.list(`${root}/starts`).catch(() => [])) {
+    if (!f.name.endsWith('.json') || (await $.fs.exists(`${root}/brief-sent/${f.name}`))) continue
     const j = await readJSON<{ name?: string; state?: string; updated?: string }>($, `${root}/starts/${f.name}`)
-    if (j?.name === to && (j.state === 'imported' || j.state === 'done') && now - (Date.parse(String(j.updated)) || 0) < 30 * 60000) return true // the brief, right after the start; later sends need his word
+    if (j?.name === to && (j.state === 'imported' || j.state === 'done') && now - (Date.parse(String(j.updated)) || 0) < 30 * 60000) {
+      await $.fs.write(`${root}/brief-sent/${f.name}`, String(now)).catch(() => undefined)
+      return true // the brief, right after the start; later sends need his word
+    }
   }
   return false
 }
@@ -640,11 +645,13 @@ async function wake($: D, me: { root: string; session: string }): Promise<void> 
   // Finish reports never wake one by one: they go with an item's wake, or as one batch once due (core.mjs dueReports).
   const reports = await waitingReports($, me)
   if (!fresh.length && !dueReports(reports, now)) return
+  const lines = fresh.map((it) => `- ${sourceTag(it)}: ${it.kind === 'ask' ? it.questions?.[0]?.question : it.kind === 'choice' ? it.ask : `card "${it.title}"`}`)
+  await $.prompt.submit({ text: fresh.length
+    ? `Inbox: ${fresh.length} new item${fresh.length > 1 ? 's' : ''} waiting for the person:\n${lines.join('\n')}${reports.length ? `\nAlso: ${finishedLine(reports)}` : ''}\nReview them now with the makarasty-tools inbox skill.`
+    : `Inbox: ${finishedLine(reports)} Show them now with the makarasty-tools inbox skill (inbox.mjs list).` })
+  // Marked only once the wake went: a failed submit is tried again at the next tick, not lost.
   for (const it of fresh) await $.fs.write(`${me.root}/announced/${it.id}`, '')
   for (const r of reports) await $.fs.write(`${me.root}/reports/announced/${r.id}`, '')
-  if (!fresh.length) return void (await $.prompt.submit({ text: `Inbox: ${finishedLine(reports)} Show them now with the makarasty-tools inbox skill (inbox.mjs list).` }))
-  const lines = fresh.map((it) => `- ${sourceTag(it)}: ${it.kind === 'ask' ? it.questions?.[0]?.question : it.kind === 'choice' ? it.ask : `card "${it.title}"`}`)
-  await $.prompt.submit({ text: `Inbox: ${fresh.length} new item${fresh.length > 1 ? 's' : ''} waiting for the person:\n${lines.join('\n')}${reports.length ? `\nAlso: ${finishedLine(reports)}` : ''}\nReview them now with the makarasty-tools inbox skill.` })
 }
 
 // What the person types in a chat where the inbox is on (the inbox chat too: it is where he asks for a start) goes to said.jsonl, the inbox chat's source for who he is and what he
@@ -739,6 +746,7 @@ async function deliverAnswers($: D, a: { root: string; session: string }): Promi
     const card = it.kind === 'card' // a proposal: its answer only withdraws it, at any age (left standing it could be started twice)
     const why = undeliverable(it, { now: await $.clock.now(), prompt: !card, muted: await muted($, a).catch(() => false), typedAfter: !card && (await typedAfter($, a, it.at).catch(() => false)) })
     if (why) { await $.fs.write(`${a.root}/skipped/${id}`, why).catch(() => undefined); if (why.includes('muted')) await $.fs.write(`${a.root}/skipped-seen/${id}`, '').catch(() => undefined); continue }
+    if (await chatBusy($, a)) return // before the transcript scan below: a busy chat would rescan every tick for nothing
     if (it.kind === 'ask' && it.found !== 'scan') {
       // A dead dialog only if the chat never got the answer: older waiter paths wrote no delivered/<id>, so look for the dialog's tool_result.
       if ((await $.clock.now()) - (Number(ans.at) || 0) > 86400000) continue
@@ -747,7 +755,6 @@ async function deliverAnswers($: D, a: { root: string; session: string }): Promi
       if (seen?.exitCode === 0) await $.fs.write(`${a.root}/delivered/${id}`, String(await $.clock.now())).catch(() => undefined)
       if (seen?.exitCode !== 1) continue // seen, or the transcript cannot be read: never deliver on uncertainty
     }
-    if (await chatBusy($, a)) return
     try { await $.prompt.submit({ text: deliveryText(it, ans) }) } catch { return }
     await $.fs.write(`${a.root}/delivered/${id}`, String(await $.clock.now())).catch(() => undefined)
     return

@@ -1,5 +1,20 @@
 # Changelog
 
+## makarasty-tools 1.19.40 — 2026-11-13
+
+Review of the inbox's 13 versions (1.19.21..39): what holds, what layered wrong.
+- **A plugin message typed as composer text answers nothing:** it closed every open question of that chat and dropped
+  a waiting inbox answer as "you wrote in that chat". Only his own words do that now.
+- **A chat `start` made gets one send without his word (its brief), not 30 minutes of them.**
+- **A wake whose submit failed is tried again:** its items were marked announced before the submit, so they never woke
+  the inbox chat again and the watchdog skipped them too.
+- A busy chat no longer rescans its whole transcript every 15 s for a dead dialog's answer; two `list` runs at once no
+  longer crash on a report switch the other one swept.
+- inbox SKILL: the Status step no longer asks "следить?" in a multiSelect (C20 says never ask which chats to watch);
+  a duplicated link rule and dated anecdotes removed.
+
+Not checked live: the three hook fixes run only in tests (`tools/hooks/inbox-concept.test.ts`, each failed before).
+
 ## makarasty-tools 1.19.39 — 2026-11-13
 
 - inbox: a question's source, the "Chat:" line, the "Open the chat" link and the finish reports name the chat by its title in the app, not by its first prompt. A chat started from another session opens with that session's brief, so two started chats both read "Background (from the session that…" and could not be told apart. `list` also writes the title into the item file, so the hook's tag check agrees with what it showed.

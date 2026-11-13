@@ -192,7 +192,7 @@ function reports() {
     if (now - r.at > (shown(r.id) ? REPORT_TTL_MS : UNSEEN_REPORT_TTL_MS)) { for (const p of [f, join('seen', f.slice(0, -5)), join('announced', f.slice(0, -5))]) rmSync(join(d, p), { force: true }); continue }
     out.push(r)
   }
-  for (const f of readdirSync(dir(join('reports', 'on')))) { const p = join(d, 'on', f); if (now - statSync(p).mtimeMs > 30 * 24 * 3600e3) rmSync(p, { force: true }) }
+  for (const f of readdirSync(dir(join('reports', 'on')))) { const p = join(d, 'on', f); let t = now; try { t = statSync(p).mtimeMs } catch {} if (now - t > 30 * 24 * 3600e3) rmSync(p, { force: true }) } // another `list` may have swept it already
   return out.sort((a, b) => a.at - b.at)
 }
 const shown = (/** @type {string} */ id) => existsSync(join(root, 'reports', 'seen', id))

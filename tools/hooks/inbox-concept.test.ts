@@ -9,7 +9,7 @@ declare const setTimeout: (f: (v?: unknown) => void, ms: number) => unknown // t
 
 const R = '/cfg/makarasty/inbox'
 const H = 3600e3
-function world(on: On, o: { self?: string; session?: string; now?: number } = {}) {
+function world(on: On, o: { self?: string; session?: string; now?: number; failSubmits?: number } = {}) {
   const disk = new Map<string, string>([['/cfg/makarasty/inbox.on', 'x']])
   if (o.self) disk.set(`${R}/self`, o.self)
   const plain = (p: string): string => p.replace(/^[A-Za-z]:/, '').replaceAll('\\', '/')
@@ -45,7 +45,7 @@ function world(on: On, o: { self?: string; session?: string; now?: number } = {}
   })
   const submitted: string[] = []
   const contexts: (readonly string[] | undefined)[] = []
-  on('prompt.submit', (_$, e) => { submitted.push(e.text); contexts.push(e.context); return { text: e.text } })
+  on('prompt.submit', (_$, e) => { if (o.failSubmits) { o.failSubmits--; throw new Error('the prompt did not go') } submitted.push(e.text); contexts.push(e.context); return { text: e.text } })
   on('turn.start', (_$, e) => ({ turnId: e.turnId }))
   on('turn.complete', (_$, e) => ({ text: e.answer }))
   const under = (d: string) => [...disk.keys()].filter((k) => k.startsWith(`${R}/${d}/`) && !k.slice(R.length + d.length + 2).includes('/'))
@@ -256,6 +256,41 @@ test('a session cloned to another account: this copy never delivers the other co
 test('7. a started chat\'s report shows its summary once: the last message, not also the recap', () => {
   const shown = renderReports([{ id: 'r1', at: 1, session: 's', cwd: 'C:/x/proj', chat: 'c', started: true, recap: 'Расследовал падение: причина в кэше', excerpt: 'Сделал: нашёл причину. Нашёл: кэш не сбрасывается. Дальше: починить сброс.' } as never], 60e3)
   expect(shown).not.toContain('Recap:')
+})
+
+// Review of 1.19.21..39
+test('2. a plugin message that arrives as a composer prompt in an asking chat closes nothing and keeps the inbox answer', async ($, on) => {
+  const w = world(on)
+  w.disk.set(`${R}/turns/chatA`, 'idle 1')
+  w.disk.set(`${R}/items/chatA~p1.json`, box('chatA~p1', 100 * H - 60e3))
+  w.disk.set(`${R}/answers/chatA~p1.json`, inboxAnswer('chatA~p1'))
+  w.disk.set(`${R}/items/chatA~p2.json`, box('chatA~p2', 100 * H - 60e3, { ask: 'Удалить лог?' }))
+  await $.prompt.submit({ text: 'The makarasty-tools plugin sent a message: Inbox: 2 new items waiting for the person', origin: { kind: 'composer' } } as never)
+  expect(w.disk.has(`${R}/skipped/chatA~p1`)).toBe(false)
+  expect(w.disk.has(`${R}/answers/chatA~p2.json`)).toBe(false)
+  await w.clock.advance(15000)
+  await w.until(() => w.submitted.some((s) => s.startsWith('The person answered')), 'answer delivered')
+})
+
+test('3. a chat `start` made gets one send without his word (the brief), not a second', async ($, on) => {
+  const w = world(on, { session: 'inboxChat', self: 'inboxChat' })
+  w.disk.set(`${R}/starts/k3.json`, JSON.stringify({ name: 'fresh-start', state: 'imported', updated: new Date(100 * H - 60e3).toISOString() }))
+  expect((await $.tool.call({ tool: 'SendMessage', to: 'fresh-start', message: 'бриф' } as never)).deny).toBeUndefined()
+  expect((await $.tool.call({ tool: 'SendMessage', to: 'fresh-start', message: 'ещё' } as never)).deny).toBeTruthy()
+})
+
+test('a wake whose submit failed is sent again on the next tick', async ($, on) => {
+  const w = world(on, { session: 'inboxChat', self: 'inboxChat', failSubmits: 1 })
+  w.disk.set(`${R}/turn`, `idle ${100 * H - 60e3}`)
+  w.disk.set(`${R}/items/chatB~f1.json`, JSON.stringify({ id: 'chatB~f1', kind: 'choice', at: 100 * H - 60e3, session: 'chatB', cwd: 'C:/work/x', chat: 'x', ask: 'Ок?', actions: [] }))
+  on('session.start', (_$, e) => ({ cwd: e.cwd }))
+  on('command.register', () => ({ value: undefined }) as never)
+  await $.session.start({ cwd: 'C:/work/app', surface: null, isInteractive: true } as never)
+  await w.clock.advance(15000)
+  await new Promise((r) => setTimeout(r, 50))
+  expect(w.submitted.filter((s) => s.startsWith('Inbox:'))).toEqual([])
+  await w.clock.advance(15000)
+  await w.until(() => w.submitted.some((s) => s.startsWith('Inbox: 1 new item')), 'woken after the failed submit')
 })
 
 // Review round 2 (2026-11-13)

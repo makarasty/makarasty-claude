@@ -69,8 +69,7 @@ one line and restart it. A watchdog missing from the task list means this chat r
    answered from that answer, named in the report. Not the person's: a hold chat's echo, a question a chat put to its
    own reviewer or subagent, a recap sentence that merely ends in "?": answer nothing (an answer lands in that chat
    as the person's message), `inbox.mjs done <id>`, one line saying what it is.
-3. Every item, a session this chat started included (the person does not see that session's dialog here: on 11-12
-   he answered one in its own chat after this chat only pointed at it), is asked here:
+3. Every item, a session this chat started included (pointing at its own chat instead left it unanswered), is asked here:
    Ask in AskUserQuestion with `metadata: {"source": "inbox:<id>,<id>"}` naming the items of that call (the flag keeps
    the call out of the inbox, and the dialog closes by itself once the person has answered all of them in their own
    chats; the plugin refuses a dialog here without the flag while items are open), up to 4 questions per call,
@@ -97,8 +96,7 @@ one line and restart it. A watchdog missing from the task list means this chat r
    - a step only the person can do, in an item or in this chat's own report (restart an app and look, sign in, click
      in another app, check something by eye): one question with the exact action and the outcomes as options
      ("done, it works" / "done, still broken" / "not now", in the person's language), never only in the text.
-   Right above each call, in the text, the asking chat's "Open the chat" link: the dialog cannot hold one, and the
-   step often happens in that chat. Every question starts with its item's "Start each question with" text (project ·
+   Every question starts with its item's "Start each question with" text (project ·
    chat), copied exactly: the plugin refuses a call whose question does not. The header is the project name, cut to 12 characters. Typed free text is an answer too and goes as typed.
 4. Write each answer:
    - ask item: `inbox.mjs answer <id>` with a JSON map of every one of its questions on stdin:
@@ -159,11 +157,9 @@ Messages reach chats of other accounts too: a fleet coordinator on another accou
      of that project, never routed through another project's chat, and the person is never asked to sign in, paste
      or click instead; say the window flip in one line.
   3. `inbox.mjs track <chat> <profile> <project> <task>`; each reply: `inbox.mjs note <chat> <status> <one line>`.
-- **Status** ("что с задачами"): `inbox.mjs tasks`, plus `list_events` for a chat whose last note is old. Then
-  `inbox.mjs followed`: a chat in its "busy, not followed" part that is not this one and not tracked gets one line,
-  "<title> (<project>) работает без отчётов: следить?", all such chats in one AskUserQuestion with multiSelect, never
-  followed without the person's pick. Asked how long it will run: a table "chat | what is left | rough time",
-  marked as an estimate.
+- **Status** ("что с задачами"): `inbox.mjs tasks`, plus `list_events` for a chat whose last note is old, then
+  `inbox.mjs followed` shown as printed (its "not watched" count line too). Which chats to watch is never asked (C20).
+  Asked how long it will run: a table "chat | what is left | rough time", marked as an estimate.
 - **Night** ("поставь всё на паузу", "иду спать"): every chat `ListAgents` shows busy, and every tracked chat not
   done, gets one message: «Оператор выключает компьютер на ночь: доведи текущий шаг до безопасной точки, запиши, где
   остановился, ничего нового не начинай и ответь одной строкой. Если ты координатор флита: поставь флит на паузу.»
@@ -206,7 +202,5 @@ carries that file to every chat (apart from profile.md, so neither cuts the othe
 next such item from it. Never for a commit, push, merge,
 deploy, delete, money, someone else's data, new work or a choice between approaches. Each item answered so names
 the profile line in the report and how to undo it: "отмени <id>" sends that chat a correction with `SendMessage`,
-the person's words quoted. Measured 2026-11-12, 61 answers from the inbox: the only questions he gave the same
-answer to twice were fleet-plan's two standing questions (now in the profile); fleet pace answers changed from run
-to run (quality "best" 5 times, "balanced" 4), and commit answers were "yes", "not yet" and "yes, after X", so a
-guess from past answers would be wrong [M63].
+the person's words quoted. Past picks are no standing answer: the same question got different answers from case to
+case [M63].
