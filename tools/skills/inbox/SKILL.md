@@ -5,7 +5,9 @@ argument-hint: [on | off | status | test | report [off] | follow or mute <chat> 
 
 Every chat where makarasty-tools is loaded writes what it waits on into one folder while the inbox is on: its
 AskUserQuestion (the dialog still shows there too), the question of its end-of-turn box, and its session cards. After
-2 minutes unanswered the asking chat adds a plain explanation and sends one phone message through notify. This chat
+2 minutes unanswered the asking chat adds a plain explanation and, only when a notify channel is configured, sends one
+phone message through notify (none configured: no push is tried, and `list` and `status` say "phone pushes off"; a push
+that failed is reported as failed, never as sent). This chat
 lists them, asks the person once, and writes the answers; each chat picks up its own. Chats switched on for it also
 leave a finish report here when they end a working turn: every session this chat starts (the plugin switches it on),
 and any chat the person switches on. Reports wake this chat in batches, never one by one. The script is

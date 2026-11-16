@@ -10,7 +10,7 @@ import { PLUGIN_FRAME, ownWords } from './own-words.ts'
 //      first wins. An inbox answer is returned as the tool's own result, so the model reads it as the dialog's [M63].
 //   2. wrap_up with an `ask`, and an own_initiative session card: writes the item after the call; an inbox answer comes
 //      back as a prompt this chat's timer submits once the chat is idle [M63].
-//   3. Every 15 s (own items only): after 2 min unanswered, a plain explanation by a small model and one phone message.
+//   3. Every 15 s (own items only): after 2 min unanswered, a plain explanation by a small model and, only if a notify channel is configured, one phone message.
 //   4. A prompt the person types here closes this chat's open boxes; a started card closes its card item.
 //   5. A chat switched on for finish reports (reports/on/<id>: every session the inbox chat starts, or `inbox.mjs report
 //      on`) writes one report per working turn it ends: wrap_up called, or the turn died on an error. Not when the turn
@@ -130,6 +130,7 @@ function startTimer($: D): void {
 }
 
 export const register: Register = (on) => {
+  chan = { at: -Infinity, yes: true } // a reload asks again
   on('tool.call', { tool: 'AskUserQuestion' }, async ($, e, next) => {
     if (e.tool !== 'AskUserQuestion') return next(e)
     const source = e.metadata?.source ?? ''
@@ -770,6 +771,8 @@ async function deliverAnswers($: D, a: { root: string; session: string }): Promi
   }
 }
 
+// The last answer to "is a notify channel configured?" and when it was asked (tick keeps it 10 min).
+let chan = { at: -Infinity, yes: true }
 export async function tick($: D): Promise<void> {
   const me = await inboxSelf($)
   if (me) {
@@ -780,6 +783,7 @@ export async function tick($: D): Promise<void> {
   const a = await active($)
   if (!a) return
   const now = await $.clock.now()
+  let channel: boolean | undefined
   await deliverOnce($, a).catch(() => undefined)
   for (const it of await openItems($, a)) {
     if (now - it.at < PUSH_AFTER_MS) continue
@@ -794,6 +798,12 @@ export async function tick($: D): Promise<void> {
       const cur = r?.isAnswered && r.text.trim() ? await readJSON<Item>($, `${a.root}/items/${it.id}.json`) : undefined
       if (cur) await $.fs.write(`${a.root}/items/${it.id}.json`, JSON.stringify({ ...cur, explain: r!.text.trim() }))
     }
-    await cli($, a.dir, ['push', it.id]).catch(() => undefined)
+    // No notify channel: no attempt and no failure record. Asked only when an item is due, and an answer is kept 10 min,
+    // since with no channel an open item stays due on every 15 s tick.
+    if (channel === undefined) {
+      if (now - chan.at >= 600000) chan = { at: now, yes: !/^channels: none/m.test(String((await cli($, a.dir, ['channels']).catch(() => undefined))?.stdout ?? '')) }
+      channel = chan.yes
+    }
+    if (channel) await cli($, a.dir, ['push', it.id]).catch(() => undefined)
   }
 }

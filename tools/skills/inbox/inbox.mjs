@@ -12,7 +12,8 @@
 //   node inbox.mjs answer <id> [text]       answer one item (text, or a JSON map on stdin); first answer wins
 //   node inbox.mjs done <id>                the chat answered it itself (dialog, box button, card click, Esc)
 //   node inbox.mjs wait <id>[,<id>...] <ms> block until every item is answered; prints the answer JSON (exit 3: timed out)
-//   node inbox.mjs push <id>                one phone message for the item through notify.mjs, once
+//   node inbox.mjs push <id>                one phone message for the item through notify.mjs, once; with no notify channel: no attempt, no record
+//   node inbox.mjs channels                 `channels: yes` or `channels: none` (notify.mjs --status; a dry-run sink counts as yes)
 //   node inbox.mjs open <id>|local_<id>     bring that chat up in the app window of its own account (profile)
 //   node inbox.mjs start <profile> <folder> <name> --said "<his words>" [--model m] [--effort e] [--mode default|plan|auto]
 //                                           a new chat in that folder on that profile's account, named <name>; then SendMessage
@@ -50,6 +51,13 @@ const root = join(base, 'inbox')
 const dir = (/** @type {string} */ d) => { const p = join(root, d); mkdirSync(p, { recursive: true }); return p }
 const readJSON = (/** @type {string} */ p) => { try { return JSON.parse(readFileSync(p, 'utf8').replace(/^﻿/, '')) } catch { return undefined } }
 const say = (/** @type {string} */ s) => process.stdout.write(`${s}\n`)
+const notifyJs = join(here, '..', '..', 'hooks', 'notify.mjs')
+/** Is a notify channel configured? Asked of notify's own --status (its config is not parsed here); unknown counts as yes, so a push is tried and a failure is reported. */
+function hasChannel() {
+  if (process.env.NOTIFY_DRY_RUN) return true
+  try { return !/^channels: none/m.test(execFileSync(process.execPath, [notifyJs, '--status', '--session', 'inbox'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 20000 })) } catch { return true }
+}
+const pushLine = () => (hasChannel() ? 'phone pushes: on (a notify channel is configured)' : `phone pushes off: no notify channel; \`node ${notifyJs} setup\` turns them on`)
 
 // Created exclusively: two writers at once (two inbox chats, the inbox and the dialog) leave exactly one answer.
 function create(/** @type {string} */ path, /** @type {string} */ text) {
@@ -600,7 +608,7 @@ function scan(/** @type {string[]} */ selves) {
 
 async function main() {
   const [cmd, id, ...rest] = process.argv.slice(2)
-  if (cmd === 'on') { mkdirSync(base, { recursive: true }); writeFileSync(join(base, 'inbox.on'), `${new Date().toISOString()}\n`); say('inbox: on for every chat that loads makarasty-tools (running chats after their next restart or plugin reload)'); autoFollow([process.env.CLAUDE_CODE_SESSION_ID || '', readOr(join(root, 'self'))]); return 0 }
+  if (cmd === 'on') { mkdirSync(base, { recursive: true }); writeFileSync(join(base, 'inbox.on'), `${new Date().toISOString()}\n`); say('inbox: on for every chat that loads makarasty-tools (running chats after their next restart or plugin reload)'); say(`inbox: ${pushLine()}`); autoFollow([process.env.CLAUDE_CODE_SESSION_ID || '', readOr(join(root, 'self'))]); return 0 }
   if (cmd === 'off') { rmSync(join(base, 'inbox.on'), { force: true }); say('inbox: off'); return 0 }
   if (cmd === 'status') {
     const on = existsSync(join(base, 'inbox.on')), all = existsSync(join(root, 'items')) ? items() : []
@@ -611,6 +619,7 @@ async function main() {
     say(`inbox: ${on ? 'on' : 'off'}, ${all.filter((i) => !answered(i.id)).length} pending, folder ${root}`)
     say(`last item: ${last ? `${ago(last.at)} from ${String(last.cwd).split(/[\\/]/).filter(Boolean).pop()} (${last.kind})` : 'none'}`)
     say(`last wake of the inbox chat: ${ago(newest('announced'))}; last answer: ${ago(newest('answers'))}`)
+    say(`inbox: ${pushLine()}`)
     say(`inbox chat: ${existsSync(join(root, 'self')) ? readFileSync(join(root, 'self'), 'utf8').trim() : 'none yet (run list once)'}`)
     say(`finish reports not shown yet: ${reports().filter((r) => !shown(r.id)).length}`)
     const rows = readOr(ledgerFile()).split(/\r?\n/).filter(Boolean).slice(-10)
@@ -767,6 +776,8 @@ async function main() {
     return 0
   }
 
+  if (cmd === 'channels') { say(`channels: ${hasChannel() ? 'yes' : 'none'}`); return 0 }
+
   if (cmd === 'scan') {
     // Files the questions that wait in live chats of every account and have no item (also run by the first list and by list --take).
     if (!scan([process.env.CLAUDE_CODE_SESSION_ID || '']).length) say('inbox: scan found no waiting question without an item')
@@ -785,6 +796,7 @@ async function main() {
       if (was !== self || rest.includes('--take') || id === '--take') { try { scan([self]) } catch (e) { console.error(`inbox: scan failed: ${/** @type {Error} */ (e).message}`) } }
     }
     if (!readOnly) autoFollow([self || '', was])
+    if (!readOnly && (was !== self || rest.includes('--take') || id === '--take')) say(`inbox: ${pushLine()}`) // once, when this chat becomes the inbox
     // A question its chat no longer waits for is not asked: closed here, one line each, once (owner, 2026-11-13). A card stays
     // a proposal at any age; a muted chat's item leaves without a line (he asked for silence).
     // One line per chat, never per question; a muted chat gets no line at all (he asked for silence).
@@ -897,6 +909,7 @@ async function main() {
     const mark = join(dir('pushed'), item.id), now = Date.now(), prev = existsSync(mark) ? readJSON(mark) : undefined
     if (existsSync(mark) && !prev) return 0
     if (prev && (prev.fails >= 3 || now - prev.at < 5 * 60e3)) return 0
+    if (!hasChannel()) { say('inbox: no push, no notify channel'); return 0 } // no attempt, no failure record
     const attempt = JSON.stringify({ fails: (prev?.fails ?? 0) + 1, at: now })
     if (prev) writeFileSync(mark, attempt); else if (!create(mark, attempt)) return 0
     try { execFileSync(process.execPath, [join(here, '..', '..', 'hooks', 'notify.mjs'), 'send', pushText(item)], { stdio: ['ignore', 'pipe', 'pipe'], timeout: 20000 }) } catch (e) { console.error(`inbox: push failed: ${/** @type {Error} */ (e).message.split('\n')[0]}`); return 1 } // the attempt record stays: a later tick retries

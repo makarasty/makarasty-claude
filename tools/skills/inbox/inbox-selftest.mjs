@@ -76,7 +76,15 @@ try {
   put(item({ id: 'chatA~t5' }))
   writeFileSync(join(root, 'pushed', 'chatA~t5'), JSON.stringify({ fails: 3, at: Date.now() - 3600e3 }))
   check('after 3 failed tries it gives up', run(['push', 'chatA~t5']).status === 0 && sentN() === n0 + 1)
-  run(['done', 'chatA~t4']); run(['done', 'chatA~t5'])
+  check('a failed push says "failed", never "pushed"', /push failed/.test(failed.stderr) && !/pushed/.test(failed.stdout + failed.stderr), failed.stderr)
+  // No notify channel (no dry-run sink, empty config dir): no attempt, no record, no "pushed", one "phone pushes off" line.
+  const bare = { ...env, NOTIFY_DRY_RUN: '' }, runBare = (/** @type {string[]} */ args) => spawnSync(process.execPath, [cli, ...args], { env: bare, encoding: 'utf8' })
+  put(item({ id: 'chatA~t6' }))
+  const nc = runBare(['push', 'chatA~t6'])
+  check('no channel: push makes no attempt, no record, and says nothing went out', nc.status === 0 && !existsSync(join(root, 'pushed', 'chatA~t6')) && sentN() === n0 + 1 && !/pushed(?! off)/.test(nc.stdout) && /no push/.test(nc.stdout), nc.stdout + nc.stderr)
+  check('channels says none without a config', runBare(['channels']).stdout.includes('channels: none') && run(['channels']).stdout.includes('channels: yes'))
+  check('on and status say "phone pushes off" with no channel, and not with one', runBare(['on']).stdout.includes('phone pushes off: no notify channel') && runBare(['status']).stdout.includes('phone pushes off') && /phone pushes: on/.test(run(['status']).stdout))
+  run(['done', 'chatA~t4']); run(['done', 'chatA~t5']); run(['done', 'chatA~t6'])
   check('the chat answering itself closes the item', run(['done', 'chatA~t3']).stdout.includes('done') && JSON.parse(readFileSync(join(root, 'answers', 'chatA~t3.json'), 'utf8')).by === 'chat')
   // open: finds the profile that holds the chat and hands the link to that profile's app copy (dry run prints it)
   const host = 'local_9fe89352-d54d-4073-874d-1806f8dacf22'

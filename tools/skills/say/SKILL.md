@@ -1,5 +1,5 @@
 ---
-description: Turns what you mean into simple English to say on a call with, or send to, a vendor, partner or support: call script, meeting questions, one live reply, a ticket or email. Use on "подготовь вопросы для звонка", "напиши им простым языком", "как сказать это на звонке", "что ответить вендору", "напиши в саппорт", "составь тикет". Not for translation or prose rewriting (unslop).
+description: Turns what you mean into simple English to say on a call with, or send to, a vendor, partner, support or a colleague: call script, meeting questions, a live reply, a ticket, email or short message. Use on "подготовь вопросы для звонка", "что ответить вендору", "напиши в саппорт", "напиши коротко на английском, я скину это <человеку>", "на английском, скину вендору". Not for prose rewriting (unslop).
 argument-hint: <what you want to say, in any language, what the vendor just said, or a file with the points>
 ---
 
@@ -30,6 +30,9 @@ and read later, an email, a ticket, a Slack thread, is Written, even when it ans
 
 ## The call script
 
+When the call needs facts dug out of the project (many files, a client contact's questions), offer
+`/makarasty:fleet-call` for the heavy version.
+
 One line, one sentence, in every spoken line. A blank line where the speaker pauses. Each point opens with
 its gist, one or two sentences, so the speaker knows what the point is; then the English to say. The points
 go in speaking order, the most urgent first, the tempo falling in blocks. At the end, an answer sheet with a
@@ -55,6 +58,12 @@ A point that reports a problem takes three steps, and only these:
 3. **One question, then wait.**
    "How should we get that code?"
    *(stop - their turn)*
+
+Length: about five questions for the whole call and at most four spoken lines per point (the three steps above); the
+speaker reads this aloud and no one will read more. A question the other side already answered is not asked
+again; spare questions wait in a reserve list. A screen is named by its menu path, never by button labels
+that may have changed. Where the speaker can show something, make the call a walk-through ("you said this,
+we built that") more than a list of questions.
 
 The sharper follow-ups wait under "If the answer is vague", and go one at a time, each after an answer.
 

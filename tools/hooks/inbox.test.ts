@@ -9,7 +9,7 @@ const plain = (p: string): string => p.replace(/^[A-Za-z]:/, '').replaceAll('\\'
 const Q = 'Какую базу взять для отчётов?'
 const QUESTIONS = [{ question: Q, header: 'База', multiSelect: false, options: [{ label: 'Postgres', description: 'та, что уже в проекте' }, { label: 'SQLite', description: 'файл рядом с отчётом' }] }]
 
-function world(on: On, o: { on?: boolean; session?: string; self?: string; children?: string[]; now?: number } = {}) {
+function world(on: On, o: { on?: boolean; session?: string; self?: string; children?: string[]; now?: number; noChannel?: boolean } = {}) {
   const disk = new Map<string, string>()
   if (o.on !== false) disk.set('/cfg/makarasty/inbox.on', 'x')
   if (o.self) disk.set('/cfg/makarasty/inbox/self', o.self)
@@ -49,6 +49,7 @@ function world(on: On, o: { on?: boolean; session?: string; self?: string; child
       return ok(disk.get(ans) ?? '[]')
     }
     if (cmd === 'children') return ok((o.children ?? []).join('\n'))
+    if (cmd === 'channels') return ok(o.noChannel ? 'channels: none\n' : 'channels: yes\n')
     if (cmd === 'push') disk.set(`/cfg/makarasty/inbox/pushed/${id}`, '')
     if (cmd === 'done') { if (!disk.has(ans)) { disk.set(ans, JSON.stringify({ id, at: 0, by: 'chat' })); wake?.() } return ok() }
     return ok()
@@ -152,6 +153,18 @@ test('after 2 minutes an open item gets a plain explanation and one push', async
   await w.until(() => w.cli.some((c) => c[0] === 'push'), 'push')
   expect(w.items()[0].explain).toContain('спрашивает')
   expect(w.cli.filter((c) => c[0] === 'push')).toEqual([['push', 'chatA~toolu_4']])
+})
+
+test('no notify channel: the explanation is still written, but no push is tried and nothing says one went out', async ($, on) => {
+  const w = world(on, { noChannel: true })
+  await $.tool.call({ tool: 'mcp__ccd_turn__wrap_up', recap: 'r', ask: 'Удалить старые отчёты?', actions: [{ label: 'Да' }], tool_use_id: 'toolu_nc' } as never)
+  await w.clock.advance(3 * 60e3)
+  await w.until(() => w.cli.some((c) => c[0] === 'channels'), 'channels asked')
+  await w.until(() => !!w.items()[0].explain, 'explain')
+  await new Promise((r) => setTimeout(r, 50))
+  expect(w.cli.filter((c) => c[0] === 'push').length).toBe(0)
+  expect(w.disk.has('/cfg/makarasty/inbox/pushed/chatA~toolu_nc')).toBe(false)
+  expect(JSON.stringify([...w.disk.values(), ...w.submitted])).not.toMatch(/pushed|sent to (the )?phone/i)
 })
 
 // pushed/<id> is empty once pushed, or {fails, at} after a failed try: tried again after 5 min, 3 times at most.

@@ -1,5 +1,23 @@
 # Changelog
 
+## makarasty-tools 1.19.45 — 2026-11-16
+
+- **Questions to the person** (operator 11-16: questions asked without looking into it, options with no reason): the
+  session text now says to look into a question first, take what a checked fact or plain logic settles (nothing worse
+  for the person, nothing on the ask-first list) and name it in one line for review; ask only when outcomes really
+  differ; plain words; each option says why it beats the others, on a checked fact, an unchecked one marked a guess.
+- **inbox claims no push it did not make**: no notify channel is configured on this machine and 93 of 96 push records
+  since 11-11 were failures. With no channel there is no attempt and no failure record, and `on`/`status` say phone
+  pushes are off and how to turn them on; the hook asks at most every 10 min; a failed push reads as failed.
+- **say**: triggers for "напиши коротко на английском, я скину это <человеку>"; a call script is about five questions,
+  at most four spoken lines per point (the operator's 10-16 rewrites); offers `/makarasty:fleet-call` when facts must
+  be dug from the project. **blindtest**: a static mode for PNG/JPG mockups. **update**, **tune**: manual-only.
+
+## makarasty 1.18.11 — 2026-11-16
+
+- fleet-plan routes a mission that prepares a call or meeting to `/makarasty:fleet-call`; fleet-call says when to use
+  it. (1.18.10 is the fleet-analyze fix on branch `worktree-agent-a5adf8536f0a8db91`, not merged yet.)
+
 ## makarasty-tools 1.19.44 — 2026-11-16
 
 - **cleanup: personal files are recoverable** (owner's pick 11-16). Owner-tier items (unless the rule is

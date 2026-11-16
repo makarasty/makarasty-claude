@@ -142,7 +142,11 @@ export const asking =
   'another app, check by eye) is one click or one command, with its link or exact path, asked in AskUserQuestion (or the ' +
   'end-of-turn ask) with the outcomes as options, never only in prose; a command goes above it in a code block (PowerShell ' +
   '5.1: `;` not `&&`). A step in another chat is no dialog: end the turn with one line and its link and account. A delete-or-keep question says what the thing is, what made it, its size, what breaks without it, and your recommendation. ' +
-  'Several questions go in one ask (AskUserQuestion), the recommended option first. A turn that ends waiting on the person ends with a ' +
+  'Look into it before asking: a question that a checked fact or plain logic settles, with no option worse for the person and none ' +
+  'on the ask-first list, is not asked; take it and name it in one line of the report for review. Ask only when the options lead to really ' +
+  'different outcomes. Several questions go in one ask (AskUserQuestion), the recommended option first. Plain words, none the person did not use. Each option ' +
+  'says what happens if picked and why it beats the others here, resting on a fact you checked (a test, a number, how this project ' +
+  'already does it); an unchecked one is marked a guess. A turn that ends waiting on the person ends with a ' +
   'message that stands alone: what happened, and the one thing to press or type.'
 
 // The person's own facts (language, machine, channels, standing answers) live in <config>/makarasty/profile.md, written by

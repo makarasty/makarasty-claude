@@ -79,6 +79,9 @@ which one this mission wants and let the operator run it. A `critique` mission i
 verify one, with the "Critique" section of `docs/DESIGN.md` - and nothing else from that file - supplying
 what the task carries: the screens and their states, the token file, and the assertion lines.
 
+A mission that prepares a call or a meeting with a client or vendor goes to `/makarasty:fleet-call`, which
+carries `disable-model-invocation`: say so and let the operator run it.
+
 **Mockup rounds** (a design subject the operator reacts to more than once): keep `reports/<subject>.req.md` with
 every operator message on the subject verbatim and timestamped, ids R1..Rn, and the original task items, appended only by `fleet.sh req-add` (you call it for each operator message on the subject and for each `AskUserQuestion` answer about it; `supersedes Rn` drops an earlier one, a contradiction with no `supersedes` goes to the operator); every
 round's task embeds it at the top, never a paraphrase; the worker returns a table variant x Rn -> met / not met /
