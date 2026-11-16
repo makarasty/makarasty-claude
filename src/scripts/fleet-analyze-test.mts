@@ -349,6 +349,13 @@ try {
   check('one-chat: grandchild fleet-coder on Sonnet', [row('makarasty:fleet-coder', SONNET)?.agents, row('makarasty:fleet-coder', SONNET)?.cost], [1, 300 * 10 / 1e6]);
   check('one-chat: fleet-reviewer on Sonnet', [row('makarasty:fleet-reviewer', SONNET)?.agents, row('makarasty:fleet-reviewer', SONNET)?.cost], [1, 200 * 10 / 1e6]);
   check('one-chat: total $', o.cost.total_usd, (100 * 4 + 1000 * 20 + 100 * 20 + 200 * 10 + 300 * 10) / 1e6, 1e-9);
+  // The slot id from the task is the worker; the subagents started inside its task window feed the time and habit pass.
+  const oj = o as unknown as { workers_seen: number; per_worker: { chip: string; subagents: number }[]; time: { total_min: number; buckets_min: Record<string, number> };
+    habits: { turns: number }; subagents: { count: number } };
+  check('one-chat: slot is the worker', [oj.workers_seen, oj.per_worker[0]?.chip, oj.per_worker[0]?.subagents], [1, '09', 3]);
+  check('one-chat: time buckets filled', [oj.time.total_min > 0, oj.time.buckets_min['model']! > 0], [true, true]);
+  check('one-chat: habits see the subagent turns', [oj.habits.turns, oj.subagents.count], [3, 3]);
+  check('one-chat: tokens still counted once', o.tokens.workers_subagents.msgs, 3);
 } catch { console.log(`FAIL one-chat run: ${orr.stderr}`); failed++; }
 
 rmSync(tmp, { recursive: true, force: true });

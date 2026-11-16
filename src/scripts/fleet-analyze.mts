@@ -810,6 +810,25 @@ async function main(): Promise<void> {
   }
   const done = tasks.filter((t) => t.done);
   const pauses = readPauses(run, byChip);
+  const coordSessions = [...coords].map((s) => sessions.get(s)).filter((s): s is Session => !!s);
+  // One-chat run (no worker chats): the coordinator's own subagents, at any depth, are the workers.
+  const oneChat = byChip.size === 0;
+  if (oneChat) {
+    // One pseudo-worker per slot id; a subagent goes to the slot whose task window (latest claimed) holds its first line.
+    // shortcut: a subagent that starts outside every task window (planning, merging) joins no slot, only the token totals.
+    const seen = new Set<string>();
+    for (const cs of coordSessions) for (const t of cs.subs) {
+      if (seen.has(resolve(t.file)) || t.first === null) continue;
+      seen.add(resolve(t.file));
+      let owner: Task | null = null;
+      for (const k of tasks) if (k.start <= t.first && t.first <= k.end) owner = k;
+      if (!owner) continue;
+      const empty: Transcript = { file: '', tag: 'parent', iv: [], msgs: [], tools: [], first: null, last: null, badLines: 0, meta: {}, resumes: [] };
+      const ss = byChip.get(owner.chip) ?? [{ sid: `slot-${owner.chip}`, parent: empty, subs: [] }];
+      ss[0]!.subs.push(t);
+      byChip.set(owner.chip, ss);
+    }
+  }
 
   // ---- per chip: intervals, task splits, tokens, habits
   const taskRows: Record<string, unknown>[] = [];
@@ -842,9 +861,8 @@ async function main(): Promise<void> {
         misses.push(...cacheMisses(t));
         for (const m of t.msgs) {
           addTok(t.tag === 'parent' ? ptok : stok, m);
-          addTok(t.tag === 'parent' ? parentTok : subTok, m);
-          addTok(workerTok, m);
-          add(models, m.model, 1);
+          // One-chat subagents are totalled once, in the coordinator pass below.
+          if (!oneChat) { addTok(t.tag === 'parent' ? parentTok : subTok, m); addTok(workerTok, m); add(models, m.model, 1); }
           chipMsgs.push(m);
         }
         if (t.tag === 'sub') {
@@ -900,14 +918,11 @@ async function main(): Promise<void> {
   }
 
   // ---- coordinator
-  const coordSessions = [...coords].map((s) => sessions.get(s)).filter((s): s is Session => !!s);
   const coordTok = emptyTok();
-  // One-chat run (no worker chats): the coordinator's own subagents, at any depth, are the workers. Grouped by
-  // agent type and model; a subagent file reached twice (any session, any depth) is counted once.
-  const oneChat = byChip.size === 0;
+  // One-chat subagents are grouped by agent type and model; a file reached twice (any session, any depth) is counted once.
   const coordSubTok = emptyTok();
   const coordSubBy = new Map<string, { type: string; model: string; agents: Set<string>; tok: ReturnType<typeof emptyTok> }>();
-  const seenSub = new Set<string>([...byChip.values()].flat().flatMap((s) => s.subs.map((t) => resolve(t.file))));
+  const seenSub = new Set<string>(oneChat ? [] : [...byChip.values()].flat().flatMap((s) => s.subs.map((t) => resolve(t.file))));
   for (const cs of coordSessions) {
     for (const m of cs.parent.msgs) { addTok(coordTok, m); add(models, m.model, 1); }
     for (const t of cs.subs) {

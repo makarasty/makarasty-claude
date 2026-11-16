@@ -1,5 +1,12 @@
 # Changelog
 
+## makarasty 1.18.10 — 2026-11-16
+
+- **fleet-analyze: one-chat runs get their time and habit pass.** A run with no `chips/<session-id>` files printed 0 workers
+  and zero time buckets, turns, re-reads and subagents. Now each slot id from the tasks is a worker, and each coordinator
+  subagent joins the slot whose task window holds its first line; token and cost totals are unchanged. Multi-chat runs are
+  unchanged. Test: one-chat fixture in `fleet-analyze-test`.
+
 ## makarasty-tools 1.19.44 — 2026-11-16
 
 - **cleanup: personal files are recoverable** (owner's pick 11-16). Owner-tier items (unless the rule is
