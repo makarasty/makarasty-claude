@@ -1,10 +1,12 @@
 ---
-description: How to refactor, dedupe and test so code gets simpler and stays protected: behaviour pinned first, tests seen failing. Use on "отрефактори", "сделай dry", "без костылей", "покрой тестами", "закрой тестом, чтобы не повторилось", "тупые тесты", "refactor", "DRY this", "add unit tests for X", or when judging whether tests are worth keeping. Tests for existing code and regression tests are craft; a new feature built red-green is tdd.
+description: Refactor, dedupe and test existing code: pin behaviour first, see a new test fail, no premature abstraction. Use on "отрефактори", "сделай dry", "покрой тестами", "закрой тестом", refactor, add unit tests. A new feature built red-green is tdd.
 ---
 
 These are the points where a capable model still slips on this kind of work. Everything else, use your
 own judgement and the project's conventions; where the project has a rule, it wins over this file, and
-when the `tdd` skill is in play, its agreement on test seams comes first.
+when the `tdd` skill is in play, its agreement on test seams comes first. Tests the person asked for are
+written in full even under a minimal-code mode: a lean mode cuts unrequested code, not requested tests
+(with a lean ruleset beside it, no test came first and one task got no tests at all [M74]).
 
 ## Refactor
 
@@ -44,5 +46,5 @@ when the `tdd` skill is in play, its agreement on test seams comes first.
 The pinned behaviour still passes, every new test was seen failing once, the diff holds no change the
 task did not need, and shared pieces were checked at every use.
 
-Status: written from the owner's chats and published testing practice; not yet measured against a
-baseline with `forge/ab.mjs`.
+Status: written from the owner's chats and published testing practice. A/B against no skill [M74]: it
+changes the process (test first, a test seen failing) at +54% cost; outcomes on small tasks were equal.

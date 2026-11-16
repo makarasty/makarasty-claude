@@ -1269,6 +1269,21 @@ about his products: **181**, in themes. Plus 2026-11-11..13 from the inbox's `sa
 **Status:** one regex pass (complaints with none of its words are missed), one Sonnet rater per quarter of the rows,
 counts per theme approximate (a row counts once, under its main theme).
 
+## M74 — A/B of craft, ponytail and the asking text (2026-11-16)
+`claude -p`, sonnet, small node repos or tool-less prompts, the tool text through `--append-system-prompt-file`.
+- **craft** (4 agentic tasks with `node --test`, 20 runs): test before the code change 6/6 with craft vs 0/6 without;
+  a new test seen failing 3/8 vs 0/8; outcomes equal (hidden checks and mutants all pass in both arms); +54% cost,
+  +64% time. With the ponytail ruleset beside it (n=1): test-first 0/3, one task got no tests, 11 tests where craft
+  alone wrote 27.
+- **ponytail** (5 coding prompts, 25 runs): code lines 8.0 with it, 18.4 without, 14.6 with the owner's CLAUDE.md
+  only; output tokens -39%; it dropped the one money edge case the bare arm handled.
+- **asking text** (5 prompts, 20 runs): with the new text a model asked 1.5 of 6 times on real choices vs 6 of 6;
+  both arms gave reasons for options. With the habits text in both arms and the ask-first exclusion added (16 runs):
+  a delete question asked 2/2; "fix before release" decided alone 2/2 (the merge and release asked later); a pure
+  taste choice asked 0/2, then 1/2 once the text said taste is the person's.
+**Status:** 1-2 runs per cell, one model, regex scoring plus one reader; craft's skill text was a system prompt, not
+loaded through the Skill tool.
+
 ## Appendix: what a pull run spends
 
 Moved here from `PULL.md`, which workers read in full; none of it changes what a worker does.

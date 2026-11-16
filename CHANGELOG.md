@@ -1,5 +1,13 @@
 # Changelog
 
+## makarasty-tools 1.19.46 — 2026-11-16
+
+- **Asking**: a question the person's taste decides is asked too (A/B: a pure taste choice was decided alone 0/2,
+  then asked 1/2) [M74].
+- **craft kept on measurement** [M74]: with it a test came before the change 6/6 (0/6 without) and a test was seen
+  failing 3/8 (0/8); outcomes on small tasks equal, +54% cost. Description cut to ~200 chars; one line says tests the
+  person asked for are written in full under a minimal-code mode (beside the ponytail ruleset no test came first).
+
 ## makarasty-tools 1.19.45 — 2026-11-16
 
 - **Questions to the person** (operator 11-16: questions asked without looking into it, options with no reason): the
