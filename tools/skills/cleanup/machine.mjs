@@ -7,6 +7,8 @@
 //   node machine.mjs scan [--json] [--rules <file>]
 //   node machine.mjs apply <id ...> [--json] [--rules <file>]   delete, recycle, vendor clean, or open an uninstaller
 //   node machine.mjs admin <id ...> [--rules <file>]            writes a .bat for the person to run elevated; runs nothing
+//   node machine.mjs trash <path ...>                           a hand-found file: the local trash on its own drive, else the Recycle Bin when it surely fits, else kept
+//   node machine.mjs restore [<stamp|id|path>]                  puts back what went to the local trash (no argument: lists it)
 //   node machine.mjs --selftest
 //
 // --rules <file> is read in place of ~/.claude/makarasty/cleanup-rules.json (the shipped rules.json always loads).
@@ -18,10 +20,13 @@
 // rule's minAgeHours, and a date in the future counts as new. One apply runs at a time (a lock file). Links are never followed: sizes skip them, deletes unlink them. A drive root, the home folder
 // or anything above it, and the known top folders themselves are refused. "recycle" goes to the Recycle Bin only when
 // the item holds no link and fits the bin's free room, and is reported as recycled only when the bin grew by it.
+// Personal things (owner tier, loose files, a rule with "recover": true) are never deleted for good: the Recycle Bin, else
+// a rename into ~/.claude/makarasty/trash/cleanup/<stamp>/ with a manifest line; a move that fails leaves the item.
+// Caches (safe, close-app) stay permanent. Trash older than 30 days is offered as one ordinary safe item.
 // Every outcome is measured after the act and appended to ~/.claude/makarasty/cleanup-log.jsonl.
 import { readdirSync, lstatSync, readFileSync, writeFileSync, appendFileSync, mkdirSync, mkdtempSync, rmSync, unlinkSync,
     rmdirSync, chmodSync, existsSync, renameSync, symlinkSync, utimesSync, statfsSync, realpathSync } from 'node:fs';
-import { homedir, tmpdir } from 'node:os';
+import { homedir, tmpdir, hostname } from 'node:os';
 import { join, dirname, basename, resolve, sep, isAbsolute } from 'node:path';
 import { spawnSync, spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -55,6 +60,22 @@ const longName = p => {
     }
     return p;
 };
+// The one real form of an existing path, or null (refused): 8.3 names long, \\?\ and \\localhost\C$ as C:\, a junction or
+// symlink in any parent followed. A leaf that is itself a link stays that link (the act is on it, not on its target).
+// shortcut: a leaf link under an 8.3 name keeps that name; no API gives a link's own long name, upgrade if it matters.
+export function canon(p) {
+    if (typeof p !== 'string' || !isAbsolute(p)) return null;
+    try {
+        let r = lst(p)?.isSymbolicLink() ? join(realpathSync.native(dirname(p)), basename(p)) : realpathSync.native(p);
+        r = r.replace(/^\\\\\?\\UNC\\/i, '\\\\').replace(/^\\\\\?\\/, '');
+        const m = /^\\\\([^\\]+)\\([A-Za-z])\$(?=\\|$)/.exec(r); // \\localhost\C$\x is C:\x
+        if (m && ['localhost', '127.0.0.1', '[::1]', hostname().toLowerCase()].includes(m[1].toLowerCase())) r = `${m[2]}:${r.slice(m[0].length)}`;
+        return WIN && !/^[A-Za-z]:\\/.test(r) ? null : r; // a share is not a drive path
+    } catch { return null; }
+}
+const canonMemo = new Map(); // for the fixed lists (top folders, session roots) that every check compares against
+const canonOf = p => { let c = canonMemo.get(p); if (c === undefined) { c = canon(p); if (c) canonMemo.set(p, c); } return c; };
+const forms = p => [...new Set([norm(p), ...(canonOf(p) ? [norm(canonOf(p))] : [])])];
 const glob = s => new RegExp('^' + s.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$', 'i');
 
 // %VAR%, a leading ~, and * inside one path segment. An unknown or empty %VAR% makes the pattern match nothing, so
@@ -79,7 +100,7 @@ export function expand(pattern) {
 // folder a tool just made has no file to date it. A rule over files a tool rewrites in place keeping their
 // modified date (scrub does, on transcripts and handoffs) sets ageBy: "modified".
 export function measure(p, now = Date.now(), birth = true) {
-    const r = { bytes: 0, newest: 0, files: 0, links: 0, denied: 0, partial: false };
+    const r = { bytes: 0, newest: 0, files: 0, links: 0, denied: 0, partial: false, maxPath: p.length };
     // modified and created time; a future date reads as now: young. shortcut: a folder moved in keeps both, so it
     // reads as old (ctime would catch it, but any attribute change resets ctime and no test can set it back).
     const seen = st => { r.newest = Math.max(r.newest, Math.min(Math.max(st.mtimeMs, birth ? st.birthtimeMs || 0 : 0), now)); };
@@ -97,6 +118,7 @@ export function measure(p, now = Date.now(), birth = true) {
         for (const e of ents) {
             if (++n > 3e6) { r.partial = true; return r; }
             const f = join(d, e.name);
+            r.maxPath = Math.max(r.maxPath, f.length);
             if (e.isSymbolicLink()) { r.links++; continue; }
             try {
                 const st = lstatSync(f);
@@ -136,14 +158,17 @@ const VOLS = [];
 // A drive root, the home folder or above it, and the known top folders themselves are never acted on, nor
 // anything inside the key and system folders.
 export function forbidden(p) {
-    const k = norm(p), h = norm(homedir());
-    if (dirname(k) === k || h === k || h.startsWith(k + sep)) return true;
+    const c = canon(p);
+    if (!c) return true; // cannot be resolved to one real path: not acted on
+    const ks = [norm(p), norm(c)], hs = forms(homedir());
+    if (ks.some(k => dirname(k) === k || hs.some(h => h === k || h.startsWith(k + sep)))) return true;
     const top = ['Desktop', 'Documents', 'Downloads', 'Pictures', 'Videos', 'Music', 'OneDrive', '.claude', 'AppData',
         join('AppData', 'Local'), join('AppData', 'Roaming'), join('AppData', 'Local', 'Temp')].map(n => join(homedir(), n));
     const env = ['LOCALAPPDATA', 'APPDATA', 'TEMP', 'TMP', 'ProgramData', 'ProgramFiles', 'ProgramFiles(x86)', 'SystemRoot'].map(v => process.env[v]);
-    if ([...top, ...env, ...KNOWN].some(t => t && k === norm(t))) return true;
+    const prot = [...top, ...env, ...KNOWN].filter(Boolean).flatMap(forms);
+    if (ks.some(k => prot.includes(k))) return true;
     const deep = [join(homedir(), '.ssh'), join(homedir(), '.gnupg'), process.env.SystemRoot && join(process.env.SystemRoot, 'System32')];
-    return deep.some(t => t && inside(k, t));
+    return deep.filter(Boolean).flatMap(forms).some(t => ks.some(k => inside(k, t)));
 }
 
 // ---- the machine ----------------------------------------------------------------------------------------------
@@ -202,12 +227,16 @@ const who = s => `${s.id.slice(0, 8)}${s.title ? ` "${s.title}"` : ''}${s.state 
 
 // Why p must not be touched now, or null.
 export function holdOf(p, ctx) {
+    const c = canon(p), raw = holdOf1(p, ctx);
+    return raw ?? (!c ? 'its real path cannot be resolved' : norm(c) !== norm(p) ? holdOf1(c, ctx) : null); // the path as given, then as it really is
+}
+function holdOf1(p, ctx) {
     for (const s of ctx.sessions) {
         if (!s.live) continue;
         if (s.id && norm(p).includes(s.id.toLowerCase())) return `chat ${who(s)} owns it`; // its scratch, also when resumed mid-apply
         const r = s.root || s.cwd;
         if (!r || inside(homedir(), r)) continue; // a chat started in home or a drive root holds no folder
-        if (inside(p, r) || inside(r, p)) return `chat ${who(s)} works in ${r}`;
+        if (forms(r).some(x => inside(p, x) || inside(x, p))) return `chat ${who(s)} works in ${r}`;
     }
     const k = norm(p);
     for (const q of ctx.procs) {
@@ -399,6 +428,12 @@ const TYPES = {
         return ctx.sid ? ctx.volumes.map(v => ({ slug: v.drive, title: `${r.title} ${v.drive}`, paths: [join(v.drive + sep, '$Recycle.Bin', ctx.sid)] })) : [];
     },
     command() { return [{ paths: [], preset: true, bytes: null }]; },
+    // Local trash folders older than 30 days (named by their stamp): offered, never deleted on their own.
+    trash(r, ctx) {
+        const cut = (ctx.now ?? Date.now()) - 30 * DAY;
+        const old = ls(TRASH()).filter(n => /^\d{8}T\d{6}Z$/.test(n) && Date.parse(n.replace(/^(\d{4})(\d\d)(\d\d)T(\d\d)(\d\d)(\d\d)Z$/, '$1-$2-$3T$4:$5:$6Z')) < cut);
+        return old.length ? [{ slug: 'old', paths: old.map(n => join(TRASH(), n)), evidence: [`${old.length} trash folder(s) from before ${day(cut)}`] }] : [];
+    },
     // Watchers, dev servers and automation browsers whose chat is done, or that nobody owns: residents.mjs reads and judges
     // (a terminal's or an unknown owner is asked, a live chat, CPU use or a connection keeps it). Listed only, method none:
     // ending one is the operator's yes and a taskkill by pid from the chat, never this script.
@@ -502,7 +537,7 @@ export function evaluate(rules, ctx) {
             items.push({ id, rule: rule.id, title: c.title ?? rule.title, tier: rule.tier, method: c.method ?? rule.method, vendor: rule.vendor,
                 paths: parts.map(x => x.path), parts, bytes: denied ? null : bytes, newest, held, blockers: [...new Set(blockers)],
                 evidence: [...(c.evidence ?? []), ...(denied ? ['size not readable without admin'] : [])], lose: c.lose ?? rule.lose, explain: rule.explain,
-                uninstall: c.uninstall, atomic: !!c.atomic, running: rule.running, app: c.app, scratch: rule.type === 'scratch', keepRepos: !!rule.keepRepos, bat: rule.shipped ? rule.bat : undefined, birth: rule.ageBy !== "modified", minAgeHours: c.minAgeHours ?? rule.minAgeHours ?? 0 });
+                uninstall: c.uninstall, atomic: !!c.atomic, running: rule.running, app: c.app, scratch: rule.type === 'scratch', type: rule.type, recover: !!rule.recover, regenerable: !!rule.regenerable, keepRepos: !!rule.keepRepos, bat: rule.shipped ? rule.bat : undefined, birth: rule.ageBy !== "modified", minAgeHours: c.minAgeHours ?? rule.minAgeHours ?? 0 });
             if (!c.preset) claimed.push(...parts.map(x => x.path));
         }
     }
@@ -516,15 +551,18 @@ export function evaluate(rules, ctx) {
 const PS_RECYCLE = String.raw`$ErrorActionPreference = 'Stop'; Add-Type -AssemblyName Microsoft.VisualBasic; $p = $env:CLEANUP_PATH
 if ([IO.Directory]::Exists($p)) { [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteDirectory($p, 'OnlyErrorDialogs', 'SendToRecycleBin') } else { [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile($p, 'OnlyErrorDialogs', 'SendToRecycleBin') }`;
 
-// Moves one measured part to the Recycle Bin, or says why not.
+// Moves one measured part to the Recycle Bin, or says why not. The call has no confirmation flag: what the bin cannot
+// take Windows deletes for good, so it is made only when the part was measured whole and every path in it is short.
 export function recycleOne(part, ctx) {
     if (!WIN) return { why: 'the Recycle Bin is Windows-only in this version' };
     const drive = part.path.slice(0, 2).toUpperCase(), v = ctx.volumes.find(x => (x.drive ?? '').toUpperCase() === drive);
     if (!v || !v.maxMB || +v.nuke === 1) return { why: `the Recycle Bin of ${drive} is off or unknown` };
-    if (part.links) return { why: 'it holds a link (junction or symlink); move it by hand' };
+    if (part.links) return { why: 'it holds a link (junction or symlink)' };
     // A synced folder deletes in the cloud too, and an online-only file is not in the local bin to restore.
     const cloud = ['OneDrive', 'OneDriveConsumer', 'OneDriveCommercial'].map(v => process.env[v]).find(d => d && inside(part.path, d));
     if (cloud) return { why: `it is inside OneDrive (${cloud}); delete it there, where OneDrive keeps its own recycle bin` };
+    if (part.denied || part.partial) return { why: 'kept: its size was not measured whole (folders it could not read, or too many entries), so the Recycle Bin could not be checked to hold it' };
+    if (part.maxPath >= 260) return { why: 'kept: it holds a path of 260 characters or more, which the Recycle Bin would delete for good' };
     const bin = join(drive + sep, '$Recycle.Bin', ctx.sid), used = measure(bin).bytes, room = v.maxMB * MB * 0.9 - used;
     if (part.bytes > room) return { why: `kept: it does not fit the Recycle Bin (${gb(Math.max(0, room))} free there), and Windows would delete it for good` };
     const r = spawnSync('powershell', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(PS_RECYCLE, 'utf16le').toString('base64')],
@@ -532,6 +570,73 @@ export function recycleOne(part, ctx) {
     const grew = measure(bin).bytes - used;
     if (lst(part.path)) return { why: `still there: ${(r.stderr || '').trim().split('\n')[0] || 'unknown'}` };
     return grew >= part.bytes * 0.9 ? { done: 'recycled' } : { done: 'deleted', warn: 'gone, but the Recycle Bin did not grow by it: it may not be restorable' };
+}
+
+// ---- the local trash: where a personal item goes when the Recycle Bin cannot take it -----------------------------------
+
+const TRASH = () => join(state(), 'trash', 'cleanup');
+const stampNow = () => new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, 'Z'); // 20261116T101500Z
+// What the person owns, so what must stay recoverable: never a cache (safe, close-app), nor an owner item the next build or
+// download makes again (`regenerable`: build outputs, driver unpacks), where a trash would free no disk.
+const soft = i => i.method === 'recycle' || (i.method === 'delete' && ((i.tier === 'owner' && !i.regenerable) || i.type === 'loose' || i.recover));
+
+// Renames p into <trash>/<stamp>/<its path without the colon> and writes a manifest line. A rename never copies and
+// never deletes: a failure (locked file, another volume) leaves p where it is and says so.
+export function trashOne(part, stamp, id) {
+    const from = canon(part.path); // the manifest records the real long path, so a restore lands where the item was
+    if (!from) return { why: 'its real path cannot be resolved; left where it is' };
+    const rel = from.replace(/^([A-Za-z]):/, '$1').replace(/^[\\/]+/, ''), dir = join(TRASH(), stamp), to = join(dir, rel);
+    try {
+        mkdirSync(dirname(to), { recursive: true });
+        if (lst(to)) return { why: `${to} is already in the trash; left where it is` };
+        renameSync(from, to);
+    } catch (e) { return { why: `not moved to the trash (${e.code ?? e.message}); left where it is` }; }
+    try { appendFileSync(join(dir, 'manifest.jsonl'), JSON.stringify({ id, from, to: rel, bytes: part.bytes, at: new Date().toISOString() }) + '\n'); }
+    catch (e) { return { done: 'trashed', to, warn: `moved to ${to}, but its manifest line was not written (${e.code ?? e.message}): restore it by moving it back by hand` }; }
+    return { done: 'trashed', to };
+}
+
+// On the trash's own volume: a rename into the local trash (instant, always restorable). On another volume: the Recycle
+// Bin, only when recycleOne can vouch for it; else the item stays and the reason is reported. Never a delete for good.
+function recoverable(part, ctx, stamp, id) {
+    const c = canon(part.path);
+    if (!c) return { why: 'its real path cannot be resolved; left where it is' };
+    const t = (canon(state()) ?? resolve(state())).slice(0, 2).toUpperCase();
+    // The bin's checks (whole measure, paths under 260) must see the long path it acts on, not a short or junction form.
+    return !WIN || c.slice(0, 2).toUpperCase() === t ? trashOne({ ...part, path: c }, stamp, id)
+        : recycleOne(norm(c) === norm(part.path) ? part : { ...part, ...measure(c), path: c }, ctx);
+}
+
+// `trash <path ...>`: files found by hand. Refuses a top folder, a held path and a git checkout.
+export function trashPaths(paths, ctx, stamp) {
+    return paths.map((p, n) => {
+        const path = resolve(p), part = lst(path) && { path, ...measure(path) };
+        const why = !part ? 'not found' : forbidden(path) ? 'a top folder: never acted on' : holdOf(path, ctx) ?? (holdsGit(path) ? REPO : null);
+        return { path, ...(why ? { why } : recoverable(part, ctx, stamp, `hand-${stamp}-${process.pid}-${n + 1}`)) };
+    });
+}
+
+// key: a stamp (a whole apply), an item id, or the original path. No key lists what the trash holds.
+export function restore(key) {
+    const root = TRASH(), rows = [];
+    for (const stamp of ls(root).sort()) for (const line of read(join(root, stamp, 'manifest.jsonl')).split('\n')) {
+        let m; try { m = JSON.parse(line); } catch { continue; }
+        const dir = join(root, stamp), at = typeof m?.to === 'string' ? join(dir, m.to) : '';
+        // manifest.jsonl is a file anyone can edit: only what lies strictly inside this stamp's folder (not "", ".", "..\x"),
+        // back to an absolute drive path (not a share)
+        if (!at || norm(at) === norm(dir) || !inside(at, dir) || typeof m.from !== 'string' || !(WIN ? /^[A-Za-z]:[\\/]/ : /^\//).test(m.from) || !lst(at)) continue; // not in the trash any more: restored or emptied
+        rows.push({ stamp, id: m.id, from: m.from, bytes: m.bytes, at: m.at, held: at });
+    }
+    if (key === undefined) return rows;
+    const out = [];
+    for (const r of rows.filter(r => [r.stamp, r.id, r.from].includes(key))) {
+        if (lst(r.from)) { out.push({ ...r, why: 'something is already at the original path; left in the trash' }); continue; }
+        let link; for (let d = dirname(r.from); !link && dirname(d) !== d; d = dirname(d)) if (lst(d)?.isSymbolicLink()) link = d; // mkdir and rename would follow it
+        if (link) { out.push({ ...r, why: `${link} is a junction or symlink now, so the item would land elsewhere; left in the trash` }); continue; }
+        try { mkdirSync(dirname(r.from), { recursive: true }); renameSync(r.held, r.from); out.push({ ...r, restored: true }); }
+        catch (e) { out.push({ ...r, why: `not restored (${e.code ?? e.message}); still in ${r.held}` }); }
+    }
+    return out;
 }
 
 const SILENT = /(^|\s)[/-]{1,2}(s|silent|verysilent|quiet|q|qn|qb|qr|passive)([!+=-]|\s|$)|--mode[= ](silent|unattended)/i;
@@ -557,12 +662,16 @@ export function apply(ids, rules, ctx = gather()) {
     try { return applyLocked(ids, rules, ctx); } finally { unlock(); }
 }
 
+// lost: parts that went for good (the Recycle Bin did not take them). A part gone for good is never called trashed.
+export const outcomeOf = r => r.unchanged ? 'unchanged' : r.left ? 'partly left'
+    : r.lost && (r.trashed || r.toBin) ? 'partly deleted' : r.lost ? 'deleted' : r.trashed ? 'trashed' : r.soft ? 'recycled' : 'deleted';
+
 function applyLocked(ids, rules, ctx) {
     // Every rule, not only the picked ones: an earlier rule's claim on a path must hold here as it did in the scan.
     const { items } = evaluate(rules, ctx);
     const look = () => { if (!ctx.fixed) ctx.procs = prep(gather().procs); }; // ctx.fixed: the selftest's own process list
     look(); // the walk took a minute or more: look at the programs again before the first item
-    const out = [], free0 = drives(), logf = join(state(), 'cleanup-log.jsonl');
+    const out = [], free0 = drives(), stamp = stampNow(), logf = join(state(), 'cleanup-log.jsonl');
     let seen = Date.now();
     const fresh = () => { if (Date.now() - seen > 60e3) { seen = Date.now(); look(); } }; // a program started during a long apply
     mkdirSync(state(), { recursive: true });
@@ -570,7 +679,7 @@ function applyLocked(ids, rules, ctx) {
         if (out.length) appendFileSync(logf, JSON.stringify(out.at(-1)) + '\n'); // logged as it goes: a crash later keeps what was done
         const it = items.find(i => i.id === id);
         // after starts equal to before: an item skipped or held frees nothing, whichever `continue` it leaves by
-        const row = { at: new Date().toISOString(), id, rule: it?.rule, method: it?.method, before: it?.bytes ?? 0, after: it?.bytes ?? 0, toBin: 0, outcome: 'skipped', notes: [] };
+        const row = { at: new Date().toISOString(), id, rule: it?.rule, method: it?.method, before: it?.bytes ?? 0, after: it?.bytes ?? 0, toBin: 0, toTrash: 0, outcome: 'skipped', notes: [] };
         out.push(row);
         try {
         if (!it) { row.notes.push('not found on a fresh scan: gone, now in use, too young or too small'); continue; }
@@ -617,23 +726,23 @@ function applyLocked(ids, rules, ctx) {
             row.outcome = 'unchanged';
             continue;
         }
-        let lost = 0;
+        let lost = 0, trashed = 0;
         row.after = 0;
         for (const part of it.parts) {
             ctx.sessions = sessions(ctx);
             fresh();
             const w = why(part) ?? (running(it, ctx.procs)[0] ?? null);
             if (w) { row.notes.push(`kept ${part.path}: ${w}`); row.after += part.bytes; continue; }
-            if (it.method === 'recycle') {
-                const r = recycleOne(part, ctx);
+            if (soft(it)) {
+                const r = recoverable(part, ctx, stamp, id);
                 if (r.why) { row.notes.push(`kept ${part.path}: ${r.why}`); row.after += part.bytes; continue; }
-                if (r.warn) { row.notes.push(`${part.path}: ${r.warn}`); lost++; } else row.toBin += part.bytes;
+                if (r.done === 'trashed') { row.toTrash += part.bytes; trashed++; row.notes.push(`${part.path} -> ${r.to}${r.warn ? '; ' + r.warn : ''}`); }
+                else if (r.warn) { row.notes.push(`${part.path}: ${r.warn}`); lost++; } else row.toBin += part.bytes;
             } else if (lst(part.path)) wipe(part.path);
             row.after += measure(part.path).bytes;
         }
         const left = it.parts.filter(p => lst(p.path)).length;
-        row.outcome = row.after === row.before && left === it.parts.length ? 'unchanged' : left ? 'partly left'
-            : it.method === 'recycle' && !lost ? 'recycled' : 'deleted';
+        row.outcome = outcomeOf({ unchanged: row.after === row.before && left === it.parts.length, left, lost, trashed, toBin: row.toBin, soft: soft(it) });
         if (left && row.outcome === 'partly left') row.notes.push(`${left} of ${it.parts.length} paths still there (files in use or kept)`);
         } catch (e) { // one item's failure stops neither the log nor the rest; what it did is measured, not assumed
             row.outcome = 'error'; row.notes.push(e.message);
@@ -641,8 +750,9 @@ function applyLocked(ids, rules, ctx) {
         }
     }
     if (out.length) appendFileSync(logf, JSON.stringify(out.at(-1)) + '\n');
-    // What went to the Recycle Bin still takes disk space until the bin is emptied: counted apart.
-    return { rows: out, freed: out.reduce((s, r) => s + Math.max(0, r.before - r.after - r.toBin), 0), toBin: out.reduce((s, r) => s + r.toBin, 0), free: [free0, drives()] };
+    // What went to the Recycle Bin or the local trash still takes disk space until it is emptied: counted apart.
+    const sum = k => out.reduce((s, r) => s + r[k], 0);
+    return { rows: out, freed: out.reduce((s, r) => s + Math.max(0, r.before - r.after - r.toBin - r.toTrash), 0), toBin: sum('toBin'), toTrash: sum('toTrash'), trash: out.some(r => r.toTrash) ? stamp : undefined, free: [free0, drives()] };
 }
 
 const drives = (total = false) => Object.fromEntries((WIN ? (VOLS.length ? VOLS : ['C:']).map(d => d + '\\') : ['/']).flatMap(d => {
@@ -852,6 +962,106 @@ function selftest() {
         assert.ok(o['t-notool'].outcome === 'skipped' && /not installed/.test(o['t-notool'].notes.join()) && existsSync(join(local, 'Hash', 'bin', 'code')), 'a vendor rule whose tool is missing is held and deletes nothing');
         assert.equal(read(join(tmp, 'claude', 'makarasty', 'cleanup-log.jsonl')).trim().split('\n').length, 7, 'every outcome is logged');
 
+        // Recoverable: personal items (owner, loose) go to the local trash with a manifest line, caches stay permanent.
+        assert.ok(soft({ method: 'delete', tier: 'safe', type: 'loose' }) && soft({ method: 'delete', tier: 'owner' }) && soft({ method: 'recycle', tier: 'safe' })
+            && !soft({ method: 'delete', tier: 'safe' }) && !soft({ method: 'delete', tier: 'close-app' }) && !soft({ method: 'vendor', tier: 'owner' })
+            && !soft({ method: 'delete', tier: 'owner', regenerable: true }), 'soft: owner, loose and recycle items are recoverable, caches, vendor cleans and regenerable owner items are not');
+        assert.ok(loadRules().filter(r => /^(build-outputs|driver-unpack)$/.test(r.id)).every(r => r.regenerable), 'build outputs and driver unpacks are deleted for good: a trash would free no disk');
+        put(join(local, 'mine', 'draft.txt'), 2048); put(join(local, 'perm', 'f'), 2048);
+        const mineR = { id: 't-mine', title: 'm', tier: 'owner', method: 'recycle', each: true, children: true, paths: ['%LOCALAPPDATA%\\mine'], minMB: 0 };
+        const permR = { id: 't-perm', title: 'p', tier: 'safe', method: 'delete', paths: ['%LOCALAPPDATA%\\perm'], minMB: 0 };
+        const mineId = evaluate([mineR], ctx).items[0].id, draft = join(local, 'mine', 'draft.txt');
+        const tr = apply([mineId, 't-perm'], [mineR, permR], ctx), tro = Object.fromEntries(tr.rows.map(r => [r.id, r]));
+        assert.equal(tro[mineId].outcome, 'trashed', `an owner item goes to the local trash when the bin cannot take it (${tro[mineId].notes})`);
+        assert.ok(!existsSync(draft) && tr.trash && tr.toTrash === 2048, 'the file left its place and the trash is counted apart from freed');
+        const manifest = read(join(TRASH(), tr.trash, 'manifest.jsonl')).trim().split('\n');
+        const man = JSON.parse(manifest[0]);
+        assert.ok(manifest.length === 1 && man.id === mineId && man.from === draft && man.bytes === 2048 && man.at && existsSync(join(TRASH(), tr.trash, man.to)), 'one manifest line: id, original path, size, time; the file lies under its relative path');
+        assert.equal(tro['t-perm'].outcome, 'deleted', 'a safe cache is still deleted for good');
+        assert.ok(!existsSync(join(local, 'perm')), 'the cache is gone, not in the trash');
+        assert.equal(restore().length, 1, 'the trash lists the item');
+        const rs = restore(tr.trash);
+        assert.ok(rs.length === 1 && rs[0].restored && lst(draft)?.size === 2048 && restore().length === 0, 'restore puts it back and it leaves the list');
+        assert.ok(restore(tr.trash).length === 0, 'a second restore finds nothing');
+        // a move that fails leaves the file: the trash root is a file here, so no folder can be made in it
+        rmSync(join(state(), 'trash'), { recursive: true, force: true }); writeFileSync(join(state(), 'trash'), 'x');
+        const fl = apply([mineId], [mineR], ctx).rows[0];
+        assert.ok(fl.outcome === 'unchanged' && existsSync(draft) && /left where it is/.test(fl.notes.join()), `a failed move keeps the file and says so, no delete (${fl.outcome}: ${fl.notes})`);
+        rmSync(join(state(), 'trash'));
+        // trash older than 30 days is one ordinary safe item; a young one is not offered
+        const oldT = join(TRASH(), '20200101T000000Z'), youngT = join(TRASH(), stampNow());
+        put(join(oldT, 'C', 'x', 'f'), 1024); put(join(youngT, 'C', 'x', 'f'), 1024);
+        const trRules = loadRules().filter(r => r.id === 'cleanup-trash-old'), ot = evaluate(trRules, ctx).items;
+        assert.ok(ot.length === 1 && ot[0].tier === 'safe' && ot[0].method === 'delete' && !soft(ot[0]) && ot[0].paths.length === 1 && ot[0].paths[0] === oldT, 'old trash is offered as one safe item');
+        assert.equal(apply([ot[0].id], trRules, ctx).rows[0].outcome, 'deleted');
+        assert.ok(!existsSync(oldT) && existsSync(youngT), 'only the offered, old trash is deleted');
+
+        // Review fixes. 1+2: a path is judged, held and recorded by its real form (junction in a parent, 8.3 name, \\?\, \\localhost\C$).
+        const docs = join(home, 'Documents'), jn = join(tmp, 'jn'), wman = (st, rows) => { mkdirSync(join(TRASH(), st), { recursive: true }); writeFileSync(join(TRASH(), st, 'manifest.jsonl'), rows.map(x => JSON.stringify(x)).join('\n') + '\n'); };
+        mkdirSync(docs, { recursive: true }); symlinkSync(home, jn, 'junction');
+        put(join(local, 'okdir', 'f'));
+        assert.ok(forbidden(join(jn, 'Documents')) && forbidden(join(jn, '.ssh', 'x')) && !forbidden(join(local, 'okdir')), 'a top folder reached through a junction in its parent is still refused');
+        assert.ok(forbidden(join(tmp, 'no-such-folder')) && canon(join(tmp, 'no-such-folder')) === null && canon('relative') === null, 'a path that cannot be resolved is refused');
+        const hctx = { ...ctx, sessions: [], procs: prep([{ pid: 7, name: 'x.exe', cmd: `x.exe ${join(home, 'proj')}` }]) };
+        mkdirSync(join(home, 'proj'), { recursive: true });
+        assert.ok(holdOf(join(home, 'proj'), hctx) && holdOf(join(jn, 'proj'), hctx), 'a hold on a folder also holds it under a junction');
+        if (WIN) {
+            assert.ok(forbidden('\\\\?\\' + docs) && forbidden('\\\\localhost\\' + docs[0] + '$' + docs.slice(2)), '\\\\?\\ and \\\\localhost\\C$ forms of a top folder are refused');
+            const un = canon('\\\\localhost\\' + docs[0] + '$' + docs.slice(2));
+            assert.ok(un === null || un === docs, `\\\\localhost\\C$ reads as the drive path (${un})`);
+            const short = p => (spawnSync('cmd.exe', ['/d', '/c', `for %I in ("${p}") do @echo %~sI`], { encoding: 'utf8', windowsVerbatimArguments: true }).stdout ?? '').trim();
+            const sd = short(docs), mineLong = join(local, 'mine-long-folder-name');
+            put(join(mineLong, 'f.txt'));
+            const sm = short(mineLong);
+            if (!/~\d/.test(sd) || !/~\d/.test(sm)) console.log(`selftest note: 8.3 names are off on ${tmp.slice(0, 2)} (${sd} | ${sm}), the 8.3 cases are skipped`);
+            else {
+                assert.ok(forbidden(sd) && canon(sd) === docs, `an 8.3 name of a top folder is refused (${sd})`);
+                const t83 = trashPaths([sm], ctx, '20261116T000083Z')[0];
+                assert.ok(t83.done === 'trashed' && !existsSync(mineLong), `an item given by its 8.3 name is trashed (${t83.why})`);
+                assert.equal(JSON.parse(read(join(TRASH(), '20261116T000083Z', 'manifest.jsonl'))).from, mineLong, 'the manifest holds the long path, so a restore lands there');
+                assert.ok(restore('20261116T000083Z')[0].restored && lst(join(mineLong, 'f.txt')), 'restore recreates the long name, not the 8.3 one');
+            }
+        }
+        // 3: the Recycle Bin is for another volume only, and only for a part measured whole with short paths; the same volume renames
+        const cb = { ...ctx, volumes: [{ drive: tmp.slice(0, 2), maxMB: 1e6, nuke: 0 }], sid: 'S-1-selftest' };
+        const part = { path: join(outside, 'keep.txt'), bytes: 1, links: 0 };
+        if (WIN) {
+            assert.match(recycleOne({ ...part, denied: 1 }, cb).why, /not measured whole/, 'a part with folders it could not read is not sent to the bin');
+            assert.match(recycleOne({ ...part, partial: true }, cb).why, /not measured whole/);
+            assert.match(recycleOne({ ...part, maxPath: 260 }, cb).why, /260/, 'a path of 260 characters or more is not sent to the bin');
+        }
+        put(join(local, 'mine2', 'd.txt'), 2048);
+        const m2 = { ...mineR, id: 't-mine2', paths: ['%LOCALAPPDATA%\\mine2'] }, m2id = evaluate([m2], cb).items[0].id;
+        assert.equal(apply([m2id], [m2], cb).rows[0].outcome, 'trashed', 'a soft item on the trash volume is renamed into the trash even when the bin is on and roomy');
+        // 4: a part gone for good is never "trashed"
+        assert.deepEqual([{ trashed: 1 }, { trashed: 1, lost: 1 }, { lost: 1, toBin: 1 }, { lost: 1 }, { soft: true }, { left: 1, trashed: 1 }].map(outcomeOf), ['trashed', 'partly deleted', 'partly deleted', 'deleted', 'recycled', 'partly left'], 'outcome of mixed parts');
+        // 5: a git checkout is not trashed by hand
+        put(join(local, 'repo', '.git', 'HEAD')); put(join(local, 'repo', 'f')); put(join(local, 'nest', 'a', 'wt', '.git'), 20);
+        const rp = trashPaths([join(local, 'repo'), join(local, 'nest')], ctx, '20261116T000005Z');
+        assert.ok(rp.every(r => /prune/.test(r.why ?? '')) && existsSync(join(local, 'repo', '.git', 'HEAD')) && existsSync(join(local, 'nest', 'a', 'wt', '.git')), 'trash refuses a folder that holds .git, and says prune');
+        // 6: every hand-trashed item has its own id, so restore <id> puts back one
+        const h1 = join(local, 'hand', 'a.txt'), h2 = join(local, 'hand', 'b.txt'), hs = '20261116T000006Z';
+        put(h1); put(h2);
+        assert.ok(trashPaths([h1, h2], ctx, hs).every(r => r.done === 'trashed'), 'both hand items are trashed');
+        const hid = restore().filter(r => r.stamp === hs).map(r => r.id);
+        assert.ok(hid.length === 2 && new Set(hid).size === 2 && hid.every(i => /^hand-/.test(i)), `hand items get distinct ids (${hid})`);
+        const r1 = restore(hid[0]);
+        assert.ok(r1.length === 1 && [h1, h2].filter(f => existsSync(f)).length === 1 && restore().filter(r => r.stamp === hs).length === 1, `restore <id> puts back one item only (${JSON.stringify(r1)})`);
+        // 7: a manifest line that points outside its stamp folder, or at a share, is not restorable
+        const st7 = '20261116T000007Z', okTo = join('ok', 'f'), back = join(tmp, 'restored', 'f');
+        put(join(TRASH(), st7, okTo)); put(join(TRASH(), 'elsewhere', 'f'));
+        wman(st7, [{ id: 'bad-empty', to: '', from: join(tmp, 'x1') }, { id: 'bad-dot', to: '.', from: join(tmp, 'x2') }, { id: 'bad-up', to: join('..', 'elsewhere', 'f'), from: join(tmp, 'x3') },
+            { id: 'bad-share', to: okTo, from: '\\\\host\\share\\x' }, { id: 'bad-rel', to: okTo, from: 'relative\\x' }, { id: 'good', to: okTo, from: back }]);
+        assert.deepEqual(restore().filter(r => r.stamp === st7).map(r => r.id), ['good'], 'only the line inside its stamp folder, back to a drive path, is listed');
+        assert.ok(restore('good')[0].restored && existsSync(back) && !existsSync(join(tmp, 'x1')), 'the good line restores');
+        // 8: a parent of the original path that is a junction now stops the restore
+        const st8 = '20261116T000008Z', via = join(tmp, 'jp');
+        mkdirSync(join(outside, 'room'), { recursive: true }); symlinkSync(join(outside, 'room'), via, 'junction');
+        put(join(TRASH(), st8, 'ok', 'f')); wman(st8, [{ id: 'linked', to: okTo, from: join(via, 'sub', 'f') }]);
+        const lk = restore('linked')[0];
+        assert.ok(!lk.restored && /junction or symlink/.test(lk.why) && !existsSync(join(outside, 'room', 'sub')), `restore refuses a parent that is a junction (${lk.why})`);
+        rmSync(jn, { recursive: true, force: true }); rmSync(via, { recursive: true, force: true }); rmSync(TRASH(), { recursive: true, force: true });
+
         if (WIN) {
             const c2 = { ...ctx, volumes: [{ drive: tmp.slice(0, 2), maxMB: 1, nuke: 0 }], sid: 'S-1-selftest' };
             assert.match(recycleOne({ path: join(outside, 'keep.txt'), bytes: 5 * MB, links: 0 }, c2).why, /does not fit/);
@@ -884,8 +1094,8 @@ function main(argv) {
         const s = evaluate(loadRules(extra), gather());
         // The person picks by these numbers; confirm.mjs reads their answer. Same order as show() prints.
         const list = TIERS.flatMap(t => s.items.filter(i => i.tier === t));
-        const plan = makePlan('cleanup', list.map(i => ({ id: i.id, what: i.title, bytes: i.bytes, how: i.method === 'recycle' || i.method === 'uninstall' ? 'undo' : 'forever',
-            note: i.method === 'recycle' ? 'to the Recycle Bin' : i.method === 'uninstall' ? 'its uninstaller opens' : undefined,
+        const plan = makePlan('cleanup', list.map(i => ({ id: i.id, what: i.title, bytes: i.bytes, how: soft(i) || i.method === 'uninstall' ? 'undo' : 'forever',
+            note: soft(i) ? 'to the local trash (restore brings it back); another drive: the Recycle Bin when it fits, else kept' : i.method === 'uninstall' ? 'its uninstaller opens' : undefined,
             held: i.blockers.join('; ') || (i.tier === 'admin' ? 'admin item: written to a .bat' : i.method === 'none' ? 'yours to do by hand' : undefined) })), { scope: 'machine' });
         for (const p of plan.items) if (p.n) list.find(i => i.id === p.id).n = p.n;
         return say(s, () => show(s));
@@ -895,14 +1105,30 @@ function main(argv) {
         const a = apply(ids, loadRules(extra));
         process.exitCode = a.rows.some(r => ['skipped', 'unchanged', 'error'].includes(r.outcome)) ? 1 : 0;
         return say(a, () => [...a.rows.map(r => `${r.outcome.padEnd(11)} ${r.id}  ${gb(Math.max(0, r.before - r.after))}${r.notes.length ? '  ' + r.notes.join('; ') : ''}`),
-            `freed about ${gb(a.freed)}${a.toBin ? `, and ${gb(a.toBin)} went to the Recycle Bin (still on disk until it is emptied)` : ''}; free space ${Object.keys(a.free[0]).map(d => `${d} ${gb(a.free[0][d])} -> ${gb(a.free[1][d])}`).join(', ')}; log: ${join(state(), 'cleanup-log.jsonl')}`]);
+            `freed about ${gb(a.freed)}${a.toBin ? `, and ${gb(a.toBin)} went to the Recycle Bin (still on disk until it is emptied)` : ''}${a.toTrash ? `, and ${gb(a.toTrash)} went to the local trash ${join(TRASH(), a.trash)} (still on disk; undo: node machine.mjs restore ${a.trash}, or restore <id>)` : ''}; free space ${Object.keys(a.free[0]).map(d => `${d} ${gb(a.free[0][d])} -> ${gb(a.free[1][d])}`).join(', ')}; log: ${join(state(), 'cleanup-log.jsonl')}`]);
+    }
+    if (cmd === 'trash' && ids.length) {
+        const ctx = gather(), stamp = stampNow(), unlock = lock();
+        try {
+            ctx.sessions = sessions(ctx);
+            const rows = trashPaths(ids, ctx, stamp);
+            process.exitCode = rows.some(r => r.why) ? 1 : 0;
+            return say({ rows, trash: stamp }, () => [...rows.map(r => r.why ? `kept ${r.path}: ${r.why}` : `${r.done} ${r.path}${r.to ? ' -> ' + r.to : ''}${r.warn ? '; ' + r.warn : ''}`),
+                ...(rows.some(r => r.done === 'trashed') ? [`undo: node machine.mjs restore ${stamp}`] : [])]);
+        } finally { unlock(); }
+    }
+    if (cmd === 'restore') {
+        const rows = restore(ids[0]);
+        process.exitCode = rows.some(r => r.why) ? 1 : 0;
+        return say(rows, () => !rows.length ? [ids.length ? 'nothing in the trash matches' : 'the trash is empty']
+            : rows.map(r => ids.length ? (r.restored ? `restored ${r.from}` : `kept in the trash: ${r.from}: ${r.why}`) : `${r.stamp}  ${r.id}  ${gb(r.bytes)}  ${r.from}`));
     }
     if (cmd === 'admin' && ids.length) {
         const r = admin(ids, loadRules(extra));
         return say(r, () => [r.ids.length ? `wrote ${r.file} for ${r.ids.join(', ')}: right-click it, Run as administrator` : 'no admin item matched',
             ...r.held.map(h => `left out, held: ${h}`), ...(r.missing.length ? [`not admin items or not found: ${r.missing.join(', ')}`] : [])]);
     }
-    console.error('usage: node machine.mjs scan | apply <id ...> | admin <id ...> | --selftest   [--json] [--rules <file>]');
+    console.error('usage: node machine.mjs scan | apply <id ...> | admin <id ...> | trash <path ...> | restore [<stamp|id|path>] | --selftest   [--json] [--rules <file>]');
     process.exitCode = 2;
 }
 

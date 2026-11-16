@@ -98,7 +98,10 @@ One block per tier:
 - `admin`: needs an elevated shell; the agent never runs these.
 - `owner`: games, programs, big personal files, build output of repos with no commit for 30 days, the Recycle
   Bin, transcripts. Never a default pick. Build output is here because the script cannot see a server started
-  with a relative path (`node dist/x.js`), so it cannot hold that output for it.
+  with a relative path (`node dist/x.js`), so it cannot hold that output for it. Unlike `safe`, nothing here
+  (and no loose file) is deleted for good, except what the next build or download makes again (rules marked
+  `regenerable`: build output, driver unpacks), where a trash would free no disk: it goes by rename to the local trash `~/.claude/makarasty/trash/cleanup/<stamp>/` when it is on the same drive as `~/.claude`
+  (always restorable, see step 4), else to the Recycle Bin only when its size was measured whole, every path in it is under 260 characters and it fits the bin; otherwise it is kept and the reason is reported.
 
 Each item has an id, size, age of its newest file, the method, the path, its evidence and what is lost.
 `held, nothing to do now` lists what a live chat or a running program holds. `scan --json` prints the full
@@ -160,12 +163,12 @@ Yours to decide: <n>. <game, program or file> - <GB> - <last used, or "unknown">
 Held now: <what> - <the chat or program holding it>
 Ask: <item> - <question>
 Kept until the fleet ends: <item> - <why>
-Undo: what went to the Recycle Bin comes back from it; what was deleted does not. Log: ~/.claude/makarasty/cleanup-log.jsonl
+Undo: what went to the Recycle Bin comes back from it; what went to the local trash comes back with `node machine.mjs restore <stamp|id>`; a cache that was deleted does not. Log: ~/.claude/makarasty/cleanup-log.jsonl
 ```
 
 The labels and every line are in the operator's language, the rule titles turned into plain words (no
 `vendor`, `scratch`, `close-app`, no method tags); only the id in brackets stays as printed. `<how>` is one of:
-deleted for good, to the Recycle Bin, its uninstaller opens (one window per program), by hand. A null size
+deleted for good (caches only), to the Recycle Bin or the local trash, its uninstaller opens (one window per program), by hand. A null size
 is "size unknown", never counted. `Yours to decide` shows the ten largest; the rest come on "покажи все".
 The Recycle Bin line says not to empty it until the operator has checked what this run moved there.
 
@@ -175,7 +178,9 @@ trees, children first - when that census file contains `--pid` (makarasty 1.5.14
 ignores the filter and ends every eligible line, so then go pid by pid as below). Every other chosen process - a `CLOSED CHAT SERVING` line the operator named, a line
 the census left alone, a pid found by hand - is ended pid by pid with `taskkill /PID <n> /F` (`taskkill //PID <n> //F` from Git Bash), children first,
 never `/T`, which follows reused pids. Then list again.
-Files found by hand are the operator's to delete: print the commands for the chosen items.
+Files found by hand are the operator's to remove, and they stay recoverable: print `node "${CLAUDE_SKILL_DIR}/machine.mjs" trash <path ...>` for the chosen items
+(the local trash on the `~/.claude` drive, else the Recycle Bin when it surely fits, else kept; it refuses a top folder, a held path and a folder that holds a `.git`: that is `/makarasty-tools:prune`; a path is judged by its real long form, junctions and 8.3 names resolved), never `rm` for personal files. Only a regenerable cache found by hand
+may get a delete command.
 
 Scan items are deleted only with the operator's own answer, read by a script from this chat, not reported by you.
 A bare "да" or "всё" after the list is never enough, and `#N` is not read: numbers only. In the report a disk item keeps the number `scan` printed
@@ -197,16 +202,24 @@ show what changed before acting.
 
 - `node "${CLAUDE_SKILL_DIR}/machine.mjs" apply <id> ...`: looks again first, then per method: `delete` for
   good (caches, old versions, scratch), `vendor` through the tool's own command (`npm cache clean --force`),
-  `recycle` to the Recycle Bin only when it fits the bin's free room (the bin holds about 10% of a drive; an
-  item that does not fit is kept and says so), `uninstall` opens the program's own uninstaller or
+  `recycle` (and every `owner` item not marked `regenerable` or loose-file item, even with method `delete`) renamed into the local trash with a manifest line
+  (real original path, size, time) when on the same drive as `~/.claude`; on another drive to the Recycle Bin only when its size was measured whole (no unreadable
+  folder), every path in it is under 260 characters and it fits the bin's free room (about 10% of a drive), else kept. A move that fails (a locked file) or is refused is reported and the item stays:
+  there is no fallback to a permanent delete. A OneDrive file is kept: delete it there. `uninstall` opens the program's own uninstaller or
   `steam://uninstall` for the operator to confirm there (0 GB freed until they do; scan again after). It
-  prints per id `deleted`, `recycled`, `opened`, `partly left` (files in use), `unchanged` or `skipped` with
+  prints per id `deleted`, `partly deleted` (some part went for good, never shown as trashed), `recycled`, `trashed`, `opened`, `partly left` (files in use), `unchanged` or `skipped` with
   the reason, and the freed size from a measurement after the act (what went to the Recycle Bin is counted
   apart: it still takes the disk until the bin is emptied), plus each drive's free space before and after;
   it exits 1 when any id was skipped, unchanged or `error` (its note says why). Report those numbers, not the
   scan's, and each skipped id with its reason; do not retry it in the same turn. What went to the Recycle Bin
-  frees the disk only when the bin is emptied: say that beside its size. A crash midway still leaves the log
+  frees the disk only when the bin is emptied: say that beside its size; the local trash likewise, and say
+  its restore line from the apply output (`node "${CLAUDE_SKILL_DIR}/machine.mjs" restore <stamp>` puts back a
+  whole apply, `restore <id>` one item (hand-trashed items each get their own `hand-<stamp>-<pid>-<n>` id), `restore <original path>` one file; `restore` alone lists the trash;
+  it refuses to overwrite a file already at the original path, a manifest line that does not point inside its stamp folder or back to a drive path, and an original path under a junction or symlink). A crash midway still leaves the log
   of every id done.
+- The trash is never emptied by this skill on its own. Folders older than 30 days appear in the next scan as
+  one ordinary `safe` item (`cleanup-trash-old`, deleted for good on the operator's yes like any cache), with
+  its own `lose:` line saying they can no longer be restored.
 - `admin` items: `node "${CLAUDE_SKILL_DIR}/machine.mjs" admin <id> ...` writes
   `~/.claude/makarasty/cleanup-admin.bat` (a HELD item is left out and named; ids under `not admin items or
   not found` go back to the operator by name). Admin ids never go to `apply`. The operator right-clicks it,
@@ -214,7 +227,7 @@ show what changed before acting.
   this file may change system folders), then each step's own line the file echoes (from the rule's
   `explain`). Never run it yourself.
 - Every outcome is in `~/.claude/makarasty/cleanup-log.jsonl`: what went, how big, and how: `recycled` comes
-  back from the Recycle Bin, `deleted` does not.
+  back from the Recycle Bin, `trashed` with `restore`, `deleted` (a cache) does not.
 
 Done when the chosen processes are gone, confirmed by a second listing, every chosen scan id has its
 outcome from `apply` or a written `.bat`, and the operator has the commands for the rest.

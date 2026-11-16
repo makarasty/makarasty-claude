@@ -1,5 +1,17 @@
 # Changelog
 
+## makarasty-tools 1.19.44 — 2026-11-16
+
+- **cleanup: personal files are recoverable** (owner's pick 11-16). Owner-tier items (unless the rule is
+  `regenerable`: build output, driver unpacks, where a trash frees no disk), loose files, `recover:true` rules and
+  hand-found files (`machine.mjs trash <path>`) are renamed into `~/.claude/makarasty/trash/cleanup/<stamp>/` with a
+  manifest line when on the trash's drive; on another drive the Recycle Bin is used only when the item was measured
+  whole and holds no path of 260 characters or more (Windows deletes those for good without asking); else the item
+  stays. A failed move never falls back to a delete. `machine.mjs restore <stamp|id|path>` puts items back, never over
+  an existing file or through a junction. Trash older than 30 days is offered as one ordinary safe item. Paths are
+  checked in their long, real form (`DOCUME~1`, `\\?\`, `\\localhost\C$`, a junction parent could reach Documents);
+  `trash` refuses a folder holding `.git`. Two review rounds; the selftest covers each case.
+
 ## makarasty-tools 1.19.43 — 2026-11-16
 
 From the tools audit of 11-16 (six agents, a red team judged the recommendations).

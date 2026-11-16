@@ -217,6 +217,7 @@
    "title": "Driver installer unpack folders",
    "tier": "owner",
    "method": "delete",
+   "regenerable": true,
    "os": "win32",
    "paths": [
     "C:\\AMD",
@@ -613,6 +614,7 @@
    "title": "Build output of a project idle for 30 days",
    "tier": "owner",
    "method": "delete",
+   "regenerable": true,
    "type": "builds",
    "names": [
     "build",
@@ -772,7 +774,7 @@
    "minMB": 200,
    "minAgeHours": 168,
    "keepRepos": true,
-   "lose": "it goes to the Recycle Bin while it fits; a portable app or game keeps its settings and saves inside"
+   "lose": "it goes to the local trash (restorable; another drive: the Recycle Bin when it fits); a portable app or game keeps its settings and saves inside"
   },
   {
    "id": "videos-big",
@@ -788,7 +790,7 @@
    "minMB": 1024,
    "minAgeHours": 168,
    "keepRepos": true,
-   "lose": "it goes to the Recycle Bin and can be restored from there"
+   "lose": "it goes to the local trash (another drive: the Recycle Bin) and can be restored from there"
   },
   {
    "id": "loose-files",
@@ -798,7 +800,16 @@
    "type": "loose",
    "minAgeHours": 168,
    "minMB": 1,
-   "lose": "logs, drafts and bundles chats left; they go to the Recycle Bin"
+   "lose": "logs, drafts and bundles chats left; they go to the local trash, or the Recycle Bin on another drive"
+  },
+  {
+   "id": "cleanup-trash-old",
+   "title": "Cleanup's own trash, older than 30 days",
+   "tier": "safe",
+   "method": "delete",
+   "type": "trash",
+   "minMB": 0,
+   "lose": "what you removed with cleanup over 30 days ago and left in ~/.claude/makarasty/trash/cleanup; after this it cannot be restored"
   },
   {
    "id": "recycle-bin",
