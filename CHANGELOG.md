@@ -1,5 +1,12 @@
 # Changelog
 
+## makarasty-tools 1.19.42 — 2026-11-16
+
+- **A plain push of a work branch no longer asks** (operator 11-16: «можешь спокойно сам пушить, бесит спрашивать»):
+  `git push [-u] <remote> <branch>` runs without his word. Still asked: main/master (also as `X:main`), `HEAD` or no
+  branch named, force (`-f`, `--force*`, `+ref`), delete (`:ref`, `--delete`), tags, `--mirror`, any other flag, an
+  alias, `subtree push`, `send-pack`. `push-guard.test.ts` covers both lists.
+
 ## makarasty-tools 1.19.41 — 2026-11-13
 
 The rest of the inbox review (operator's picks of 11-13). Each fix has a test that failed on 1.19.40.

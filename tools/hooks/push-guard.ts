@@ -11,12 +11,15 @@ import { PLUGIN_FRAME, ownWords } from './own-words.ts'
 //    delivers as a prompt when the dialog died.
 // A brief, another session's message, a paste, an app reminder or a standing answer is not his word. Typed during a
 // turn, "stop, don't push" withdraws it. `--dry-run`/`-n` is no push. MAKARASTY_PUSH_GUARD=off drops it.
+// 2026-11-16 «можешь спокойно сам пушить»: a plain push of a named branch runs without his word; only main/master,
+// force, delete, tags, mirror, any other flag, or a push with no branch named (it may be main) still needs it.
 // shortcut: a push inside a script (`npm run release`), an alias from ~/.gitconfig or a GUI client is not seen; this
 // stops a chat's own unasked `git push`, not a determined bypass.
 
 export const MESSAGE =
-  'Blocked by makarasty-tools push-guard: a push needs the person\'s own word in this turn, and none came (a brief, a ' +
-  'plugin message or a standing answer does not count). Ask with AskUserQuestion: the branch, the remote and the ' +
+  'Blocked by makarasty-tools push-guard: this push (to main/master, forced, deleting, tags, an unusual flag, or no branch ' +
+  'named) needs the person\'s own word in this turn, and none came (a brief, a plugin message or a standing answer does ' +
+  'not count). A plain `git push <remote> <branch>` of a work branch needs no word. Ask with AskUserQuestion: the branch, the remote and the ' +
   'commits it sends, options "Да, пушь" / "Нет". His yes (or a typed «запушь») lets the push run. MAKARASTY_PUSH_GUARD=off turns this off.'
 
 // The verb, not the noun or a name: пушь/пушим/запушь/запушить/пуш, push (not push-guard, pushed, Пушкин, push notifications).
@@ -53,6 +56,20 @@ export function pushes(cmd: string, tool: string): boolean {
   // A dry run: --dry-run, or -n in a cluster of push's own short flags (not `-onoop`, a push option).
   return gitSubs(cmd, tool).some(({ sub }) => (/^push(\s|$)/.test(sub) && !/\s(--dry-run|-[fuqvd46]*n[fuqvd46]*)(\s|$)/.test(sub.split(/\s--(\s|$)/)[0]!)) ||
     /^(subtree\s+push|send-pack)(\s|$)/.test(sub) || /^config\s.*\balias\.\S+\s+["']?!?(git[\s\u0002]+)?push\b/.test(sub)) // the lexer joins a quoted word with \u0002
+}
+
+// A push that needs no word: every push in the line is `push [-u|-q|-v] <remote> <branch>...`, no branch is main,
+// master, HEAD, a tag, forced (+) or deleted (:), and no alias is in play.
+const PLAIN_FLAG = /^(-u|--set-upstream|-q|--quiet|-v|--verbose)$/
+const plainRef = (r: string): boolean => /^[\w./@:-]+$/.test(r) && !/^[:+]|^refs\/tags\/|(^|:)(refs\/heads\/)?(main|master|HEAD)$/.test(r)
+export function plainPush(cmd: string, tool: string): boolean {
+  if (/alias\./i.test(cmd)) return false
+  const subs = gitSubs(cmd, tool).map(({ sub }) => sub).filter((s) => /^(push|subtree\s+push|send-pack)(\s|$)/.test(s))
+  return subs.length > 0 && subs.every((s) => {
+    const words = s.split(/\s+/).slice(1)
+    const args = words.filter((w) => !w.startsWith('-'))
+    return /^push\s/.test(s) && words.every((w) => !w.startsWith('-') || PLAIN_FLAG.test(w)) && args.length >= 2 && args.slice(1).every(plainRef)
+  })
 }
 
 // ok: his word for a push in this turn; lastAsk: this chat's last end-of-turn ask. Fresh on every module load (a reload
@@ -93,7 +110,8 @@ export const register: Register = (on) => {
 
   on('tool.call', { tool: /^(Bash|PowerShell|Monitor|mcp__terminal__run_in_terminal)$/ }, async ($, e, next) => {
     const command = String((e as unknown as { command?: unknown }).command ?? '')
-    if (state.ok || !pushes(command, e.tool === 'PowerShell' ? 'PowerShell' : 'Bash') || (await $.env.get('MAKARASTY_PUSH_GUARD')) === 'off') return next(e)
+    const tool = e.tool === 'PowerShell' ? 'PowerShell' : 'Bash'
+    if (state.ok || !pushes(command, tool) || plainPush(command, tool) || (await $.env.get('MAKARASTY_PUSH_GUARD')) === 'off') return next(e)
     return { deny: MESSAGE }
   }).catch(($, e, next) => next(e))
 }

@@ -121,17 +121,17 @@ const findingsOn = async ($: Dollar) => (await $.env.get('MAKARASTY_FINDINGS')) 
 // standing answers of people who run many chats at once. A person's own limits go in profile.md. Rides with the economy
 // text and its switch.
 export const habits =
-  "Working rules: Edit a file only after reading it with the Read tool. Wait for a task's completion notice; never poll with sleep loops. " +
+  "Working rules: Edit a file only after reading it.Wait for a task's completion notice; never poll." +
   'Call a fix done only after a check you ran shows it, and say plainly what you did not check. Report in this order: what happened, why, ' +
   'what you did, what the person must do. Told it is urgent: the core change and one check, no extra review rounds, then list what you skipped. ' +
   'Do without asking, then report: run the scoped tests, typecheck or build; start the dev server the task needs, after checking its port ' +
   'and using one that already answers (never a second); fix what your own change broke. Never ask for secrets or to run what you can: ' +
-  'use the local way in (proxy, port). Commit your own files when done. Ask first: push, merge, release, delete, anything ' +
+  'use the local way in (proxy, port). Commit your own files when done and push the work branch. Ask first: a push to main or forced, merge, release, delete, anything ' +
   'sent off this machine, stopping a process the person started, a real choice between approaches; otherwise take the recommended option and ' +
   "say so in one line. Other chats may share this checkout: edit and commit only your own files, name another chat's file, never touch or " +
   'discard it. A check that runs out of memory is too broad: narrow it, never raise --max-old-space-size or drop a worker cap someone set. ' +
   'New errors after a tool update: find the culprit before any rollback or pin. The code is wrong (fix it), another checker misses ' +
-  'it (report the gap), or the new version has a bug (cite its issue or changelog, then pin with a comment linking it).'
+  'it (report the gap), or the new version has a bug (cite its issue, then pin with a comment linking it).'
 
 // How a question reaches a person who runs many chats and answers hours later, often in free text [M63] [M67]. Once,
 // here, instead of in every skill and command that asks. Rides with the economy text and its switch.
