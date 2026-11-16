@@ -1,5 +1,5 @@
 ---
-description: Plan a call run - dig every fact about a topic out of the project, then write the bilingual script a non-native speaker reads aloud on the call. With `live <run-id>`, sit in on the call in a fresh chat and answer from those facts in both languages, one turn per question.
+description: Plan a call run - dig every fact about a topic out of the project, then write the bilingual script a non-native speaker reads aloud on the call. With `live <run-id>`, sit in on the call in a fresh chat and answer from those facts in both languages, one turn per question. Use when a call or meeting needs facts dug out of the project; a quick script without digging is `/makarasty-tools:say`.
 argument-hint: <who you are talking to and what about> [fast] | live <run-id>
 disable-model-invocation: true
 ---

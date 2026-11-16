@@ -1,5 +1,6 @@
 ---
-description: Re-checks which model and effort each role should use (main chat, coder, reviewer, judge, scouts) from this machine's own transcripts and git history, with an optional paid blind benchmark. Use on "перепроверь модели", "какую модель для чего", "новая модель вышла, пересчитай", "tune models", "benchmark the models".
+description: Re-checks which model and effort each role should use (main chat, coder, reviewer, judge, scouts) from this machine's own transcripts and git history, with an optional paid blind benchmark.
+disable-model-invocation: true
 argument-hint: "[usage|quality|bench] [--days N]"
 allowed-tools: Bash(node:*), Read, Write, Agent
 ---

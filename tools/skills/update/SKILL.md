@@ -1,5 +1,6 @@
 ---
-description: Finds what on this computer is outdated and worth updating: apps, runtimes, CLIs, Claude Code and plugins, other agents, drivers, what a `game` run installed. Use on "обнови всё", "обнови всё что устарело", "что можно обновить", "что устарело", "проверь обновления", "старая версия", "update everything", "what is outdated", "check for updates".
+description: Finds what on this computer is outdated and worth updating: apps, runtimes, CLIs, plugins, other agents, drivers, what a `game` run installed.
+disable-model-invocation: true
 argument-hint: "[apps | dev | claude | drivers | all]"
 allowed-tools: Bash, PowerShell, Read, Grep, Glob, Agent, ToolSearch, WebSearch, WebFetch, SendMessage, Write
 ---
@@ -8,7 +9,7 @@ Find what is out of date on this machine and which updates are worth doing. The 
 list, and the operator decides what to update.
 
 The area in `$ARGUMENTS` picks the sources: `apps` the package managers, `dev` developer tools and their pins,
-`claude` Claude Code, its plugins and other agent CLIs, `drivers` the drivers; `all` or nothing, everything.
+`claude` plugins and other agent CLIs, `drivers` the drivers; `all` or nothing, everything.
 
 ## 1. Inventory, read only, in one script
 
@@ -25,11 +26,10 @@ missing and name it once.
   hand-managed installs (a `.tools` folder, `D:\java`).
 - **Pins**: `package.json` engines and `.nvmrc`, `go.mod`'s go line, `pyvenv.cfg` of known venvs, a
   launcher's Java path, IDE SDK paths, the version an installed skill is tied to.
-- **Claude**: every copy - `claude --version` on PATH and `Get-Process claude | Select Path` (desktop profiles
-  run their own) - against `npm view @anthropic-ai/claude-code version`; `claude plugin list`; for a GitHub
-  marketplace `git -C ~/.claude/plugins/marketplaces/<m> rev-parse --short HEAD` against `git ls-remote <repo>
-  HEAD`; for a directory marketplace, its `plugin.json` version and whether that bump is committed. Other
-  agent CLIs on PATH (`codex --version` and the like). Never `claude plugin marketplace update` here: it writes.
+- **Claude plugins** (Claude Code itself: the separate `sunup` plugin, `/sunup:sunup`, checks its releases; when that plugin is not installed, `claude --version` against `claude update` here): `claude plugin list`; for a GitHub marketplace
+  `git -C ~/.claude/plugins/marketplaces/<m> rev-parse --short HEAD` against `git ls-remote <repo> HEAD`; for a
+  directory marketplace, its `plugin.json` version and whether that bump is committed. Other agent CLIs on
+  PATH (`codex --version` and the like). Never `claude plugin marketplace update` here: it writes.
 - **Drivers**: `nvidia-smi --query-gpu=name,driver_version --format=csv` or `Win32_VideoController`. The
   current version only from the vendor's own page or app; unverified, say so.
 - **Where each item lives**: `InstallLocation` from the Uninstall keys (HKLM, WOW6432Node, HKCU), and the disk
@@ -88,8 +88,8 @@ Ask once which numbers to apply. Apply each approved number on its own - `winget
 naming package, source and size first. Record each in `~/.claude/makarasty/upkeep.json` (create the folder if
 missing; read, merge, write) as `{"items":[{"item","manager","id","old","new","path","date","by":"update","undo"}]}`,
 the same shape `game` writes.
-Drivers and Windows settings are the operator's: give the steps. Claude Code updates with `claude update` and
-plugins with `claude plugin update`, between fleet runs only.
+Drivers and Windows settings are the operator's: give the steps. Plugins update with `claude plugin update`,
+between fleet runs only.
 
 Done when the operator has the report and every applied item is recorded. For a monthly run, a local
 scheduled task (the `scheduled-tasks` tools) can start it; a cloud `/schedule` cannot see this machine.

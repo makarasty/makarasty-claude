@@ -1,11 +1,37 @@
 # Changelog
 
-## makarasty 1.18.10 — 2026-11-16
+## makarasty 1.18.12 — 2026-11-17
 
 - **fleet-analyze: one-chat runs get their time and habit pass.** A run with no `chips/<session-id>` files printed 0 workers
   and zero time buckets, turns, re-reads and subagents. Now each slot id from the tasks is a worker, and each coordinator
   subagent joins the slot whose task window holds its first line; token and cost totals are unchanged. Multi-chat runs are
   unchanged. Test: one-chat fixture in `fleet-analyze-test`.
+
+## makarasty-tools 1.19.46 — 2026-11-16
+
+- **Asking**: a question the person's taste decides is asked too (A/B: a pure taste choice was decided alone 0/2,
+  then asked 1/2) [M74].
+- **craft kept on measurement** [M74]: with it a test came before the change 6/6 (0/6 without) and a test was seen
+  failing 3/8 (0/8); outcomes on small tasks equal, +54% cost. Description cut to ~200 chars; one line says tests the
+  person asked for are written in full under a minimal-code mode (beside the ponytail ruleset no test came first).
+
+## makarasty-tools 1.19.45 — 2026-11-16
+
+- **Questions to the person** (operator 11-16: questions asked without looking into it, options with no reason): the
+  session text now says to look into a question first, take what a checked fact or plain logic settles (nothing worse
+  for the person, nothing on the ask-first list) and name it in one line for review; ask only when outcomes really
+  differ; plain words; each option says why it beats the others, on a checked fact, an unchecked one marked a guess.
+- **inbox claims no push it did not make**: no notify channel is configured on this machine and 93 of 96 push records
+  since 11-11 were failures. With no channel there is no attempt and no failure record, and `on`/`status` say phone
+  pushes are off and how to turn them on; the hook asks at most every 10 min; a failed push reads as failed.
+- **say**: triggers for "напиши коротко на английском, я скину это <человеку>"; a call script is about five questions,
+  at most four spoken lines per point (the operator's 10-16 rewrites); offers `/makarasty:fleet-call` when facts must
+  be dug from the project. **blindtest**: a static mode for PNG/JPG mockups. **update**, **tune**: manual-only.
+
+## makarasty 1.18.11 — 2026-11-16
+
+- fleet-plan routes a mission that prepares a call or meeting to `/makarasty:fleet-call`; fleet-call says when to use
+  it.
 
 ## makarasty-tools 1.19.44 — 2026-11-16
 

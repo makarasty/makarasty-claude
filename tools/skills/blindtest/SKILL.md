@@ -1,5 +1,5 @@
 ---
-description: First-time-user usability check: agents with no code access try plain tasks on the live screen; fixes are re-run to prove it got easier. Use on "проверь тупым агентом", "слепой агент", "как тупой пользователь", "пусть новичок разберётся", "blind test the UI", "is this screen understandable".
+description: First-time-user usability check: agents with no code access try plain tasks on the live screen, or on PNG/JPG mockups when there is no live pane; fixes are re-run to prove it got easier. Use on "проверь тупым агентом", "слепой агент", "слепое тестирование мокапов", "как тупой пользователь", "blind test the UI", "is this screen understandable".
 argument-hint: [screen or route] [tasks in plain words] [--fix]
 ---
 
@@ -11,7 +11,7 @@ are usability observations, not design findings: the design gate in the fleet's 
 
 ## 1. Set it up
 
-Needs the makarasty plugin (its `fleet-naive-user` agent) and a browser pane. Without either, say so in one line and stop: nothing was tested.
+Live mode (the default) needs the makarasty plugin (its `fleet-naive-user` agent) and a browser pane. When the person gives image files (PNG/JPG mockups) or the pane is hidden, use the static screens below. Neither a pane nor images: say so in one line and stop, nothing was tested.
 
 - **Tasks**: three by default, at most five: goals a real user of this screen has, in their words, with no
   label from the UI ("find the phone number of a patient", not "open the Contacts tab"), each with one
@@ -31,6 +31,24 @@ Needs the makarasty plugin (its `fleet-naive-user` agent) and a browser pane. Wi
   does not reset (dismissed tips, remembered filters) in the report. Read the viewport with
   `innerWidth`/`innerHeight` and pass it. After each user, check the frames once more; a user who ran on a
   dead pane, or returned `blocked`, is replaced and not counted.
+
+### Static screens
+
+The same roles, tasks, user models and findings format, but the agents read image files instead of the
+pane. A mockup has no live state, so a task ends when the user names the screen and the label it would tap
+to finish.
+
+- **Images**: copy every screen into a fresh folder in the scratchpad, outside the project (these agents have
+  every tool, so "no code" holds only by the prompt and by the code not being next to the images), under neutral names (`s01.png`, `s02.png`), so no file
+  name or caption says what a screen is; keep a private map from name to screen.
+- **Users**: three `general-purpose` agents, one `sonnet` and two `haiku`, with the efforts and rotated task
+  order of live mode, one after another (`fleet-naive-user` has no file tools). Each prompt carries the role,
+  the tasks, the folder and the rules of `agents/fleet-naive-user.md` in the makarasty plugin: knows the job
+  not the app, reads only the images with `Read`, opens no code or other file, returns the same JSON, stops
+  after about twelve steps.
+- **Judge**: section 2, with the judge's own look at the image in place of `document.body.innerText`; a quote
+  not on the screen is dropped. Fixes are changes to the mockups, re-run only with new images. Section 3's
+  element and text counts are skipped, and the report says so.
 
 ## 2. Judge
 

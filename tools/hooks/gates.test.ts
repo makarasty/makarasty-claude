@@ -391,8 +391,12 @@ test('MAKARASTY_ECONOMY=off and MAKARASTY_FINDINGS=off drop their texts and leav
 })
 
 test('asking: one line names each rule the person asked for, under its budget', () => {
-  for (const w of [/stands alone/, /Number every list/, /continue\?/, /one click or one command/, /what made it, its size, what breaks without it, and your recommendation/, /one ask \(AskUserQuestion\), the recommended option first/, /message that stands alone/, /with the outcomes as options, never only in prose/]) expect(asking).toMatch(w)
-  expect(asking.length).toBeLessThan(1050)
+  for (const w of [/stands alone/, /Number every list/, /continue\?/, /one click or one command/, /what made it, its size, what breaks without it, and your recommendation/, /one ask \(AskUserQuestion\), the recommended option first/, /message that stands alone/, /with the outcomes as options, never only in prose/,
+    /why it beats the others here, resting on a fact you checked/, /marked a guess/, /Plain words/, /Look into it before asking/,
+    /name it in one line of the report for review/, /none on the ask-first list/, /really different outcomes or the person's taste decides/]) expect(asking).toMatch(w)
+  // 11-16: the owner asked that a chat look into a question before asking, settle what logic settles (and report it), and that
+  // every option say why it beats the others, with checked facts, in plain words (+~500 chars).
+  expect(asking.length).toBeLessThan(1550)
 })
 
 test('profile.md: added after the rules when present, BOM dropped, capped', async ($, on) => {
