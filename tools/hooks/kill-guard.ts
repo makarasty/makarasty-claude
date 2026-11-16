@@ -171,10 +171,12 @@ export function denial(command: string, off: boolean, tool = 'Bash'): string | n
 }
 
 export const register: Register = on => {
-  on('tool.call', { tool: /^(Bash|PowerShell|Monitor)$/ }, async ($, e, next) => {
-    const command = (e.tool === 'Bash' || e.tool === 'PowerShell' || e.tool === 'Monitor' ? e.command : '') ?? '' // a Monitor on a ws has no command
+  on('tool.call', { tool: /^(Bash|PowerShell|Monitor|mcp__terminal__run_in_terminal)$/ }, async ($, e, next) => {
+    const command = String((e as unknown as { command?: unknown }).command ?? '') // a Monitor on a ws has no command
+    // The person's terminal has an unknown shell (often PowerShell on Windows): either reading refuses.
+    const tools = e.tool === 'mcp__terminal__run_in_terminal' ? ['Bash', 'PowerShell'] : [e.tool]
     let deny: string | null = null
-    try { deny = denial(command, (await $.env.get('MAKARASTY_KILL_GUARD')) === 'off', e.tool) } catch {
+    try { const off = (await $.env.get('MAKARASTY_KILL_GUARD')) === 'off'; deny = tools.reduce<string | null>((d, t) => d ?? denial(command, off, t), null) } catch {
       // shortcut: a bug in this guard (not a refusal) lets the call run rather than blocking every shell call.
     }
     return deny ? { deny } : next(e)

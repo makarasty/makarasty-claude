@@ -68,9 +68,9 @@ const CMD_SWITCH = new Set(['rd', 'rmdir', 'del', 'erase'])
 const NARROWS = /^-(i?name|i?path|i?wholename|i?regex|i?lname|[acm]time|[acm]min|newer\w*|empty|size|user|group|perm|samefile)$/
 // The narrowing tests that take a pattern; a pattern that matches everything narrows nothing.
 const PATTERN_TEST = /^-(i?name|i?path|i?wholename|i?regex|i?lname)$/
-// Does a find expression's filter limit what -delete reaches? A test does (a negated one too: `! -name x` still filters),
-// -maxdepth does with `-type f`, a `( a -o b )` group does when every branch does; at the top level only the branch that
-// holds the delete counts. A pattern that matches everything (`*`, `.*`) narrows nothing.
+// Does a find expression's filter limit what -delete reaches? A test does, but not a negated one (`! -name x`, `-not -path y`
+// still take everything else); -maxdepth does with `-type f`, a `( a -o b )` group does when every branch does; at the top
+// level only the branch that holds the delete counts. A pattern that matches nearly everything (`*`, `.*`, `*.*`, `?*`) narrows nothing.
 function findNarrowed(t: string[]): boolean {
   const andNarrows = (b: string[]): boolean => {
     for (let i = 0; i < b.length; i++) {
@@ -80,7 +80,7 @@ function findNarrowed(t: string[]): boolean {
         for (; e < b.length && d; e++) d += b[e] === '(' ? 1 : b[e] === ')' ? -1 : 0
         if (orNarrows(b.slice(i + 1, e - 1), true)) return true
         i = e - 1
-      } else if (NARROWS.test(w) && (!PATTERN_TEST.test(w) || !/^(\.?\*+|)$/.test(b[i + 1] ?? ''))) return true
+      } else if (NARROWS.test(w) && !/^(!|-not)$/.test(b[i - 1] ?? '') && (!PATTERN_TEST.test(w) || !/^(\.?\*+|\*\.\*|\?\*|\*\?|\[!\.\]\*|)$/.test(b[i + 1] ?? ''))) return true
     }
     return b.includes('-maxdepth') && b.some((y, k) => y === '-type' && b[k + 1] === 'f')
   }
@@ -97,6 +97,10 @@ function findNarrowed(t: string[]): boolean {
   }
   return orNarrows(t, false)
 }
+// A bare match-all operand (`*`, `./*`, `.\*`, `*.*`, and `.`, `./`): emptied folder after a cd that may have failed.
+const MATCHALL = /^(\.[\\/]?|(\.[\\/])?\*(\.\*)?)$/
+// The files of one folder: `*`, `*.*`, `dist/*`.
+const MATCHALL_FILES = /^(.*[\\/])?\*(\.\*)?$/
 const DELETISH = /\b(rm|rmdir|rd|del|erase|ri|remove-item|rimraf|del-cli|trash)\b|-delete\b/i
 const strip = (w: string): string => w.replace(/^["']|["']$/g, '')
 const TEMP_PATH = /^\[(?:system\.)?io\.path\]::gettemppath\(\)$/i
@@ -373,9 +377,10 @@ function namesDotGit(seg: string): boolean {
 
 // null = the target may go, else what deleting it destroys. `search`: a find root; `narrowed`: a find test limits what it
 // deletes, which frees the working folder, the home folder and the temp folder as roots.
-function target(typed: string, x: Ctx, narrowed: boolean): string | null {
+// `flat`: a delete without -r, refused only for the project's .git core and for every file of the project folder.
+function target(typed: string, x: Ctx, narrowed: boolean, flat = false): string | null {
   for (const s0 of expand(typed, x)) {
-    const why = place(s0, x, narrowed)
+    const why = place(s0, x, narrowed, flat)
     if (why) return why
   }
   return null
@@ -389,10 +394,14 @@ const HOME_CACHES = ['.cache', '.npm', '.pnpm-store', '.vite', '.turbo', '.expo'
 // Scratch folders other tools use besides the session's own temp folder; below them may go, they themselves may not.
 const SCRATCH = ['/var/tmp', '/dev/shm', '/private/tmp', 'C:/Windows/Temp', 'C:/temp', 'C:/tmp']
 
-function place(s0: string, x: Ctx, narrowed: boolean): string | null {
+// A variable nobody resolved that is the whole target but for a slash or glob: empty, it is `/`, `/*` or the drive root.
+const BARE_VAR = /^(?:[\\/]\$\{?[A-Za-z_]\w*\}?(?:[\\/]\*+)?|\$\{?[A-Za-z_]\w*\}?[\\/]\*?)$/
+
+function place(s0: string, x: Ctx, narrowed: boolean, flat: boolean): string | null {
   const { env, win } = x
   if (!s0) return null
   const free = narrowed
+  if (!flat && !free && BARE_VAR.test(s0)) return `names a variable and nothing else (${s0}): if it is empty this deletes the drive or the folder above; write "\${VAR:?}" (bash) or test the variable first`
   // Only what can be shown dangerous is refused. A path that starts with a variable or substitution nobody resolved here
   // (`$f`, `$1`, `$(ls)`, `$_.FullName`), or a relative one after a cd to such a folder, is allowed.
   if (/^([^\\/]*\$|%\w+%)/.test(s0) || (x.cur === undefined && !/^([A-Za-z]:|[\\/]|~)/.test(s0))) return null
@@ -404,22 +413,24 @@ function place(s0: string, x: Ctx, narrowed: boolean): string | null {
   // A glob whose last segment starts with a dot can name .git (and ..) when it sits in the project folder.
   const cut = Math.max(s0.lastIndexOf('/'), s0.lastIndexOf('\\'))
   const last = s0.slice(cut + 1)
-  if (last.startsWith('.') && /[*?[{]/.test(last) && namesDotGit(last) && same(resolve(cut < 0 ? '.' : s0.slice(0, cut + 1), base0, win), cwd))
+  if (!flat && last.startsWith('.') && /[*?[{]/.test(last) && namesDotGit(last) && same(resolve(cut < 0 ? '.' : s0.slice(0, cut + 1), base0, win), cwd))
     return `${last} can match .git and .., so it deletes the repository history and everything above this folder`
   const glob = /(^|[\\/])\*+$/.test(s0)
   const s = glob ? s0.replace(/[\\/]?\*+$/, '') || (/^[\\/]/.test(s0) ? '/' : '.') : s0
   const r = resolve(s, base0, win)
+  // Only the project's own .git: a nested one (vendor/x/.git, node_modules/x/.git) is somebody else's checkout.
+  const git = `${cwd.replace(/\/$/, '')}/.git`
+  // .git/modules and .git/worktrees hold one entry per submodule or worktree: one of those may go, the folders may not.
+  const inGit = under(r, git) ? r.slice(git.length + 1).split('/') : []
+  const core = inGit.length && GIT_CORE.has(inGit[0]!.toLowerCase()) && !(inGit.length > 1 && /^(modules|worktrees)$/i.test(inGit[0]!))
+    ? `deletes .git/${inGit[0]}, which the whole history of the repository lives in` : null
+  if (flat) return core ?? (MATCHALL_FILES.test(s0) && !free && same(resolve(s0.replace(/[^\\/]*$/, '') || '.', base0, win), cwd) ? 'deletes every file in this folder: name the files, or a folder (rm dist/*)' : null)
   const tmps = [env.tmp, ...(win ? [] : ['/tmp']), ...SCRATCH].map((t) => resolve(t, env.cwd, win))
   if (/^([A-Za-z]:)?\/$/.test(r)) return 'deletes the whole drive'
   if (same(r, home) && free) return null
   if (same(r, home) || under(home, r)) return 'deletes your whole home folder (or the folder that holds it)'
-  // Only the project's own .git: a nested one (vendor/x/.git, node_modules/x/.git) is somebody else's checkout.
-  const git = `${cwd.replace(/\/$/, '')}/.git`
   if (same(r, git)) return 'deletes .git, the whole history of the repository'
-  // .git/modules and .git/worktrees hold one entry per submodule or worktree: one of those may go, the folders may not.
-  const inGit = under(r, git) ? r.slice(git.length + 1).split('/') : []
-  if (inGit.length && GIT_CORE.has(inGit[0]!.toLowerCase()) && !(inGit.length > 1 && /^(modules|worktrees)$/i.test(inGit[0]!)))
-    return `deletes .git/${inGit[0]}, which the whole history of the repository lives in`
+  if (core) return core
   if (same(r, cwd)) return free ? null : glob ? 'deletes everything in this folder' : 'deletes the whole project folder'
   if (under(cwd, r)) return 'deletes everything above this folder'
   if (tmps.some((t) => same(r, t)) && free) return null
@@ -488,6 +499,7 @@ export function check(cmd: string, tool: string, env: Env): string | null {
   const scopes: { cur: string | undefined; vars: Map<string, string[]> }[] = []
   const stack: (string | undefined)[] = []
   let prev: string | undefined
+  let moved = false // a cd earlier in the line: it may fail or change nothing, and then a relative match-all wipes the project
   for (const c of cmds) {
     x.ps = c.ps
     // Past the nesting limit the rest is not read, only scanned for a word that is a dangerous target on its own.
@@ -501,6 +513,7 @@ export function check(cmd: string, tool: string, env: Env): string | null {
     if (c.name === '=') { x.vars.set(key(c.args[0]!), [c.args[1]!]); continue }
     if (c.name === 'for') { x.vars.set(key(c.args[0]!), c.args.slice(1)); continue }
     if (c.name === 'cd') {
+      moved = true
       // cd - goes back, pushd/popd keep a stack; a folder the line does not name is unknown (undefined).
       const [n, ...a] = c.args, old = x.cur
       if (/^(popd|pop-location)$/.test(n!)) x.cur = stack.pop()
@@ -526,9 +539,9 @@ export function check(cmd: string, tool: string, env: Env): string | null {
       continue
     }
     const { rec, paths, narrowed } = removal(c)
-    if (!rec) continue
     for (const p of paths) {
-      const why = target(p, x, narrowed)
+      if (rec && moved && !narrowed && MATCHALL.test(p)) return `${shown} empties the folder it runs in, and after a cd that may have failed or changed nothing that is the project: name the folder (rm -rf build/*)`
+      const why = target(p, x, narrowed, !rec)
       if (why) return `${shown} ${why}`
     }
   }
@@ -536,7 +549,7 @@ export function check(cmd: string, tool: string, env: Env): string | null {
 }
 
 // Worth lexing: names a delete command, a shell that may carry one, or eval.
-const MAYBE = /\b(rm|rmdir|rd|del|erase|ri|remove-item|find|eval|iex|invoke-expression|sh|bash|zsh|dash|ksh|su|cmd|pwsh|powershell|nix-shell)\b|\s-e(c|nc)/i
+const MAYBE = /\b(rm|rmdir|rd|del|erase|ri|remove-item|rimraf|del-cli|trash|find|eval|iex|invoke-expression|sh|bash|zsh|dash|ksh|su|cmd|pwsh|powershell|nix-shell)\b|\s-e(c|nc)/i
 
 const FIX = 'Name the folder you mean, inside this project (rm -rf dist, Remove-Item -Recurse .\\dist); a delete of the project, ' +
   'your home, a drive or .git cannot be undone. Or ask the user to run the command themselves with `!` if it is truly needed. ' +
@@ -549,8 +562,10 @@ export function denial(command: string, tool: string, env: Env): string | null {
 }
 
 export const register: Register = on => {
-  on('tool.call', { tool: /^(Bash|PowerShell|Monitor)$/ }, async ($, e, next) => {
-    const command = (e.tool === 'Bash' || e.tool === 'PowerShell' || e.tool === 'Monitor' ? e.command : '') ?? '' // a Monitor on a ws has no command
+  on('tool.call', { tool: /^(Bash|PowerShell|Monitor|mcp__terminal__run_in_terminal)$/ }, async ($, e, next) => {
+    const command = String((e as unknown as { command?: unknown }).command ?? '') // a Monitor on a ws has no command
+    // The person's terminal has an unknown shell (often PowerShell on Windows): either reading refuses.
+    const tools = e.tool === 'mcp__terminal__run_in_terminal' ? ['Bash', 'PowerShell'] : [e.tool]
     if (!MAYBE.test(command)) return next(e)
     let deny: string | null = null
     try {
@@ -560,7 +575,7 @@ export const register: Register = on => {
       // An unknown home reads as the root, so `~` is refused rather than guessed.
       const home = (await $.env.get('USERPROFILE')) || (await $.env.get('HOME')) || '/'
       const tmp = (await $.env.get('TMPDIR')) || (await $.env.get('TEMP')) || (await $.env.get('TMP')) || (win ? 'C:/Windows/Temp' : '/tmp')
-      deny = denial(command, e.tool, { cwd, home, tmp })
+      deny = tools.reduce<string | null>((d, t) => d ?? denial(command, t, { cwd, home, tmp }), null)
     } catch {
       // shortcut: a bug in this guard (not a refusal) lets the call run rather than blocking every shell call.
     }

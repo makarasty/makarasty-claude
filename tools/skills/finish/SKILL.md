@@ -1,6 +1,6 @@
 ---
 description: The end of a task in one command - review this chat's change until a round finds nothing (max three rounds), red team it, fix what holds, run the narrow tests, then commit under the person's own name and push. Use on "проведи ревью, красную команду, по кругу, закоммить от меня и запушь", "доведи до идеала и запушь", "финализируй", "finish this". A review alone is /makarasty-tools:review; a commit alone is /makarasty-tools:commit; a bare push, or "fix the tests and push" with no review asked, is /makarasty-tools:ship.
-argument-hint: [--no-push] [--no-redteam]
+argument-hint: [--no-push] [--no-redteam] [--score]
 ---
 
 The person ends almost every task with the same sentence: review in a loop, red team, fix everything,
@@ -11,7 +11,8 @@ cannot go on. Keep the steps below as a task list, and run each skill with the S
 First write down the files this chat changed; every step works on that list and nothing else, since other
 chats may have uncommitted work in the same checkout.
 
-1. **Review**: `makarasty-tools:review` with `--loop`, on the list.
+1. **Review**: `makarasty-tools:review` with `--loop`, on the list; with `--score` (or "до 10/10" in the
+   request), `--score` instead, and its last score goes into the report.
 2. **Red team**: `makarasty-tools:redteam` with `--fix`, on the list, unless `--no-redteam` or the change
    is only a typo, a comment, a README line or a version bump. A changed skill or hook is a prompt for a
    model and gets the red team. When the red team changed files, run `makarasty-tools:review` once more,

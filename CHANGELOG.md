@@ -1,5 +1,26 @@
 # Changelog
 
+## makarasty-tools 1.19.43 — 2026-11-16
+
+From the tools audit of 11-16 (six agents, a red team judged the recommendations).
+- **Guard bypasses closed**, each confirmed by feeding the command to the guard first: `npx rimraf .`, `trash .`
+  passed the handler's prefilter though `check()` refused them; delete, git and kill guards now also read
+  `mcp__terminal__run_in_terminal` (as Bash and as PowerShell, either refusal counts); a match-all delete after a
+  `cd` (`cd build; rm -rf *`: a failed or empty cd wipes the project); a target that is only a variable plus a slash or
+  glob (`rm -rf "$BUILD"/*`, `/$X`; `"${BUILD:?}"/*` passes); `find . ! -name x -delete` and `-name "*.*"` (a negated
+  or match-all test narrows nothing); a plain `rm -f *` in the project root and `rm .git/index`-style core files.
+- **`-h`/`--help` on any git subcommand passes**: `git stash -h` was refused.
+- **`review --score`, `finish --score`** («оцени от 1 до 10», «работай, пока не будет 10/10»): a fresh agent writes
+  5-8 checkable criteria from the request before judging, the file is frozen by hash, a new judge each round sees only
+  the criteria, the diff and the command outputs; a PASS without evidence is a FAIL; stops at 10/10, on the same
+  failures twice, on a regression, or after three rounds.
+
+## makarasty 1.18.9 — 2026-11-16
+
+- **fleet-plan no longer asks the pace questions every run**: speed, economy and isolation come from a `Fleet pace:`
+  line in the person's profile, asked once when it is missing (or on `ask`) and kept; scale is counted by the plan and
+  never asked. The line saying each commit to the main checkout is still asked is gone (the person's commit rule).
+
 ## makarasty-tools 1.19.42 — 2026-11-16
 
 - **A plain push of a work branch no longer asks** (operator 11-16: «можешь спокойно сам пушить, бесит спрашивать»):

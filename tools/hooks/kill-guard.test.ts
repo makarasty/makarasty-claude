@@ -1,4 +1,4 @@
-import { expect, test } from 'claude-code/testing'
+import { expect, mock, test } from 'claude-code/testing'
 import { check, denial, register } from './kill-guard.ts'
 
 const BLOCK = ['taskkill /IM node.exe', 'taskkill /F /IM node.exe', 'taskkill /f /im node.exe /t', 'taskkill //F //IM node.exe', 'taskkill.exe /IM chrome.exe',
@@ -117,4 +117,19 @@ test('only a PowerShell single-quoted here-string is text: an expandable @".."@ 
 test('an unknown PowerShell option with a value does not hide -Command', () => {
   expect(['pwsh -SettingsFile s.json -Command "Stop-Process -Name node"', 'powershell -PSConsoleFile x.psc1 -Command "Stop-Process -Name node"'].filter((c) => !check(c))).toEqual([])
   expect(['pwsh -SettingsFile s.json -Command "Stop-Process -Id 4242"'].filter((c) => check(c))).toEqual([])
+})
+
+// Audit round: the person's terminal is guarded too.
+test('hook: the terminal tool is read as Bash and as PowerShell', async ($, on) => {
+  on('tool.call', async () => ({ result: 'ok' }))
+  mock.env(on, { CLAUDE_CONFIG_DIR: '/cfg', MAKARASTY_SCREEN: 'off' })
+  mock.clock(on, { now: 1_000_000 })
+  on('session.id', () => ({ value: 's1' }))
+  on('session.cwd', () => ({ value: 'C:/work/app' }))
+  on('fs.exists', () => ({ value: false }))
+  on('fs.read', () => ({ deny: 'ENOENT' }))
+  const call = (command: string) => $.tool.call({ tool: 'mcp__terminal__run_in_terminal', command } as never)
+  expect(await call('taskkill /IM node.exe')).toEqual({ deny: expect.stringContaining('kill-guard') })
+  expect(await call('Stop-Process -Name node')).toEqual({ deny: expect.stringContaining('kill-guard') })
+  expect(await call('taskkill /PID 4242 /F')).toEqual({ result: 'ok' })
 })

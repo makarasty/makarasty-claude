@@ -157,8 +157,7 @@ const RULES: Rule[] = [
   [(s) => /^apply\b/.test(s) && new RegExp(`\\s(-[a-zA-Z0-9]*R[a-zA-Z0-9]*(\\s|$)|${opt('reverse')})`).test(s) && !/\s--cached(\s|$)/.test(s)
     && (!/\s--(check|stat|numstat|summary)(\s|$)/.test(s) || /\s--apply(\s|$)/.test(s)),
     'git apply -R reverses uncommitted changes in the tree (git apply -R --cached, --check or --stat is allowed)', true],
-  // `-h`/`--help` only prints usage: a plugin-combo run found the guard blocking `git worktree remove -h` [M53].
-  [(s) => /^worktree\s+remove\b/.test(s) && !/\s(-h|--help)(\s|$)/.test(s), 'git worktree remove follows a node_modules junction and empties the main checkout: use /makarasty-tools:prune, or fleet.sh clean for the worktree of a fleet run'],
+  [(s) => /^worktree\s+remove\b/.test(s), 'git worktree remove follows a node_modules junction and empties the main checkout: use /makarasty-tools:prune, or fleet.sh clean for the worktree of a fleet run'],
   [(s) => /^push\b/.test(s) && (/\s--force(\s|$)/.test(s) || /\s-[a-zA-Z]*f[a-zA-Z]*(\s|$)/.test(s) || /\s\+\S/.test(s)), 'git push --force overwrites commits on the remote (--force-with-lease is allowed)'],
   // A remote ref deleted (`--delete`, `-d`, `:ref`) or every ref overwritten (`--mirror`, `--prune`) is gone for everyone.
   [(s) => /^push\b/.test(s) && (new RegExp(`\\s${opt('delete', 'mirror', 'prune')}`).test(s) || /\s-[a-zA-Z]*d[a-zA-Z]*(\s|$)/.test(s) || /\s:\S/.test(s)),
@@ -507,6 +506,9 @@ export function check(cmd: string, tool = 'Bash', where: Where = {}): string | n
       // The starting folder or one above it (`init .`, `clone u ..`) is an existing tree, not a new one.
       if (d && d !== '?' && norm(d) !== norm(dir) && !norm(dir).startsWith(norm(d).replace(/\/?$/, '/'))) made.add(norm(d))
     }
+    // `-h`/`--help` before any `--` only prints usage, whatever the subcommand (`stash -h`, `worktree remove -h`) [M53].
+    // shortcut: a `-h` that is the value of a short option (`commit -m -h`) is not told apart from help beyond -m/-F/-C/-c/-t; `--message -h` slips through.
+    if (/(?<!\s-[a-zA-Z]*[mFCct])\s(-h|--help)(\s|$)/.test(sub.split(/\s--(?:\s|$)/)[0]!)) continue
     const own = isPrivate(dir, where.tmp)
     if (!via && name.includes('$')) return `git ${name}: ${VARIABLE}`
     // shortcut: a bare `$var` before a guarded subcommand word is read as git, so `$pkg restore` is refused too.
@@ -534,14 +536,17 @@ export function denial(command: string, off: boolean, tool = 'Bash', where: Wher
 }
 
 export const register: Register = on => {
-  on('tool.call', { tool: /^(Bash|PowerShell|Monitor)$/ }, async ($, e, next) => {
-    const command = (e.tool === 'Bash' || e.tool === 'PowerShell' || e.tool === 'Monitor' ? e.command : '') ?? '' // a Monitor on a ws has no command
+  on('tool.call', { tool: /^(Bash|PowerShell|Monitor|mcp__terminal__run_in_terminal)$/ }, async ($, e, next) => {
+    const command = String((e as unknown as { command?: unknown }).command ?? '') // a Monitor on a ws has no command
+    // The person's terminal has an unknown shell (often PowerShell on Windows): either reading refuses.
+    const tools = e.tool === 'mcp__terminal__run_in_terminal' ? ['Bash', 'PowerShell'] : [e.tool]
     const off = (await $.env.get('MAKARASTY_GIT_GUARD')) === 'off'
-    let deny = MAYBE.test(command) && denial(command, off, e.tool)
+    const first = (where?: Where): string | null => tools.reduce<string | null>((d, t) => d ?? denial(command, off, t, where), null)
+    let deny = MAYBE.test(command) && first()
     // Only a refused command needs to know whether its tree is private.
     if (deny) {
       const tmp = [await $.env.get('TMPDIR'), await $.env.get('TEMP'), await $.env.get('TMP')].filter((t): t is string => !!t)
-      deny = denial(command, off, e.tool, { cwd: await $.session.cwd(), tmp })
+      deny = first({ cwd: await $.session.cwd(), tmp })
     }
     return deny ? { deny } : next(e)
   }).catch(($, e, next) => next(e))

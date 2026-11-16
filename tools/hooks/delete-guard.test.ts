@@ -1,4 +1,4 @@
-import { expect, test } from 'claude-code/testing'
+import { expect, mock, test } from 'claude-code/testing'
 import { check, denial, register, type Env } from './delete-guard.ts'
 
 const WIN: Env = { cwd: 'C:\\Users\\dev\\proj', home: 'C:\\Users\\dev', tmp: 'C:\\Users\\dev\\AppData\\Local\\Temp' }
@@ -53,8 +53,8 @@ const ALLOW2 = [
   'rm -rf "$PWD/dist"', 'rm -rf $PWD/dist', 'rm -rf "$(pwd)/dist"', 'rm -rf "$dir/build"', 'rm -rf "$dir"/build', 'rm -rf "${dir}/build"', 'dir=dist; rm -rf "$dir"',
   'dir=dist; rm -rf $dir/', 'x=a; y=$x; rm -rf $y', 'find "$d" -name x -delete',
   // 10
-  'cd build && rm -rf .', 'cd src && rm -rf ../dist', 'cd dist && rm -rf node_modules', 'cd /tmp && rm -rf x', 'cd "$dir" && rm -rf /tmp/x', 'cd "$dir" && ls', 'cd ~ && ls && rm -f x',
-  'cd build; cd ..; rm -rf dist', 'cd $PWD/build && rm -rf .', '(cd build && rm -rf .)',
+  'cd src && rm -rf ../dist', 'cd dist && rm -rf node_modules', 'cd /tmp && rm -rf x', 'cd "$dir" && rm -rf /tmp/x', 'cd "$dir" && ls', 'cd ~ && ls && rm -f x',
+  'cd build; cd ..; rm -rf dist',
   // 11
   'busybox ls', 'env -S "rm -rf dist"', 'nix-shell --run "rm -rf dist"', 'sudo busybox rm -f x',
   // 12
@@ -79,7 +79,7 @@ const PS_BLOCK2 = ['Remove-Item -Recurse $HOME', 'Remove-Item -Recurse $home\\x'
   'Set-Location ..; Remove-Item -Recurse proj', 'cd ~; Remove-Item -Recurse proj', 'cd \\; Remove-Item -Recurse Windows',
   'Push-Location ..; ri -r x', '$x = $env:USERPROFILE; Remove-Item -Recurse $x']
 const PS_ALLOW2 = ['Remove-Item -Recurse $tmp\\x', 'Remove-Item -Recurse "$temp\\x"', 'Remove-Item -Recurse $env:TEMP\\x', 'Remove-Item -Recurse "$PWD\\dist"',
-  '$x = "dist"; Remove-Item -Recurse $x', '$d = ".\\build"; Remove-Item -Recurse -Force $d', 'cd build; Remove-Item -Recurse .', 'Set-Location -Path build; Remove-Item -Recurse -Force .',
+  '$x = "dist"; Remove-Item -Recurse $x', '$d = ".\\build"; Remove-Item -Recurse -Force $d', 'cd build; Remove-Item -Recurse dist', 'Set-Location -Path build; Remove-Item -Recurse -Force dist',
   'Remove-Item -Recurse .cache*', 'Remove-Item -Recurse .{cache,tmp}']
 
 test('PowerShell: variables, cd, $PWD and dotted globs', () => {
@@ -89,7 +89,7 @@ test('PowerShell: variables, cd, $PWD and dotted globs', () => {
 
 const ALLOW = ['rm -rf node_modules', 'rm -rf dist build', 'rm -rf ./dist', 'rm -rf dist/', 'rm -rf dist/*', 'rm -rf src/tmp', 'rm -rf "my dir"',
   'rm -rf -- dist', 'rm -rf .cache .github', 'rm -rf a..b ..foo', 'rm -rf "$TMPDIR/x"', 'rm -rf $TEMP/x', 'rm -rf /tmp/x', 'rm -rf $(mktemp -d)',
-  'rm -f a.ts', 'rm a.ts', 'rm -f *', 'rm -f ..', 'rmdir empty', 'rm -r dist 2>&1', 'rm -rf dist > /dev/null', 'rm -rf dist; echo ..', 'rm -rf a && rm -rf b',
+  'rm -f a.ts', 'rm a.ts', 'rm -f ..', 'rmdir empty', 'rm -r dist 2>&1', 'rm -rf dist > /dev/null', 'rm -rf dist; echo ..', 'rm -rf a && rm -rf b',
   'git rm -r dist', 'git rm -rf --cached node_modules', 'sudo git rm -r .', 'git commit -m "rm -rf /"', 'echo rm -rf ..', 'echo "rm -rf /"', "echo 'rm -rf ~'",
   'ls ..', 'cat .git/config', 'bash -c "rm -rf dist"', 'bash -c "echo rm -rf .."', 'xargs rm -f', 'find . -name x | xargs rm -f', 'xargs -I{} rm -rf dist/{}',
   'find . -name "*.log" -delete', 'find . -name "*.js" -exec rm {} \\;', 'find src -delete', 'find . -type f -name x', 'find .. -name x', 'find / -name x -print', 'find ~ -name x -delete', 'find ~ -name x -exec rm {} +',
@@ -122,7 +122,7 @@ const PS_BLOCK = ['Remove-Item -Recurse -Force .', 'Remove-Item -Recurse -Force 
   'Remove-Item `\n -Recurse ..']
 const PS_ALLOW = ['Remove-Item -Recurse -Force .\\tmp', 'Remove-Item -Recurse -Force .\\tmp -ErrorAction SilentlyContinue', 'Remove-Item -Recurse -Force tmp, dist',
   'Remove-Item -Recurse -Path dist, build', 'Remove-Item -Recurse -Include *.tmp -Path dist', 'Remove-Item -Recurse -Filter *.tmp dist', 'Remove-Item -r dist',
-  'Remove-Item -rec dist', 'Remove-Item -Recurse "my dir"', 'Remove-Item -Recurse ".\\a b\\c"', 'Remove-Item .\\a.txt', 'Remove-Item -Force ..', 'Remove-Item -Force *',
+  'Remove-Item -rec dist', 'Remove-Item -Recurse "my dir"', 'Remove-Item -Recurse ".\\a b\\c"', 'Remove-Item .\\a.txt', 'Remove-Item -Force ..', 'Remove-Item -Force dist\\*',
   'Remove-Item -Recurse -WhatIf ..', 'Remove-Item -Recurse -Wi ..', 'Remove-Item -Recurse:$false ..', 'ri -r dist', 'rm -r dist', 'rm dist\\a.txt', 'del a.txt', 'del /q a.txt',
   'rd /s /q dist', 'rmdir /s /q build', 'cmd /c rd /s /q dist', 'del /s /q *.log', 'Remove-Item -Recurse "$env:TEMP\\x"', 'Remove-Item -Recurse $env:TEMP/x',
   'Remove-Item -Recurse -LiteralPath .git2', 'git rm -r dist', 'git rm -rf --cached node_modules', 'Write-Host "Remove-Item -Recurse .."', "echo 'rm -rf ..'",
@@ -251,7 +251,7 @@ test('a refusal inside .git names the part it protects', () => {
 // Round 3: the guard refuses only what it can show is dangerous. A computed path, a pipeline and an unknown folder are allowed.
 const ALLOW4 = [
   // a variable, substitution, parameter or loop variable nobody resolved here
-  'rm -rf "$tmp"', 'rm -rf $OLDPWD', 'rm -rf "${OLDPWD}"', 'rm -rf "$f"', 'rm -rf $1', 'rm -rf "$@"', 'rm -rf $(dirname $PWD)', 'rm -rf "$dir"/', 'rm -rf "$dir"/*', 'rm -rf "${OUT_DIR:?}"',
+  'rm -rf "$tmp"', 'rm -rf $OLDPWD', 'rm -rf "${OLDPWD}"', 'rm -rf "$f"', 'rm -rf $1', 'rm -rf "$@"', 'rm -rf $(dirname $PWD)', 'rm -rf "${OUT_DIR:?}"',
   'rm -rf "${OUT_DIR:?}"/*', 'rm -rf $(echo dist)', 'rm -rf $(ls -d */)', 'dir=$(foo); rm -rf "$dir"', 'for d in $(ls); do rm -rf "$d"; done', 'for d in a b; do rm -rf "$e"; done',
   'clean() { rm -rf "$1"; }; clean dist', 'while read f; do rm -rf "$f"; done < list', 'rm -rf $x/..', 'rm -rf "$(dirname "$0")"', 'rm -rf "$(dirname "$0")"/dist',
   'cd "$(dirname "$0")/.." && rm -rf x',
@@ -260,9 +260,9 @@ const ALLOW4 = [
   // a folder the line cannot name
   'cd "$dir" && rm -rf build', 'cd - && rm -rf x', 'popd && rm -rf x', 'cd $(mktemp -d) && rm -rf x',
   // a stack of folders is followed
-  'pushd build && rm -rf . && popd', 'pushd .. && popd && rm -rf dist', 'cd build; cd -; rm -rf dist',
+  'pushd build && rm -rf dist && popd','pushd .. && popd && rm -rf dist', 'cd build; cd -; rm -rf dist',
   // find
-  'find . ! -name x -delete', 'find . -not -name x -delete', 'find . \\( -name a -o -name b \\) -delete', 'find . -type f ! -name x -delete', 'find . \\( -name a \\) -delete',
+  'find . \\( -name a -o -name b \\) -delete', 'find . \\( -name a \\) -delete',
   // .git/modules/<x> and .git/worktrees/<x>
   'rm -rf .git/modules/x', 'rm -rf .git/worktrees/wt', 'rm -rf .git/modules/a/b',
   // home caches
@@ -367,4 +367,67 @@ test('an unknown PowerShell option with a value does not hide -Command', () => {
 test('bare -e is -EncodedCommand: decoded like the long form', () => {
   expect([`powershell -e ${enc('Remove-Item -Recurse -Force ..')}`, `pwsh -ec ${enc('rd /s ..')}`].filter((c) => !check(c, 'Bash', WIN))).toEqual([])
   expect([`powershell -e ${enc('Remove-Item -Recurse dist')}`].filter((c) => check(c, 'Bash', WIN))).toEqual([])
+})
+
+// Audit round: rimraf past the prefilter, the person's terminal, a cd before a match-all, a bare variable, negated finds, non-recursive accidents.
+const BLOCK5 = [
+  // 3: a cd that fails or changes nothing leaves a relative match-all on the project
+  'cd build; rm -rf *', 'cd nonexistent; rm -rf *', 'cd build || true; rm -rf *', 'cd "$BUILD" && rm -rf *', 'cd build; rm -rf ./*', 'cd build; rm -rf *.*', 'cd build && rm -rf .',
+  '(cd build && rm -rf .)', 'pushd build && rm -rf . && popd',
+  // 4: an unset variable as the whole target but for a slash or glob
+  'rm -rf "$BUILD"/*', 'rm -rf $BUILD/*', 'rm -rf /$BUILD', 'rm -rf "$BUILD/"', 'rm -rf "$dir"/', 'rm -rf "${BUILD}"/*',
+  // 5: a pattern that matches nearly everything, or a negated test, narrows nothing
+  'find . -name "*.*" -delete', 'find . -name "?*" -delete', 'find . -iname "*?" -delete', 'find . -name "[!.]*" -delete', 'find . ! -name x -delete', 'find . -not -name x -delete',
+  'find . -mindepth 1 ! -name .git -delete', 'find . -type f ! -path "./.git/*" -delete', 'find . -type f ! -name x -delete',
+  // 6: a non-recursive match-all in the project root, and a file of the .git core
+  'rm -f *', 'rm -f ./*', 'rm *.*', 'del *.*', 'rm .git/index', 'rm -f .git/HEAD', 'rm .git/refs/heads/master', 'rm -f .git/config']
+const ALLOW5 = [
+  'rm -rf build/*', 'cd build && rm -rf dist', 'cd build; rm -rf dist', 'rm -rf "${BUILD:?}"/*', 'rm -rf "${BUILD:?}"', 'rm -rf "$BUILD/dist"', 'rm -rf $f', 'rm -rf "$f"',
+  'BUILD=x; rm -rf "$BUILD"/*', 'find . -name "*.log" -delete', 'find dist -delete', 'find . \\( -name a -o -name b \\) -delete',
+  'rm *.log', 'rm -f dist/*', 'rm -f a.ts', 'cd build; rm -f *', 'rm .git/hooks/pre-commit', 'rm .git/COMMIT_EDITMSG', 'rm .git/index.lock', 'rm .git/modules/x/HEAD']
+const PS_BLOCK5 = ['Set-Location $b; Remove-Item -Recurse -Force *', 'cd x; Remove-Item -Recurse -Force .\\*', 'Remove-Item -Recurse -Force "$build\\*"', 'Remove-Item -Recurse $build/*',
+  'Remove-Item *', 'Remove-Item .\\* -Force', 'del *.*', 'Remove-Item .git\\index']
+const PS_ALLOW5 = ['Remove-Item -Recurse -Force build\\*', 'Remove-Item -Recurse -Force $build', 'Remove-Item .\\a.txt -Force', 'Set-Location $b; Remove-Item -Recurse -Force build',
+  'Remove-Item -Recurse -Force "${build}"', 'Remove-Item .git\\hooks\\pre-commit']
+
+for (const [name, env] of [['Windows', WIN], ['POSIX', NIX]] as const) {
+  test(`${name} cwd: audit rows (cd then match-all, bare variable, negated find, non-recursive accidents)`, () => {
+    expect(BLOCK5.filter((c) => !check(c, 'Bash', env))).toEqual([])
+    expect(ALLOW5.filter((c) => check(c, 'Bash', env))).toEqual([])
+  })
+}
+
+test('PowerShell audit rows: cd then match-all, bare variable, non-recursive accidents', () => {
+  expect(PS_BLOCK5.filter((c) => !check(c, 'PowerShell', WIN))).toEqual([])
+  expect(PS_ALLOW5.filter((c) => check(c, 'PowerShell', WIN))).toEqual([])
+})
+
+test('the messages of the audit rows say what to write instead', () => {
+  expect(check('cd build; rm -rf *', 'Bash', NIX)).toContain('rm -rf build/*')
+  expect(check('rm -rf "$BUILD"/*', 'Bash', NIX)).toContain('${VAR:?}')
+  expect(check('rm -f *', 'Bash', NIX)).toContain('every file in this folder')
+  expect(check('rm .git/index', 'Bash', NIX)).toContain('.git/index')
+})
+
+test('rimraf, del-cli and trash reach the refusal through denial(), not only check()', async () => {
+  for (const c of ['npx rimraf .', 'rimraf ..', 'trash .', 'pnpm dlx rimraf .', 'del-cli ..']) expect([c, await denial(c, 'Bash', NIX)]).toEqual([c, expect.stringContaining('delete-guard')])
+  for (const c of ['npx rimraf dist', 'trash dist']) expect(await denial(c, 'Bash', NIX)).toBeNull()
+})
+
+test('hook: rimraf is not filtered out early, and the terminal tool is read as Bash or PowerShell', async ($, on) => {
+  on('tool.call', async () => ({ result: 'ok' }))
+  mock.env(on, { CLAUDE_CONFIG_DIR: '/cfg', MAKARASTY_SCREEN: 'off', USERPROFILE: WIN.home, TEMP: WIN.tmp })
+  mock.clock(on, { now: 1_000_000 })
+  on('session.id', () => ({ value: 's1' }))
+  on('session.cwd', () => ({ value: WIN.cwd }))
+  on('fs.exists', () => ({ value: false }))
+  on('fs.read', () => ({ deny: 'ENOENT' }))
+  const call = (tool: string, command: string) => $.tool.call({ tool, command } as never)
+  expect(await call('Bash', 'npx rimraf .')).toEqual({ deny: expect.stringContaining('delete-guard') })
+  expect(await call('mcp__terminal__run_in_terminal', 'rm -rf ..')).toEqual({ deny: expect.stringContaining('delete-guard') })
+  // `$env:TEMP` is a variable only PowerShell resolves: the Bash reading lets it run, the PowerShell one refuses
+  expect(await call('Bash', 'Remove-Item -Recurse $env:TEMP')).toEqual({ result: 'ok' })
+  expect(await call('mcp__terminal__run_in_terminal', 'Remove-Item -Recurse $env:TEMP')).toEqual({ deny: expect.stringContaining('delete-guard') })
+  expect(await call('mcp__terminal__run_in_terminal', 'rm -rf dist')).toEqual({ result: 'ok' })
+  expect(await call('Bash', 'npx rimraf dist')).toEqual({ result: 'ok' })
 })

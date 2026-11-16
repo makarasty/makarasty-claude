@@ -1,14 +1,15 @@
 ---
-description: Reviews a diff, branch, PR number, file or directory for bugs. --loop fixes and re-reviews until a round finds nothing (max three rounds). Use on "ревью", "проведи ревью", "проверь ветку", "найди баги", "проведи ревью и исправь все находки", "по кругу, пока находок не станет ноль", or when asked to review changes, a branch or a PR for bugs. Not for style, standards-vs-spec review, over-engineering or security audits.
-argument-hint: [nothing | <branch> | <PR number> | <file or directory>] [--quick] [--fix | --loop]
-allowed-tools: Bash(git diff:*), Bash(git log:*), Bash(git show:*), Bash(git status:*), Bash(git merge-base:*), Bash(git rev-parse:*), Bash(git ls-files:*), Bash(git symbolic-ref:*), Bash(git fetch:*), Bash(gh pr diff:*), Bash(gh pr view:*), Bash(wc:*), Read, Grep, Glob, Agent, Edit
+description: Reviews a diff, branch, PR number, file or directory for bugs. --loop fixes and re-reviews until a round finds nothing (max three rounds); --score has a fresh judge grade the work against what was asked, 1-10, and fixes until 10/10. Use on "ревью", "проведи ревью", "проверь ветку", "найди баги", "проведи ревью и исправь все находки", "по кругу, пока находок не станет ноль", "оцени от 1 до 10", "работай, пока не будет 10/10", or when asked to review changes, a branch or a PR for bugs. Not for style, over-engineering or security audits.
+argument-hint: [nothing | <branch> | <PR number> | <file or directory>] [--quick] [--fix | --loop | --score]
+allowed-tools: Bash(git diff:*), Bash(git log:*), Bash(git show:*), Bash(git status:*), Bash(git merge-base:*), Bash(git rev-parse:*), Bash(git ls-files:*), Bash(git hash-object:*), Bash(git symbolic-ref:*), Bash(git fetch:*), Bash(gh pr diff:*), Bash(gh pr view:*), Bash(wc:*), Read, Grep, Glob, Agent, Edit
 ---
 
 Review what `$ARGUMENTS` names. Report findings only: no praise, no summary of the change, no restating
 the diff.
 
 A request in words often arrives with empty arguments. Take the mode from the request then: "исправь",
-"исправь все находки", "по кругу", "fix all" mean `--loop`; "быстро", "quick" mean `--quick`.
+"исправь все находки", "по кругу", "fix all" mean `--loop`; "быстро", "quick" mean `--quick`; "оцени",
+"до 10/10", "10 из 10" mean `--score` (section 9; sections 2-5 still run inside its rounds).
 
 ## 1. Resolve the target
 
@@ -135,9 +136,42 @@ Review until nothing is left, at most three rounds:
 report gives each round's count (`round 1: 7 found, 7 fixed; round 2: 1 found, 1 fixed; round 3: 0`), then
 the remaining `q` and `risk [med]` list, then the files changed.
 
+## 9. `--score`
+
+Grades the work against what the person asked, not only for bugs, and fixes until every criterion holds.
+The judge never sees this chat: the chat that did the work agrees with its own work and fills gaps from
+context the reader will not have.
+
+1. **Criteria first, then frozen.** One fresh subagent (`model: "opus"`, `effort: "medium"`) gets only the
+   request in the person's words, quoted, and the target's file list, and writes 5-8 numbered criteria
+   (C1...) to a file in the scratchpad. Each is pass/fail and checkable: a command with its expected
+   result, a fact at a file:line, or a screenshot this session takes and saves beside the file. Together
+   they cover: what was asked is done, the edge cases the request implies, the narrow tests pass, nothing
+   outside the target changed, and "no `bug`" (sections 3-4). Note `git hash-object <file>`; it is checked
+   again before every judge, and a changed hash stops the run, since a rubric rewritten after the work
+   grades what it sees.
+2. **Evidence gathered here.** Each round this session runs every criterion's command (the narrow-check and
+   timeout rules of section 8, step 2), takes its screenshots, and runs sections 3-4 on the target; their
+   finding lines are the evidence for "no `bug`". A command the person declines is a FAIL marked `not run`.
+3. **A new judge each round.** A fresh subagent (`model: "opus"`, `effort: "medium"`, never one used in an
+   earlier round) gets the criteria file, the diff or target, the outputs, screenshot paths and finding
+   lines; not this chat's claims, not an earlier verdict. Per criterion: PASS or FAIL with its evidence
+   (an output line, a file:line), or INVALID when the criterion itself cannot be checked (a wrong command,
+   a file this chat does not own). A PASS without evidence is a FAIL. INVALID ones leave the total and are
+   listed in the report, never rewritten. Score: `floor(10 * passed / total)`, so 10 only when all pass.
+4. **Fix** each FAIL from its evidence, at the root, in this chat's own files only (section 6), then go to 2.
+   Round three's FAILs are reported, not fixed: nothing lands after the last judge.
+5. **Stop** at 10/10; when the exact same set of criteria fails twice in a row (the fix is not landing:
+   report why); when a criterion that passed in an earlier round fails (a fix broke it: report which);
+   when more than two are INVALID (the rubric is wrong: report it); or after round three.
+
+Report one line per round (`round 1: 6/8 = 8/10, failed C3 C7; round 2: 8/8 = 10/10`), then each criterion
+with its final verdict and evidence, then what is still open.
+
 ## Done when
 
 Every changed file was read in context from the side under review, skipped files are listed, every
 reported finding survived the verify pass (unless `--quick`), and every finding names the input that breaks
 it. No file outside this chat's own was edited. With `--loop`: the last round found nothing new, or three
-rounds ran and what is left is listed.
+rounds ran and what is left is listed. With `--score`: the criteria file's hash did not change, and the
+report shows each round's score and the evidence behind the last one.

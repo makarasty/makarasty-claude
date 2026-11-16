@@ -137,21 +137,26 @@ run filed every task `repo`, the coordinator did the screen checks, and its pane
 The operator writes a mission in plain words from a fresh chat that knows nothing. Turn that into a plan
 good enough to run unattended; the only way is to ask.
 
-### Round 0: pace, right after the first draft, even with `fast`
+### Round 0: pace, from the person's profile, right after the first draft
 
-Draft the plan first (below), then ask **one** `AskUserQuestion` call holding exactly these four questions,
-all at once, never more than four, the recommended option first in each:
+Pace is the person's standing policy, not this run's: the same answers were asked run after run, the
+recommended option almost every time. Draft the plan first (below), then read `<config>/makarasty/profile.md`
+yourself (the session text cuts it at 2000 characters) for one line
+`Fleet pace: speed=<balanced|fast|quality> economy=<max|balanced|spend> isolation=<onechat|worktrees|chats> commits=<end|wave|branch>`.
+Found: take it, name it in one line under the draft, ask nothing. Missing, or the mission says `ask` ("спроси
+темп"): ask **one** `AskUserQuestion` with the three questions below, the recommended option first, each saying
+the answer is kept for later runs; then write the line to the profile (create the file if missing, replace an
+existing `Fleet pace:` line, never append a duplicate) and say so in one line. Scale is never asked: the plan
+counts it, and the draft shows the count and the overnight warning, so the person can object in a word.
 
-1. **Scale**: "Let the plan count it (Recommended)" / "Small (a few tasks)" / "Medium (an afternoon)" /
-   "Large (a day+, queue it)".
-2. **Speed against quality**: "Balanced (Recommended)" / "Fastest finish" / "Best quality".
-3. **Economy**: "Maximum economy (Recommended)" / "Balanced" / "Spend for speed".
-4. **Isolation and commits**: "One chat, main checkout, one commit at the end (Recommended)" / "One chat, a
+1. **Speed against quality**: "Balanced (Recommended)" / "Fastest finish" / "Best quality".
+2. **Economy**: "Maximum economy (Recommended)" / "Balanced" / "Spend for speed".
+3. **Isolation and commits**: "One chat, main checkout, one commit at the end (Recommended)" / "One chat, a
    commit per wave" / "Worktrees for code tasks, commit per task branch" / "Separate chats for browser
-   workers, one commit at the end". The answer sets when a commit is due; each commit to the main checkout is
-   still asked at its time, with its paths (`docs/ONECHAT.md`, "Commits").
+   workers, one commit at the end". The answer sets when a commit is due; a due commit of this run's own
+   paths is made without asking, as the person's commit rule says, and the status line lists its paths.
 
-Write the answers as one `pace:` line in `STATE.md`, for example `pace: scale=plan speed=balanced
+Write the run's pace as one `pace:` line in `STATE.md`, `scale=plan` plus the profile's words, for example `pace: scale=plan speed=balanced
 economy=max isolation=onechat commits=end` (the other three: `isolation=onechat commits=wave`,
 `isolation=worktrees commits=branch`, `isolation=chats commits=end`), and show the edit each answer makes
 to the draft: the queue's size and the overnight warning, the models and efforts per step, the review

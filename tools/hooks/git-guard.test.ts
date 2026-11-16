@@ -1,4 +1,4 @@
-import { expect, test } from 'claude-code/testing'
+import { expect, mock, test } from 'claude-code/testing'
 import { check, denial, register } from './git-guard.ts'
 
 const BLOCK = ['git stash', 'git stash -u', 'git stash pop', 'cd x && git stash', 'git -C ../r stash', 'git reset --hard HEAD~1',
@@ -540,4 +540,26 @@ test('exported HUSKY=0 skips hooks only for hook-running subcommands, also insid
 test('exported HUSKY=0 also covers revert, worktree, clone and gc', () => {
   expect(['export HUSKY=0; git revert HEAD', 'export HUSKY=0; git worktree add ../x', 'export HUSKY=0; git clone u x', 'export HUSKY=0; git gc'].filter((c) => !check(c))).toEqual([])
   expect(check('export HUSKY=0; git log')).toBeNull()
+})
+
+// Audit round: -h/--help only prints usage; the person's terminal is guarded too.
+test('-h and --help on any git subcommand only print help; the same line without it is still refused', () => {
+  for (const c of ['git stash -h', 'git stash --help', 'git reset --hard --help', 'git clean -h', 'git clean -fd -h', 'git checkout --help', 'git -C x stash -h', 'git stash -h 2>&1 | head -20'])
+    expect([c, check(c)]).toEqual([c, null])
+  for (const c of ['git stash', 'git reset --hard', 'git clean -fd', 'git stash -- -h', 'git commit -a -m "fix -h"', 'git commit -a -m -h', 'git worktree remove x'])
+    expect([c, check(c) === null]).toEqual([c, false])
+})
+
+test('hook: the terminal tool is read as Bash and as PowerShell', async ($, on) => {
+  on('tool.call', async () => ({ result: 'ok' }))
+  mock.env(on, { CLAUDE_CONFIG_DIR: '/cfg', MAKARASTY_SCREEN: 'off' })
+  mock.clock(on, { now: 1_000_000 })
+  on('session.id', () => ({ value: 's1' }))
+  on('session.cwd', () => ({ value: 'C:/work/app' }))
+  on('fs.exists', () => ({ value: false }))
+  on('fs.read', () => ({ deny: 'ENOENT' }))
+  const call = (command: string) => $.tool.call({ tool: 'mcp__terminal__run_in_terminal', command } as never)
+  expect(await call('git stash')).toEqual({ deny: expect.stringContaining('git-guard') })
+  expect(await call('git stash -h')).toEqual({ result: 'ok' })
+  expect(await call('git status')).toEqual({ result: 'ok' })
 })
