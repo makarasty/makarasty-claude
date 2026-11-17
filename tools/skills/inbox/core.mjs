@@ -323,11 +323,19 @@ export function renderReports(/** @type {Report[]} */ reports, now = Date.now(),
 export const TG_PROMPT = '[Telegram]'
 /** His own words go in quoted lines and nothing else does: they count as his word (owner, 2026-11-17), and push-guard and
  *  the start consent read only those lines (telegramWords). */
-export function inboundPrompt(/** @type {{ text: string, about?: { item: string, short: string } }[]} */ ms) {
+export function inboundPrompt(/** @type {{ text: string, about?: { item: string, short: string } }[]} */ ms, /** @type {string | undefined} */ notify = undefined) {
   const one = (/** @type {{ text: string, about?: { item: string, short: string } }} */ m) =>
     `${m.about ? `(a reply to the phone question "${m.about.short}", inbox item ${m.about.item})\n` : ''}> ${m.text.replace(/\n/g, '\n> ')}`
+  const n = notify && `node "${notify}"`
   return `${TG_PROMPT} The person wrote from Telegram${ms.length > 1 ? ` (${ms.length} messages)` : ''}. His own words:\n${ms.map(one).join('\n')}\n` +
-    'Do what he asks, with the makarasty-tools inbox skill where it needs it. Your final message is sent to his Telegram as is: ' +
+    'This is full remote control of his computer by plain text: do what he asks, with the makarasty-tools inbox skill where ' +
+    'it needs it (a chat in a project, with the model and effort he names: `inbox.mjs start`). ' +
+    (n ? `To send him a file, picture, video or voice note: \`${n} file <path> [--caption "..."]\` (type by extension; a voice ` +
+      `note is .ogg/.mp3/.m4a with \`--as voice\`). The desktop: \`${n} screenshot\`. Something from the internet: download it ` +
+      'to %TEMP% first, then send the file. A voice note: make the audio on this machine (Windows speech, or the video ' +
+      'skill\'s local TTS) and convert it with ffmpeg. ' : '') +
+    'A task or note in Obsidian: the vault path is in %APPDATA%\\obsidian\\obsidian.json; read the vault\'s CLAUDE.md first ' +
+    'and follow it. Work over a few minutes goes to a chat you start for it; say which. Your final message is sent to his Telegram as is: ' +
     'his language, short (up to 5 lines; Markdown bold, code and lists render), the answer first. He is on the phone, not at ' +
     'this screen: ask no AskUserQuestion; a decision you need from him is your last line, and he answers it by replying.'
 }

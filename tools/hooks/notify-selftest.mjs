@@ -563,10 +563,10 @@ http.createServer((q, r) => {
   let b = ""; q.on("data", (d) => b += d);
   q.on("end", () => {
     const method = q.url.split("/").pop();
-    fs.appendFileSync(pf + ".log", JSON.stringify({ url: q.url, method, body: b ? JSON.parse(b) : {} }) + "\\n");
+    fs.appendFileSync(pf + ".log", JSON.stringify({ url: q.url, method, body: !b ? {} : b[0] === "{" ? JSON.parse(b) : { form: b.slice(0, 2000) } }) + "\\n");
     let result = true;
     if (method === "getMe") result = { username: "claude_test_bot" };
-    else if (method === "sendMessage") result = { message_id: ++id };
+    else if (/^send(Message|Photo|Video|Voice|Audio|Document|Animation)$/.test(method)) result = { message_id: ++id };
     else if (method === "getUpdates") { try { result = JSON.parse(fs.readFileSync(pf + ".updates", "utf8")); fs.unlinkSync(pf + ".updates"); } catch { result = []; } }
     r.setHeader("content-type", "application/json"); r.end(JSON.stringify({ ok: true, result }));
   });
@@ -630,11 +630,10 @@ if (waitingFinish.disable_notification === true)
     ok('a finish goes out silently');
 else
     bad('a finish goes out silently', JSON.stringify(waitingFinish));
-const menu = calls('setMyCommands')[0]?.body.commands?.map((c) => c.command).join() ?? '';
-if (menu === 'status,ideas,help')
-    ok('setup sets the bot menu');
+if (calls('deleteMyCommands').length === 1 && !calls('setMyCommands').length)
+    ok('setup removes the bot menu: plain text only');
 else
-    bad('setup sets the bot menu', menu);
+    bad('setup removes the bot menu: plain text only');
 if (exists(marker))
     bad('and its marker is gone');
 else
@@ -742,6 +741,43 @@ else
 resetLog();
 node([n, 'send', 'a < b & c'], { env: liveTg });
 check('plain send escapes what Telegram HTML reads as markup', 'a &lt; b &amp; c', String(calls('sendMessage')[0]?.body.text));
+section('file and typing, against the same fake');
+resetLog();
+const png = `${tmp}/кот.png`, ogg = `${tmp}/voice.ogg`, mp3 = `${tmp}/song.mp3`;
+for (const p of [png, ogg, mp3])
+    writeFileSync(p, 'not really media');
+code('file <png> exits 0', 0, node([n, 'file', png, '--caption', `котик ${tok}`, '--reply-to', '55'], { env: liveTg }).code);
+const ph = String(calls('sendPhoto')[0]?.body.form ?? '');
+if (ph.includes('name="photo"; filename="кот.png"') && ph.includes('котик') && ph.includes('"message_id":55'))
+    ok('a picture goes as a photo with its name, caption and reply');
+else
+    bad('a picture goes as a photo with its name, caption and reply', ph.slice(0, 300));
+if (ph.includes(tok.slice(-12)))
+    bad('a token in the caption is blanked', ph.slice(0, 300));
+else
+    ok('a token in the caption is blanked');
+node([n, 'file', ogg], { env: liveTg });
+node([n, 'file', mp3, '--as', 'voice'], { env: liveTg });
+if (calls('sendVoice').length === 2 && !calls('sendAudio').length)
+    ok('an .ogg, and an .mp3 with --as voice, go as voice notes');
+else
+    bad('voice notes', JSON.stringify(tgLog().map((x) => x.method)));
+r = node([n, 'file', `${tmp}/nope.png`], { env: liveTg });
+if (r.code === 1 && r.err.includes('no such file'))
+    ok('a missing file exits 1 and says so');
+else
+    bad('a missing file exits 1 and says so', both(r));
+r = node([n, 'file', png, '--as', 'sticker'], { env: liveTg });
+if (r.code === 1 && r.err.includes('--as sticker'))
+    ok('an unknown --as is refused');
+else
+    bad('an unknown --as is refused', both(r));
+resetLog();
+code('typing exits 0', 0, node([n, 'typing'], { env: liveTg }).code);
+if (calls('sendChatAction')[0]?.body.action === 'typing' && calls('sendChatAction')[0]?.body.chat_id === '42')
+    ok('typing sends the typing action to the bound chat');
+else
+    bad('typing', JSON.stringify(tgLog()));
 section('finishes are silent, the rest ring');
 resetLog();
 writeFileSync(conf, confPlain);

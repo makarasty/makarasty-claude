@@ -1,5 +1,18 @@
 # Changelog
 
+## makarasty-tools 1.19.63 — 2026-11-17
+
+- **The bot answers what you write again**: with no inbox chat open, every free message went to `inbox.mjs telegram`,
+  which sat after the item-id check and exited "needs an item id" (since 1.19.52). Your messages got 👀 and nothing
+  else. Fixed; the inbox selftest now runs that path.
+- **Plain text only**: the bot has no commands but `/start` (what it does); `/status` stays as a debug view, in no
+  menu, and setup removes the old menu. "идея …", `/ideas` and `ideas.md` are gone: write "создай задачу в Obsidian"
+  and the inbox does it in your vault, by the vault's own CLAUDE.md.
+- **Remote control by text**: the inbox can send you a desktop screenshot (`notify.mjs screenshot`, every monitor), any
+  file, picture, video or voice note (`notify.mjs file <path>`, type by extension, 50 MB), and start a chat with the
+  model and effort you name. "typing…" shows on the phone while it works.
+- **A cheaper, faster inbox**: the headless inbox turn runs on Sonnet (`INBOX_TG_MODEL` overrides).
+
 ## makarasty-tools 1.19.62 — 2026-11-17
 
 - **A yes to a push given in the inbox or on the phone lets that push run**: 1.19.56 fixed how push-guard read the

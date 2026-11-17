@@ -92,14 +92,21 @@ Nothing is sent for routine steps (an edit, an agent starting or ending).
 
 ## What the person can write to the bot
 
-His messages are read by the hook engine of any running chat (no process at idle). "идея …" or 💡 saves an idea,
-`/ideas` lists them, `/status` shows what waits for an answer, `/help` the rest; none of these uses the model.
-Anything else goes to the inbox chat, or to a headless inbox turn when no inbox chat runs, and its short answer
-comes back as a reply. His taps and messages count as his word, like typing. Details and edge cases:
-`docs/TELEGRAM.md` in the plugin repository.
+His messages are read by the hook engine of any running chat (no process at idle). Everything is plain text: the
+only command is `/start` (`/status` is a debug view). A message goes to the inbox chat, or to a headless inbox turn
+on Sonnet when no inbox chat runs, which does what he asks and replies; it can send a file, picture, video or voice
+note and a desktop screenshot:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/hooks/notify.mjs" file <path> [--as photo|video|voice|audio|animation|document] [--caption "..."]
+node "${CLAUDE_PLUGIN_ROOT}/hooks/notify.mjs" screenshot [--caption "..."]
+```
+
+His taps and messages count as his word, like typing. Details and edge cases: `docs/TELEGRAM.md` in the plugin
+repository.
 
 What leaves the machine for Telegram: these lines, the inbox question with its options, the explanation he asks
-for, and the inbox's answers to him. Never a chat's transcript.
+for, the inbox's answers to him, and the files and screenshots he asks for. Never a chat's transcript.
 
 `/clear` drops this chat's marker: the person is at the screen. Closing the chat, or a crash, keeps it.
 

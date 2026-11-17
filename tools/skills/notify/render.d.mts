@@ -6,7 +6,6 @@ export function phoneKeyboard(options: string[], more?: boolean, lang?: string):
 export function collapsed(short: string, outcome: string): string
 export function note(text: string): string
 export function helpHtml(lang: string | undefined): string
-export function ideasHtml(lang: string | undefined, lines: string[]): string
 export function statusHtml(lang: string | undefined, count: number, items: { question: string; where: string; age: string }[], alive: boolean): string
 export function explainHtml(lang: string | undefined, question: string, text: string | undefined): string
 export function mdToTg(md: string, head?: number): string

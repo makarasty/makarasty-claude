@@ -40,6 +40,6 @@ export const STALE_MS: number
 export function undeliverable(item: Item, o?: { now?: number; typedAfter?: boolean; archived?: boolean; muted?: boolean; prompt?: boolean }): string | undefined
 export function overlaps(a: string, b: string, min?: number): boolean
 export const TG_PROMPT: string
-export function inboundPrompt(ms: { text: string; about?: { item: string; short: string } }[]): string
+export function inboundPrompt(ms: { text: string; about?: { item: string; short: string } }[], notify?: string): string
 export function telegramWords(prompt: string): string
 export function isTelegramPrompt(text: string): boolean

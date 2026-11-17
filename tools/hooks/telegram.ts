@@ -1,6 +1,6 @@
 import type { EngineInterface } from 'claude-code'
 import { explainPrompt, inboundPrompt, isTelegramPrompt, STALE_MS, TG_PROMPT, telegramWords, type Item } from '../skills/inbox/core.mjs'
-import { collapsed, esc, explainHtml, helpHtml, ideasHtml, mdToTg, note, phoneKeyboard, statusHtml } from '../skills/notify/render.mjs'
+import { collapsed, esc, explainHtml, helpHtml, mdToTg, note, phoneKeyboard, statusHtml } from '../skills/notify/render.mjs'
 import { langOf, t } from '../skills/notify/strings.mjs'
 import { writeHeard } from './consent.ts'
 
@@ -10,8 +10,8 @@ import { writeHeard } from './consent.ts'
 // (getUpdates timeout 20), so a tap arrives within a second, and renews its lease before each one; another chat takes
 // over once the lease is 30 s old (the leader closed or crashed). Where the engine cannot hold a long request, short
 // polls every 2 s. The person's taps answer inbox items, "❔ Подробнее" writes the explanation on demand, a message he
-// writes goes to the inbox chat (or a headless inbox turn when none runs), and ideas, /status and /ideas are answered
-// here with no model. Layout under <config>/makarasty/telegram/:
+// writes goes to the inbox chat (or a headless inbox turn when none runs); only /start and the debug /status are
+// answered here with no model. Layout under <config>/makarasty/telegram/:
 //   polled          "<ms> <session>": the lease; the writer reads it back and polls only if it is still his
 //   offset, lastok  getUpdates offset; when a poll last worked (a gap over 23 h is told: Telegram keeps updates 24 h)
 //   seen.json       the last 300 update ids, written before an update's effects, so a second poller skips them
@@ -182,26 +182,10 @@ async function handle($: D, dir: string, b: { token: string; me: string }, u: Up
   const text = (m.text ?? m.caption ?? '').trim()
   if (!text) { await send($, b, esc(t(L, 'textOnly')), replyTo(m.message_id)).catch(() => undefined); return 'no-text' }
   const extra = !m.text && (m.photo || m.document || m.video) ? t(L, 'pictureNote') : ''
-  const command = /^\/(\w+)(?:@\w+)?\s*([\s\S]*)$/.exec(text)
-  // \b is ASCII-only: «идея купить» needs a letter-aware end of word.
-  const IDEA = /^(💡|(идея|idea)(?![\p{L}\p{N}]))[:\s-]*/iu
-  const idea = command?.[1] === 'idea' ? command[2] : IDEA.test(text) ? text.replace(IDEA, '') : undefined
-  if (idea !== undefined) {
-    if (!idea.trim()) { await send($, b, esc(t(L, 'ideaPrompt')), replyTo(m.message_id)).catch(() => undefined); return 'idea' }
-    // shortcut: read-and-rewrite (no append in $.fs); two ideas within the same millisecond from two pollers is not a case.
-    const old = String(await $.fs.read(`${dir}/makarasty/ideas.md`).catch(() => ''))
-    const day = new Date(now).toISOString().slice(0, 16).replace('T', ' ')
-    await $.fs.write(`${dir}/makarasty/ideas.md`, `${old}${old && !old.endsWith('\n') ? '\n' : ''}- ${day} ${idea.trim().replace(/\s*\n\s*/g, ' ')}\n`)
-    const n = (old.match(/^- /gm) ?? []).length + 1
-    await send($, b, note(`${t(L, 'ideaSaved', { n })}${extra}`), { ...replyTo(m.message_id), disable_notification: true }).catch(() => undefined)
-    return 'idea'
-  }
+  // Plain text only (owner, 2026-11-17): /start says so; /status is a debug view, in no menu. Anything else, a
+  // task in Obsidian or an "idea" included, is the inbox model's to do.
+  const command = /^\/(\w+)(?:@\w+)?\s*$/.exec(text)
   if (command && ['start', 'help'].includes(command[1]!)) { await send($, b, helpHtml(L)).catch(() => undefined); return 'help' }
-  if (command?.[1] === 'ideas') {
-    const lines = String(await $.fs.read(`${dir}/makarasty/ideas.md`).catch(() => '')).split('\n').filter((l) => l.startsWith('- ')).slice(-10)
-    await send($, b, ideasHtml(L, lines.map((l) => l.slice(2)))).catch(() => undefined)
-    return 'ideas'
-  }
   if (command?.[1] === 'status') { await send($, b, await status($, dir, now, L)).catch(() => undefined); return 'status' }
   // A reply to an ask: a question about it goes to the inbox; anything else is the answer, where a free answer fits.
   const about = m.reply_to_message ? await openAsk($, `${tg}/asks/${m.reply_to_message.message_id}.json`) : undefined

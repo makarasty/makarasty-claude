@@ -568,6 +568,13 @@ try {
     writeFileSync(join(root, 'self'), 'inboxChat')
   }
   check('off removes the switch', run(['off']).status === 0 && !existsSync(join(tmp, 'makarasty', 'inbox.on')))
+
+  // `telegram` takes no item id: from 1.19.52 to 1.19.62 it was refused with "needs an item id" and no message was answered.
+  const inb = join(tmp, 'makarasty', 'telegram', 'inbound')
+  mkdirSync(inb, { recursive: true }); writeFileSync(join(inb, '7001.json'), JSON.stringify({ id: 7001, text: 'ты тут?', message_id: 41, at: Date.now() }))
+  const tgRun = spawnSync(process.execPath, [cli, 'telegram'], { env: { ...env, INBOX_CLAUDE: process.execPath }, encoding: 'utf8', timeout: 60000 })
+  const tgMsg = JSON.parse(readFileSync(join(inb, '7001.json'), 'utf8'))
+  check('telegram runs with no item id, answers the waiting message and marks it done', tgRun.status === 0 && !tgRun.stderr.includes('needs an item id') && tgMsg.done > 0, tgRun.stderr)
 } finally {
   rmSync(tmp, { recursive: true, force: true })
 }

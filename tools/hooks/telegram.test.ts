@@ -217,18 +217,16 @@ for (const [what, text, extra] of [['a reply ending in a question mark', 'а п�
   })
 }
 
-for (const text of ['идея купить молоко', '💡 купить молоко', '/idea купить молоко', 'idea купить молоко']) {
-  test(`"${text}": a line in ideas.md and a silent reply, not a message for the inbox`, async () => {
+// No commands but /start (owner, 2026-11-17): "идея …", /idea and /ideas are plain text for the inbox model.
+for (const text of ['идея купить молоко', '💡 купить молоко', '/idea купить молоко', '/ideas']) {
+  test(`"${text}": a message for the inbox, no ideas.md, no reply from the poller`, async () => {
     const w = world()
-    w.put('/cfg/makarasty/ideas.md', '- 2026-01-01 00:00 старая\n')
+    w.put(`${INBOX}/beat`, String(w.NOW - 10_000))
     w.feed([say(7, text)])
     await w.tick()
-    expect(w.disk.get('/cfg/makarasty/ideas.md')).toMatch(/^- 2026-01-01 00:00 старая\n- \d{4}-\d\d-\d\d \d\d:\d\d купить молоко\n$/)
-    const reply = w.sent('sendMessage')[0]!.body
-    expect(reply).toMatchObject({ disable_notification: true, reply_parameters: { message_id: 67 } })
-    expect(reply.text).toContain('Записал идею №2')
-    expect(w.inbound()).toEqual([])
-    expect(w.runs).toEqual([])
+    expect(w.json(`${TG}/inbound/7.json`)).toMatchObject({ id: 7, text })
+    expect(w.disk.has('/cfg/makarasty/ideas.md')).toBe(false)
+    expect(w.sent('sendMessage')).toEqual([])
   })
 }
 
@@ -288,12 +286,11 @@ for (const [what, u] of [
 
 test('the same update twice (a second poller, or a batch not yet confirmed) is handled once', async () => {
   const w = world()
-  w.feed([say(7, 'idea купить молоко')])
+  w.feed([say(7, '/start')])
   await w.tick()
   await w.advance(20000)
   await w.tick()
   await w.wait()
-  expect((w.disk.get('/cfg/makarasty/ideas.md') ?? '').match(/^- /gm)?.length).toBe(1)
   expect(w.sent('sendMessage').length).toBe(1)
   expect(JSON.parse(w.disk.get(`${TG}/seen.json`)!)).toEqual([7])
 })
@@ -353,25 +350,25 @@ test('no profile: a tap is acknowledged and collapsed in English', async () => {
   expect(w.sent('editMessageText')[0]!.body.text).toContain('answered in the app')
 })
 
-test('no profile: /help, /status and /ideas are English; Language: Russian gives the Russian ones', async () => {
+test('no profile: /start and /status are English; Language: Russian gives the Russian ones', async () => {
   const en = world({ profile: null })
   en.item('chatB~t1', { at: en.NOW - 5 * 60000 })
-  en.feed([say(7, '/help'), say(8, '/status'), say(9, '/ideas')])
+  en.feed([say(7, '/start'), say(8, '/status')])
   await en.tick()
-  const [help, status, ideas] = en.sent('sendMessage').map((c) => c.body.text as string)
+  const [help, status] = en.sent('sendMessage').map((c) => c.body.text as string)
   expect(help).toContain('<b>What the bot does</b>')
   expect(status).toContain('<b>Waiting for an answer: 1</b>')
   expect(status).toContain(`${Q} <i>reports-app · 5 min</i>`)
   expect(status).toContain('the inbox is not running')
-  expect(ideas).toBe('<i>No ideas yet. Write "idea ...".</i>')
-  for (const text of [help, status, ideas]) expect(text).not.toMatch(/Что умеет|Ждут|Идей|мин|запущен/) // the question itself (Q) is the chat's own Russian text
+  expect(help).not.toMatch(/\/ideas|\/status|idea/)
+  for (const text of [help, status]) expect(text).not.toMatch(/Что умеет|Ждут|Идей|мин|запущен/) // the question itself (Q) is the chat's own Russian text
   const ru = world()
-  ru.feed([say(7, '/help'), say(8, '/ideas')])
+  ru.feed([say(7, '/start')])
   await ru.tick()
-  const [rhelp, rideas] = ru.sent('sendMessage').map((c) => c.body.text as string)
+  const [rhelp] = ru.sent('sendMessage').map((c) => c.body.text as string)
   expect(rhelp).toContain('<b>Что умеет бот</b>')
+  expect(rhelp).toContain('• пиши что угодно обычным текстом')
   expect(rhelp).toContain('• «❔ Подробнее» — пояснение к вопросу')
-  expect(rideas).toBe('<i>Идей пока нет. Напиши «идея …».</i>')
 })
 
 test('Язык: русский in the profile counts, and the explanation hint follows the language', async () => {

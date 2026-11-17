@@ -558,10 +558,20 @@ async function telegramTurn() {
       /** @type {string[]} */ let profs = []; try { profs = readdirSync(profilesDir()) } catch { /* no app profiles: the CLI on PATH */ }
       const prof = profs.includes('main') ? 'main' : profs[0]
       const cli = bundledCli({ name: prof ?? '', dir: join(profilesDir(), prof ?? '') })
-      const argv = ['-p', inboundPrompt(ms), ...(sess.sid ? ['--resume', sid] : ['--session-id', sid, '-n', 'Telegram inbox']), '--permission-mode', 'auto']
-      let out = '', ok = false
-      try { out = execFileSync(cli, argv, { cwd: homedir(), encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 300e3, maxBuffer: 16 << 20 }); ok = true }
-      catch (e) { out = String(/** @type {{stdout?: string}} */ (e).stdout ?? '') }
+      // A mid model (owner, 2026-11-17: a cheap inbox for his everyday asks); the long work goes to a chat it starts.
+      const argv = ['-p', inboundPrompt(ms, notifyJs), ...(sess.sid ? ['--resume', sid] : ['--session-id', sid, '-n', 'Telegram inbox']), '--model', process.env.INBOX_TG_MODEL || 'sonnet', '--permission-mode', 'auto']
+      // "typing..." on his phone the whole time, so he sees it is being worked on (it lasts about 5 s per call).
+      const typing = () => spawn(process.execPath, [notifyJs, 'typing'], { stdio: 'ignore', windowsHide: true }).on('error', () => undefined)
+      typing(); const beat = setInterval(typing, 4500)
+      const { ok, out } = await new Promise((done) => {
+        let o = ''
+        const c = spawn(cli, argv, { cwd: homedir(), stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true })
+        const kill = setTimeout(() => c.kill(), 300e3)
+        c.stdout.on('data', (d) => { if (o.length < 16 << 20) o += d })
+        c.on('error', () => { clearTimeout(kill); done({ ok: false, out: o }) })
+        c.on('close', (code) => { clearTimeout(kill); done({ ok: code === 0, out: o }) })
+      })
+      clearInterval(beat)
       if (!sess.sid && (ok || out)) writeFileSync(join(tg, 'headless.json'), JSON.stringify({ sid, at: now }))
       const html = ok && out.trim() ? mdToTg(out) : note(t(lang(), 'headlessFailed'))
       notify(['send', '--html', '--reply-to', String(ms[ms.length - 1].message_id)], html)
@@ -825,6 +835,9 @@ async function main() {
 
   if (cmd === 'channels') { say(`channels: ${hasChannel() ? 'yes' : 'none'}`); return 0 }
 
+  // Before the item-id check below: it takes no id (it sat after it from 1.19.52 and never ran).
+  if (cmd === 'telegram') return telegramTurn()
+
   if (cmd === 'scan') {
     // Files the questions that wait in live chats of every account and have no item (also run by the first list and by list --take).
     if (!scan([process.env.CLAUDE_CODE_SESSION_ID || '']).length) say('inbox: scan found no waiting question without an item')
@@ -969,8 +982,6 @@ async function main() {
     say('inbox: pushed')
     return 0
   }
-
-  if (cmd === 'telegram') return telegramTurn()
 
   if (cmd === 'open') {
     const host = id.startsWith('local_') ? id : item?.host

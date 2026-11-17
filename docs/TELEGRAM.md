@@ -6,8 +6,10 @@ The person's own bot (`/makarasty-tools:notify setup`) carries, both ways:
   "❔ Подробнее"; a finish he armed (`notify --arm`), silent; needs-you and errors, with sound; the inbox's answers to
   his messages.
 - **in**: a tap (answers the item), a reply to a question (a free answer, or a question about it when it ends in "?"),
-  "идея …" / 💡 (saved to `~/.claude/makarasty/ideas.md`), `/status`, `/ideas`, `/help`, and anything else, which the
-  inbox answers.
+  and any plain text, which the inbox model does: answers, starts a chat, sends a desktop screenshot, a file, a
+  picture, a video or a voice note (`notify.mjs file|screenshot`), adds a task to Obsidian. The only command is
+  `/start` (what the bot does); `/status` is a debug view in no menu (owner, 2026-11-17: no commands, everything is
+  text; the ideas list is gone, "create a task in Obsidian" replaces it).
 
 Nothing else is sent: no per-edit or per-agent noise (owner, 2026-11-17). The owner picked the compact look B3:
 the question first and bold, "project · kind · age" small under it. An answered message collapses to one grey line
@@ -17,10 +19,11 @@ the question first and bold, "project · kind · age" small under it. An answere
 
 | Part | Where | Cost when idle |
 |---|---|---|
-| Poll, taps, replies, ideas, /status, collapse | `tools/hooks/telegram.ts`, inside the hook engine (`$.http.fetch`), called from every chat's inbox timer | one HTTPS request per 15 s across all chats, no process |
+| Poll, taps, replies, /start, /status, collapse | `tools/hooks/telegram.ts`, inside the hook engine (`$.http.fetch`), called from every chat's inbox timer | one HTTPS request per 15 s across all chats, no process |
 | Ask message (text, buttons) | `tools/skills/inbox/core.mjs` `phoneAsk`, `phoneKeyboard`; sent by `notify.mjs ask` | only when an item is due |
 | Finish, needs-you, error | `notify.mjs` hook mode (armed chats only) | none: no marker, no node |
-| His free message | the inbox chat, as one `[Telegram]` prompt at its next idle tick; none alive: `inbox.mjs telegram`, one headless `claude -p` turn of a persistent session | only per message |
+| His free message | the inbox chat, as one `[Telegram]` prompt at its next idle tick; none alive: `inbox.mjs telegram`, one headless `claude -p --model sonnet` turn of a persistent session ("typing…" on the phone while it runs; `INBOX_TG_MODEL` overrides the model) | only per message |
+| Files, screenshot, typing | `notify.mjs file <path>` (photo, video, voice, audio, animation or document by extension, `--as` overrides; 50 MB), `notify.mjs screenshot` (every monitor, Windows), `notify.mjs typing` | only when the model calls them |
 | "❔ Подробнее" | Haiku via `$.model.complete`, only on the tap | only per tap |
 
 Files: `~/.claude/makarasty/notify.json` (token, chat), `~/.claude/makarasty/telegram/` (layout in the header of
@@ -63,3 +66,5 @@ UX
 25. Answered on the computer, gone, or past 12 h (inbox `STALE_MS`): collapsed with that reason.
 26. A second tap on an answered ask: "уже закрыто".
 27. Voice, sticker, a picture without a caption: "понимаю только текст"; a caption is read as text.
+28. Until 1.19.63 `inbox.mjs telegram` sat after the item-id check and exited "needs an item id": no free message was
+    ever answered with the inbox chat closed. The inbox selftest now runs it.

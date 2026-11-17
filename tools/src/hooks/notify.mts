@@ -21,6 +21,9 @@
 //   node notify.mjs --test                 send a test line
 //   node notify.mjs send <text>            send one message now, plain words (fleet.sh landed uses this)
 //   node notify.mjs send --html [--reply-to <message id>]   HTML on stdin (the headless inbox's answer)
+//   node notify.mjs file <path> [--as photo|video|voice|audio|animation|document] [--caption <text>] [--reply-to <id>]
+//   node notify.mjs screenshot [--caption <text>]   the whole desktop as a photo (Windows)
+//   node notify.mjs typing [action]        the "typing..." line for about 5 s (sendChatAction)
 //   node notify.mjs ask                    stdin {item, html, short, options?, reply?, keyboard?} from the inbox (core.mjs
 //                                          phoneAsk): sends it and keeps the ask in telegram/asks/<message id>.json.
 //                                          The taps, replies and the person's own messages are read by the hook engine
@@ -314,6 +317,62 @@ async function sendWith(cfg: Config, html: string, excerpt = '', kind?: Kind, ex
   }
 }
 const send = (html: string, excerpt?: string, kind?: Kind) => sendWith(config(), html, excerpt, kind);
+
+// A file to the bound chat, the method picked by extension unless `as` names one. Telegram takes a voice note as OGG/Opus,
+// MP3 or M4A, a photo up to 10 MB (larger goes as a document), any file up to 50 MB.
+const AS: Record<string, string> = { png: 'photo', jpg: 'photo', jpeg: 'photo', webp: 'photo', mp4: 'video', mov: 'video', webm: 'video', gif: 'animation', ogg: 'voice', oga: 'voice', opus: 'voice', mp3: 'audio', m4a: 'audio', wav: 'audio', flac: 'audio' };
+const METHOD: Record<string, string> = { photo: 'sendPhoto', video: 'sendVideo', animation: 'sendAnimation', voice: 'sendVoice', audio: 'sendAudio', document: 'sendDocument' };
+async function sendFile(cfg: Config, path: string, as0: string | null, caption: string, replyTo: number): Promise<Result> {
+  const failed = (error: string): Result => ({ sent: [], failed: [{ name: 'file', error }] });
+  if (as0 && !METHOD[as0]) return failed(`--as ${as0}: one of ${Object.keys(METHOD).join(', ')}`);
+  let size = 0; try { size = statSync(path).size; } catch { return failed(`no such file: ${path}`); }
+  if (size > 50 * 1048576) return failed(`${Math.round(size / 1048576)} MB: a bot sends 50 MB at most`);
+  let as = as0 ?? AS[(/\.(\w+)$/.exec(path)?.[1] ?? '').toLowerCase()] ?? 'document';
+  if (as === 'photo' && size > 10 * 1048576) as = 'document';
+  const capt = cut(redactExcerpt(caption).replace(/<(redacted|url|token)>/g, tr('hidden')), 1000);
+  const dry = process.env.NOTIFY_DRY_RUN;
+  if (dry) {
+    try { appendFileSync(dry, `[${as}] ${basename(path)}${capt ? ` | ${capt.replace(/\n/g, ' | ')}` : ''}\n`); return { sent: ['dry-run'], failed: [] }; }
+    catch (e) { return { sent: [], failed: [{ name: 'dry-run', error: (e as Error).message }] }; }
+  }
+  if (!connected(cfg)) return { sent: [], failed: [{ name: 'config', error: `${setupHint()} (${configFile})` }] };
+  const once = async (kind: string) => {
+    const form = new FormData();
+    form.set('chat_id', cfg.telegram!.chat_id);
+    form.set(kind, new Blob([readFileSync(path)]), basename(path));
+    if (capt) form.set('caption', capt);
+    if (replyTo) form.set('reply_parameters', JSON.stringify({ message_id: replyTo, allow_sending_without_reply: true }));
+    const r = await fetch(`${API()}/bot${cfg.telegram!.token}/${METHOD[kind]}`, { method: 'POST', body: form, signal: AbortSignal.timeout(180000) });
+    const o = await r.json() as { ok: boolean; description?: string; result?: { message_id: number } };
+    if (!o.ok) throw new Error(o.description || `${r.status}`);
+    return o.result!.message_id;
+  };
+  try {
+    let id: number;
+    // A photo Telegram refuses (too wide, too tall, odd format) still arrives, as a file.
+    try { id = await once(as); } catch (e) { if (as !== 'photo' || !/PHOTO|IMAGE|dimension/i.test((e as Error).message)) throw e; id = await once('document'); }
+    return { sent: ['telegram'], failed: [], message_id: id };
+  } catch (e) {
+    return { sent: [], failed: [{ name: 'telegram', error: redact((e as Error)?.message || e) }] };
+  }
+}
+
+// The whole desktop (every monitor), DPI-aware so a scaled screen is not cropped, as a PNG in the temp folder.
+function screenshot(): string {
+  const out = join(process.env.TEMP || process.env.TMP || homedir(), `screen-${Date.now()}.png`);
+  const ps = [
+    "Add-Type -MemberDefinition '[DllImport(\"user32.dll\")] public static extern bool SetProcessDPIAware();' -Name U -Namespace W",
+    '[void][W.U]::SetProcessDPIAware()',
+    'Add-Type -AssemblyName System.Windows.Forms, System.Drawing',
+    '$b = [System.Windows.Forms.SystemInformation]::VirtualScreen',
+    '$i = New-Object System.Drawing.Bitmap $b.Width, $b.Height',
+    '$g = [System.Drawing.Graphics]::FromImage($i)',
+    '$g.CopyFromScreen($b.Left, $b.Top, 0, 0, $i.Size)',
+    `$i.Save('${out.replace(/'/g, "''")}', [System.Drawing.Imaging.ImageFormat]::Png)`,
+  ].join('; ');
+  execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', ps], { stdio: 'ignore', timeout: 30000, windowsHide: true });
+  return out;
+}
 
 // Finishes that were written but never delivered, sent now. Setup saving the channel and a reopened
 // chat both call this. A marker whose send is still running (done written, no unsent yet) is another
@@ -633,7 +692,8 @@ async function setup() {
   if (!r.sent.length) { say(`  not delivered: ${r.failed.map((x) => x.error).join('; ')}`, '  Nothing was saved. Run setup again.'); return done(1); }
   writeJSON(configFile, one);
   // The menu beside the message box; a failure costs only the menu.
-  await telegram(token, 'setMyCommands', { commands: [{ command: 'status', description: tr('cmdStatus') }, { command: 'ideas', description: tr('cmdIdeas') }, { command: 'help', description: tr('cmdHelp') }] }).catch(() => undefined);
+  // No command menu (owner, 2026-11-17: everything is plain text); an older setup's menu is removed.
+  await telegram(token, 'deleteMyCommands', {}).catch(() => undefined);
   say(`  connected: a test message is in Telegram now. Saved to ${configFile}`);
   const flushed = await flushUnsent(one);
   if (flushed) say(`  and ${flushed} message(s) that were waiting went out now`);
@@ -656,6 +716,25 @@ async function main() {
       return report(await sendWith(config(), html, '', undefined, to ? { reply_parameters: { message_id: to, allow_sending_without_reply: true } } : {}));
     }
     return report(await send(esc(args.slice(1).join(' '))));
+  }
+  if (cmd === 'file' || cmd === 'screenshot') {
+    const as = take('--as'), caption = take('--caption') ?? '', to = Number(take('--reply-to')) || 0;
+    let path = args[1];
+    if (cmd === 'screenshot') {
+      if (process.platform !== 'win32') { console.error('notify: screenshot is Windows only'); return 1; }
+      try { path = screenshot(); } catch (e) { console.error(`notify: screenshot failed: ${(e as Error).message.split('\n')[0]}`); return 1; }
+    }
+    if (!path) { console.error('notify: usage: file <path> [--as photo|video|voice|audio|animation|document] [--caption <text>] [--reply-to <id>]'); return 2; }
+    const r = await sendFile(config(), path, as, caption, to);
+    if (cmd === 'screenshot') rmSync(path, { force: true });
+    return report(r);
+  }
+  if (cmd === 'typing') {
+    // The "typing..." line on the phone lasts about 5 s: the headless inbox repeats it while it works.
+    const cfg = config(), action = args[1] || 'typing';
+    if (process.env.NOTIFY_DRY_RUN || !connected(cfg)) return 0;
+    await telegram(cfg.telegram!.token, 'sendChatAction', { chat_id: cfg.telegram!.chat_id, action }, 4000).catch(() => undefined);
+    return 0;
   }
   if (cmd === '--test') return report(await send(`<i>${esc(tr('testLine', { host: hostname() }))}</i>`));
   if (cmd === 'setup') return setup();

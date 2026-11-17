@@ -64,14 +64,9 @@ export const note = (/** @type {string} */ text) => `<i>${esc(text)}</i>`
 export function helpHtml(/** @type {string | undefined} */ lang) {
   return [
     `<b>${esc(t(lang, 'helpTitle'))}</b>`,
-    ...['helpQuestions', 'helpMore', 'helpAny', 'helpIdea', 'helpStatus'].map((k) => `• ${esc(t(lang, k))}`),
+    ...['helpAny', 'helpQuestions', 'helpMore'].map((k) => `• ${esc(t(lang, k))}`),
     note(t(lang, 'helpNote')),
   ].join('\n')
-}
-
-/** /ideas: the title and the lines, or a grey "no ideas yet". */
-export function ideasHtml(/** @type {string | undefined} */ lang, /** @type {string[]} */ lines) {
-  return lines.length ? `<b>${esc(t(lang, 'ideasTitle'))}</b>\n${lines.map((l) => esc(l)).join('\n')}` : note(t(lang, 'ideasEmpty'))
 }
 
 /** /status: the count in bold, a line per waiting question (already cut as plain text), the inbox's state in grey. */
