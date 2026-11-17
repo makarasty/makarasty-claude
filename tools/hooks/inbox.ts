@@ -1,7 +1,8 @@
 import type { EngineInterface, Register } from 'claude-code'
-import { PUSH_AFTER_MS, clean, contextOf, continueAnswer, deliveryText, dueReports, excerptOf, explainPrompt, itemId, namesSource, overlaps, ownedBy, safe, sourceTag, toResult, undeliverable, type Answer, type Item, type Report } from '../skills/inbox/core.mjs'
+import { PUSH_AFTER_MS, STALE_MS, body, clean, contextOf, continueAnswer, deliveryText, dueReports, excerptOf, explainPrompt, itemId, namesSource, overlaps, ownedBy, safe, sourceTag, toResult, undeliverable, type Answer, type Item, type Report } from '../skills/inbox/core.mjs'
 import { find as secretIn } from './secret-guard.ts'
-import { notePrompt } from './push-guard.ts'
+import { deliveredYes, heardYes, notePrompt, noteTurnStart } from './push-guard.ts'
+import { configDir as claudeDir, deliveredPairs, readHeard, writeHeard, type Pair } from './consent.ts'
 import { PLUGIN_FRAME, ownWords } from './own-words.ts'
 import { isTelegramPrompt, inboundPrompt, takeInbound, startTelegram, telegramInbound, telegramTurnComplete, telegramTurnStart, telegramWords } from './telegram.ts'
 
@@ -25,14 +26,6 @@ type D = Pick<EngineInterface, 'env' | 'fs' | 'http' | 'process' | 'plugin' | 's
 
 const TICK_MS = 15000
 const WAIT_MS = 590000 // one waiter lives at most this long, then is started again: $.process.run refuses over 600000
-
-// `$.env.get` takes a literal name. On Windows node's homedir() is USERPROFILE; Git Bash's HOME is a /c/... path.
-async function claudeDir($: D): Promise<string | undefined> {
-  const cfg = await $.env.get('CLAUDE_CONFIG_DIR')
-  if (cfg) return cfg.replace(/[\\/]+$/, '')
-  const home = (await $.env.get('USERPROFILE')) || (await $.env.get('HOME'))
-  return home ? `${home.replace(/[\\/]+$/, '')}/.claude` : undefined
-}
 
 // The inbox's folder when it is on and this chat is not the inbox itself, else undefined.
 async function active($: D): Promise<{ dir: string; root: string; session: string } | undefined> {
@@ -111,6 +104,8 @@ let turnOrigin: string | undefined
 let inTurn = false
 // The inbox chat: the person spoke in this turn (typed it, or answered one of its dialogs). Only then may it write into a chat.
 let heard = false
+// The inbox chat: what he typed in this turn (his own words), the answer on record for an item the turn answers.
+let typedHere: string | undefined
 // How long the inbox chat's "busy" and "he spoke" files count once this copy has not seen the turn (a reload mid-turn, or a
 // crash that never ended it): after a crash the wake stays silent and a send stays open this long (owner, 2026-11-13: 30 min, not 3 h).
 const CRASH_MS = 30 * 60000
@@ -146,7 +141,10 @@ export const register: Register = (on) => {
     }
     if (me || source === 'inbox' || source.startsWith('inbox:')) {
       const r = await (me && !source ? next(e) : inboxAsk($, e, next, flagged))
-      if (me && personAnswered(r)) await hear($, me.root) // his pick in this turn: a send he asks for in it is his command
+      if (me && personAnswered(r)) {
+        await hear($, me.root) // his pick in this turn: a send he asks for in it is his command
+        await heardDialog($, me.root, flagged, r).catch(() => undefined)
+      }
       return r
     }
     const a = await active($)
@@ -236,6 +234,7 @@ export const register: Register = (on) => {
   }).catch(($, e, next) => next(e))
 
   on('turn.start', async ($, e, next) => {
+    noteTurnStart(deliveredYes(e.text) && (await deliveredHeard($, e.text).catch(() => false))) // push-guard's turn word
     wrapRecap = undefined // a subagent's run raises no turn.start: this is the main loop's
     inTurn = true
     await markTurn($, 'busy').catch(() => undefined)
@@ -251,7 +250,7 @@ export const register: Register = (on) => {
     const r = await next(e)
     const recap = e.agentId ? undefined : wrapRecap
     const origin = e.agentId ? undefined : turnOrigin
-    if (!e.agentId) { wrapRecap = undefined; turnOrigin = undefined; inTurn = false; heard = false }
+    if (!e.agentId) { wrapRecap = undefined; turnOrigin = undefined; inTurn = false; heard = false; typedHere = undefined }
     await startInboxTimer($).catch(() => undefined)
     if (e.agentId) return r
     const me = await inboxSelf($).catch(() => undefined)
@@ -305,7 +304,7 @@ export const register: Register = (on) => {
     if (typed) {
       // The person writes to the inbox chat: the finish reports waiting for their batch go with this prompt.
       const me = await inboxSelf($).catch(() => undefined)
-      if (me && hisWords(e.text)) await hear($, me.root) // a plugin message can arrive as a composer prompt: not his word
+      if (me && hisWords(e.text)) { await hear($, me.root); typedHere = ownWords(e.text) } // a plugin message can arrive as a composer prompt: not his word
       const waiting = me ? await waitingReports($, me).catch(() => []) : []
       if (me && waiting.length) {
         for (const w of waiting) await $.fs.write(`${me.root}/reports/announced/${w.id}`, '').catch(() => undefined)
@@ -348,6 +347,22 @@ export const register: Register = (on) => {
       return next(e)
     }).catch(($, e, next) => next(e))
   }
+
+  // The inbox chat answers an item with `inbox.mjs answer <id>` in a turn the person typed: what he typed is the answer on
+  // record (consent.ts Heard), written before the answer file. The model's own answer text is never the record.
+  on('tool.call', { tool: /^(Bash|PowerShell)$/ }, async ($, e, next) => {
+    const said = typedHere
+    const ids = said ? [...String((e as unknown as { command?: unknown }).command ?? '').matchAll(/inbox\.mjs["']?\s+answer\s+["']?([\w~-]+)/g)].map((m) => m[1]!) : []
+    const me = ids.length ? await inboxSelf($).catch(() => undefined) : undefined
+    if (me && said) {
+      const now = await $.clock.now()
+      for (const id of ids) {
+        const it = await readJSON<Item>($, `${me.root}/items/${id.split('~').map(safe).join('~')}.json`)
+        if (it) await writeHeard($, me.root, it.id, { at: now, via: 'typed', pairs: questionsOf(it).map((question) => ({ question, answer: said })) }).catch(() => undefined)
+      }
+    }
+    return next(e)
+  }).catch(($, e, next) => next(e))
 
 }
 
@@ -468,6 +483,48 @@ async function startedName($: D, root: string, to: string): Promise<boolean> {
 function personAnswered(r: unknown): boolean {
   const ans = (r as { result?: { answers?: Record<string, unknown> } } | undefined)?.result?.answers
   return !!ans && Object.values(ans).some((v) => typeof v === 'string' && v.trim() !== '' && v !== NOT_YET && v !== ANSWERED_THERE)
+}
+
+const questionsOf = (it: Item): string[] => (it.kind === 'ask' ? (it.questions ?? []).map((q) => q.question) : it.kind === 'choice' ? [it.ask ?? ''] : [])
+
+// His pick in the inbox chat's dialog, on record (consent.ts Heard) for each item the dialog asked, before the model
+// writes the answer file. A question goes to the one item whose source it names (two items of one chat: the one it
+// overlaps), with that source tag taken off, so the record holds the question as he read it.
+async function heardDialog($: D, root: string, ids: string[], r: unknown): Promise<void> {
+  const answers = Object.entries((r as { result?: { answers?: Record<string, unknown> } }).result?.answers ?? {})
+    .filter((x): x is [string, string] => typeof x[1] === 'string' && x[1].trim() !== '' && x[1] !== NOT_YET && x[1] !== ANSWERED_THERE)
+  const items = (await Promise.all(ids.map((id) => readJSON<Item>($, `${root}/items/${id.split('~').map(safe).join('~')}.json`)))).filter((x): x is Item => !!x)
+  const now = await $.clock.now()
+  for (const it of items) {
+    const pairs: Pair[] = []
+    for (const [q, answer] of answers) {
+      const named = items.filter((o) => namesSource(q, o))
+      const near = named.length > 1 ? named.filter((o) => overlaps(q, body(o), 0.5)) : named
+      if (near.length !== 1 || near[0] !== it) continue
+      let cut = 1
+      while (cut < q.length && !namesSource(q.slice(0, cut), it)) cut++
+      pairs.push({ question: q.slice(cut).replace(/^[\s:·—-]+/, ''), answer })
+    }
+    if (pairs.length) await writeHeard($, root, it.id, { at: now, via: 'dialog', pairs })
+  }
+}
+
+// In an asking chat: this turn's prompt is the inbox's delivery of an answer to one of its push questions, and his act
+// behind that answer is on record (consent.ts Heard), at most STALE_MS old: the age an answer may still be delivered at.
+async function deliveredHeard($: D, text: string): Promise<boolean> {
+  const a = await active($)
+  if (!a) return false
+  const pairs = deliveredPairs(text)
+  const now = await $.clock.now()
+  for (const f of await $.fs.list(`${a.root}/heard-answers`).catch(() => [])) {
+    if (!f.name.endsWith('.json') || !ownedBy(f.name, a.session)) continue
+    const id = f.name.slice(0, -5)
+    const heardOf = await readHeard($, a.root, id)
+    if (!heardOf || now - heardOf.at > STALE_MS) continue
+    const it = await readJSON<Item>($, `${a.root}/items/${id}.json`)
+    if (it && questionsOf(it).some((q) => pairs.some((p) => p.question === q) && heardYes(q, heardOf))) return true
+  }
+  return false
 }
 
 // He wrote in this chat after the question (said.jsonl, what the hook keeps of his typing).

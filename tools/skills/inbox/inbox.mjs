@@ -89,7 +89,7 @@ function items() {
     if (!it || typeof it.id !== 'string' || typeof it.cwd !== 'string' || typeof it.at !== 'number') continue
     // Swept lazily: an unanswered one after 7 days (the night and the weekend); an answered one a day after its ANSWER (not
     // after the question: one answered late is still to be delivered), and an inbox answer to a box or card only once delivered.
-    if (sweepable(it, f)) { for (const d of ['items', 'answers', 'pushed', 'delivered', 'announced', 'skipped', 'skipped-seen', 'auto-seen']) rmSync(join(root, d, d === 'items' || d === 'answers' ? f : f.slice(0, -5)), { force: true }); continue }
+    if (sweepable(it, f)) { for (const d of ['items', 'answers', 'heard-answers', 'pushed', 'delivered', 'announced', 'skipped', 'skipped-seen', 'auto-seen']) rmSync(join(root, d, d === 'items' || d === 'answers' || d === 'heard-answers' ? f : f.slice(0, -5)), { force: true }); continue }
     out.push(it)
   }
   return out.sort((a, b) => a.at - b.at)

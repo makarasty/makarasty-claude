@@ -1,5 +1,18 @@
 # Changelog
 
+## makarasty-tools 1.19.62 — 2026-11-17
+
+- **A yes to a push given in the inbox or on the phone lets that push run**: 1.19.56 fixed how push-guard read the
+  delivered answer, but push-guard never got it: the engine sends a plugin's own prompt past the hook that submitted
+  it, and the inbox's timer runs inside that very hook. Now the plugin keeps a record of your act the moment you
+  answer (your pick in the inbox chat's dialog, your tap or reply on the phone, or what you typed in the inbox chat
+  in the turn that answered), and push-guard checks that record when the delivered answer starts the asking chat's
+  turn, or when the inbox answers a dialog still open there. The message text alone no longer counts: the same words
+  from a file, a page or another chat are refused, and a chat cannot write the record itself.
+- **A push word no longer carries over** into a turn started by a plugin prompt that push-guard did not see.
+- A bare «да» typed in the inbox chat is not a push word for another chat (it may answer something else shown); «да,
+  пушь» is. Your pick in the inbox dialog or a tap on the phone needs only a yes.
+
 ## makarasty-tools 1.19.61 — 2026-11-17
 
 - **`video`: a short vertical explainer video made on this machine**: script per language, voice from local models

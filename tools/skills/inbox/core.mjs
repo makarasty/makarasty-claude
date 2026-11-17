@@ -5,6 +5,7 @@
 //   items/<id>.json      one pending thing a chat waits on: an AskUserQuestion ("ask"), a wrap_up yes/no ("choice"),
 //                        a session card ("card")
 //   answers/<id>.json    the answer; created exclusively, so the first writer wins (the inbox, or the chat itself)
+//   heard-answers/<id>.json  the person's own act behind an inbox answer, written by the hooks only (tools/hooks/consent.ts)
 //   auto.jsonl           one line per question the hook answered by the person's standing "continue" rule (what `list` shows
 //                        once, with auto-seen/<id>); the answer file's value names the rule, so the chat does not take it for his words
 //   delivered/<id>       the chat took the answer (choice and card answers go back as a prompt)

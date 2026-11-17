@@ -3229,7 +3229,7 @@
    "ru": "Мой ответ считается из любого канала: диалог, кнопка, сообщение, инбокс, телефон. Дважды не спрашивать.",
    "layer": "plugin",
    "enforced": "hook+text",
-   "enforcer": "tools/hooks/consent.ts (read by push-guard.ts); tools/hooks/inbox.ts",
+   "enforcer": "tools/hooks/consent.ts (the record of his act, read by push-guard.ts); tools/hooks/inbox.ts, telegram.ts (write it)",
    "complaints": [
     "C10",
     "C13"
@@ -3259,7 +3259,7 @@
     "regex": "(дважды спрашива|опять спрашива\\S* (на|про) пуш|я уже (ответил|разрешил|отвечал)|10 раз подряд разрешил)",
     "since": "2026-11-17"
    },
-   "gap": "an inbox or phone yes to a push is not seen by push-guard: the engine sends a plugin's own prompt.submit past the hook that calls it, so notePrompt never sees the delivered answer (found 2026-11-17 by the notifications chat; fix waits on the owner). Until then a push needs his yes in the chat's own dialog."
+   "gap": "a Telegram message typed to the bot (not a tap or a reply to an ask) reaches the inbox chat as a plugin prompt its own prompt.submit hook never sees, so it is not his word there for a push or a send"
   },
   {
    "id": "R138",

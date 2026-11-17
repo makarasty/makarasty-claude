@@ -2,6 +2,7 @@ import type { EngineInterface } from 'claude-code'
 import { explainPrompt, inboundPrompt, isTelegramPrompt, STALE_MS, TG_PROMPT, telegramWords, type Item } from '../skills/inbox/core.mjs'
 import { collapsed, esc, explainHtml, helpHtml, ideasHtml, mdToTg, note, phoneKeyboard, statusHtml } from '../skills/notify/render.mjs'
 import { langOf, t } from '../skills/notify/strings.mjs'
+import { writeHeard } from './consent.ts'
 
 // The Telegram side of notify, read inside the hook engine: `$.http.fetch`, so polling starts no process. Every chat with
 // the inbox on runs a 1 s timer here (startTelegram, from inbox.ts), its own: the inbox timer can be busy for a minute
@@ -232,6 +233,10 @@ async function status($: D, dir: string, now: number, L: string): Promise<string
 // The tap or reply answers the item through `inbox.mjs answer`, as the inbox chat would; the message then collapses.
 async function answer($: D, dir: string, b: { token: string; me: string }, msg: number, a: Ask, pick: string, replyId?: number): Promise<void> {
   const L = await lang($, dir)
+  // His tap or reply, on record before the answer file (consent.ts Heard): handle() checked it came from his Telegram id.
+  const it = await readJSON<Item>($, `${dir}/makarasty/inbox/items/${a.item}.json`)
+  const question = (it?.kind === 'choice' ? it.ask : it?.questions?.[0]?.question) ?? a.short
+  await writeHeard($, `${dir}/makarasty/inbox`, a.item, { at: await $.clock.now(), via: 'phone', pairs: [{ question, answer: pick }] }).catch(() => undefined)
   const r = await $.process.run(['node', `${$.plugin.root}/skills/inbox/inbox.mjs`, 'answer', a.item], { stdin: pick, timeoutMs: 20000, env: { CLAUDE_CONFIG_DIR: dir } }).catch(() => undefined)
   const line = `${r?.stdout ?? ''}\n${r?.stderr ?? ''}`.trim().split('\n').filter(Boolean).pop()?.replace(/^inbox: /, '') ?? t(L, 'outFailed')
   const sent = r?.exitCode === 0 && !/NOT SENT/.test(line)

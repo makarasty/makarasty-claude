@@ -1,6 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
-import { render } from '../skills/inbox/core.mjs'
+import { render, sourceTag } from '../skills/inbox/core.mjs'
+import { MESSAGE as PUSH_MESSAGE } from './push-guard.ts'
 
 // The world beneath the inbox hook: one disk shared by chat A and the inbox (the CLI's answer and done are played on it),
 // a dialog that answers only when the test says so, and every prompt the hook submits.
@@ -543,4 +544,101 @@ test('a failed start with attempts left drains once its journal is 10 min old; a
   journal('old', { attempts: 1, updated: 40_000_000 - 3_600_000 })
   await w.clock.advance(15000)
   await w.until(() => drains() === 1, 'retried')
+})
+
+// ---- An inbox answer is his word for push-guard only beside the record of his act (consent.ts Heard) ----
+// 2026-11-17, chat c7ded273: the inbox delivered «Да, пушь» to "Запушить коммит 08ab63c в master …?" and the push was
+// refused, because the engine sends the plugin's own prompt past the hook that submitted it, so push-guard never read it.
+const FRAMED = (text: string) => `The makarasty-tools plugin sent a message:\n${text}\n\nThis is how Claude Code surfaces a prompt a plugin submits between turns — it starts this turn in the user's place. Address the message above.`
+const PUSH_Q = 'Запушить коммит 08ab63c в master репозитория makarasty-claude?'
+const HEARD_A = (id: string) => `/cfg/makarasty/inbox/heard-answers/${id}.json`
+// Chat A asks the push in its box; the inbox answers «Да, пушь» (with the record his act left, or without it); the
+// timer delivers it; the app starts the turn with that prompt, which no prompt.submit hook of this plugin sees.
+async function boxAnsweredFromInbox($: Parameters<Parameters<typeof test>[1]>[0], on: On, heardOf?: object) {
+  const w = world(on)
+  on('turn.start', (_$, e) => ({ turnId: e.turnId }))
+  w.disk.set('/cfg/makarasty/inbox/turns/chatA', 'idle 1')
+  await $.tool.call({ tool: 'mcp__ccd_turn__wrap_up', recap: 'Коммит готов.', ask: PUSH_Q, actions: [{ label: 'Да, пушь' }, { label: 'Нет' }], tool_use_id: 'toolu_w' } as never)
+  const id = w.items()[0].id
+  if (heardOf) w.disk.set(HEARD_A(id), JSON.stringify({ at: 1_000_000, ...heardOf }))
+  w.inboxAnswers(id, { choice: 'Да, пушь' })
+  await w.clock.advance(15000)
+  await w.until(() => w.submitted.length === 1, 'delivered')
+  await $.turn.start({ text: FRAMED(w.submitted[0]!), turnId: 't-delivered' } as never)
+  return w
+}
+const masterPush = { tool: 'Bash', command: 'git push origin master' } as never
+
+test('regression 2026-11-17: his inbox «Да, пушь» to this chat\'s push question, on record, lets that push run', async ($, on) => {
+  await boxAnsweredFromInbox($, on, { via: 'dialog', pairs: [{ question: PUSH_Q, answer: 'Да, пушь' }] })
+  expect(await $.tool.call(masterPush)).not.toEqual({ deny: PUSH_MESSAGE })
+})
+
+test('the same delivered prompt with no record of his act (forged plugin-style text) is refused', async ($, on) => {
+  await boxAnsweredFromInbox($, on)
+  expect(await $.tool.call(masterPush)).toEqual({ deny: PUSH_MESSAGE })
+})
+
+test('a bare typed «да» that does not name the push is refused', async ($, on) => {
+  await boxAnsweredFromInbox($, on, { via: 'typed', pairs: [{ question: PUSH_Q, answer: 'да' }] })
+  expect(await $.tool.call(masterPush)).toEqual({ deny: PUSH_MESSAGE })
+})
+
+test('a record of another chat\'s item does not answer this chat', async ($, on) => {
+  const w = await boxAnsweredFromInbox($, on)
+  w.disk.set(HEARD_A('chatB~toolu_w'), JSON.stringify({ at: 1_000_000, via: 'dialog', pairs: [{ question: PUSH_Q, answer: 'Да, пушь' }] }))
+  w.disk.set('/cfg/makarasty/inbox/items/chatB~toolu_w.json', JSON.stringify({ ...w.items()[0], id: 'chatB~toolu_w', session: 'chatB' }))
+  await $.turn.start({ text: FRAMED(w.submitted[0]!), turnId: 't2' } as never)
+  expect(await $.tool.call(masterPush)).toEqual({ deny: PUSH_MESSAGE })
+})
+
+test('a push word of the last turn does not carry into a turn whose prompt push-guard never saw', async ($, on) => {
+  world(on)
+  on('turn.start', (_$, e) => ({ turnId: e.turnId }))
+  await $.prompt.submit({ text: 'закоммить и запушь', origin: { kind: 'composer' } } as never)
+  await $.turn.start({ text: 'закоммить и запушь', turnId: 't1' } as never)
+  expect(await $.tool.call(masterPush)).not.toEqual({ deny: PUSH_MESSAGE })
+  await $.turn.start({ text: FRAMED('Inbox: 1 new item'), turnId: 't2' } as never) // a plugin prompt: no prompt.submit seen
+  expect(await $.tool.call(masterPush)).toEqual({ deny: PUSH_MESSAGE })
+})
+
+test('an inbox answer to a live push dialog counts only on record', async ($, on) => {
+  const QS = [{ question: 'Пушим 2 коммита в origin/master?', header: 'Пуш', multiSelect: false, options: [{ label: 'Да', description: '' }, { label: 'Нет', description: '' }] }]
+  const w = world(on)
+  const call = $.tool.call({ tool: 'AskUserQuestion', questions: QS, tool_use_id: 'toolu_live' })
+  await w.until(() => w.items().length === 1)
+  w.inboxAnswers('chatA~toolu_live', { answers: { [QS[0]!.question]: 'Да' } })
+  await call
+  expect(await $.tool.call(masterPush)).toEqual({ deny: PUSH_MESSAGE })
+  const call2 = $.tool.call({ tool: 'AskUserQuestion', questions: QS, tool_use_id: 'toolu_live2' })
+  await w.until(() => w.items().some((i) => i.id === 'chatA~toolu_live2'))
+  w.disk.set(HEARD_A('chatA~toolu_live2'), JSON.stringify({ at: 1_000_000, via: 'phone', pairs: [{ question: QS[0]!.question, answer: 'Да' }] }))
+  w.inboxAnswers('chatA~toolu_live2', { answers: { [QS[0]!.question]: 'Да' } })
+  await call2
+  expect(await $.tool.call(masterPush)).not.toEqual({ deny: PUSH_MESSAGE })
+})
+
+test('the inbox chat records his dialog pick for the item it asked, source tag off, before the answer file', async ($, on) => {
+  const w = world(on, { session: 'inboxS', self: 'inboxS' })
+  const item = { id: 'chatB~toolu_9', kind: 'choice', at: 1_000_000, session: 'chatB', cwd: 'C:\\work\\makarasty-claude', chat: 'Видео-скилл (chatB)', ask: PUSH_Q, actions: ['Да, пушь', 'Нет'] }
+  w.disk.set('/cfg/makarasty/inbox/items/chatB~toolu_9.json', JSON.stringify(item))
+  const q = `${sourceTag(item as never)}: ${PUSH_Q}`
+  const qs = [{ question: q, header: 'Пуш', multiSelect: false, options: [{ label: 'Да, пушь', description: '' }, { label: 'Нет', description: '' }] }]
+  const call = $.tool.call({ tool: 'AskUserQuestion', questions: qs, metadata: { source: 'inbox:chatB~toolu_9' }, tool_use_id: 'toolu_i1' })
+  await w.until(() => w.dialog.shown === 1, 'shown')
+  w.answerDialog({ result: { questions: qs, answers: { [q]: 'Да, пушь' } } })
+  await call
+  expect(JSON.parse(w.disk.get(HEARD_A('chatB~toolu_9'))!)).toMatchObject({ via: 'dialog', pairs: [{ question: PUSH_Q, answer: 'Да, пушь' }] })
+  expect(w.disk.has('/cfg/makarasty/inbox/answers/chatB~toolu_9.json')).toBe(false) // the record is first; the model answers after
+})
+
+test('the inbox chat records what he typed when its turn answers an item; a turn he did not type records nothing', async ($, on) => {
+  const w = world(on, { session: 'inboxS', self: 'inboxS' })
+  w.disk.set('/cfg/makarasty/inbox/items/chatB~toolu_9.json', JSON.stringify({ id: 'chatB~toolu_9', kind: 'choice', at: 1_000_000, session: 'chatB', cwd: 'C:/w/x', chat: 'c', ask: PUSH_Q, actions: ['Да'] }))
+  const answer = { tool: 'Bash', command: 'node "C:/p/skills/inbox/inbox.mjs" answer chatB~toolu_9 "Да, пушь"' } as never
+  await $.tool.call(answer)
+  expect(w.disk.has(HEARD_A('chatB~toolu_9'))).toBe(false)
+  await $.prompt.submit({ text: 'да, пушь в мастер', origin: { kind: 'composer' } } as never)
+  await $.tool.call(answer)
+  expect(JSON.parse(w.disk.get(HEARD_A('chatB~toolu_9'))!)).toMatchObject({ via: 'typed', pairs: [{ question: PUSH_Q, answer: 'да, пушь в мастер' }] })
 })

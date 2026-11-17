@@ -8,11 +8,48 @@
 // (2026-11-17: "Да, пушь" from the phone, push-guard refused, the chat asked again). So the parsing lives here, and a
 // test (consent.test.ts) feeds every guard the prompt exactly as the app frames it.
 //
-// Safety stays where it was: only a prompt this plugin submitted (origin plugin, name makarasty-tools) carries an
-// answer, and only the answer part of it counts; the question text beside it is the asking chat's own words and is read
-// only to know what was answered.
+// That prompt is text, and text proves nothing: the same words can come from a file, a page or another chat. It also
+// never reaches the hook that would read it: the engine sends a plugin's own $.prompt.submit past the hook that called
+// it, and the inbox timer runs inside this plugin's prompt.submit hook (2026-11-17: an inbox "Да, пушь" refused twice
+// after the 1.19.56 frame fix). So a delivered answer counts as his word only beside the record below, which hook code
+// writes at the moment he acts, before the answer file exists: his pick in the inbox chat's own dialog, his tap or
+// reply on the phone (the bot checks his Telegram id), or his typed prompt in the inbox chat in the turn that answered
+// the item. A model writes the answer file (`inbox.mjs answer`) and can write any prose, but never this record.
+
+import type { EngineInterface } from 'claude-code'
+import { safe } from '../skills/inbox/core.mjs'
 
 export type Pair = { question: string; answer: string }
+export type Heard = { at: number; via: 'dialog' | 'phone' | 'typed'; pairs: Pair[] }
+type D = Pick<EngineInterface, 'env' | 'fs'>
+
+// `$.env.get` takes a literal name. On Windows node's homedir() is USERPROFILE; Git Bash's HOME is a /c/... path.
+export async function configDir($: D): Promise<string | undefined> {
+  const cfg = await $.env.get('CLAUDE_CONFIG_DIR')
+  if (cfg) return cfg.replace(/[\\/]+$/, '')
+  const home = (await $.env.get('USERPROFILE')) || (await $.env.get('HOME'))
+  return home ? `${home.replace(/[\\/]+$/, '')}/.claude` : undefined
+}
+
+const fileId = (id: string): string => id.split('~').map(safe).join('~')
+async function readJSON<T>($: D, path: string): Promise<T | undefined> {
+  try { return JSON.parse(String(await $.fs.read(path)).replace(/^﻿/, '')) as T } catch { return undefined }
+}
+export async function writeHeard($: D, root: string, id: string, h: Heard): Promise<void> {
+  await $.fs.write(`${root}/heard-answers/${fileId(id)}.json`, JSON.stringify(h))
+}
+export async function readHeard($: D, root: string, id: string): Promise<Heard | undefined> {
+  const h = await readJSON<Heard>($, `${root}/heard-answers/${fileId(id)}.json`)
+  return h && Array.isArray(h.pairs) ? h : undefined
+}
+/** The inbox's answer to item `id`, if the inbox gave one, and his act on record for it. */
+export async function inboxAnswer($: D, id: string): Promise<{ byInbox: boolean; heard?: Heard }> {
+  const dir = await configDir($)
+  const root = `${dir}/makarasty/inbox`
+  const ans = dir ? await readJSON<{ by?: string; standing?: boolean }>($, `${root}/answers/${fileId(id)}.json`) : undefined
+  if (ans?.by !== 'inbox') return { byInbox: false }
+  return { byInbox: true, heard: ans.standing ? undefined : await readHeard($, root, id) } // a standing rule is not his act
+}
 
 const FRAME = /^\s*The ([\w-]+) plugin sent a message:\s*/
 const FRAME_TAIL = /\s*This is how Claude Code surfaces a prompt a plugin submits[\s\S]*$/
@@ -44,7 +81,3 @@ export function deliveredPairs(raw: string): Pair[] {
   return []
 }
 
-/** His answers in a prompt event: only from a prompt this plugin submitted. */
-export function ownerAnswers(e: { text: string; origin?: { kind?: string; name?: string } }): Pair[] {
-  return e.origin?.kind === 'plugin' && e.origin.name === 'makarasty-tools' ? deliveredPairs(e.text) : []
-}
