@@ -862,7 +862,7 @@ async function telegramDeliver($: D, me: { dir: string; root: string; session: s
   const ms = await telegramInbound($, me.dir, retry)
   if (!ms.length) return
   await takeInbound($, me.dir, ms)
-  await $.prompt.submit({ text: inboundPrompt(ms, `${$.plugin.root}/hooks/notify.mjs`) })
+  await $.prompt.submit({ text: inboundPrompt(ms, $.plugin.root) })
 }
 
 // The last answer to "is a notify channel configured?" and when it was asked (tick keeps it 10 min).

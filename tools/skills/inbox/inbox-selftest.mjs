@@ -69,6 +69,11 @@ try {
   put(item({ id: 'chatA~t3r' })); run(['push', 'chatA~t3r']); run(['answer', 'chatA~t3r', 'Postgres'])
   check('with Language: Russian it is the Russian one', (readFileSync(sink, 'utf8').trim().split('\n').pop() ?? '').includes('reports-app · вопрос · '))
   rmSync(profile)
+  const nTwo = existsSync(sink) ? readFileSync(sink, 'utf8').trim().split('\n').length : 0
+  put(item({ id: 'chatA~two', questions: [{ question: Q, options: [{ label: 'Postgres' }] }, { question: 'Какой порт?', options: [{ label: '5432' }] }] })); run(['push', 'chatA~two'])
+  const two = readFileSync(sink, 'utf8').trim().split('\n').slice(nTwo)
+  check('a dialog of two questions goes to the phone as two messages, 1/2 and 2/2', two.length === 2 && two[0].includes(Q) && two[0].includes('· 1/2 ·') && two[1].includes('Какой порт?') && two[1].includes('· 2/2 ·'), two.join(' / '))
+  check('and the phone\'s gathered answers close it as one', run(['answer', 'chatA~two'], JSON.stringify({ [Q]: 'Postgres', 'Какой порт?': '5432' })).status === 0)
   // A push that fails leaves no marker, so the next tick retries it.
   put(item({ id: 'chatA~t4' }))
   const sentN = () => (existsSync(sink) ? readFileSync(sink, 'utf8').trim().split('\n').length : 0)

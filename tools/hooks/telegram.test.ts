@@ -149,6 +149,31 @@ test('a tap of the bound user: acknowledged first, then the item answered with t
   expect(w.disk.get(`${TG}/offset`)).toBe('8')
 })
 
+test('a dialog of two questions, one message each: the first tap only collapses its message, the second answers the item with both', async () => {
+  const w = world()
+  w.item('chatB~t1')
+  w.ask(101, { q: Q, of: 2 }); w.ask(102, { q: 'Какой порт?', short: 'Какой порт?', options: ['5432', '5433'] })
+  w.feed([tap(7, 42, 101, 'a1')])
+  await w.tick()
+  expect(w.runs).toEqual([])
+  expect(w.sent('editMessageText')[0]!.body.text).toBe(`<i>${Q} — SQLite</i>`)
+  w.put(`${TG}/asks/102.json`, { ...w.json(`${TG}/asks/102.json`), q: 'Какой порт?', of: 2 })
+  w.feed([tap(8, 42, 102, 'a0')])
+  await w.advance(20000)
+  await w.tick()
+  expect(w.runs).toEqual([{ argv: ['answer', 'chatB~t1'], stdin: JSON.stringify({ [Q]: 'SQLite', 'Какой порт?': '5432' }) }])
+})
+
+test('a message while the headless inbox is busy with an earlier one: a silent "in the queue" line at once', async () => {
+  const w = world()
+  w.put(`${TG}/headless.lock`, String(w.NOW - 60_000))
+  w.feed([say(7, 'что нового?')])
+  await w.tick()
+  const q = w.sent('sendMessage')[0]!.body
+  expect(q).toMatchObject({ disable_notification: true, reply_parameters: { message_id: 67 } })
+  expect(q.text).toContain('В очереди')
+})
+
 test('a second tap on an answered message does not answer again', async () => {
   const w = world()
   w.item('chatB~t1'); w.ask(101)

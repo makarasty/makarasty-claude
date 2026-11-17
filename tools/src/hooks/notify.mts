@@ -574,7 +574,7 @@ async function hook() {
 // hook engine, which reads the taps (tools/hooks/telegram.ts). The engine cannot delete a file, so the asks it closed and
 // the inbound messages it answered are pruned here, two days on.
 
-interface AskIn { item: string; html: string; short: string; options?: string[]; reply?: boolean; keyboard?: object }
+interface AskIn { item: string; html: string; short: string; options?: string[]; reply?: boolean; keyboard?: object; q?: string; of?: number }
 async function ask() {
   let a: Partial<AskIn>;
   const usage = 'notify: ask wants {item, html, short, options?, reply?, keyboard?} on stdin';
@@ -588,7 +588,7 @@ async function ask() {
   const keyboard = a.keyboard ? JSON.parse(JSON.stringify(a.keyboard), (k, v) => (k === 'text' && typeof v === 'string' ? clean(v) : v)) : undefined;
   const r = await sendWith(config(), html, '', undefined, keyboard ? { reply_markup: keyboard } : {});
   if (!r.sent.length) return report(r);
-  if (r.message_id) writeJSON(join(tgDir, 'asks', `${r.message_id}.json`), { item: a.item, html, short, options: (a.options ?? []).map(String), reply: !!a.reply, at: Date.now() });
+  if (r.message_id) writeJSON(join(tgDir, 'asks', `${r.message_id}.json`), { item: a.item, html, short, options: (a.options ?? []).map(String), reply: !!a.reply, at: Date.now(), ...(typeof a.q === 'string' && Number(a.of) > 1 ? { q: a.q, of: Number(a.of) } : {}) });
   prunePhone();
   console.log(`notify: asked, message ${r.message_id}`);
   return 0;

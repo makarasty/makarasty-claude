@@ -66,5 +66,11 @@ UX
 25. Answered on the computer, gone, or past 12 h (inbox `STALE_MS`): collapsed with that reason.
 26. A second tap on an answered ask: "уже закрыто".
 27. Voice, sticker, a picture without a caption: "понимаю только текст"; a caption is read as text.
+29. A dialog of several questions: one ask per question (`q`, `of` in the ask file); a tap or reply records its pick
+    in `telegram/partial/<item>.json`, collapses that message, and the last one answers the item with the whole map.
+30. The headless turn runs with `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`: `claude -p` waits for its background tasks,
+    so one started there held the answer and "typing…" until the kill (2026-11-18). Long work goes to a started chat.
+31. A run busy with an earlier message: a new one gets a silent "in the queue" line; what is left after a run is taken
+    by a new detached run at once.
 28. Until 1.19.63 `inbox.mjs telegram` sat after the item-id check and exited "needs an item id": no free message was
     ever answered with the inbox chat closed. The inbox selftest now runs it.

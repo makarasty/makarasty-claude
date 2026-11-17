@@ -45,7 +45,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { freemem, homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { REPORT_TTL_MS, TTL_MS, UNSEEN_REPORT_TTL_MS, clean, contextOf, expired, inboundPrompt, itemId, normalizeAnswer, phoneAsk, render, renderReports, safe, sourceTag, undeliverable } from './core.mjs'
+import { REPORT_TTL_MS, TTL_MS, UNSEEN_REPORT_TTL_MS, clean, contextOf, expired, inboundPrompt, itemId, normalizeAnswer, phoneAsks, render, renderReports, safe, sourceTag, undeliverable } from './core.mjs'
 import { mdToTg, note, phoneKeyboard } from '../notify/render.mjs'
 import { langOf, t } from '../notify/strings.mjs'
 
@@ -559,13 +559,14 @@ async function telegramTurn() {
       const prof = profs.includes('main') ? 'main' : profs[0]
       const cli = bundledCli({ name: prof ?? '', dir: join(profilesDir(), prof ?? '') })
       // A mid model (owner, 2026-11-17: a cheap inbox for his everyday asks); the long work goes to a chat it starts.
-      const argv = ['-p', inboundPrompt(ms, notifyJs), ...(sess.sid ? ['--resume', sid] : ['--session-id', sid, '-n', 'Telegram inbox']), '--model', process.env.INBOX_TG_MODEL || 'sonnet', '--permission-mode', 'auto']
+      const argv = ['-p', inboundPrompt(ms, join(here, '..', '..')), ...(sess.sid ? ['--resume', sid] : ['--session-id', sid, '-n', 'Telegram inbox']), '--model', process.env.INBOX_TG_MODEL || 'sonnet', '--permission-mode', 'auto']
       // "typing..." on his phone the whole time, so he sees it is being worked on (it lasts about 5 s per call).
       const typing = () => spawn(process.execPath, [notifyJs, 'typing'], { stdio: 'ignore', windowsHide: true }).on('error', () => undefined)
       typing(); const beat = setInterval(typing, 4500)
       const { ok, out } = await new Promise((done) => {
         let o = ''
-        const c = spawn(cli, argv, { cwd: homedir(), stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true })
+        // No background tasks: -p does not exit while one runs, so the answer and "typing..." hung until the kill (2026-11-18).
+        const c = spawn(cli, argv, { cwd: homedir(), stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true, env: { ...process.env, CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: '1' } })
         const kill = setTimeout(() => c.kill(), 300e3)
         c.stdout.on('data', (d) => { if (o.length < 16 << 20) o += d })
         c.on('error', () => { clearTimeout(kill); done({ ok: false, out: o }) })
@@ -578,7 +579,12 @@ async function telegramTurn() {
       for (const m of ms) writeFileSync(join(tg, 'inbound', `${m.id}.json`), JSON.stringify({ ...m, taken: now, done: Date.now() }))
     }
     return 0
-  } finally { rmSync(lockF, { force: true }) }
+  } finally {
+    rmSync(lockF, { force: true })
+    // What came during a long round would wait for his next message: a new run takes it now, outside the hook's time limit.
+    const left = readdirSync(join(tg, 'inbound')).some((f) => { const m = f.endsWith('.json') && readJSON(join(tg, 'inbound', f)); return m && !m.done && !m.taken })
+    if (left && !process.env.INBOX_TG_NO_RELAUNCH) spawn(process.execPath, [fileURLToPath(import.meta.url), 'telegram'], { detached: true, stdio: 'ignore', windowsHide: true }).unref()
+  }
 }
 
 // ---- scan: questions that wait in chats which filed no item ----
@@ -976,8 +982,8 @@ async function main() {
     if (!hasChannel()) { say('inbox: no push, no notify channel'); return 0 } // no attempt, no failure record
     const attempt = JSON.stringify({ fails: (prev?.fails ?? 0) + 1, at: now })
     if (prev) writeFileSync(mark, attempt); else if (!create(mark, attempt)) return 0
-    const L = lang(), phone = phoneAsk(item, Date.now(), L)
-    try { execFileSync(process.execPath, [notifyJs, 'ask'], { input: JSON.stringify({ ...phone, keyboard: phoneKeyboard(phone.options, true, L) }), stdio: ['pipe', 'pipe', 'pipe'], timeout: 20000 }) } catch (e) { console.error(`inbox: push failed: ${/** @type {Error} */ (e).message.split('\n')[0]}`); return 1 } // the attempt record stays: a later tick retries
+    const L = lang()
+    try { for (const phone of phoneAsks(item, Date.now(), L)) execFileSync(process.execPath, [notifyJs, 'ask'], { input: JSON.stringify({ ...phone, keyboard: phoneKeyboard(phone.options, true, L) }), stdio: ['pipe', 'pipe', 'pipe'], timeout: 20000 }) } catch (e) { console.error(`inbox: push failed: ${/** @type {Error} */ (e).message.split('\n')[0]}`); return 1 } // the attempt record stays: a later tick retries
     writeFileSync(mark, '')
     say('inbox: pushed')
     return 0

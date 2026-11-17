@@ -160,6 +160,17 @@ export function phoneAsk(/** @type {Item} */ item, now = Date.now(), /** @type {
   return { item: item.id, html: phoneHtml(message), message, short: cut(first, 90), options, reply: one || item.kind === 'choice' }
 }
 
+/** The phone messages for an item: one, or for a dialog of several questions one per question, each with its own
+ *  buttons (owner, 2026-11-18: "where are the answer options?"); `q`/`of` let the poller gather the answers into one. */
+export function phoneAsks(/** @type {Item} */ item, now = Date.now(), /** @type {string | undefined} */ lang = undefined) {
+  const qs = item.questions ?? []
+  if (item.kind !== 'ask' || qs.length < 2) return [phoneAsk(item, now, lang)]
+  return qs.map((q, i) => {
+    const message = { question: q.question, meta: `${project(item.cwd)} · ${i + 1}/${qs.length} · ${age(lang ?? 'en', now - item.at)}`, note: '' }
+    return { item: item.id, html: phoneHtml(message), message, short: cut(q.question, 90), options: (q.options ?? []).map((o) => o.label), reply: true, q: q.question, of: qs.length }
+  })
+}
+
 /** What an AskUserQuestion hook returns for an inbox answer: the tool's own result shape, so the model reads it as the dialog's. */
 export function toResult(/** @type {Item} */ item, /** @type {Answer} */ answer) {
   return { questions: item.questions ?? [], answers: answer.answers ?? {} }
@@ -323,19 +334,23 @@ export function renderReports(/** @type {Report[]} */ reports, now = Date.now(),
 export const TG_PROMPT = '[Telegram]'
 /** His own words go in quoted lines and nothing else does: they count as his word (owner, 2026-11-17), and push-guard and
  *  the start consent read only those lines (telegramWords). */
-export function inboundPrompt(/** @type {{ text: string, about?: { item: string, short: string } }[]} */ ms, /** @type {string | undefined} */ notify = undefined) {
+export function inboundPrompt(/** @type {{ text: string, about?: { item: string, short: string } }[]} */ ms, /** @type {string | undefined} */ root = undefined) {
   const one = (/** @type {{ text: string, about?: { item: string, short: string } }} */ m) =>
     `${m.about ? `(a reply to the phone question "${m.about.short}", inbox item ${m.about.item})\n` : ''}> ${m.text.replace(/\n/g, '\n> ')}`
-  const n = notify && `node "${notify}"`
+  const n = root && `node "${root}/hooks/notify.mjs"`
   return `${TG_PROMPT} The person wrote from Telegram${ms.length > 1 ? ` (${ms.length} messages)` : ''}. His own words:\n${ms.map(one).join('\n')}\n` +
     'This is full remote control of his computer by plain text: do what he asks, with the makarasty-tools inbox skill where ' +
-    'it needs it (a chat in a project, with the model and effort he names: `inbox.mjs start`). ' +
+    'it needs it. Answer within a minute or two: he waits, and the next message waits behind this turn. Anything longer (a ' +
+    'video, code, a build, research) goes to a chat you start for it, in the right project folder, with the model and ' +
+    `effort he names (\`node "${root ?? '<plugin>'}/skills/inbox/inbox.mjs" start <profile> <folder> "<chat name>" --said "<his words>" [--model m] [--effort e]\`), ` +
+    'and you reply at once which chat started. Never a background agent or a background command here: this turn\'s process ' +
+    'ends with it and they would die. ' +
     (n ? `To send him a file, picture, video or voice note: \`${n} file <path> [--caption "..."]\` (type by extension; a voice ` +
       `note is .ogg/.mp3/.m4a with \`--as voice\`). The desktop: \`${n} screenshot\`. Something from the internet: download it ` +
       'to %TEMP% first, then send the file. A voice note: make the audio on this machine (Windows speech, or the video ' +
       'skill\'s local TTS) and convert it with ffmpeg. ' : '') +
     'A task or note in Obsidian: the vault path is in %APPDATA%\\obsidian\\obsidian.json; read the vault\'s CLAUDE.md first ' +
-    'and follow it. Work over a few minutes goes to a chat you start for it; say which. Your final message is sent to his Telegram as is: ' +
+    'and follow it. Your final message is sent to his Telegram as is: ' +
     'his language, short (up to 5 lines; Markdown bold, code and lists render), the answer first. He is on the phone, not at ' +
     'this screen: ask no AskUserQuestion; a decision you need from him is your last line, and he answers it by replying.'
 }

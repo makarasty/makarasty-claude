@@ -22,7 +22,7 @@ import { writeHeard } from './consent.ts'
 // Design and edge cases: docs/TELEGRAM.md.
 
 type D = Pick<EngineInterface, 'env' | 'fs' | 'http' | 'process' | 'plugin' | 'session' | 'clock' | 'model'>
-type Ask = { item: string; html: string; short: string; options: string[]; reply: boolean; at: number; more?: boolean; closed?: number }
+type Ask = { item: string; html: string; short: string; options: string[]; reply: boolean; at: number; more?: boolean; closed?: number; q?: string; of?: number }
 type Msg = { message_id: number; chat: { id: number; type?: string }; from?: { id: number }; text?: string; caption?: string; reply_to_message?: { message_id: number }; forward_origin?: unknown; voice?: unknown; photo?: unknown; document?: unknown; sticker?: unknown; video?: unknown }
 type Update = { update_id: number; message?: Msg; callback_query?: { id: string; from: { id: number }; data?: string; message?: Msg } }
 export type Inbound = { id: number; text: string; message_id: number; at: number; about?: { item: string; short: string }; taken?: number; done?: number }
@@ -195,7 +195,12 @@ async function handle($: D, dir: string, b: { token: string; me: string }, u: Up
   await call($, b.token, 'setMessageReaction', { chat_id: b.me, message_id: m.message_id, reaction: [{ type: 'emoji', emoji: '👀' }] }).catch(() => undefined)
   // The inbox chat takes it at its next idle tick; with none alive, one headless inbox turn answers it.
   const beat = Number(String(await $.fs.read(`${dir}/makarasty/inbox/beat`).catch(() => '0'))) || 0
-  if (now - beat > ALIVE_MS) void $.process.run(['node', `${$.plugin.root}/skills/inbox/inbox.mjs`, 'telegram'], { timeoutMs: 400000, env: { CLAUDE_CONFIG_DIR: dir } }).catch(() => undefined)
+  if (now - beat > ALIVE_MS) {
+    // A run still busy with an earlier message answers this one after it: say so now rather than leave him guessing.
+    const busy = Number(String(await $.fs.read(`${tg}/headless.lock`).catch(() => '0'))) || 0
+    if (now - busy < 8 * 60000) await send($, b, note(t(L, 'queued')), { ...replyTo(m.message_id), disable_notification: true }).catch(() => undefined)
+    void $.process.run(['node', `${$.plugin.root}/skills/inbox/inbox.mjs`, 'telegram'], { timeoutMs: 400000, env: { CLAUDE_CONFIG_DIR: dir } }).catch(() => undefined)
+  }
   return 'inbound'
 }
 
@@ -220,8 +225,22 @@ async function answer($: D, dir: string, b: { token: string; me: string }, msg: 
   // His tap or reply, on record before the answer file (consent.ts Heard): handle() checked it came from his Telegram id.
   const it = await readJSON<Item>($, `${dir}/makarasty/inbox/items/${a.item}.json`)
   const question = (it?.kind === 'choice' ? it.ask : it?.questions?.[0]?.question) ?? a.short
-  await writeHeard($, `${dir}/makarasty/inbox`, a.item, { at: await $.clock.now(), via: 'phone', pairs: [{ question, answer: pick }] }).catch(() => undefined)
-  const r = await $.process.run(['node', `${$.plugin.root}/skills/inbox/inbox.mjs`, 'answer', a.item], { stdin: pick, timeoutMs: 20000, env: { CLAUDE_CONFIG_DIR: dir } }).catch(() => undefined)
+  let stdin = pick, pairs = [{ question, answer: pick }]
+  if (a.q) {
+    // One of several questions, one message each: the item is answered once every one of them has his pick.
+    const p = `${dir}/makarasty/telegram/partial/${a.item}.json`
+    const got = { ...((await readJSON<Record<string, string>>($, p)) ?? {}), [a.q]: pick }
+    await $.fs.write(p, JSON.stringify(got))
+    if (Object.keys(got).length < (a.of ?? 1)) {
+      await call($, b.token, 'editMessageText', { chat_id: b.me, message_id: msg, text: collapsed(a.short, pick), parse_mode: 'HTML' }).catch(() => undefined)
+      await close($, `${dir}/makarasty/telegram/asks/${msg}.json`, a)
+      return
+    }
+    stdin = JSON.stringify(got)
+    pairs = Object.entries(got).map(([q, v]) => ({ question: q, answer: v }))
+  }
+  await writeHeard($, `${dir}/makarasty/inbox`, a.item, { at: await $.clock.now(), via: 'phone', pairs }).catch(() => undefined)
+  const r = await $.process.run(['node', `${$.plugin.root}/skills/inbox/inbox.mjs`, 'answer', a.item], { stdin, timeoutMs: 20000, env: { CLAUDE_CONFIG_DIR: dir } }).catch(() => undefined)
   const line = `${r?.stdout ?? ''}\n${r?.stderr ?? ''}`.trim().split('\n').filter(Boolean).pop()?.replace(/^inbox: /, '') ?? t(L, 'outFailed')
   const sent = r?.exitCode === 0 && !/NOT SENT/.test(line)
   const outcome = sent ? pick : /already answered/.test(line) ? t(L, 'outAlready', { pick }) : t(L, 'outNotSent', { pick, why: line.replace(/^answered \S+, NOT SENT to the chat: /, '') })
