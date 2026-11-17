@@ -15,6 +15,9 @@
 //   node inbox.mjs push <id>                one phone message for the item through notify.mjs, once; with no notify channel: no attempt, no record
 //   node inbox.mjs telegram                 answer the person's waiting Telegram messages with one headless inbox turn (the hook runs it
 //                                           when no inbox chat is running)
+//   node inbox.mjs job <folder> <name> --said "<his words>" [--model m] [--effort e]
+//                                           long work he asked for from Telegram: a detached `claude -p` in that folder whose final
+//                                           message goes to his Telegram (jobs/<id>.json); consent as for start
 //   node inbox.mjs channels                 `channels: yes` or `channels: none` (notify.mjs --status; a dry-run sink counts as yes)
 //   node inbox.mjs open <id>|local_<id>     bring that chat up in the app window of its own account (profile)
 //   node inbox.mjs start <profile> <folder> <name> --said "<his words>" [--model m] [--effort e] [--mode default|plan|auto]
@@ -531,6 +534,43 @@ async function startCmd(/** @type {string | undefined} */ id, /** @type {string[
 }
 
 
+// ---- job: long work he asked for from the phone ----
+// The phone's inbox turn must answer within a minute or two, and a chat in the app window needs the inbox chat to start it
+// and send it the brief. So a task from Telegram (a video, code, research) runs as its own `claude -p` in the project
+// folder, detached: it outlives the turn, and its final message goes to his Telegram. Consent as for `start`.
+function jobCmd(/** @type {string[]} */ argv) {
+  const o = /** @type {Record<string, string>} */ ({}), words = []
+  for (let i = 0; i < argv.length; i++) { if (['--said', '--model', '--effort'].includes(argv[i]) && argv[i + 1] !== undefined) o[argv[i].slice(2)] = argv[++i]; else words.push(argv[i]) }
+  const [folder, ...nameW] = words, name = nameW.join(' ').trim()
+  if (!folder || !existsSync(folder) || !name || !o.said) { console.error('inbox: usage: job <folder> <name> --said "<his words>" [--model m] [--effort e]'); return 2 }
+  if (dispatchOff()) { console.error('inbox: dispatch is off'); return 2 }
+  const c = consent(o.said, true, name)
+  if (!c.id) { console.error(`inbox: ${c.why}`); return 2 }
+  const id = `${Date.now()}-${randomUUID().slice(0, 8)}`, sid = randomUUID()
+  writeFileSync(join(dir('jobs'), `${id}.json`), JSON.stringify({ id, sid, folder, name, said: o.said, model: o.model || 'sonnet', effort: o.effort, state: 'running', at: new Date().toISOString() }, null, 1))
+  spawn(process.execPath, [fileURLToPath(import.meta.url), 'job-run', id], { detached: true, stdio: 'ignore', windowsHide: true }).unref()
+  say(`inbox: job ${id} started in ${folder}, session ${sid}; its result goes to his Telegram by itself`)
+  return 0
+}
+function jobRun(/** @type {string} */ id) {
+  const f = join(root, 'jobs', `${id}.json`), j = readJSON(f)
+  if (!j || j.state !== 'running') return 1
+  /** @type {string[]} */ let profs = []; try { profs = readdirSync(profilesDir()) } catch { /* no app profiles: the CLI on PATH */ }
+  const prof = profs.includes('main') ? 'main' : profs[0]
+  const prompt = `${j.said}\n\n(These are the person's own words, sent from Telegram; he is on the phone, not at this screen. Do it here. ` +
+    `Ask no AskUserQuestion. Files, pictures, video, voice: \`node "${notifyJs}" file <path> [--caption "..."]\`. Your final message ` +
+    'goes to his Telegram as is: his language, short, what was made and where.)'
+  const argv = ['-p', prompt, '--session-id', j.sid, '-n', j.name, '--model', j.model, ...(j.effort ? ['--effort', j.effort] : []), '--permission-mode', 'auto']
+  let out = '', ok = false
+  try { out = execFileSync(bundledCli({ name: prof ?? '', dir: join(profilesDir(), prof ?? '') }), argv, { cwd: j.folder, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 3 * 3600e3, maxBuffer: 16 << 20, windowsHide: true }); ok = true }
+  catch (e) { out = String(/** @type {{stdout?: string}} */ (e).stdout ?? '') }
+  const head = `<b>${escHtml(j.name)}</b>\n`
+  try { execFileSync(process.execPath, [notifyJs, 'send', '--html'], { input: head + (ok && out.trim() ? mdToTg(out) : note(t(lang(), 'jobFailed'))), stdio: ['pipe', 'ignore', 'ignore'], timeout: 30000 }) } catch { /* the result stays in the job's session */ }
+  writeFileSync(f, JSON.stringify({ ...j, state: ok ? 'done' : 'failed', ended: new Date().toISOString() }, null, 1))
+  return ok ? 0 : 1
+}
+const escHtml = (/** @type {string} */ s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+
 // ---- telegram: the person's messages when no inbox chat is running ----
 // The hook engine (tools/hooks/telegram.ts) writes his messages to <config>/makarasty/telegram/inbound/ and, when the
 // inbox chat's beat is older than a minute, runs this: one headless turn of one persistent session (`claude -p`,
@@ -847,6 +887,8 @@ async function main() {
 
   // Before the item-id check below: it takes no id (it sat after it from 1.19.52 and never ran).
   if (cmd === 'telegram') return telegramTurn()
+  if (cmd === 'job') return jobCmd([id, ...rest].filter((x) => x !== undefined))
+  if (cmd === 'job-run') return jobRun(id ?? '')
 
   if (cmd === 'scan') {
     // Files the questions that wait in live chats of every account and have no item (also run by the first list and by list --take).

@@ -341,10 +341,10 @@ export function inboundPrompt(/** @type {{ text: string, about?: { item: string,
   return `${TG_PROMPT} The person wrote from Telegram${ms.length > 1 ? ` (${ms.length} messages)` : ''}. His own words:\n${ms.map(one).join('\n')}\n` +
     'This is full remote control of his computer by plain text: do what he asks, with the makarasty-tools inbox skill where ' +
     'it needs it. Answer within a minute or two: he waits, and the next message waits behind this turn. Anything longer (a ' +
-    'video, code, a build, research) goes to a chat you start for it, in the right project folder, with the model and ' +
-    `effort he names (\`node "${root ?? '<plugin>'}/skills/inbox/inbox.mjs" start <profile> <folder> "<chat name>" --said "<his words>" [--model m] [--effort e]\`), ` +
-    'and you reply at once which chat started. Never a background agent or a background command here: this turn\'s process ' +
-    'ends with it and they would die. ' +
+    'video, code, a build, research) runs as a job in the right project folder, with the model and effort he names: ' +
+    `\`node "${root ?? '<plugin>'}/skills/inbox/inbox.mjs" job <folder> "<short name>" --said "<his message, exact>" [--model m] [--effort e]\`; ` +
+    'it works on its own and sends him the result itself, so you reply at once that it started. Never a background agent ' +
+    'or a background command here: this turn\'s process ends with it and they would die. ' +
     (n ? `To send him a file, picture, video or voice note: \`${n} file <path> [--caption "..."]\` (type by extension; a voice ` +
       `note is .ogg/.mp3/.m4a with \`--as voice\`). The desktop: \`${n} screenshot\`. Something from the internet: download it ` +
       'to %TEMP% first, then send the file. A voice note: make the audio on this machine (Windows speech, or the video ' +

@@ -1,5 +1,13 @@
 # Changelog
 
+## makarasty-tools 1.19.66 — 2026-11-18
+
+- **Long work asked from the phone actually runs**: a chat in the app window is started and briefed by the inbox chat,
+  so with none open "сделай видео" stayed queued forever behind "a Claude window is in front". The phone's inbox now
+  runs such a task as a job (`inbox.mjs job <folder> <name> --said "<your message>"`): its own `claude -p` in the project
+  folder, on the model and effort you name, detached, up to 3 h; its final message (and any file it sends) comes to
+  your Telegram by itself. Consent as for a start: your message, one message one job.
+
 ## makarasty-tools 1.19.65 — 2026-11-18
 
 - **The phone inbox can start a chat for what you ask**: "сделай видео про darkkitty" from Telegram was refused ("offer a

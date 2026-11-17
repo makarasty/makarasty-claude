@@ -75,5 +75,8 @@ UX
 32. A chat started for a Telegram message: the run writes his messages to `inbox/said.jsonl` with `via: telegram`
     (the inbox chat's capture does too), and `start`'s consent takes such a line with no start verb: a message to the
     bot is the ask. One message, one start, as for typed prompts.
+33. Long work from the phone is a job, not a started app chat (that needs the inbox chat to drain the queue and send the
+    brief): `inbox.mjs job` writes `inbox/jobs/<id>.json` and runs a detached `claude -p` in the folder (3 h cap, model
+    and effort as asked); its final message goes to Telegram, a failure as one line.
 28. Until 1.19.63 `inbox.mjs telegram` sat after the item-id check and exited "needs an item id": no free message was
     ever answered with the inbox chat closed. The inbox selftest now runs it.

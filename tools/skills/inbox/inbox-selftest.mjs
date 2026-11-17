@@ -583,6 +583,13 @@ try {
   const tgRun = spawnSync(process.execPath, [cli, 'telegram'], { env: { ...env, INBOX_CLAUDE: process.execPath }, encoding: 'utf8', timeout: 60000 })
   const tgMsg = JSON.parse(readFileSync(join(inb, '7001.json'), 'utf8'))
   check('telegram runs with no item id, answers the waiting message and marks it done', tgRun.status === 0 && !tgRun.stderr.includes('needs an item id') && tgMsg.done > 0, tgRun.stderr)
+  // A job: his words, then a detached `claude -p` (here node, which fails on the prompt) whose end goes to his Telegram.
+  const jenv = { ...env, INBOX_CLAUDE: process.execPath }
+  const job = spawnSync(process.execPath, [cli, 'job', tmp, 'kitty video', '--said', 'короткое веселое видео про darkkitty'], { env: jenv, encoding: 'utf8' })
+  const jobFile = () => { try { const f = readdirSync(join(root, 'jobs'))[0]; return f ? JSON.parse(readFileSync(join(root, 'jobs', f), 'utf8')) : undefined } catch { return undefined } }
+  for (let i = 0; i < 60 && jobFile()?.state === 'running'; i++) await new Promise((r) => setTimeout(r, 250))
+  check('job starts on his words, runs detached and its end goes to his Telegram', job.status === 0 && jobFile()?.state === 'failed' && readFileSync(sink, 'utf8').includes('<b>kitty video</b>'), job.stdout + job.stderr + JSON.stringify(jobFile()))
+  check('the same message starts no second job', spawnSync(process.execPath, [cli, 'job', tmp, 'kitty video', '--said', 'короткое веселое видео про darkkitty'], { env: jenv, encoding: 'utf8' }).status === 2)
 } finally {
   rmSync(tmp, { recursive: true, force: true })
 }
