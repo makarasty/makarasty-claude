@@ -1,5 +1,18 @@
 # Changelog
 
+## makarasty-tools 1.19.64 — 2026-11-18
+
+- **No more endless "typing…" and no "не успел ответить" on a long ask**: asked for a video, the headless inbox started
+  a background agent and wrote its answer, but `claude -p` does not exit while a background task runs, so the answer
+  never went out, "typing…" ran for 5 minutes, the kill took the video with it, and the next message waited behind
+  it. The headless turn now runs with background tasks off and answers within a minute or two; a video, code, a build
+  or research goes to a chat it starts (`inbox.mjs start`, the model and effort you name), and it tells you which.
+- **A message never waits for your next one**: what arrived during a long run is taken by a new run right after it.
+  While a run is busy, a new message gets a silent line at once: «В очереди: доделываю прошлое сообщение».
+- **Every question of a multi-question dialog comes with buttons**: one phone message per question ("1/3", "2/3"),
+  each with its own buttons or a reply; when every one has your pick, the chat gets them as one answer. Before, only
+  the first came, without buttons, with "answer on the computer".
+
 ## makarasty-tools 1.19.63 — 2026-11-17
 
 - **The bot answers what you write again**: with no inbox chat open, every free message went to `inbox.mjs telegram`,
