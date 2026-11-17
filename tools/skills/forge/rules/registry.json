@@ -552,7 +552,7 @@
    "id": "R011",
    "rule": "A one-screen UI complaint is a pattern: sweep all screens, fix at the source (template or component), leave a detector; otherwise the owner repeats the same complaint.",
    "ru": "Жалоба на один экран это паттерн: исправь в источнике, найди везде, оставь детектор.",
-   "layer": "memory",
+   "layer": "plugin",
    "enforced": "text",
    "enforcer": null,
    "complaints": [
@@ -570,12 +570,23 @@
     {
      "file": "<2026-11-17 investigation notes>",
      "anchor": "cluster 7 (11-04 ll d4cc707d, 11-10 oy 5f5413b2, 11-11 oy d9111264)"
+    },
+    {
+     "file": "tools/hooks/gates.ts",
+     "anchor": "habits",
+     "date": "2026-11-17"
     }
    ],
    "field": {
     "regex": "(как я (уже )?говорил|опять жалуюсь|я уже (говорил|жаловался)|снова то же|опять (те же|такие же|эти) (отступ|скролл))"
    },
-   "eval": "evals/R011-pattern.json"
+   "eval": "evals/R011-pattern.json",
+   "inForce": [
+    {
+     "text": "gates:habits",
+     "has": "fix it there once, and name the other places it changed"
+    }
+   ]
   },
   {
    "id": "R012",
@@ -1166,9 +1177,11 @@
    "rule": "No 'shortcut:' comments (or any note aimed at an AI tool) in code: a comment says the why for the next human reader.",
    "ru": "В коде нет комментариев «shortcut:» и пометок для ИИ: комментарий объясняет «почему» живому читателю.",
    "layer": "global",
-   "enforced": "text",
-   "enforcer": null,
-   "complaints": [],
+   "enforced": "hook+text",
+   "enforcer": "tools/hooks/comment-guard.ts",
+   "complaints": [
+    "C24"
+   ],
    "complaintChats": null,
    "conflicts": [
     "R074",
@@ -1194,6 +1207,17 @@
     {
      "text": "global",
      "has": "No `shortcut:` comments"
+    },
+    {
+     "hook": "comment-guard",
+     "env": "MAKARASTY_COMMENT_GUARD",
+     "canary": {
+      "fn": "added",
+      "args": [
+       "const a = 1\n// shortcut: only ISO for now"
+      ],
+      "match": "shortcut"
+     }
     }
    ],
    "field": {

@@ -139,8 +139,8 @@ const findingsOn = async ($: Dollar) => (await $.env.get('MAKARASTY_FINDINGS')) 
 
 // Habits that each cost hours in measured runs (Edit failures [M25] [M31], polling and waiting on questions [M52],
 // "fixed" with no proof [M23]) and lived only in fleet docs, plus how far a session acts alone and how it reports: the
-// standing answers of people who run many chats at once. A person's own limits go in profile.md. Rides with the economy
-// text and its switch.
+// standing answers of people who run many chats at once. The fix-at-the-source line: 6/6 vs 0/6 in its A/B [M77]. A
+// person's own limits go in profile.md. Rides with the economy text and its switch.
 export const habits =
   "Working rules: Edit a file only after reading it. Wait for a task's completion notice; never poll. " +
   'Call a fix done only after a check you ran shows it, and say plainly what you did not check. Report in this order: what happened, why, ' +
@@ -149,7 +149,9 @@ export const habits =
   'and using one that already answers (never a second); fix what your own change broke. Never ask for secrets or to run what you can: ' +
   'use the local way in (proxy, port). Commit your own files when done and push the work branch. Ask first: a push to main or forced, merge, release, delete, anything ' +
   'sent off this machine, stopping a process the person started, a real choice between approaches; otherwise take the recommended option and ' +
-  "say so in one line. Other chats may share this checkout: edit and commit only your own files, name another chat's file, never touch or " +
+  'say so in one line. A defect reported on one page or screen: find where it comes from (a shared component, style or helper), fix it there ' +
+  'once, and name the other places it changed. ' +
+  "Other chats may share this checkout: edit and commit only your own files, name another chat's file, never touch or " +
   'discard it. A check that runs out of memory is too broad: narrow it, never raise --max-old-space-size or drop a worker cap someone set. ' +
   'New errors after a tool update: find the culprit before any rollback or pin. The code is wrong (fix it), another checker misses ' +
   'it (report the gap), or the new version has a bug (cite its issue, then pin with a comment linking it).'

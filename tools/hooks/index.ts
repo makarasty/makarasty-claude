@@ -9,6 +9,7 @@ import { register as loopGuard } from './loop-guard.ts'
 import { register as budgetGuard } from './budget-guard.ts'
 import { register as secretGuard } from './secret-guard.ts'
 import { register as generatedGuard } from './generated-guard.ts'
+import { register as commentGuard } from './comment-guard.ts'
 import { register as gates } from './gates.ts'
 import { register as inbox } from './inbox.ts'
 import { register as askGuard } from './ask-guard.ts'
@@ -29,6 +30,7 @@ export const register: Register = (on, options) => {
   budgetGuard(on, options)
   secretGuard(on, options)
   generatedGuard(on, options)
+  commentGuard(on, options)
   // Before ask-guard and the inbox: it reads the answer the dialog (or the inbox) returns.
   pushGuard(on, options)
   verifyGuard(on, options)

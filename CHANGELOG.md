@@ -1,5 +1,17 @@
 # Changelog
 
+## makarasty-tools 1.19.59 — 2026-11-17
+
+- **Every rule has a proof**: `tools/skills/forge/rules/registry.json` lists the owner's 98 cross-project rules (where each
+  is written, how it is enforced, the complaint it answers) and `forge/rules.mjs` checks each is in force in the
+  installed copy, counts his complaints per week and, with `--evals`, re-runs its A/B with a blind judge and marks it
+  pays, absorbed, none, hurts or regressed [M77].
+- **No `shortcut:` comments**: `comment-guard` refuses an Edit, Write or file-writing shell line that adds a
+  `shortcut:` or `ponytail:` comment, in chats and subagents; the text ban alone let 4 chats write them in two days.
+  `MAKARASTY_COMMENT_GUARD=off` drops it.
+- **Fix at the source**: the working rules say to fix a defect reported on one page where it comes from and name the
+  other places it changed (6/6 vs 0/6 in its A/B; it lived only in one project's memory).
+
 ## makarasty-tools 1.19.58 — 2026-11-17
 
 - **Paths and code read cleanly on the phone**: in a question, its explanation, a collapsed line, /status and a Markdown
