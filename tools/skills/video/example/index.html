@@ -1,0 +1,463 @@
+﻿<!doctype html>
+<html lang="ru" data-resolution="portrait">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=1080, height=1920" />
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.15.0/dist/gsap.min.js"></script>
+<script src="data.js"></script><script src="strings.js"></script>
+<style>
+:root{
+  --ground:#050608; --ink:#f4f6f8; --dim:rgba(244,246,248,.5); --faint:rgba(244,246,248,.22); --acc:#00daf6; --red:#ff4d6d; --green:#00d488;
+  --disp:"Oswald",sans-serif; --sans:"Montserrat",sans-serif; --mono:"JetBrains Mono",monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:1080px;height:1920px;overflow:hidden;background:var(--ground)}
+#root{position:relative;width:1080px;height:1920px;overflow:hidden;color:var(--ink);font-family:var(--sans)}
+.clip{position:absolute;inset:0}
+/* ground: one slow cyan glow, a vignette, and short light hits on the punches */
+#glow{position:absolute;width:1400px;height:1400px;left:-420px;top:-80px;border-radius:50%;
+  background:radial-gradient(circle,rgba(0,218,246,.13) 0%,rgba(0,218,246,.04) 38%,transparent 66%)}
+.flash{position:absolute;inset:0;opacity:0}
+#flash{background:radial-gradient(ellipse 70% 45% at 40% 33%,rgba(0,218,246,.32),transparent 70%)}
+#flashR{background:radial-gradient(ellipse 70% 45% at 60% 38%,rgba(255,77,109,.28),transparent 70%)}
+#vig{position:absolute;inset:0;background:radial-gradient(ellipse 80% 60% at 45% 40%,transparent 40%,rgba(0,0,0,.55) 100%)}
+
+/* scenes: full-frame layers, everything placed in the safe column x 132..876 */
+.sc{position:absolute;inset:0;opacity:0}
+.a{position:absolute}
+/* line-height = Oswald's ascent+descent, so the box IS the text box the safe-zone check measures */
+.xl{position:absolute;white-space:nowrap;font-family:var(--disp);font-weight:700;text-transform:uppercase;line-height:1.48;letter-spacing:-.01em}
+.lb{position:absolute;white-space:nowrap;font-family:var(--sans);font-weight:700;text-transform:uppercase;font-size:38px;letter-spacing:.06em;color:var(--dim)}
+.mono{position:absolute;white-space:nowrap;font-family:var(--mono);font-size:32px}
+.acc{color:var(--acc);text-shadow:0 0 60px rgba(0,218,246,.35)} .red{color:var(--red);text-shadow:0 0 60px rgba(255,77,109,.35)} .dimc{color:var(--dim)}
+.ico{position:absolute;color:var(--ink)} .ico svg{width:100%;height:100%;display:block;overflow:visible}
+.memb{position:absolute;border:3px dashed var(--faint);border-radius:24px}
+.ml{position:absolute;height:10px;border-radius:5px;background:var(--faint)}
+.dot{position:absolute;width:28px;height:28px;border-radius:8px;background:var(--acc)}
+.docl{position:absolute;height:9px;border-radius:5px;background:rgba(244,246,248,.28)}
+.row{position:absolute;white-space:nowrap;font-family:var(--mono);font-size:30px;color:var(--ink)}
+.row .d{color:var(--dim)} .row .m{color:var(--acc)}
+.ag{position:absolute;width:96px;height:96px;border-radius:50%;border:4px solid var(--faint);display:grid;place-items:center}
+.ag .tk{width:46px;height:46px;color:var(--acc)} .ag .tk svg{width:100%;height:100%;display:block;overflow:visible}
+.code{position:absolute;left:132px;top:320px;width:744px;padding:24px 34px;border:2px solid #23303a;border-radius:24px;font-family:var(--mono);font-size:32px;line-height:1.5;white-space:nowrap}
+.code .k{color:#9aa0ff} .code .s{color:#9be7c4} .code .g{color:var(--dim)}
+#sq{position:absolute;left:0;right:0;bottom:-2px;height:5px;border-radius:3px;background:var(--red);transform-origin:left;transform:scaleX(0)}
+
+/* pulse line: an ECG trace under the scenes that spikes on every beat */
+#ecg{position:absolute;left:0;top:990px;width:780px;height:130px;overflow:hidden;
+  -webkit-mask-image:linear-gradient(90deg,transparent 0%,#000 42%);filter:drop-shadow(0 0 10px rgba(0,218,246,.55))}
+#ecg svg{position:absolute;left:0;top:0;width:780px;height:130px;overflow:visible}
+#head{position:absolute;left:773px;top:1063px;width:14px;height:14px;border-radius:50%;background:#bff8ff;
+  box-shadow:0 0 0 5px rgba(0,218,246,.25),0 0 28px 6px rgba(0,218,246,.7)}
+
+/* Pulse: hero in scene 1, narrator beside the captions, host on the end card */
+#bot{position:absolute;left:0;top:0;width:300px;height:300px;transform-origin:0 0}
+#bot svg{width:300px;height:300px;display:block}
+
+/* captions: one line in x 270..780 beside the narrator; colour-only highlight, so the line never shifts */
+#cap{position:absolute;left:270px;width:510px;top:1120px;height:104px}
+.chunk{position:absolute;left:0;top:50%;transform:translateY(-50%);white-space:nowrap;opacity:0;visibility:hidden;
+  font-family:var(--sans);font-weight:800;font-size:50px;line-height:1.2;letter-spacing:-.01em}
+.chunk .w{display:inline-block;margin-right:.26em;color:rgba(244,246,248,.46)}
+.chunk .w:last-child{margin-right:0}
+.chunk .w.on{color:var(--acc)} .chunk .w.said{color:var(--ink)}
+
+/* end card */
+#end{position:absolute;left:120px;width:768px;top:600px;display:flex;flex-direction:column;align-items:center;gap:30px}
+#end .wm{font-family:var(--sans);font-weight:900;font-size:150px;letter-spacing:-.045em;line-height:1}
+#end .wm span{display:inline-block}
+#end .sl{font-family:var(--mono);font-size:40px;letter-spacing:.14em;color:var(--dim);text-transform:uppercase}
+</style>
+</head>
+<body>
+<div id="root" data-composition-id="main" data-start="0" data-duration="62.9" data-width="1080" data-height="1920">
+  <audio id="vo" class="clip" src="voice.wav" data-start="0" data-duration="62.9" data-volume="1"></audio>
+
+  <!-- every Cyrillic glyph the three languages use, per face: the font embedder picks subsets from the text it finds in this file -->
+  <div id="glyphs" aria-hidden="true" style="display:none"><span style="font-family:Oswald;font-weight:700">АБВГҐДЕЁЄЖЗИІЇЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯабвгґдеёєжзиіїйклмнопрстуфхцчшщъыьэюя’±■›</span><span style="font-family:Montserrat;font-weight:700">АБВГҐДЕЁЄЖЗИІЇЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯабвгґдеёєжзиіїйклмнопрстуфхцчшщъыьэюя’±■›</span><span style="font-family:Montserrat;font-weight:800">АБВГҐДЕЁЄЖЗИІЇЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯабвгґдеёєжзиіїйклмнопрстуфхцчшщъыьэюя’±■›</span><span style="font-family:'JetBrains Mono'">АБВГҐДЕЁЄЖЗИІЇЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯабвгґдеёєжзиіїйклмнопрстуфхцчшщъыьэюя’±■›</span></div>
+  <div id="bg" class="clip" data-start="0" data-duration="62.9"><div id="glow"></div><div id="flash" class="flash"></div><div id="flashR" class="flash"></div><div id="vig"></div></div>
+
+  <div id="stage" class="clip" data-start="0" data-duration="62.9">
+    <div id="scenes"></div>
+    <div id="ecg" data-layout-ignore><svg viewBox="0 0 780 130"><path id="trace" fill="none" stroke="#00daf6" stroke-width="4.5" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+    <div id="head" data-layout-ignore></div>
+    <div id="cap"></div>
+    <div id="end">
+      <div class="wm"><span>Life</span><span class="acc">Lines</span></div>
+      <div class="sl" id="sub"></div>
+    </div>
+    <div id="bot" data-layout-ignore><svg viewBox="0 0 48 48" class="pulse"></svg></div>
+  </div>
+</div>
+
+<script>
+// Pulse robot, same geometry as frontend/src/components/knowledge/PulseBot.vue
+document.querySelectorAll("svg.pulse").forEach((s, i) => {
+  const id = "pg" + i;
+  s.innerHTML = `<defs><linearGradient id="${id}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#9aa0ff"/><stop offset="1" stop-color="#7fe9ff"/></linearGradient></defs>
+  <g stroke="url(#${id})" fill="url(#${id})"><circle cx="24" cy="6" r="4.6" stroke="none" opacity=".22"/><line x1="24" y1="8.5" x2="24" y2="13" stroke-width="2.4" stroke-linecap="round" fill="none"/>
+  <circle class="ant" cx="24" cy="6" r="2.5" stroke="none"/><rect x="5" y="22" width="4" height="8" rx="2" stroke="none"/><rect x="39" y="22" width="4" height="8" rx="2" stroke="none"/>
+  <rect x="9" y="13" width="30" height="26" rx="9.5" stroke="none" style="fill:#0d1528"/><rect x="9" y="13" width="30" height="26" rx="9.5" stroke="none" opacity=".1"/>
+  <rect x="9" y="13" width="30" height="26" rx="9.5" fill="none" stroke-width="2.6"/>
+  <g class="eyes"><circle cx="18.5" cy="24" r="3" stroke="none"/><circle cx="17.5" cy="23" r=".95" fill="#fff" stroke="none" opacity=".9"/>
+  <circle cx="29.5" cy="24" r="3" stroke="none"/><circle cx="28.5" cy="23" r=".95" fill="#fff" stroke="none" opacity=".9"/></g>
+  <path class="mouth" d="M18.3 29.8 Q24 34.8 29.7 29.8" fill="none" stroke-width="2.4" stroke-linecap="round"/>
+  <ellipse class="talk" cx="24" cy="31.2" rx="3.4" ry="0.8" stroke="none" opacity="0"/></g>`;
+});
+
+const D = window.DATA, S = D.segments, T = window.STR[D.lang] || window.STR.en;
+document.getElementById("sub").textContent = T.sub;
+const B = (i, name) => { const t = S[i].beats[name]; if (t == null) throw new Error(`no beat ${name} in segment ${i + 1}`); return t; };
+
+const ICON = {
+  person: `<svg viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round"><circle cx="50" cy="50" r="46"/><circle cx="50" cy="40" r="15"/><path d="M22 80c6-14 17-20 28-20s22 6 28 20"/></svg>`,
+  spark: `<svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round"><path d="M20 3v34M3 20h34M8 8l24 24M32 8 8 32"/></svg>`,
+  warn: `<svg viewBox="0 0 100 90" fill="none" stroke="currentColor" stroke-width="7" stroke-linejoin="round" stroke-linecap="round"><path d="M50 6 94 84H6Z"/><path d="M50 34v22"/><circle cx="50" cy="69" r="3.5" fill="currentColor" stroke="none"/></svg>`,
+  lock: `<svg viewBox="0 0 60 72" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round"><rect x="6" y="32" width="48" height="36" rx="9"/><path class="shk" d="M17 32V22a13 13 0 0 1 26 0v10"/></svg>`,
+  doc: `<svg viewBox="0 0 260 380" fill="none" stroke="currentColor" stroke-width="6" stroke-linejoin="round"><path d="M10 10h170l70 70v290H10Z"/><path d="M180 10v70h70"/></svg>`,
+  x: `<svg viewBox="0 0 260 380" fill="none" stroke="#ff4d6d" stroke-width="14" stroke-linecap="round"><path class="x1" d="M40 90 220 300" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1"/><path class="x2" d="M220 90 40 300" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1"/></svg>`,
+  ok: `<svg viewBox="0 0 100 100" fill="none" stroke="#00d488" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"><circle cx="50" cy="50" r="44"/><path class="tick" d="M29 52l14 14 28-31" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1"/></svg>`,
+  tick: `<svg viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"><path class="tick" d="M18 52l20 20 44-46" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1"/></svg>`,
+  cards: `<svg viewBox="0 0 220 200" fill="none" stroke="currentColor" stroke-width="6" stroke-linejoin="round" stroke-linecap="round"><rect x="8" y="8" width="62" height="184" rx="12" opacity=".35"/><rect x="79" y="8" width="62" height="184" rx="12" opacity=".35"/><rect x="150" y="8" width="62" height="184" rx="12" opacity=".35"/>
+    <rect x="18" y="22" width="42" height="40" rx="7"/><rect x="18" y="72" width="42" height="40" rx="7"/><rect x="89" y="22" width="42" height="40" rx="7" stroke="#00daf6"/><rect x="160" y="22" width="42" height="40" rx="7"/><rect x="160" y="72" width="42" height="40" rx="7"/><rect x="160" y="122" width="42" height="40" rx="7"/></svg>`,
+  repo: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="6" cy="5" r="2.4"/><circle cx="6" cy="19" r="2.4"/><circle cx="18" cy="8" r="2.4" stroke="#00daf6"/><path d="M6 7.5v9M18 10.5c0 4.5-6 3.5-11 6.5"/></svg>`,
+};
+const RAKE = `<svg viewBox="0 0 640 120" fill="none" stroke="#00daf6" stroke-width="9" stroke-linecap="round" stroke-linejoin="round" style="width:100%;height:100%;overflow:visible">
+  <g class="rk"><line x1="30" y1="96" x2="566" y2="96"/><line x1="566" y1="96" x2="566" y2="84"/><line x1="500" y1="84" x2="632" y2="84"/>
+  <line x1="506" y1="84" x2="506" y2="42"/><line x1="536" y1="84" x2="536" y2="42"/><line x1="566" y1="84" x2="566" y2="42"/><line x1="596" y1="84" x2="596" y2="42"/><line x1="626" y1="84" x2="626" y2="42"/></g></svg>`;
+const RULES = ["ui", "frontend-data", "tests", "analytics", "billing", "calls", "server", "tooling"];
+
+function build() {
+  const tl = gsap.timeline({ paused: true });
+  const E = "expo.out", spikes = [], reds = [];
+  const host = document.getElementById("scenes");
+  const mk = (parent, cls, css, html) => {
+    const e = document.createElement("div"); e.className = cls;
+    for (const [k, v] of Object.entries(css)) e.style[k] = typeof v === "number" ? v + "px" : v;
+    if (html != null) e.innerHTML = html; parent.appendChild(e); return e;
+  };
+  // fit an Oswald word to maxW, never above cap; returns the font size
+  const fit = (e, maxW, cap) => { e.style.fontSize = "100px"; const fs = Math.min(cap, Math.floor((100 * maxW) / e.offsetWidth)); e.style.fontSize = fs + "px"; return fs; };
+  const IN = {
+    slam: [{ scale: 0.62, opacity: 0, filter: "blur(14px)" }, { scale: 1, opacity: 1, filter: "blur(0px)", duration: 0.36, ease: E }],
+    punch: [{ scale: 0.2, opacity: 0, filter: "blur(18px)" }, { scale: 1, opacity: 1, filter: "blur(0px)", duration: 0.42, ease: E }],
+    pop: [{ scale: 0.7, opacity: 0, filter: "blur(8px)" }, { scale: 1, opacity: 1, filter: "blur(0px)", duration: 0.45, ease: "back.out(1.6)" }],
+    rise: [{ y: 40, opacity: 0, filter: "blur(8px)" }, { y: 0, opacity: 1, filter: "blur(0px)", duration: 0.5, ease: E }],
+    blur: [{ opacity: 0, filter: "blur(8px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.22, ease: "power2.out" }],
+  };
+  const enter = (e, kind, t, origin) => { gsap.set(e, { transformOrigin: origin || (kind === "slam" ? "0% 60%" : "50% 50%") }); tl.fromTo(e, IN[kind][0], { ...IN[kind][1] }, t); };
+  const leave = (e, t, d = 0.25) => tl.to(e, { opacity: 0, filter: "blur(10px)", duration: d, ease: "power2.in" }, t);
+  const flash = (t, red) => tl.fromTo(red ? "#flashR" : "#flash", { opacity: 0.9 }, { opacity: 0, duration: 0.6, ease: "power2.out", immediateRender: false }, t);
+  const rake = (parent, left, top) => mk(parent, "a", { left, top, width: 640, height: 120 }, RAKE);
+  // the rake is stepped on: the handle swings up and smacks the word, which squashes, then the rake drops back
+  const hit = (r, word, t, swing = 58) => {
+    const g = r.querySelector(".rk");
+    tl.to(g, { rotation: swing, svgOrigin: "566 96", duration: 0.17, ease: "power2.in" }, t);
+    tl.to(g, { rotation: 0, svgOrigin: "566 96", duration: 0.55, ease: "bounce.out" }, t + 0.37);
+    tl.to(word, { scale: 0.9, duration: 0.06, ease: "power2.out", overwrite: "auto" }, t + 0.17);
+    tl.to(word, { scale: 1, duration: 0.7, ease: "elastic.out(1, 0.4)" }, t + 0.23);
+  };
+
+  const on = S.map((s, i) => (i ? s.start - 0.02 : 0)), off = S.map((s, i) => (S[i + 1] ? S[i + 1].start : D.endCard));
+  const sc = S.map(() => mk(host, "sc", {}));
+  const OUT = [{ x: -380 }, { y: -130 }, { scale: 2.2 }, { y: -130 }, { x: -380 }, { y: -130 }, { scale: 2.2 }, { y: -130 }, { y: 130 }];
+  sc.forEach((s, i) => {
+    tl.set(s, { opacity: 1 }, on[i]);
+    // the move accelerates while the opacity is already gone, so nothing leaving reads outside the safe box
+    tl.to(s, { ...OUT[i], transformOrigin: "50% 30%", filter: "blur(12px)", duration: 0.26, ease: "power3.in" }, off[i] - 0.13);
+    tl.to(s, { opacity: 0, duration: 0.11, ease: "power2.out" }, off[i] - 0.13);
+  });
+
+  // ---------- 1. hook: Pulse says hi; the rake is stepped on as the word lands ----------
+  {
+    const s = sc[0], t = B(0, "hook");
+    const w = mk(s, "xl", { left: 132, top: 640 }, T.rake); const fs = fit(w, 636, 200);
+    const r = rake(s, 132, 640 + 1.19 * fs + 12 - 42);
+    tl.fromTo(r, { opacity: 0, x: 60 }, { opacity: 1, x: 0, duration: 0.5, ease: E }, Math.max(0.3, t - 1.1));
+    enter(w, "slam", t); hit(r, w, t + 0.08); flash(t + 0.25);
+    spikes.push([t, 85], [t + 0.3, 60]);
+  }
+
+  // ---------- 2. two developers, each with Claude, each Claude with its own memory ----------
+  {
+    const s = sc[1], col = [132, 522];
+    [["max", T.max, "var(--ink)"], ["rost", T.rost, "var(--acc)"]].forEach(([beat, name, c], k) => {
+      const t = B(1, beat), x = col[k];
+      const av = mk(s, "ico", { left: x, top: 310, width: 110, height: 110, color: c }, ICON.person);
+      const nm = mk(s, "xl", { left: x, top: 420, color: c }, name); fit(nm, 354, 170);
+      tl.fromTo(av, { opacity: 0, scale: 0.8 }, { opacity: 0.3, scale: 1, duration: 0.45, ease: E }, S[1].start + 0.1 + k * 0.12);
+      tl.to(av, { opacity: 1, scale: 1.08, duration: 0.2, ease: "power2.out", yoyo: true, repeat: 1, transformOrigin: "50% 50%" }, t - 0.1); tl.set(av, { scale: 1 }, t + 0.31);
+      enter(nm, "slam", t); spikes.push([t, 80]);
+      const tc = (B(1, "rost") + B(1, "mem")) / 2 + k * 0.15;
+      const sp = mk(s, "ico", { left: x, top: 693, width: 34, height: 34 }, ICON.spark);
+      const cl = mk(s, "mono", { left: x + 50, top: 684 }, "Claude");
+      enter(sp, "pop", tc); enter(cl, "blur", tc + 0.05);
+      tl.to(sp, { rotation: 90, duration: 1.6, ease: "power2.out" }, tc);
+      const m = mk(s, "memb", { left: x, top: 760, width: 354, height: 150 });
+      [0, 1, 2].forEach((j) => mk(m, "ml", { left: 28, top: 30 + j * 34, width: [240, 180, 210][j] - k * 30 * j }));
+      const tm = B(1, "mem") + k * 0.12;
+      enter(m, "rise", tm - 0.1);
+      tl.to(m, { borderColor: k ? "rgba(0,218,246,.7)" : "rgba(244,246,248,.7)", duration: 0.3 }, tm + 0.25);
+    });
+    spikes.push([B(1, "mem"), 70]);
+  }
+
+  // ---------- 3. Max's agent finds a trap, keeps it to itself; a week later Rost's agent steps on it ----------
+  {
+    const s = sc[2], col = [132, 522], tT = B(2, "trap"), tS = B(2, "self"), tP = B(2, "step");
+    const boxes = col.map((x, k) => {
+      const lb = mk(s, "lb", { left: x, top: 610, color: k ? "var(--acc)" : "var(--ink)" }, k ? T.rostS : T.maxS);
+      const m = mk(s, "memb", { left: x, top: 670, width: 354, height: 170 });
+      enter(lb, "blur", S[2].start + 0.1 + k * 0.1); enter(m, "rise", S[2].start + 0.15 + k * 0.1);
+      return m;
+    });
+    const w1 = mk(s, "xl", { left: 132, top: 300 }, T.trap); fit(w1, 744, 190);
+    const w2 = mk(s, "xl red", { left: 132, top: 300 }, T.again); fit(w2, 744, 190);
+    const tr = mk(s, "ico", { left: 259, top: 710, width: 100, height: 90 }, ICON.warn);
+    enter(w1, "slam", tT); tl.fromTo(tr, { y: -260, opacity: 0, scale: 0.6 }, { y: 0, opacity: 1, scale: 1, duration: 0.55, ease: "bounce.out" }, tT + 0.05);
+    spikes.push([tT, 80]);
+    const lk = mk(s, "ico", { left: 432, top: 636, width: 52, height: 62, color: "var(--acc)" }, ICON.lock);
+    enter(lk, "pop", tS - 0.1); tl.fromTo(lk.querySelector(".shk"), { y: -9 }, { y: 0, duration: 0.18, ease: "power3.in", immediateRender: false }, tS + 0.25);
+    tl.to(boxes[0], { borderStyle: "solid", borderColor: "rgba(0,218,246,.8)", duration: 0.01 }, tS + 0.3);
+    spikes.push([tS + 0.3, 55]);
+    leave(w1, tP - 0.3, 0.2);
+    const tr2 = mk(s, "ico", { left: 649, top: 710, width: 100, height: 90, color: "var(--red)" }, ICON.warn);
+    enter(w2, "slam", tP); enter(tr2, "punch", tP + 0.05);
+    tl.to(boxes[1], { borderStyle: "solid", borderColor: "rgba(255,77,109,.9)", duration: 0.01 }, tP + 0.05);
+    tl.fromTo(boxes[1], { x: 0 }, { x: 9, duration: 0.04, yoyo: true, repeat: 7, ease: "none", immediateRender: false }, tP + 0.08);
+    flash(tP + 0.05, true); spikes.push([tP, 115]); reds.push(tP);
+  }
+
+  // ---------- 4. the counter lands on 81; each trap was seen by only one of them ----------
+  {
+    const s = sc[3], tN = B(3, "num"), tO = B(3, "one");
+    const n = mk(s, "xl acc", { left: 132, top: 300, fontSize: 360 }, "0");
+    const dots = [];
+    for (let i = 0; i < 81; i++) dots.push(mk(s, "dot", { left: 560 + (i % 9) * 36, top: 400 + Math.floor(i / 9) * 36 }));
+    // when "81" is the scene's first word the count is a fast roll that lands just after it
+    const late = tN - S[3].start < 0.6, c0 = late ? S[3].start + 0.02 : Math.max(S[3].start + 0.12, tN - 1.0), c1 = late ? c0 + 0.24 : Math.max(tN, c0 + 0.35), cnt = { v: 0 };
+    tl.fromTo(n, { opacity: 0 }, { opacity: 0.25, duration: 0.3 }, S[3].start + 0.05); tl.to(n, { opacity: 1, duration: 0.1 }, c0);
+    tl.fromTo(dots, { opacity: 0 }, { opacity: 0.12, duration: 0.3, stagger: 0.003 }, S[3].start + 0.1);
+    tl.fromTo(cnt, { v: 0 }, { v: 81, duration: c1 - c0, ease: "power2.out", onUpdate: () => { n.textContent = Math.round(cnt.v); } }, c0);
+    tl.fromTo(dots, { scale: 0.5 }, { opacity: 1, scale: 1, duration: 0.18, stagger: { each: (c1 - c0) / 81 }, ease: "power2.out", immediateRender: false }, c0);
+    tl.fromTo(n, { scale: 1.06 }, { scale: 1, duration: 0.5, ease: "elastic.out(1, 0.5)", transformOrigin: "30% 60%", immediateRender: false }, c1);
+    flash(c1); spikes.push([c1, 100]);
+    // each trap belongs to one owner: Max's turn white, Rost's stay cyan
+    const mine = dots.filter((_, i) => (i * 5 + (i >> 2)) % 9 < 4);
+    tl.to(mine, { backgroundColor: "#f4f6f8", duration: 0.25, stagger: 0.006 }, tO);
+    tl.to(dots, { scale: 0.86, duration: 0.25, ease: "power2.out" }, tO);
+    const lg = mk(s, "lb", { left: 560, top: 744, fontSize: "32px" }, `<span style="color:var(--ink)">■ ${T.maxS}</span>&nbsp;&nbsp;&nbsp;<span style="color:var(--acc)">■ ${T.rostS}</span>`);
+    enter(lg, "blur", tO + 0.1); spikes.push([tO, 70]);
+  }
+
+  // ---------- 5. one big rules file? no: +20% tokens, the agent no smarter ----------
+  {
+    const s = sc[4], tF = B(4, "file"), tNo = B(4, "no"), tP = B(4, "pct"), tSm = B(4, "smart");
+    const doc = mk(s, "ico", { left: 132, top: 320, width: 260, height: 380 }, ICON.doc);
+    const ls = [];
+    for (let i = 0; i < 15; i++) ls.push(mk(s, "docl", { left: 162, top: 410 + i * 18, width: 120 + ((i * 53) % 80) }));
+    const fn = mk(s, "mono dimc", { left: 132, top: 716, fontSize: "28px" }, T.allrules);
+    enter(doc, "pop", S[4].start + 0.1);
+    tl.fromTo(ls, { opacity: 0, x: -14 }, { opacity: 1, x: 0, duration: 0.2, stagger: Math.max(0.03, (tF - S[4].start - 0.3) / 15), ease: E }, S[4].start + 0.25);
+    tl.fromTo(doc, { scale: 1 }, { scale: 1.07, duration: 0.18, yoyo: true, repeat: 1, ease: "power2.out", immediateRender: false }, tF);
+    enter(fn, "blur", tF); spikes.push([tF, 65]);
+    const x = mk(s, "ico", { left: 132, top: 320, width: 260, height: 380 }, ICON.x);
+    tl.to(x.querySelector(".x1"), { strokeDashoffset: 0, duration: 0.16, ease: "power2.in" }, tNo);
+    tl.to(x.querySelector(".x2"), { strokeDashoffset: 0, duration: 0.16, ease: "power2.in" }, tNo + 0.12);
+    tl.to([doc, ...ls, fn], { opacity: 0.3, duration: 0.3 }, tNo + 0.1);
+    const no = mk(s, "xl red", { left: 440, top: 320 }, T.no); fit(no, 436, 230);
+    enter(no, "slam", tNo); flash(tNo, true); spikes.push([tNo, 90]);
+    leave(no, tP - 0.28, 0.2);
+    const pc = mk(s, "xl red", { left: 440, top: 320 }, "+20%"); const fp = fit(pc, 436, 190);
+    const tk = mk(s, "lb", { left: 444, top: 320 + 1.24 * fp }, T.tok);
+    enter(pc, "slam", tP); enter(tk, "blur", tP + 0.15); spikes.push([tP, 85]);
+    const z = mk(s, "xl dimc", { left: 440, top: 640, fontSize: "140px" }, "±0");
+    const sm = mk(s, "lb", { left: 440 + z.offsetWidth + 24, top: 640 + 1.19 * 140 - 46 }, T.smart);
+    enter(z, "slam", tSm); enter(sm, "blur", tSm + 0.12); spikes.push([tSm, 60]);
+  }
+
+  // ---------- 6. eight small files; an agent touches a table file and only pitfalls-ui lights up ----------
+  {
+    const s = sc[5], tE = B(5, "eight"), tT = B(5, "touch"), tO = B(5, "only");
+    const e8 = mk(s, "xl", { left: 132, top: 300, fontSize: "380px" }, "8");
+    const e1 = mk(s, "xl acc", { left: 132, top: 300, fontSize: "380px" }, "1");
+    const fl = mk(s, "lb", { left: 136, top: 770 }, T.files);
+    enter(e8, "punch", tE); enter(fl, "blur", tE + 0.15); flash(tE); spikes.push([tE, 90]);
+    const rows = RULES.map((r, i) => mk(s, "row", { left: 380, top: 400 + i * 52 }, `<span class="d">pitfalls-</span>${r}<span class="m">.md</span>`));
+    tl.fromTo(rows, { opacity: 0, x: -20 }, { opacity: 0.3, x: 0, duration: 0.4, stagger: 0.05, ease: E }, S[5].start + 0.1);
+    tl.to(rows, { opacity: 1, duration: 0.2, stagger: 0.06 }, tE + 0.1);
+    const tf = mk(s, "row", { left: 380, top: 315, color: "var(--acc)" }, `› ui/TableBlock.vue<span class="cur" style="display:inline-block;width:16px;height:34px;margin-left:8px;vertical-align:-6px;background:var(--acc)"></span>`);
+    enter(tf, "rise", tT - 0.1);
+    tl.fromTo(tf.querySelector(".cur"), { opacity: 1 }, { opacity: 0.15, duration: 0.25, yoyo: true, repeat: 5, ease: "steps(1)", immediateRender: false }, tT + 0.3);
+    spikes.push([tT, 70]);
+    const beam = mk(s, "a", { left: 392, top: 360, width: 4, height: 40, background: "var(--acc)", transformOrigin: "top" });
+    tl.fromTo(beam, { scaleY: 0 }, { scaleY: 1, duration: 0.3, ease: E }, tO - 0.3);
+    tl.to(rows.slice(1), { opacity: 0.22, duration: 0.35 }, tO);
+    tl.to(rows[0], { color: "#00daf6", textShadow: "0 0 30px rgba(0,218,246,.8)", scale: 1.08, transformOrigin: "0% 50%", duration: 0.3, ease: E }, tO);
+    leave(e8, tO - 0.05, 0.15); enter(e1, "punch", tO + 0.05); tl.to(fl, { opacity: 0, duration: 0.2 }, tO);
+    spikes.push([tO, 85]);
+  }
+
+  // ---------- 7. tested: table file 3/3, unrelated file 0/3, nothing extra in the head ----------
+  {
+    const s = sc[6], tT = B(6, "three"), tZ = B(6, "zero"), tC = B(6, "clean");
+    const row = (y, tag, file, score, lit, tb, cls, w) => {
+      const a = mk(s, "lb", { left: 132, top: y, fontSize: "30px" }, tag);
+      const f = mk(s, "mono", { left: 132, top: y + 40 }, file);
+      const ags = [0, 1, 2].map((k) => mk(s, "ag", { left: 132 + k * 116, top: y + 100 }, lit ? `<div class="tk">${ICON.tick}</div>` : `<div style="width:30px;height:5px;border-radius:3px;background:var(--faint)"></div>`));
+      const sc2 = mk(s, "xl " + cls, { left: 520, top: y + 10 }, score); fit(sc2, w, 190);
+      const t0 = S[6].start + 0.1 + (lit ? 0 : 0.25); enter(a, "blur", t0); enter(f, "blur", t0 + 0.08);
+      ags.forEach((g, k) => enter(g, "pop", t0 + 0.15 + k * 0.08));
+      return { a, f, ags, sc2 };
+    };
+    const A = row(320, T.fa, "TableBlock.vue", "3/3", true, tT, "acc", 356);
+    const Z = row(610, T.fb, "billing.service.ts", "0/3", false, tZ, "dimc", 250);
+    A.ags.forEach((g, k) => { tl.to(g, { borderColor: "rgba(0,218,246,.9)", duration: 0.2 }, tT + k * 0.14 + 0.1); tl.to(g.querySelector(".tick"), { strokeDashoffset: 0, duration: 0.25 }, tT + k * 0.14 + 0.1); });
+    enter(A.sc2, "slam", tT + 0.3); spikes.push([tT, 80], [tT + 0.42, 55]);
+    Z.ags.forEach((g, k) => tl.fromTo(g, { scale: 1 }, { scale: 0.9, duration: 0.15, yoyo: true, repeat: 1, immediateRender: false }, tZ + k * 0.08));
+    enter(Z.sc2, "slam", tZ + 0.2); spikes.push([tZ, 70]);
+    tl.to([Z.a, Z.f, ...Z.ags, Z.sc2], { opacity: 0.35, duration: 0.4 }, tC);
+    tl.fromTo(A.sc2, { scale: 1 }, { scale: 1.06, duration: 0.2, yoyo: true, repeat: 1, ease: "power2.out", transformOrigin: "0% 60%", immediateRender: false }, tC);
+    spikes.push([tC, 60]);
+  }
+
+  // ---------- 8. a typo in a rule header loads it everywhere; now a separate check catches it ----------
+  {
+    const s = sc[7], tY = B(7, "typo"), tE = B(7, "everywhere"), tC = B(7, "check");
+    const code = mk(s, "code", {}, `<div class="g">---</div><div><span class="k">description:</span> <span id="q1" class="s" style="opacity:0">"</span><span id="bad" style="position:relative">Pitfalls<span id="col">:</span> UI kit<i id="sq"></i></span><span id="q2" class="s" style="opacity:0">"</span></div><div><span class="k">paths:</span> <span class="s">"frontend/src/**"</span></div><div class="g">---</div>`);
+    enter(code, "rise", S[7].start + 0.1);
+    tl.to("#sq", { scaleX: 1, duration: 0.4, ease: E }, tY);
+    tl.to("#col", { color: "#ff4d6d", duration: 0.2 }, tY); spikes.push([tY, 70]);
+    const ev = mk(s, "xl red", { left: 132, top: 600 }, T.every); fit(ev, 636, 170);
+    enter(ev, "slam", tE); tl.to(code, { borderColor: "rgba(255,77,109,.8)", duration: 0.3 }, tE);
+    flash(tE, true); spikes.push([tE, 105]); reds.push(tE);
+    leave(ev, tC - 0.3, 0.2);
+    tl.to(code, { borderColor: "rgba(0,212,136,.8)", duration: 0.3 }, tC);
+    tl.to("#q1, #q2", { opacity: 1, duration: 0.2 }, tC);
+    tl.to("#col", { color: "#f4f6f8", duration: 0.2 }, tC);
+    tl.to("#sq", { backgroundColor: "#00d488", duration: 0.2 }, tC); tl.to("#sq", { opacity: 0, duration: 0.3 }, tC + 0.5);
+    const ok = mk(s, "ico", { left: 132, top: 620, width: 150, height: 150 }, ICON.ok);
+    const okl = mk(s, "mono", { left: 316, top: 672, color: "#00d488", fontSize: "34px" }, T.ok);
+    enter(ok, "punch", tC); tl.to(ok.querySelector(".tick"), { strokeDashoffset: 0, duration: 0.3, ease: "power2.out" }, tC + 0.15);
+    enter(okl, "blur", tC + 0.2); spikes.push([tC, 85]);
+  }
+
+  // ---------- 9. cards, repo, and the rake: once (the strongest hit of the film) ----------
+  {
+    const s = sc[8], tCa = B(8, "cards"), tR = B(8, "repo"), tO = B(8, "once");
+    const ci = mk(s, "ico", { left: 150, top: 330, width: 220, height: 200 }, ICON.cards);
+    const cl = mk(s, "lb", { left: 132, top: 560, color: "var(--ink)" }, T.cards);
+    const ri = mk(s, "ico", { left: 560, top: 330, width: 200, height: 200 }, ICON.repo);
+    const rl = mk(s, "lb", { left: 522, top: 560, color: "var(--ink)" }, T.repo);
+    [ci, ri].forEach((e, k) => tl.fromTo(e, { opacity: 0, scale: 0.85 }, { opacity: 0.22, scale: 1, duration: 0.5, ease: E }, S[8].start + 0.1 + k * 0.15));
+    [[ci, cl, tCa], [ri, rl, tR]].forEach(([e, l, t]) => { tl.to(e, { opacity: 1, duration: 0.15 }, t - 0.05); tl.fromTo(e, { scale: 1 }, { scale: 1.1, duration: 0.18, yoyo: true, repeat: 1, ease: "power2.out", immediateRender: false }, t - 0.05); enter(l, "blur", t + 0.05); spikes.push([t, 75]); });
+    [ci, cl, ri, rl].forEach((e) => leave(e, tO - 0.32, 0.22));
+    const w = mk(s, "xl acc", { left: 132, top: 360 }, T.once); const fs = fit(w, 744, 300);
+    const r = rake(s, 150, 360 + 1.19 * fs + 12 - 42);
+    tl.fromTo(r, { opacity: 0, x: 60 }, { opacity: 1, x: 0, duration: 0.4, ease: E }, tO - 0.3);
+    enter(w, "punch", tO, "50% 60%"); hit(r, w, tO + 0.1, 64);
+    tl.fromTo(s, { x: 0 }, { x: 10, duration: 0.04, yoyo: true, repeat: 7, ease: "none", immediateRender: false }, tO + 0.27);
+    flash(tO + 0.27); spikes.push([tO, 125], [tO + 0.3, 90]);
+  }
+
+  // ---------- Pulse: hero (top right) -> narrator beside the captions -> end-card host ----------
+  const HERO = { x: 571, y: 318, scale: 340 / 300 }, NARR = { x: 107, y: 1117, scale: 130 / 300 }, HOST = { x: 384, y: 318, scale: 0.8 };
+  tl.fromTo("#bot", { ...HERO, scale: HERO.scale * 0.9 }, { scale: HERO.scale, duration: 0.7, ease: "back.out(1.6)" }, 0);
+  tl.fromTo("#bot svg", { rotation: -10 }, { rotation: 0, duration: 0.9, ease: "elastic.out(1, 0.4)", transformOrigin: "50% 80%" }, 0.15);
+  tl.to("#bot", { ...NARR, duration: 0.6, ease: "power3.inOut" }, Math.max(S[0].end, S[1].start - 0.7));
+  tl.to("#bot", { ...HOST, duration: 0.7, ease: "power3.inOut" }, D.endCard - 0.25);
+  const b0 = S[1].start;
+  tl.fromTo("#bot svg", { y: 0 }, { y: -5, duration: 0.9, ease: "sine.inOut", yoyo: true, repeat: Math.floor((D.dur - b0) / 0.9) - 1, immediateRender: false }, b0);
+  for (let t = 2.9; t < D.dur - 0.3; t += 4.7) tl.to("#bot .eyes", { scaleY: 0.1, svgOrigin: "24 24", duration: 0.07, yoyo: true, repeat: 1, ease: "power1.inOut" }, t);
+  // talking: the smile gives way to an open mouth that eases wider on each word and half-closes between words
+  const smile = "#bot .mouth", open = "#bot .talk";
+  S.forEach((seg) => {
+    const spans = [];
+    seg.words.forEach((w, k) => {
+      const end = Math.min(seg.words[k + 1]?.s ?? seg.end + 0.15, w.s + 0.5), len = end - w.s;
+      const last = spans.at(-1);
+      if (last && w.s - last.e < 0.35) last.e = end; else spans.push({ s: w.s, e: end });
+      if (len < 0.09) return;
+      const up = Math.min(0.11, len * 0.4), down = Math.min(0.14, len * 0.45);
+      tl.to(open, { attr: { ry: 1.7 + ((k * 37) % 5) * 0.2 }, duration: up, ease: "sine.out" }, w.s);
+      tl.to(open, { attr: { ry: 0.8 }, duration: down, ease: "sine.inOut" }, Math.max(w.s + up, end - down));
+    });
+    spans.forEach((p) => {
+      tl.to(smile, { opacity: 0, duration: 0.08 }, Math.max(0, p.s - 0.05));
+      tl.to(open, { opacity: 1, duration: 0.08 }, Math.max(0, p.s - 0.05));
+      tl.to(open, { opacity: 0, duration: 0.14 }, p.e);
+      tl.to(smile, { opacity: 1, duration: 0.14 }, p.e);
+    });
+  });
+
+  // ---------- end card ----------
+  const TE = D.endCard;
+  tl.fromTo("#end", { opacity: 0 }, { opacity: 1, duration: 0.01 }, TE);
+  tl.fromTo("#end .wm span", { opacity: 0, scale: 0.7, filter: "blur(12px)" }, { opacity: 1, scale: 1, filter: "blur(0px)", duration: 0.55, stagger: 0.12, ease: E }, TE + 0.05);
+  tl.fromTo("#end .sl", { opacity: 0, y: 24, filter: "blur(8px)" }, { opacity: 1, y: 0, filter: "blur(0px)", duration: 0.7, ease: E }, TE + 0.3);
+  tl.to("#glow", { x: 260, y: 520, duration: D.dur / 2, ease: "sine.inOut", yoyo: true, repeat: 1 }, 0);
+  spikes.push([TE + 0.2, 85]);
+  for (let t = TE + 1.05; t < D.dur; t += 0.82) spikes.push([t, 38]);
+
+  // ---------- ECG: a trace scrolling left at V px/s; a spike drawn at X = 780 + V*t meets the head exactly at time t ----------
+  const V = 420, HX = 780, BASE = 80;
+  for (let t = 0.55; t < TE - 0.3; t += 0.82) if (!spikes.some(([s]) => Math.abs(s - t) < 0.4)) spikes.push([t, 16]);
+  spikes.sort((a, b) => a[0] - b[0]);
+  const pts = [[-1000, 0]]; let lastX = -1e9;
+  spikes.forEach(([t, a]) => {
+    const x = HX + V * t;
+    if (x - lastX < 130) return; // beats closer than one complex merge into the first
+    lastX = x; a *= 0.85;
+    [[-62, 0], [-48, -0.1 * a], [-34, 0], [-14, 0], [-6, 0.14 * a], [0, -a], [9, 0.42 * a], [18, 0], [44, 0], [58, -0.13 * a], [76, 0]].forEach(([dx, dy]) => pts.push([x + dx, dy]));
+  });
+  pts.push([HX + V * D.dur + 1000, 0]);
+  const yAt = (X) => { for (let i = 1; i < pts.length; i++) if (pts[i][0] >= X) { const [x0, y0] = pts[i - 1], [x1, y1] = pts[i]; return y0 + ((y1 - y0) * (X - x0)) / (x1 - x0 || 1); } return 0; };
+  const trace = document.getElementById("trace"), head = document.getElementById("head"), clock = { t: 0 };
+  // only the visible window of the trace is drawn each frame: the path stays small however long the film is
+  const draw = () => {
+    const sh = V * clock.t, X1 = sh + HX;
+    let i = 0; while (i < pts.length - 1 && pts[i + 1][0] < sh) i++;
+    const seg = [[0, yAt(sh)]];
+    for (let j = i + 1; j < pts.length && pts[j][0] < X1; j++) seg.push([pts[j][0] - sh, pts[j][1]]);
+    seg.push([HX, yAt(X1)]);
+    trace.setAttribute("d", "M" + seg.map(([x, y]) => `${x.toFixed(1)} ${(BASE + y).toFixed(1)}`).join(" L"));
+    head.style.transform = `translateY(${yAt(X1).toFixed(1)}px)`;
+  };
+  tl.fromTo(clock, { t: 0 }, { t: D.dur, duration: D.dur, ease: "none", onUpdate: draw }, 0);
+  draw();
+  // the trace turns red while something goes wrong
+  reds.forEach((t) => {
+    tl.to(trace, { attr: { stroke: "#ff4d6d" }, duration: 0.08 }, t - 0.05);
+    tl.to(head, { backgroundColor: "#ffc2cd", boxShadow: "0 0 0 5px rgba(255,77,109,.25),0 0 28px 6px rgba(255,77,109,.7)", duration: 0.08 }, t - 0.05);
+    tl.to(trace, { attr: { stroke: "#00daf6" }, duration: 0.5 }, t + 0.9);
+    tl.to(head, { backgroundColor: "#bff8ff", boxShadow: "0 0 0 5px rgba(0,218,246,.25),0 0 28px 6px rgba(0,218,246,.7)", duration: 0.5 }, t + 0.9);
+  });
+
+  // ---------- captions: one group at a time, spoken word lit, hard hide at chunk.end ----------
+  const cap = document.getElementById("cap");
+  D.chunks.forEach((c) => {
+    const div = document.createElement("div"); div.className = "chunk";
+    c.words.forEach((w) => { const s = document.createElement("span"); s.className = "w"; s.textContent = w.raw; div.appendChild(s); });
+    cap.appendChild(div);
+    if (div.scrollWidth > 504) div.style.fontSize = Math.max(30, Math.floor((50 * 504) / div.scrollWidth)) + "px";
+    const t0 = Math.max(0.1, c.start);
+    tl.set(div, { visibility: "visible" }, t0);
+    tl.fromTo(div, { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.16, ease: "power2.out", immediateRender: false }, t0);
+    tl.to(div, { opacity: 0, duration: 0.1, ease: "power2.in" }, c.end - 0.1);
+    tl.set(div, { opacity: 0, visibility: "hidden" }, c.end);
+    [...div.children].forEach((s, wi) => {
+      tl.set(s, { className: "w on" }, Math.max(t0, c.words[wi].s));
+      tl.set(s, { className: "w said" }, wi + 1 < c.words.length ? c.words[wi + 1].s : c.words[wi].e + 0.12);
+    });
+  });
+
+  window.__timelines = window.__timelines || {};
+  window.__timelines["main"] = tl;
+  tl.seek(0);
+}
+// measure only once the faces are loaded, then register the timeline last
+Promise.all(["700 100px Oswald", "700 38px Montserrat", "800 50px Montserrat", "900 150px Montserrat", "400 32px 'JetBrains Mono'"].map((f) => document.fonts.load(f, "ЯПульсLifeїєі’81")))
+  .catch(() => {}).then(() => document.fonts.ready).then(build);
+</script>
+</body>
+</html>

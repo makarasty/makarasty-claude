@@ -1,5 +1,15 @@
 # Changelog
 
+## makarasty-tools 1.19.61 — 2026-11-17
+
+- **`video`: a short vertical explainer video made on this machine**: script per language, voice from local models
+  (Qwen3-TTS for Russian and English, OmniVoice for Ukrainian), an animated HyperFrames composition in a look the
+  person picks from 3-4 mockups, burned-in captions, MP4 and SRT on the Desktop. The pipeline from the first video is
+  kept with the fixes its defects needed: pauses are edited only inside measured silence, sound effects are mixed one
+  input per hit, and the build refuses an MP4 whose voice has a dropout. `HOME\looks.md` records each look so the
+  next video differs. Checked: the moved pipeline rebuilt the first video's Russian cut with 0 dropouts; not checked
+  by ear.
+
 ## makarasty-tools 1.19.60 — 2026-11-17
 
 - **`report`: a summary you can scan instead of a Markdown file**: the writer puts facts into a JSON of numbered

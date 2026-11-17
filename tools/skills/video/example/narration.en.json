@@ -1,0 +1,11 @@
+[
+  {"id": "s1", "text": "I'm Pulse, the LifeLines assistant. This is a story about a rake we don't step on anymore.", "beats": {"hook": "rake"}},
+  {"id": "s2", "text": "There are two of us, Max and Rost. Each works with Claude, and each Claude keeps its own memory.", "beats": {"max": "max", "rost": "rost", "mem": "memory"}},
+  {"id": "s3", "text": "Max's agent finds a trap and remembers it. For itself only. Rost's agent never hears about it, and a week later steps right on it.", "beats": {"trap": "trap", "self": "itself", "step": "steps"}},
+  {"id": "s4", "text": "Eighty-one traps piled up like that. Each one seen by just one of them.", "beats": {"num": "eighty", "one": "one"}},
+  {"id": "s5", "text": "Dump it all into one big file? Nope. That's twenty percent more tokens, and the agent gets no smarter.", "beats": {"file": "file", "no": "nope", "pct": "twenty", "smart": "smarter"}},
+  {"id": "s6", "text": "So we split the traps into eight small files in the repo. An agent touches a table, and sees only the table rules.", "beats": {"eight": "eight", "touch": "touches", "only": "only"}},
+  {"id": "s7", "text": "We tested it. Table file: three agents out of three saw the rule. Unrelated file: zero out of three. No clutter.", "beats": {"three": "three", "zero": "zero", "clean": "clutter"}},
+  {"id": "s8", "text": "One trap was left: a typo in the header, and the rule quietly loads everywhere. Now a separate check catches it.", "beats": {"typo": "typo", "everywhere": "everywhere", "check": "check"}},
+  {"id": "s9", "text": "Bottom line: work splits by cards, knowledge lives in the repo. And a rake, you step on once.", "beats": {"cards": "cards", "repo": "repo", "once": "rake"}}
+]

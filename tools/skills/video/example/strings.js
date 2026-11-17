@@ -1,0 +1,36 @@
+// On-screen words per language. Only key words and labels: the captions carry the sentences.
+window.STR = {
+  ru: {
+    rake: "грабли", max: "Макс", rost: "Рост",
+    trap: "ловушка", again: "снова",
+    maxS: "Макс", rostS: "Рост",
+    allrules: "ВСЕ-ПРАВИЛА.md", no: "нет", tok: "токенов", smart: "умнее",
+    files: "файлов",
+    fa: "таблица", fb: "чужой файл",
+    every: "везде", ok: "rule-paths: ok",
+    cards: "карточки", repo: "репозиторий", once: "один раз",
+    sub: "дневник разработки",
+  },
+  en: {
+    rake: "rake", max: "Max", rost: "Rost",
+    trap: "trap", again: "again",
+    maxS: "Max", rostS: "Rost",
+    allrules: "ALL-RULES.md", no: "nope", tok: "tokens", smart: "smarter",
+    files: "files",
+    fa: "table file", fb: "unrelated file",
+    every: "everywhere", ok: "rule-paths: ok",
+    cards: "cards", repo: "repo", once: "once",
+    sub: "dev diary",
+  },
+  uk: {
+    rake: "граблі", max: "Макс", rost: "Рост",
+    trap: "пастка", again: "знову",
+    maxS: "Макс", rostS: "Рост",
+    allrules: "УСІ-ПРАВИЛА.md", no: "ні", tok: "токенів", smart: "розумніше",
+    files: "файлів",
+    fa: "таблиця", fb: "чужий файл",
+    every: "всюди", ok: "rule-paths: ok",
+    cards: "картки", repo: "репозиторій", once: "один раз",
+    sub: "щоденник розробки",
+  },
+};
