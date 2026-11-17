@@ -1,5 +1,12 @@
 # Changelog
 
+## makarasty-tools 1.19.68 — 2026-11-18
+
+- **Opening a chat in the app works again** (a finished phone task, `inbox.mjs start`, `open`): on app 5.1231.2 a
+  quoted `claude://resume` link never reached the window, so nothing was imported and the window only came to the
+  front. The link now goes unquoted; checked on the live app: the darkkitty task imported at once, and a chat link
+  switched the window. A link the window took without importing now says so instead of "no running app window".
+
 ## makarasty-tools 1.19.67 — 2026-11-18
 
 - **A task from the phone shows up as a chat in the app when it ends**: the window flips to it for a moment and back,

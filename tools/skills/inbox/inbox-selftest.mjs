@@ -115,7 +115,7 @@ try {
   const procs = [`${exe2}|"${exe2}" --type=renderer --user-data-dir="${join(prof, 'acct2')}"`, `${exe2}|"${exe2}" --user-data-dir="${join(prof, 'acct2')}"`, 'C:\\WA\\Claude.exe|"C:\\WA\\Claude.exe" --user-data-dir="C:\\other\\main"'].join('\n')
   const runP = (/** @type {string[]} */ a, /** @type {string} */ ps = procs) => spawnSync(process.execPath, [cli, ...a], { env: { ...env, INBOX_PROFILES_DIR: prof, INBOX_DRY_OPEN: '1', INBOX_PROCS: ps }, encoding: 'utf8' })
   const o = runP(['open', host])
-  check('open hands the quoted link to the running window of the profile that holds the chat', o.status === 0 && o.stdout.startsWith(exe2) && !o.stdout.includes('--type=') && o.stdout.includes(`--user-data-dir="${join(prof, 'acct2')}"`) && o.stdout.includes(`"claude://claude.ai/epitaxy/${host}"`), o.stdout + o.stderr)
+  check('open hands the unquoted link to the running window of the profile that holds the chat', o.status === 0 && o.stdout.startsWith(exe2) && !o.stdout.includes('--type=') && o.stdout.includes(`--user-data-dir="${join(prof, 'acct2')}"`) && o.stdout.includes(` claude://claude.ai/epitaxy/${host}`) && !o.stdout.includes('"claude://'), o.stdout + o.stderr)
   const o2 = runP(['open', 'local_00000000-0000-0000-0000-000000000000'])
   check('a chat in no profile is refused, not sent to the bare link handler (it opened a fresh signed-out app)', o2.status === 1 && !o2.stdout.includes('cmd'), o2.stdout + o2.stderr)
   const o3 = runP(['open', host], '')
@@ -155,7 +155,7 @@ try {
   const st = runP(['start', 'acct2', tmp, 'test', '--model', 'opus', 'cross-account', '--switches-window', '--mode', 'plan', '--said', Q1])
   for (const f of [shownNow, 'local_22222222-2222-2222-2222-222222222222']) rmSync(join(seen, `${f}.json`))
   const sid = /--session-id ([0-9a-f-]{36}) -n test cross-account --model opus --permission-mode plan/.exec(st.stdout)?.[1]
-  check('start names a CLI turn in the folder and hands its id to that profile through claude://resume', st.status === 0 && st.stdout.startsWith(`cd ${tmp}`) && !!sid && st.stdout.includes(exe2) && st.stdout.includes(`"claude://resume?session=${sid}"`), st.stdout + st.stderr)
+  check('start names a CLI turn in the folder and hands its id to that profile through claude://resume', st.status === 0 && st.stdout.startsWith(`cd ${tmp}`) && !!sid && st.stdout.includes(exe2) && st.stdout.includes(` claude://resume?session=${sid}`) && !st.stdout.includes('"claude://'), st.stdout + st.stderr)
   check('start then sends that window back to the chat it showed (highest lastFocusedAt)', st.stdout.includes(`back: claude://claude.ai/epitaxy/${shownNow}`), st.stdout)
   const st2 = runP(['start', 'acct2', tmp, 'test', 'cross-account', '--said', Q1])
   check('a dry run writes nothing under the root: no journal, no mark, no ledger row, no lock, no folders', st2.status === 0 && !existsSync(jfile('test cross-account')) && usedN() === 0 && ledger().length === 0 && !existsSync(join(root, 'starts')) && !existsSync(join(root, 'said-used')))

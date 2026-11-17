@@ -115,8 +115,9 @@ function profileOf(/** @type {string} */ host) {
 }
 // The exe of the window already running with that profile's --user-data-dir (main runs the installed app, the others a
 // renamed copy), given the link with the same flag: that window takes it. Never the bare claude:// handler: it has no
-// --user-data-dir and opened a fresh signed-out app instead of the operator's window. The link quoted, as measured:
-// unquoted it did not reach the window. INBOX_PROCS (lines "exe|command line") stands in for the process list in tests.
+// --user-data-dir and opened a fresh signed-out app instead of the operator's window. The link unquoted: on app 5.1231.2
+// (2026-11-18) a quoted resume link never reached the handler, unquoted resume and epitaxy links did (older apps wanted
+// quotes). INBOX_PROCS (lines "exe|command line") stands in for the process list in tests.
 function profileExe(/** @type {{name: string, dir: string}} */ prof) {
   let procs = process.env.INBOX_PROCS
   if (procs === undefined) {
@@ -128,7 +129,7 @@ function profileExe(/** @type {{name: string, dir: string}} */ prof) {
 }
 function linkArgv(/** @type {{name: string, dir: string} | undefined} */ prof, /** @type {string} */ url) {
   const exe = prof && profileExe(prof)
-  return exe && prof ? [exe, `--user-data-dir="${prof.dir}"`, `"${url}"`] : undefined
+  return exe && prof ? [exe, `--user-data-dir="${prof.dir}"`, url] : undefined
 }
 function launch(/** @type {{name: string, dir: string} | undefined} */ prof, /** @type {string} */ url) {
   const argv = linkArgv(prof, url)
@@ -564,7 +565,7 @@ function jobRun(/** @type {string} */ id) {
   let out = '', ok = false
   try { out = execFileSync(bundledCli({ name: prof ?? '', dir: join(profilesDir(), prof ?? '') }), argv, { cwd: j.folder, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 3 * 3600e3, maxBuffer: 16 << 20, windowsHide: true }); ok = true }
   catch (e) { out = String(/** @type {{stdout?: string}} */ (e).stdout ?? '') }
-  const opened = prof ? openInApp(prof, j.sid) : false
+  const opened = prof ? openInApp(prof, j.sid) === true : false
   const head = `<b>${escHtml(j.name)}</b>\n`, tail = opened ? `\n${note(t(lang(), 'jobOpened'))}` : ''
   try { execFileSync(process.execPath, [notifyJs, 'send', '--html'], { input: head + (ok && out.trim() ? mdToTg(out) : note(t(lang(), 'jobFailed'))) + tail, stdio: ['pipe', 'ignore', 'ignore'], timeout: 30000 }) } catch { /* the result stays in the job's session */ }
   writeFileSync(f, JSON.stringify({ ...j, state: ok ? 'done' : 'failed', ended: new Date().toISOString(), opened }, null, 1))
@@ -575,10 +576,10 @@ function jobRun(/** @type {string} */ id) {
 function openInApp(/** @type {string} */ profName, /** @type {string} */ sid) {
   const prof = { name: profName, dir: join(profilesDir(), profName) }
   const back = chats().filter((c) => c.profile === profName).sort((x, y) => y.focused - x.focused)[0]
-  if (!launch(prof, `claude://resume?session=${sid}`)) return false
+  if (!launch(prof, `claude://resume?session=${sid}`)) return 'no window'
   for (let i = 0; i < 60 && profileOf(`local_${sid}`)?.name !== profName; i++) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 500)
   if (back?.focused) launch(prof, `claude://claude.ai/epitaxy/${back.host}`)
-  return profileOf(`local_${sid}`)?.name === profName
+  return profileOf(`local_${sid}`)?.name === profName || 'not imported in 30 s'
 }
 const escHtml = (/** @type {string} */ s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
@@ -904,8 +905,8 @@ async function main() {
     // A job that ended before it could open itself (an older version, the window closed): open it now.
     const j = readJSON(join(root, 'jobs', `${id}.json`)), profs = existsSync(profilesDir()) ? readdirSync(profilesDir()) : []
     if (!j || j.state === 'running') { console.error('inbox: no such job, or it still runs (two writers would break its session)'); return 1 }
-    const ok = openInApp(profs.includes('main') ? 'main' : profs[0] ?? '', j.sid)
-    say(ok ? `inbox: job ${id} is open in the app` : noWindow(undefined)); return ok ? 0 : 1
+    const r = openInApp(profs.includes('main') ? 'main' : profs[0] ?? '', j.sid)
+    say(r === true ? `inbox: job ${id} is open in the app` : r === 'no window' ? noWindow(undefined) : `inbox: the window took the link but did not import session ${j.sid} in 30 s`); return r === true ? 0 : 1
   }
 
   if (cmd === 'scan') {
