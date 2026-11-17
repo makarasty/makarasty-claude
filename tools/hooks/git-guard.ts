@@ -185,6 +185,9 @@ const RULES: Rule[] = [
   [/^reflog\s+(expire|delete)\b/, 'git reflog expire/delete drops the reflog entries that are the only way back to a lost commit'],
   [/^update-ref\b.*\s(-d|--delete)(\s|$)/, 'git update-ref -d deletes a ref, and the commits only it reaches'],
   [new RegExp(`^read-tree\\b.*\\s${opt('reset')}`), 'git read-tree --reset overwrites the index, and with -u the files too'],
+  // `git rm -r --cached .` unstages every session's staged files, and a commit after it deletes the whole tree from the
+  // branch: a fixture script whose cd failed did exactly that in this repo on 2026-11-17. Your own paths by name pass.
+  [(s) => /^rm\b/.test(s) && wholeTree(operands(s)), "git rm on the whole tree (. or :/) unstages or removes every session's files: git rm your own paths by name", 'sweep'],
   // Plain `git rm` refuses a file with local changes; -f removes it anyway.
   [(s) => /^rm\b/.test(s) && !new RegExp(`\\s${opt('cached')}`).test(s) && new RegExp(`\\s(-[a-zA-Z]*f[a-zA-Z]*(\\s|$)|${opt('force')})`).test(s), 'git rm -f deletes files with uncommitted changes (plain git rm and git rm --cached are allowed)', true],
   // Git's own default is two weeks, so weeks, months, years and absolute dates pass.

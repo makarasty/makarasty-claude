@@ -1,5 +1,12 @@
 # Changelog
 
+## makarasty-tools 1.19.54 — 2026-11-17
+
+- **git-guard refuses `git rm` on the whole tree** (`.` or `:/`, with or without `--cached`): it unstages or removes
+  every session's files, and the commit after it deletes the tree from the branch. A fixture script whose `cd` failed
+  did that in this repo today (undone before any push). Your own paths by name pass; a `wt*` worktree and a folder the
+  same line makes with `git init` are free, as for `add -A`.
+
 ## makarasty-tools 1.19.53 — 2026-11-17
 
 Questions reach the person only after an investigation, findings and brief items get a destination, claims about him

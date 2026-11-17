@@ -344,6 +344,10 @@ test('git add -A / . and commit -a are refused in the shared tree and allowed in
   expect(SCOPED.filter((c) => check(c, 'Bash', MAIN))).toEqual([])
   expect(check('git add -A', 'Bash', MAIN)).toContain('your own paths')
   expect(check('git commit -am x', 'Bash', MAIN)).toContain('git commit -a')
+  // 2026-11-17: a fixture script's cd failed and this ran in the shared tree, then a commit deleted every file from master.
+  expect(['git rm -rq --cached .', 'git rm -r --cached .', 'git rm -r --cached :/', 'git rm -r .'].filter((c) => !check(c, 'Bash', MAIN))).toEqual([])
+  expect(['git rm --cached a.ts', 'git rm -r --cached src/old', 'git rm a.ts'].filter((c) => check(c, 'Bash', MAIN))).toEqual([])
+  expect(check('git rm -r --cached .', 'Bash', { cwd: 'C:\\wtmerge' })).toBeFalsy()
   for (const cwd of PRIVATE) expect(SWEEP.filter((c) => !/ -C |cd |init|clone/.test(c) && check(c, 'Bash', { cwd }))).toEqual([])
   expect(['cd C:/wtmerge && git add -A', 'cd /c/wtRM01 && git commit -am x', 'git -C C:\\wtmerge add .', 'cd /c/wtmerge/sub; git add .'].filter((c) => check(c, 'Bash', MAIN))).toEqual([])
   // Not a private tree: a folder that only starts like one, or a wt dir deeper in the tree.
