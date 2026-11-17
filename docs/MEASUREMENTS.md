@@ -1284,6 +1284,29 @@ counts per theme approximate (a row counts once, under its main theme).
 **Status:** 1-2 runs per cell, one model, regex scoring plus one reader; craft's skill text was a system prompt, not
 loaded through the Skill tool.
 
+## M75 — Delete bypasses and the snapshot's cost (2026-11-17)
+Corpus: every distinct Bash and PowerShell command in the operator's transcripts of the last 60 days (1,992 files,
+145,023 distinct commands, 168,013 calls), each checked with its session's cwd.
+- **Bypasses**: 30 probe lines (21 of them inline interpreter deletes: `python -c shutil.rmtree`, `node -e fs.rmSync`,
+  `perl`, `ruby`, `deno`, `bun`, heredocs, `os.system`, `subprocess`, `execSync`, `[IO.Directory]::Delete`) ran past
+  delete-guard 1.19.47: 21 of 30; with the interpreter reading 0 of 30. The 9 rows fixed on 11-16 still refused.
+- **False refusals**: the old guard refused 7 of the 145,023, the new one the same 7 and no other. Of 229 distinct
+  folders outside the project a recursive delete in the corpus named, none is or directly holds a git repository on
+  disk today, so the neighbour-repository check would have refused none of them.
+- **Snapshot**: its trigger fires on 58,247 of 168,013 calls (34.7%; redirects 13.8%, rm/mv/cp family 9.3%, scripts
+  8.6%, heredoc or inline code 10.9%, `sed -i` 3.4%). Cost on this box, a node harness over a temp clone of this
+  repo: first save 154 ms (7 git processes), the same tree again 39 ms (one `git status`). `git status -uall
+  --porcelain` takes 90 ms on an 18,549-file repo and 86 ms on a 16,868-file one.
+- **Delete confirmations** (same 60 days, 1,992 sessions): 164 AskUserQuestion calls with a delete word in the
+  question, in 119 sessions; at most 7 in one chat, none near the 35 remembered (approved permission prompts and
+  inbox cards are not in the transcripts). The largest repeatable cost was prune and cleanup: 17 runs, about 32 asks,
+  because confirm.mjs wanted the numbers, then the same choice again as an exact label per kind (undoable, forever):
+  2-3 asks for one batch, 3 for a single branch. 16 more were re-asks after ask-guard refused an option holding a
+  command. Real guard refusals: delete-guard 2, git-guard 278, kill-guard 29; none in a burst of 3 or more, and a
+  refusal asks the owner nothing.
+**Status:** the snapshot timing is one run each; the corpus counts are exact; skill attribution of an ask is the
+nearest Skill call within 15 tool calls, approximate.
+
 ## Appendix: what a pull run spends
 
 Moved here from `PULL.md`, which workers read in full; none of it changes what a worker does.

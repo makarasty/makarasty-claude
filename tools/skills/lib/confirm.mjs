@@ -3,8 +3,8 @@
 //
 //   node confirm.mjs plan <tool> <items.json | ->   write the plan, print the numbered list
 //        items: [{id, what, bytes (number|null), how: 'undo'|'forever', note?, held?}]; held = why it cannot be chosen
-//   node confirm.mjs select <tool>                  read the person's latest answer after the list; print the restated block and ASK: lines
-//   node confirm.mjs grant <tool>                   read the person's latest answer after select; print GRANTED: <ids>
+//   node confirm.mjs select <tool>                  read the person's answer after the list: print what it chose and GRANTED: <ids>
+//   node confirm.mjs grant <tool>                   the older second step: an answer equal to an ASK label after select; print GRANTED: <ids>
 //   node confirm.mjs --selftest
 // A plan carries a scope (prune: its repo's git dir, or 'all'; cleanup: 'machine'); check refuses a grant made under another one.
 // Exit 2 with a one-line reason when there is no answer, the answer is not a valid selection, or nothing was confirmed.
@@ -12,7 +12,9 @@
 //
 // The person's answer is read from this chat's transcript (<config>/projects/*/<session id>.jsonl): an AskUserQuestion answer
 // (toolUseResult.answers) or a typed message (not a compact summary, meta record or tool result), main thread only, recorded after the step
-// before it. A bare "да" is never a selection. The grant needs one answer line equal to the ASK label.
+// before it. A bare "да" is no selection, except on a list of one. The numbers are the grant: the list already says per
+// item whether it can be restored, and asking again for the same choice only asked twice (11-17 audit: 2-3 asks per batch
+// over 17 prune and cleanup runs, the owner's most repeated delete confirmation).
 // The calling script (machine.mjs, prune.mjs) runs check(tool, ids, {scope}) before it deletes: only ids granted in the last 30 minutes
 // pass, once each. Without CLAUDE_CODE_SESSION_ID (a person at their own terminal) check passes: that person is the consent.
 // State: ${CLAUDE_CONFIG_DIR || ~/.claude}/makarasty/confirm/<session id>.<tool>.json
@@ -146,7 +148,7 @@ function parse(answer, n) {
     const picked = nums.length > 0;
     if (none) return picked || all || except ? bad : { none: true };
     if (all && !except && picked || except && !picked) return bad;
-    if (!picked && !all) return yes ? { err: "a bare 'да' is not a selection: ask which numbers" } : bad;
+    if (!picked && !all) return yes && n === 1 ? { nums: [1] } : yes ? { err: "a bare 'да' is not a selection: ask which numbers" } : bad;
     const off = nums.find(x => x < 1 || x > n);
     if (off !== undefined) return { err: out(off) };
     if (all || except) nums = Array.from({ length: n }, (_, i) => i + 1).filter(i => !nums.includes(i));
@@ -165,7 +167,6 @@ function restate(p, chosen, ru) {
     const rest = live.filter(i => !chosen.includes(i));
     const keep = [...(rest.length ? [rest.map(i => `${i.n}. ${i.what}`).join(', ')] : []), ...(held.length ? [`${ru ? 'занято' : 'held'}: ${held.map(i => `${i.what} (${i.held})`).join(', ')}`] : [])];
     if (keep.length) L.push(`${ru ? 'Не трогаю' : 'Not touched'}: ${keep.join('; ')}`);
-    for (const how of ['undo', 'forever']) if (by(how).length) L.push(`ASK: ${label(ru, how, by(how).map(i => i.n))}`);
     return L.join('\n');
 }
 
@@ -177,10 +178,11 @@ export function select(tool, o = {}) {
     const ru = /[а-яё]/i.test(a), live = p.items.filter(i => !i.held), r = parse(a, live.length);
     if (r.err) return fail(r.err);
     const chosen = r.none ? [] : r.nums.map(x => live[x - 1]);
-    Object.assign(p, { sel: chosen.map(i => i.id), selAt: nowOf(o), lang: ru ? 'ru' : 'en', granted: [], grantedAt: null });
+    const ids = chosen.map(i => i.id), at = nowOf(o);
+    Object.assign(p, { sel: ids, selAt: at, lang: ru ? 'ru' : 'en', granted: ids, grantedAt: ids.length ? at : null });
     save(tool, o, p);
     if (!chosen.length) return { code: 0, out: ru ? 'ничего не выбрано, ничего не будет удалено' : 'nothing chosen, nothing will be deleted' };
-    return { code: 0, out: restate(p, chosen, ru) };
+    return { code: 0, out: `${restate(p, chosen, ru)}\nGRANTED: ${ids.join(' ')}` };
 }
 
 // ---- grant ----------------------------------------------------------------------------------------------------
@@ -219,7 +221,7 @@ export function check(tool, ids, o = {}) { // o.scope: the scope this run acts u
     const p = load(tool, o), want = [].concat(o.scope ?? ''), fresh = p && nowOf(o) - p.grantedAt <= TTL, ok = new Set(fresh ? p.granted : []);
     if (fresh && !want.includes(p.scope ?? '')) throw new Error(`not confirmed by the person: that list was made for scope "${p.scope ?? ''}", this run is "${want.join('" or "')}". Do not act: show the list again from here`);
     const no = ids.filter(i => !ok.has(i));
-    if (no.length) throw new Error(`not confirmed by the person: ${no.join(' ')}. Do not act on them: show the list from scan, ask which numbers, run confirm.mjs select, ask the ASK lines, run confirm.mjs grant`);
+    if (no.length) throw new Error(`not confirmed by the person: ${no.join(' ')}. Do not act on them: show the list from scan, ask which numbers once, run confirm.mjs select`);
     p.granted = p.granted.filter(i => !ids.includes(i));
     save(tool, o, p);
 }
@@ -254,14 +256,15 @@ function selftest() {
 
         for (const yes of ['да', 'Да.', 'ok', 'Давай!']) { const r = sel(yes); assert.equal(r.code, 2); assert.match(r.out, /not a selection/, yes); }
         let r = sel('1,3');
-        assert.equal(r.code, 0); assert.match(r.out, /Chosen 2 of 5/); assert.match(r.out, /ASK: Remove, undoable: 1, 3/); assert.doesNotMatch(r.out, /Delete forever/);
+        assert.equal(r.code, 0); assert.match(r.out, /Chosen 2 of 5/); assert.match(r.out, /remove, undoable: 1\. A.*3\. C/); assert.doesNotMatch(r.out, /FOREVER/);
+        assert.match(r.out, /\nGRANTED: a c$/, 'the numbers are the grant: no second ask'); assert.deepEqual(load('x', o()).granted, ['a', 'c']);
         assert.match(r.out, /Not touched: 2\. B, 4\. D, 5\. E; held: H \(a chat uses it\)/);
         assert.deepEqual(load('x', o()).sel, ['a', 'c']);
         r = sel('Все кроме 2 (Recommended)');
-        assert.match(r.out, /ASK: Удалить с возвратом: 1, 3, 5\nASK: Удалить навсегда: 4/); assert.match(r.out, /Выбрано 4 из 5/); assert.match(r.out, /размер неизвестен/);
+        assert.match(r.out, /удалю с возвратом: 1\. A.*5\. E[^\n]*\n  удалю НАВСЕГДА \(не вернуть\): 4\. D/); assert.match(r.out, /Выбрано 4 из 5/); assert.match(r.out, /GRANTED: a c d e$/); assert.match(r.out, /размер неизвестен/);
         assert.match(sel('all').out, /Chosen 5 of 5/);
         assert.deepEqual(load('x', o()).sel, ['a', 'b', 'c', 'd', 'e']);
-        assert.deepEqual(JSON.parse(JSON.stringify(sel('1-3').out.match(/ASK: .*/g))), ['ASK: Remove, undoable: 1, 3', 'ASK: Delete forever: 2']);
+        assert.match(sel('1-3').out, /GRANTED: a b c$/);
         r = sel('2, 4 (2 GB)'); assert.equal(r.code, 0); assert.deepEqual(load('x', o()).sel, ['b', 'd'], 'text in parentheses is dropped');
         for (const bad of ['#2 #4', 'Все кроме #2', '3. branch issue#7', 'удали 1 и ветку 3', 'ничего 1', 'нет, 2', 'all nothing']) {
             r = sel(bad); assert.equal(r.code, 2, bad); assert.match(r.out, /answer with numbers/, bad);
@@ -275,6 +278,14 @@ function selftest() {
         r = sel('ничего'); assert.equal(r.code, 0); assert.match(r.out, /ничего не будет удалено/); r = sel('nothing'); assert.match(r.out, /nothing will be deleted/); assert.deepEqual(load('x', o()).sel, []);
         assert.equal(sel('нет').code, 0);
         r = step('1,3', 'plan', true); r = select('x', o()); assert.equal(r.code, 0, 'a typed message counts');
+        // a list of one: a bare yes picks it (on a longer list it picks nothing, above)
+        t += 10e3; makePlan('x', [items[0]], o()); ask('Да', t + 1e3); t += 2e3;
+        r = select('x', o()); assert.equal(r.code, 0); assert.match(r.out, /GRANTED: a$/, 'one item, one yes');
+        process.env.CLAUDE_CODE_SESSION_ID = 'S1'; check('x', ['a'], o()); delete process.env.CLAUDE_CODE_SESSION_ID;
+        // the grant from select passes check once, and only for what was chosen
+        sel('1,3'); process.env.CLAUDE_CODE_SESSION_ID = 'S1';
+        check('x', ['a', 'c'], o()); assert.throws(() => check('x', ['a'], o()), /not confirmed/); assert.throws(() => check('x', ['b'], o()), /not confirmed/);
+        delete process.env.CLAUDE_CODE_SESSION_ID;
 
         // grant
         const go = answer => { sel('1,2'); t += 1e3; ask(answer, t); t += 1e3; return grant('x', o()); };
@@ -283,7 +294,7 @@ function selftest() {
         r = go('Remove, undoable: 1'); assert.equal(r.code, 0); assert.match(r.out, /^GRANTED: a\nNOT GRANTED: b$/);
         assert.equal(grant('x', o()).code, 2, 'one answer grants once');
         process.env.CLAUDE_CODE_SESSION_ID = 'S1';
-        assert.throws(() => check('x', ['b'], o()), /not confirmed by the person: b.*confirm\.mjs grant/);
+        assert.throws(() => check('x', ['b'], o()), /not confirmed by the person: b.*confirm\.mjs select/);
         check('x', ['a'], o());
         assert.throws(() => check('x', ['a'], o()), /not confirmed.*a/, 'a grant is used once');
         // a transcript longer than the tail: the answer at its end is still read (tail 4 KB, 40 KB of earlier lines)

@@ -183,16 +183,17 @@ Files found by hand are the operator's to remove, and they stay recoverable: pri
 may get a delete command.
 
 Scan items are deleted only with the operator's own answer, read by a script from this chat, not reported by you.
-A bare "да" or "всё" after the list is never enough, and `#N` is not read: numbers only. In the report a disk item keeps the number `scan` printed
-before it; `apply` refuses an id the steps below did not grant:
+A bare "да" after a list of more than one item is never enough, and `#N` is not read: numbers, "все", "все кроме N" or
+"ничего". In the report a disk item keeps the number `scan` printed before it; `apply` refuses an id the steps below did
+not grant. One question per batch: the list already says per item whether it comes back, so the answer to it is the
+whole consent.
 
 1. Show the numbered list exactly as `scan` printed it.
-2. Ask which numbers: one `AskUserQuestion`, options "Все" and "Ничего", numbers through Other.
-3. `node "${CLAUDE_SKILL_DIR}/../lib/confirm.mjs" select cleanup`. Exit 2: ask again with its reason.
-4. Show its restated block as printed, then one `AskUserQuestion` with one question per `ASK:` line, options
-   exactly that label and "Нет" (the label alone: the grant needs one answer line equal to it, nothing added).
-5. `node "${CLAUDE_SKILL_DIR}/../lib/confirm.mjs" grant cleanup`. Act only on the ids after `GRANTED:`, name what
-   was `NOT GRANTED`; nothing granted, nothing deleted.
+2. Ask which numbers: one `AskUserQuestion`, options "Все" and "Ничего", numbers through Other; the question says how
+   many of them are deleted for good. Plain words in the options, no command or path (ask-guard refuses those).
+3. `node "${CLAUDE_SKILL_DIR}/../lib/confirm.mjs" select cleanup`. Exit 2: ask again with its reason. Show its block as
+   printed and act only on the ids after `GRANTED:`; do not ask again for the same choice (no "последнее
+   подтверждение"). Nothing chosen, nothing deleted.
 
 A git checkout (a `.git` file or folder at the top or within three levels) in temp or Downloads is never offered: it is kept with a hint to use `/makarasty-tools:prune`. A one-path item's id ends in a hash of its path, so consent never moves to another file of the same name.
 

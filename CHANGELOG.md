@@ -1,5 +1,25 @@
 # Changelog
 
+## makarasty-tools 1.19.49 — 2026-11-17
+
+From the delete audit of 11-17 [M75].
+- **delete-guard reads interpreter code**: `python -c "shutil.rmtree('..')"`, `node -e "fs.rmSync('.git', {recursive:
+  true})"`, `bun -e`, `deno eval`, `perl -e` (`rmtree`), `ruby -e` (`FileUtils.rm_rf`), a heredoc fed to one of them,
+  `os.system`/`subprocess`/`execSync`/`spawnSync` command lines and PowerShell's `[IO.Directory]::Delete(p, $true)`:
+  a literal path is checked like `rm`. 21 of 30 probe bypasses ran before, 0 now; over 145,023 real commands it
+  refuses nothing the old guard let through.
+- **Another repository is not deleted**: a recursive delete of a folder outside the project that is, or directly
+  holds, a git repository (`rm -rf ../neighbour`) is refused, checked on disk.
+- **snapshot** (new hook): before a line that may overwrite or delete what no guard reads (`> file`, `mv`, `cp`,
+  `sed -i`, `Set-Content`, a script, interpreter code), the project's uncommitted files are saved as a commit on
+  `refs/makarasty/snapshot` through a temporary index; nothing else moves, no lock is taken. One `git status`
+  (40-90 ms) when nothing changed, about 150 ms for a save. Restore: `git log -g refs/makarasty/snapshot`, then
+  `git show <hash>:<path> > <path>`. `MAKARASTY_SNAPSHOT=off` turns it off. Ignored files are not saved.
+- **One question per delete in prune and cleanup**: the numbers the person picks are the consent; the second ask
+  (the same choice again as an exact label, undoable and forever apart) is gone, and on a list of one a plain «Да»
+  picks it. Before: 2-3 asks per batch (about 32 in 17 runs); now one. Options carry no command, which ask-guard
+  refused (16 re-asks).
+
 ## makarasty-tools 1.19.48 — 2026-11-17
 
 - **`grill`, our own**: rounds of questions on a plan until nothing is assumed, one `AskUserQuestion` per round,

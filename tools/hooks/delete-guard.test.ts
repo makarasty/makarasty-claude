@@ -431,3 +431,65 @@ test('hook: rimraf is not filtered out early, and the terminal tool is read as B
   expect(await call('mcp__terminal__run_in_terminal', 'rm -rf dist')).toEqual({ result: 'ok' })
   expect(await call('Bash', 'npx rimraf dist')).toEqual({ result: 'ok' })
 })
+
+// 11-17: inline interpreter code, a heredoc fed to an interpreter, PowerShell's .NET delete.
+const INTERP_BLOCK = [
+  `python -c "import shutil; shutil.rmtree('..')"`, `python3 -c 'import shutil;shutil.rmtree(".git")'`,
+  `py -c "import shutil, os; shutil.rmtree(os.path.expanduser('~'))"`, `python -c "import os; os.system('rm -rf ..')"`,
+  `python -c "import subprocess; subprocess.run(['rm', '-rf', '..'])"`, `node -e "require('fs').rmSync('..', {recursive: true, force: true})"`,
+  `node -e "fs.rmSync('.git',{recursive:true})"`, `node -e "require('fs').rmdirSync('.', {recursive:true})"`,
+  `node --eval "require('fs/promises').rm(process.cwd(), {recursive: true})"`, `node -e "require('child_process').execSync('rm -rf ..')"`,
+  `node -e "require('child_process').spawnSync('rm', ['-rf', '..'])"`, `node -e "require('shelljs').rm('-rf', '..')"`,
+  `bun -e "require('fs').rmSync('..', {recursive:true})"`, `deno eval "Deno.removeSync('..', {recursive: true})"`,
+  `perl -e 'use File::Path qw(rmtree); rmtree("..")'`, `ruby -e 'require "fileutils"; FileUtils.rm_rf("..")'`,
+  `python - <<'EOF'\nimport shutil\nshutil.rmtree('..')\nEOF`, `node <<'EOF'\nrequire('fs').rmSync('..', {recursive: true})\nEOF`,
+  `uv run python -c "import shutil; shutil.rmtree('..')"`, `timeout 9 node -e "require('fs').rmSync('..', {recursive: true})"`,
+  `node -e "require('fs').unlinkSync('.git/index')"`]
+const INTERP_ALLOW = [
+  `python -c "import shutil; shutil.rmtree('build')"`, `node -e "require('fs').rmSync('dist', {recursive: true, force: true})"`,
+  `node -e "fs.rmSync(path.join(os.tmpdir(), 'x'), {recursive:true})"`, `python -c "import shutil; shutil.rmtree(d)"`,
+  `python -c "print('rm -rf ..')"`, `node -e "console.log(require('fs').readdirSync('..'))"`, `node -e "require('fs').unlinkSync('a.txt')"`,
+  `python -c "import os; os.remove('out.log')"`, `node -e "require('fs').rmSync('..')"`, `python script.py -c "shutil.rmtree('..')"`,
+  `cat > clean.py <<'EOF'\nimport shutil\nshutil.rmtree('..')\nEOF`, `node -e "[].remove('*')"`]
+for (const [name, env] of [['Windows', WIN], ['POSIX', NIX]] as const) {
+  test(`${name} cwd: interpreter code is read for deletes with a literal path`, () => {
+    expect(INTERP_BLOCK.filter((c) => !check(c, 'Bash', env))).toEqual([])
+    expect(INTERP_ALLOW.filter((c) => check(c, 'Bash', env))).toEqual([])
+  })
+}
+
+test('PowerShell: python -c and [IO.Directory]::Delete are read; a path inside the project runs', () => {
+  for (const c of [`python -c "import shutil; shutil.rmtree('..')"`, `[System.IO.Directory]::Delete('..', $true)`, String.raw`[IO.Directory]::Delete("C:\Users\dev", $true)`,
+    String.raw`[IO.File]::Delete('.git\index')`]) expect([c, check(c, 'PowerShell', WIN)]).toEqual([c, expect.any(String)])
+  for (const c of [`[IO.Directory]::Delete('dist', $true)`, `[IO.File]::Delete('a.txt')`, `[IO.Directory]::Delete('..')`, `$s = @'\n[IO.Directory]::Delete('..', $true)\n'@`])
+    expect([c, check(c, 'PowerShell', WIN)]).toEqual([c, null])
+})
+
+test('a recursive delete outside the project is handed to the hook as a folder to check on disk', () => {
+  const out: string[] = []
+  expect(check('rm -rf ../other dist C:/scratch/x', 'Bash', DEEP, out)).toBeNull()
+  expect(out).toEqual(['C:/Users/dev/work/other', 'C:/scratch/x'])
+  const none: string[] = []
+  check('rm -f ../a.txt; find ../x -name "*.log" -delete; rm -rf $TEMP/x', 'Bash', DEEP, none)
+  expect(none).toEqual([])
+})
+
+test('hook: a recursive delete of another git repository, or a folder holding one, is refused; any other folder outside runs', async ($, on) => {
+  on('tool.call', async () => ({ result: 'ok' }))
+  mock.env(on, { CLAUDE_CONFIG_DIR: '/cfg', MAKARASTY_SCREEN: 'off', USERPROFILE: WIN.home, TEMP: WIN.tmp, MAKARASTY_SNAPSHOT: 'off' })
+  mock.clock(on, { now: 1_000_000 })
+  on('session.id', () => ({ value: 's1' }))
+  on('session.cwd', () => ({ value: DEEP.cwd }))
+  const repos = new Set(['C:/Users/dev/work/neighbour/.git', 'C:/src/app/.git'])
+  // The engine may hand the path on in its own spelling (backslashes on Windows).
+  const at = (e: unknown): string => (e as { path: string }).path.replaceAll('\\', '/')
+  on('fs.exists', (_$, e) => ({ value: repos.has(at(e)) }))
+  on('fs.list', (_$, e) => ({ value: at(e) === 'C:/src' ? [{ name: 'app', kind: 'dir', size: 0, mtimeMs: 0, isLink: false }] : [] }))
+  on('fs.read', () => ({ deny: 'ENOENT' }))
+  const call = (command: string) => $.tool.call({ tool: 'Bash', command } as never)
+  expect(await call('rm -rf ../neighbour')).toEqual({ deny: expect.stringContaining('another git repository') })
+  expect(await call(`python -c "import shutil; shutil.rmtree('../neighbour')"`)).toEqual({ deny: expect.stringContaining('C:/Users/dev/work/neighbour') })
+  expect(await call('rm -rf C:/src')).toEqual({ deny: expect.stringContaining('C:/src/app') })
+  expect(await call('rm -rf ../plain-folder')).toEqual({ result: 'ok' })
+  expect(await call('rm -rf ../neighbour/node_modules')).toEqual({ result: 'ok' })
+})

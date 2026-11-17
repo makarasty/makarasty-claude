@@ -34,11 +34,12 @@ Each entry comes back with `restore <id>`, a week or a month later.
    `w:<worktree>`); `keep` items have no number and cannot be chosen.
 2. Skip the rest when they only asked to look ("покажи", "что можно удалить"). Nothing moves without the
    person's own answer, read by a script from this chat: not even `trash --safe`, and a bare "да" is no
-   selection, and `#N` is not read: numbers only. Ask which numbers: one `AskUserQuestion`, options "Все" and "Ничего", numbers through Other
-   (say in the question that "Все" includes the `ask` items, with their reasons).
+   selection (except on a list of one item), and `#N` is not read: numbers only. Ask once, and that answer is
+   the whole consent: one `AskUserQuestion`, options "Все" and "Ничего", numbers through Other (say in the
+   question that "Все" includes the `ask` items, with their reasons); a list of one item: options "Да" and
+   "Нет". Plain words in the options, no command or path: ask-guard refuses an option that holds a command.
 3. `node "${CLAUDE_SKILL_DIR}/../lib/confirm.mjs" select prune-trash`. Exit 2: ask again with its reason.
-   Show its restated block as printed, then one `AskUserQuestion` with one question per `ASK:` line, options
-   exactly that label and "Нет" (the label alone: the grant needs one answer line equal to it, nothing added). Then `node "${CLAUDE_SKILL_DIR}/../lib/confirm.mjs" grant prune-trash`.
+   Show its block as printed; do not ask again for the same choice (no "подтверди", no second question).
 4. `node "${CLAUDE_SKILL_DIR}/prune.mjs" trash <id> <id> ...` with only the ids after `GRANTED:`; it refuses
    any other. Nothing granted: nothing more.
 5. Report in a few lines: what went to the trash (branch name or worktree path, and its trash id), each
@@ -60,7 +61,7 @@ directory is inside (`/proc`, else `lsof` when installed) and leaves the worktre
 - `empty <id> ... | --older 30d | --all`: deletes for good, only when the person asks, and only what they
   chose. A bare `empty` deletes nothing and names the three choices. A question like "а это почистить?" is
   not the choice. Run `list` (it prints the numbered list and writes the plan), then the same steps as in
-  Flow 2-3 with `prune-empty` (the ASK labels say "навсегда"); `empty` refuses ids that were not granted. A `list --all` plan is for `empty --all` only, and a grant is for
+  Flow 2-3 with `prune-empty` (say "навсегда" in the one question); `empty` refuses ids that were not granted. A `list --all` plan is for `empty --all` only, and a grant is for
   the repo it was made in (a trash id like `20261104-131209-1` can exist in two repos; `list --all` holds those).
 - `restore` and `empty` act only on an index line whose ref is its own `refs/makarasty-trash/<id>/...`
   and whose paths are its own trash folder (and, for `from`, a folder outside the git dir). Any other line

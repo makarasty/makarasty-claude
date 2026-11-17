@@ -27,9 +27,16 @@ export type Env = { cwd: string; home: string; tmp: string }
 // nesting limit, when it holds a delete word), `scope`/`end` (a nested shell or substitution: its cd and assignments end
 // with it).
 //
+// Inline interpreter code is read too (`python -c`, `node -e`, `bun -e`, `deno eval`, `perl -e`, `ruby -e`, a heredoc fed to
+// one, PowerShell's `[IO.Directory]::Delete`): a delete call with a literal path (`shutil.rmtree('..')`, `fs.rmSync('.git',
+// { recursive: true })`, `FileUtils.rm_rf`) is checked like `rm`, and a command line it hands a shell (`os.system`,
+// `subprocess.run([...])`, `execSync`) is read as one. A recursive delete of a folder outside the project that is, or
+// directly holds, another git repository is refused in the hook, which may read the disk (`../neighbour-repo`).
+//
 // Known limits (not code): a `cd` or assignment inside `( ... )` leaks to the commands after it; assignments in a branch
-// or loop body are read as always run; `rsync --delete`, `git clean`, `shutil`/`fs.rm` in a script, `mv x /dev/null`,
-// `> file` truncation and `dd` are not deletes this guard reads; `-exec` bodies are read once, not per file; a Git Bash
+// or loop body are read as always run; `rsync --delete`, `git clean`, a delete inside a script file (`python clean.py`), a
+// path the code computes, `mv x /dev/null`, `> file` truncation and `dd` are not deletes this guard reads (snapshot.ts
+// saves the project's uncommitted files before such a line); `-exec` bodies are read once, not per file; a Git Bash
 // cwd spelled `/c/...` is read as POSIX;
 // an 8.3 short temp path (`C:\Users\LONGNA~1\...\Temp`) next to the long spelling of the same folder is two folders
 // without a file-system call to join them.
@@ -38,7 +45,7 @@ type Cmd = { name: string; args: string[]; ps: boolean }
 // Same set as git-guard: `su -c "..."` takes its command line like a shell does.
 const SHELL = /(^|[\\/])((ba|z|da|k)?sh|pwsh|powershell|cmd|su)(\.exe)?$/i
 const WINSH = /(^|[\\/])(pwsh|powershell|cmd)(\.exe)?$/i
-const WRAPPER = /^(env|command|sudo|nohup|time|exec|builtin|nice|xargs|timeout|watch|coproc|ionice|stdbuf|setsid|wsl(\.exe)?|doas|runuser|flock|taskset|strace|chronic|busybox|npx|bunx|pnpx|pnpm|yarn)$/
+const WRAPPER = /^(env|command|sudo|nohup|time|exec|builtin|nice|xargs|timeout|watch|coproc|ionice|stdbuf|setsid|wsl(\.exe)?|doas|runuser|flock|taskset|strace|chronic|busybox|npx|bunx|pnpx|pnpm|yarn|uv|poetry|pipenv)$/
 // bash -c / -lc, powershell -Command (and its prefixes), cmd /c; -EncodedCommand carries base64 UTF-16.
 const SHELL_CMD = /^(-\w*c|-c(o(m(m(a(nd?)?)?)?)?)?|\/{1,2}[ck])$/i // `cmd //c` is Git Bash's spelling of cmd /c
 // Windows PowerShell runs the first word past its own options as the command (`powershell Remove-Item -Recurse -Force ..`); -c/-Command, any
@@ -101,7 +108,79 @@ function findNarrowed(t: string[]): boolean {
 const MATCHALL = /^(\.[\\/]?|(\.[\\/])?\*(\.\*)?)$/
 // The files of one folder: `*`, `*.*`, `dist/*`.
 const MATCHALL_FILES = /^(.*[\\/])?\*(\.\*)?$/
-const DELETISH = /\b(rm|rmdir|rd|del|erase|ri|remove-item|rimraf|del-cli|trash)\b|-delete\b/i
+const DELETISH = /\b(rm|rmdir|rd|del|erase|ri|remove-item|rimraf|del-cli|trash|rmtree|rmSync|rmdirSync|rm_rf|rm_r|remove_tree|removeSync)\b|-delete\b|::Delete\(/i
+
+// Interpreters whose inline code is read: the options before the code, and the option that carries it.
+const INTERP = /^(python[\d.]*|py|pypy[\d.]*|node|nodejs|bun|deno|perl|ruby)$/
+const INTERP_VALUE = /^(-r|--require|--import|--loader|--experimental-loader|-C|--conditions|--env-file|--input-type|-W|-X|-I)$/
+function inlineCode(b: string, rest: string[]): string[] {
+  const py = /^(python|py|pypy)/.test(b), js = /^(node|nodejs|bun)$/.test(b)
+  const carries = py ? /^-[A-Za-z]*c$/ : js ? /^(-e|--eval|-p|--print|-pe)$/ : /^-[A-Za-z]*[eE]$/
+  for (let i = 0; i < rest.length; i++) {
+    const a = rest[i]!
+    const eq = js ? /^--(?:eval|print)=([\s\S]*)$/.exec(a) : null
+    if (eq) return [eq[1]!]
+    if (carries.test(a)) return rest[i + 1] === undefined ? [] : [rest[i + 1]!]
+    if (b === 'deno' && a === 'eval') { const c = rest.slice(i + 1).find((y) => !y.startsWith('-')); return c ? [c] : [] }
+    // A script or module name ends the interpreter's own options: what follows is its argv.
+    if (!a.startsWith('-') || a === '-m') return []
+    if (INTERP_VALUE.test(a)) i++
+  }
+  return []
+}
+// A string literal as code writes it ('x', "x", r'x', a `template` without ${}), or a call that stands for the home folder or
+// the working folder.
+const LIT_RE = new RegExp(String.raw`\s*(?:[rRbBuU]{0,2}'((?:[^'\\\n]|\\.)*)'|[rRbBuU]{0,2}"((?:[^"\\\n]|\\.)*)"|` + '`([^`$\\\\]*)`' +
+  String.raw`|(os\.path\.expanduser\(\s*['"]~['"]\s*\)|(?:pathlib\.)?Path\.home\(\)|(?:require\(\s*['"](?:node:)?os['"]\s*\)|os)\.homedir\(\)|os\.getcwd\(\)|process\.cwd\(\)|(?:pathlib\.)?Path\.cwd\(\)|Deno\.cwd\(\)|Dir\.(?:pwd|home)))\s*`, 'y')
+// The literal arguments at `from`, up to the first one that is not a literal; `end` is where reading stopped.
+function literals(s: string, from: number): { vals: string[]; end: number } {
+  const vals: string[] = []
+  let end = from
+  for (;;) {
+    LIT_RE.lastIndex = end
+    const m = LIT_RE.exec(s)
+    if (!m) break
+    vals.push(m[4] ? (/home|expanduser/i.test(m[4]) ? '~' : '.') : (m[1] ?? m[2] ?? m[3] ?? '').replace(/\\\\/g, '\\'))
+    end = LIT_RE.lastIndex
+    if (s[end] !== ',') break
+    end++
+  }
+  return { vals, end }
+}
+// Calls that delete what their first argument names: the whole tree (true), one file (false), or the tree only when the code
+// passes a recursive option (`fs.rmSync(p, { recursive: true })`, `Deno.remove(p, { recursive: true })`).
+const DELETE_CALLS: [RegExp, boolean | 'opt'][] = [
+  [/(?<![\w$])(?:shutil\.)?(?:rmtree|remove_tree)\s*\(/g, true],
+  [/\bFileUtils\.(?:rm_rf|rm_r|remove_dir|remove_entry(?:_secure)?|rmtree)\s*\(/g, true],
+  [/(?<![\w$])(?:[\w$]+\.)*(?:rmSync|rmdirSync|rm|rmdir)\s*\(|\bDeno\.remove(?:Sync)?\s*\(/g, 'opt'],
+  [/(?<![\w$])(?:os\.(?:remove|unlink)|(?:[\w$]+\.)*(?:unlinkSync|unlink))\s*\(/g, false],
+]
+// Calls that hand a shell a command line, or a program and its argv list.
+const SHELL_CALLS = /(?<![\w$])(?:os\.(?:system|popen)|subprocess\.(?:run|call|check_call|check_output|Popen)|(?:[\w$]+\.)*(?:execSync|exec|execFileSync|execFile|spawnSync|spawn)|(?:Kernel\.)?system)\s*\(/g
+function shellLine(s: string, from: number): string | undefined {
+  const at = from + /^\s*/.exec(s.slice(from))![0].length
+  if (s[at] === '[') { const l = literals(s, at + 1).vals; return l.length ? requote(l, false) : undefined }
+  const first = literals(s, at)
+  if (!first.vals.length) return undefined
+  // spawn('rm', ['-rf', '..']): the program, then its argv.
+  const list = /^\s*\[/.exec(s.slice(first.end))
+  return first.vals.length === 1 && list ? requote([first.vals[0]!, ...literals(s, first.end + list[0].length).vals], false) : first.vals[0]
+}
+// Reads interpreter code for deletes; each found delete is pushed as the `rm` it amounts to.
+function scanCode(code: string, out: Cmd[], depth: number): void {
+  if (depth > 4) { if (DELETISH.test(code)) out.push(mk('deep', [code], false)); return }
+  const rec = /recursive\s*[:=]\s*(?:true|True|1)\b/.test(code)
+  for (const [re, kind] of DELETE_CALLS) for (const m of code.matchAll(re)) {
+    const { vals } = literals(code, m.index! + m[0].length)
+    if (!vals.length) continue
+    // shelljs: rm('-rf', path) takes rm's own flags.
+    out.push(mk('rm', vals[0]!.startsWith('-') ? vals : [...((kind === 'opt' ? rec : kind) ? ['-r'] : []), '--', vals[0]!], false))
+  }
+  for (const m of code.matchAll(SHELL_CALLS)) { const line = shellLine(code, m.index! + m[0].length); if (line) nest(line, false, out, depth + 1) }
+  for (const m of code.matchAll(/(?<![\w$])(?:Bun\.)?\$`([^`]*)`/g)) nest(m[1]!, false, out, depth + 1) // Bun shell, zx
+}
+// PowerShell's own .NET call: [IO.Directory]::Delete(path, $true) is Remove-Item -Recurse.
+const NET_DELETE = /\[(?:System\.)?IO\.(Directory|File)\]::Delete\(\s*(?:'([^']*)'|"([^"]*)")\s*(,\s*\$true)?/gi
 const strip = (w: string): string => w.replace(/^["']|["']$/g, '')
 const TEMP_PATH = /^\[(?:system\.)?io\.path\]::gettemppath\(\)$/i
 // What an expression stands for in a path word, or undefined when only the run knows: the working folder (`pwd`), a fresh
@@ -135,10 +214,12 @@ function nest(src: string, ps: boolean, out: Cmd[], depth: number): void {
 const requote = (ws: string[], ps: boolean): string => ws.map((w) => /^[\w@%+=:,./{}-]+$/.test(w) ? w : `'${w.replace(/'/g, ps ? "''" : "'\\''")}'`).join(' ')
 // A heredoc on a shell's own stdin is code; one fed to any other command is that command's text.
 const SHELL_BEFORE = /(?:^|[\s;&|(/\\])(?:ba|z|da|k)?sh(?:\.exe)?(?:[ \t]+-[\w-]+)*[ \t]*$/
+const INTERP_BEFORE = /(?:^|[\s;&|(/\\])(?:python[\d.]*|py|pypy[\d.]*|node|nodejs|bun|deno(?:[ \t]+run)?|perl|ruby)(?:\.exe)?(?:[ \t]+-[\w-]*)*[ \t]*$/
 // Cuts every heredoc body out of `src` (what follows the marker on its line stays) and hands a body that feeds a shell to
-// `code`. The terminator is looked for from each `<<TAG`; after 50 openers (`cout << x << y` is one too) the rest is left
-// in place, so a long input costs a bounded number of passes, and more text is read, never less.
-function heredocs(src: string, code: (body: string) => void): string {
+// `code`, one that feeds an interpreter to `script`. The terminator is looked for from each `<<TAG`; after 50 openers
+// (`cout << x << y` is one too) the rest is left in place, so a long input costs a bounded number of passes, and more text
+// is read, never less.
+function heredocs(src: string, code: (body: string) => void, script: (body: string) => void): string {
   let out = '', pos = 0, tries = 0
   const re = /(?<!<)<<(?!<)-?[ \t]*['"]?(\w+)['"]?/g
   for (let m = re.exec(src); m && tries < 50; m = re.exec(src)) {
@@ -149,7 +230,9 @@ function heredocs(src: string, code: (body: string) => void): string {
     end.lastIndex = nl
     const t = end.exec(src)
     if (!t) continue
-    if (SHELL_BEFORE.test(src.slice(Math.max(pos, m.index - 120), m.index))) code(src.slice(nl + 1, t.index))
+    const before = src.slice(Math.max(pos, m.index - 120), m.index)
+    if (SHELL_BEFORE.test(before)) code(src.slice(nl + 1, t.index))
+    else if (INTERP_BEFORE.test(before)) script(src.slice(nl + 1, t.index))
     out += src.slice(pos, nl) + '\n'
     pos = t.index + t[0].length
     re.lastIndex = pos
@@ -178,7 +261,8 @@ function lex(src: string, ps: boolean, out: Cmd[], depth = 0): void {
   if (depth > 4) { if (DELETISH.test(src)) out.push(mk('deep', [src], ps)); return }
   src = src.replace(ps ? /`\r?\n/g : /\\\r?\n/g, ' ')
   if (ps) src = src.replace(/<#[\s\S]*?#>/g, ' ') // PowerShell block comments
-  src = heredocs(src, (body) => nest(body, false, out, depth + 1)).replace(/@'[\s\S]*?'@|@"[\s\S]*?"@/g, ' ')
+  src = heredocs(src, (body) => nest(body, false, out, depth + 1), (body) => scanCode(body, out, depth + 1)).replace(/@'[\s\S]*?'@|@"[\s\S]*?"@/g, ' ')
+  if (ps) for (const m of src.matchAll(NET_DELETE)) out.push(mk('rm', [m[1]!.toLowerCase() === 'directory' && m[4] ? '-r' : '-f', '--', m[2] ?? m[3]!], true))
   const esc = ps ? '`' : '\\'
   let words: string[] = [], cur = '', has = false
   const word = (): void => { if (has) words.push(cur); cur = ''; has = false }
@@ -263,7 +347,7 @@ function command(w: string[], ps: boolean, out: Cmd[], depth: number): void {
       // `env -S "rm -rf .."` splits its one string into a command line.
       if (base(x) === 'env' && /^(-S|--split-string)$/.test(words[at + 1] ?? '')) nest(words.slice(at + 2).join(' '), ps, out, depth + 1)
       // A wrapper's own arguments (`timeout 60`, `sudo -u bob`) end where the command or a shell starts.
-      const g = words.findIndex((y, k) => k > at && (DEL.has(base(y)) || SHELL.test(y) || base(y) === 'git'))
+      const g = words.findIndex((y, k) => k > at && (DEL.has(base(y)) || SHELL.test(y) || base(y) === 'git' || INTERP.test(base(y))))
       if (g < 0) return
       at = g
       break
@@ -291,7 +375,7 @@ function command(w: string[], ps: boolean, out: Cmd[], depth: number): void {
     // find -exec / -execdir runs the words after it, once per file.
     const x = rest.findIndex((y) => /^-(exec|execdir|ok|okdir)$/.test(y))
     if (x >= 0) nest(requote(rest.slice(x + 1), ps), ps, out, depth + 1)
-  }
+  } else if (INTERP.test(b)) for (const code of inlineCode(b, rest)) scanCode(code, out, depth + 1)
   if (DEL.has(b)) out.push({ name: b, args: rest, ps })
 }
 
@@ -325,7 +409,8 @@ const PWD_B = /^\$\{?PWD\}?(?=$|[\\/])/
 const PWD_P = /^\$pwd(?:\.(?:path|providerpath))?(?=$|[\\/])/i
 
 // A variable holds a list: one value from an assignment, each item of a literal `for` list.
-type Ctx = { env: Env; win: boolean; ps: boolean; cur: string | undefined; vars: Map<string, string[]> }
+// `outside`: the folders a recursive delete may take outside the project, temp and home, for the hook to check on disk.
+type Ctx = { env: Env; win: boolean; ps: boolean; cur: string | undefined; vars: Map<string, string[]>; outside?: string[] }
 
 // The path as the shell will see it, one string per value its variables can take, as far as the line says: assigned
 // variables, $PWD, $(mktemp), the project root, home and temp.
@@ -440,6 +525,7 @@ function place(s0: string, x: Ctx, narrowed: boolean, flat: boolean): string | n
   // (a sibling project, C:\scratch, another drive), because only the project, home, a drive, temp and .git are shown dangerous.
   const inHome = under(r, home) ? r.slice(home.replace(/\/$/, '').length + 1) : ''
   if (inHome && !inHome.includes('/') && !HOME_CACHES.includes(inHome)) return 'deletes a folder directly in your home folder (.ssh, Documents, a project...): name a path inside it'
+  if (!flat && !free && !under(r, cwd)) x.outside?.push(r)
   return null
 }
 
@@ -490,12 +576,13 @@ function chdir(c: Cmd, x: Ctx): string | undefined {
   return resolve(s, x.cur ?? x.env.cwd, x.win)
 }
 
-// null = let it run, otherwise what the command would destroy. `tool` is the tool the command runs in.
-export function check(cmd: string, tool: string, env: Env): string | null {
+// null = let it run, otherwise what the command would destroy. `tool` is the tool the command runs in. `outside` collects
+// the folders outside the project a recursive delete in the line takes, which only the disk can tell apart.
+export function check(cmd: string, tool: string, env: Env, outside?: string[]): string | null {
   const cmds: Cmd[] = []
   lex(cmd, tool === 'PowerShell', cmds)
   const win = /^[A-Za-z]:|^\\\\/.test(env.cwd)
-  const x: Ctx = { env, win, ps: false, cur: env.cwd, vars: new Map() }
+  const x: Ctx = { env, win, ps: false, cur: env.cwd, vars: new Map(), outside }
   const scopes: { cur: string | undefined; vars: Map<string, string[]> }[] = []
   const stack: (string | undefined)[] = []
   let prev: string | undefined
@@ -548,16 +635,27 @@ export function check(cmd: string, tool: string, env: Env): string | null {
   return null
 }
 
-// Worth lexing: names a delete command, a shell that may carry one, or eval.
-const MAYBE = /\b(rm|rmdir|rd|del|erase|ri|remove-item|rimraf|del-cli|trash|find|eval|iex|invoke-expression|sh|bash|zsh|dash|ksh|su|cmd|pwsh|powershell|nix-shell)\b|\s-e(c|nc)/i
+// Worth lexing: names a delete command or call, a shell that may carry one, or eval.
+const MAYBE = /\b(rm|rmdir|rd|del|erase|ri|remove-item|rimraf|del-cli|trash|find|eval|iex|invoke-expression|sh|bash|zsh|dash|ksh|su|cmd|pwsh|powershell|nix-shell|rmtree|rmSync|rmdirSync|rm_rf|rm_r|remove_tree|remove_dir|remove_entry\w*|removeSync|remove|unlinkSync|unlink|system|popen|subprocess|execSync|exec|execFileSync|execFile|spawnSync|spawn)\b|\s-e(c|nc)|::Delete\(|\$`/i
+
+// A recursive delete outside the project, temp and home that the line settles: the folder, or one directly in it, that is a
+// git repository. Its uncommitted work and unpushed commits have no other copy, and the snapshot covers only this project.
+async function otherRepo($: { fs: { exists: (p: string) => Promise<boolean>; list: (p?: string) => Promise<{ name: string; kind: string; isLink?: boolean }[]> } }, paths: string[]): Promise<string | undefined> {
+  for (const p of [...new Set(paths)].slice(0, 8)) {
+    if (await $.fs.exists(`${p}/.git`)) return p
+    const kids = await $.fs.list(p).catch(() => [])
+    for (const k of kids.filter((k) => k.kind === 'dir' && !k.isLink).slice(0, 40)) if (await $.fs.exists(`${p}/${k.name}/.git`)) return `${p}/${k.name}`
+  }
+  return undefined
+}
 
 const FIX = 'Name the folder you mean, inside this project (rm -rf dist, Remove-Item -Recurse .\\dist); a delete of the project, ' +
   'your home, a drive or .git cannot be undone. Or ask the user to run the command themselves with `!` if it is truly needed. ' +
   'MAKARASTY_DELETE_GUARD=off turns this off.'
 
 // What a shell call is told, or null to let it run.
-export function denial(command: string, tool: string, env: Env): string | null {
-  const why = check(command, tool, env)
+export function denial(command: string, tool: string, env: Env, outside?: string[]): string | null {
+  const why = check(command, tool, env, outside)
   return why && `Blocked by makarasty-tools delete-guard: ${why}. ${FIX}`
 }
 
@@ -575,7 +673,10 @@ export const register: Register = on => {
       // An unknown home reads as the root, so `~` is refused rather than guessed.
       const home = (await $.env.get('USERPROFILE')) || (await $.env.get('HOME')) || '/'
       const tmp = (await $.env.get('TMPDIR')) || (await $.env.get('TEMP')) || (await $.env.get('TMP')) || (win ? 'C:/Windows/Temp' : '/tmp')
-      deny = tools.reduce<string | null>((d, t) => d ?? denial(command, t, { cwd, home, tmp }), null)
+      const outside: string[] = []
+      deny = tools.reduce<string | null>((d, t) => d ?? denial(command, t, { cwd, home, tmp }, outside), null)
+      const repo = deny || !outside.length ? undefined : await otherRepo($, outside)
+      if (repo) deny = `Blocked by makarasty-tools delete-guard: this deletes ${repo}, another git repository; its uncommitted work and unpushed commits have no other copy. ${FIX}`
     } catch {
       // shortcut: a bug in this guard (not a refusal) lets the call run rather than blocking every shell call.
     }

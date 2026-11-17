@@ -88,7 +88,19 @@ what the command line itself shows and lets the command through when the guard i
 - **delete-guard** covers the deletes Claude Code runs without asking: `.git`, `find . -delete`,
   `cmd /c rd /s /q .`, `rm -rf "$PWD"`, `cd .. && rm -rf <project>`. Claude Code already refuses `rm -rf .`
   and `..` [M45]. It walks no links: rm, rd and Windows PowerShell 5.1 unlink a junction and leave its target;
-  `git worktree remove` is the one that follows it [M45] [M32].
+  `git worktree remove` is the one that follows it [M45] [M32]. It reads inline interpreter code too
+  (`python -c "shutil.rmtree('..')"`, `node -e "fs.rmSync('.git', {recursive: true})"`, `perl`, `ruby`, `deno`,
+  a heredoc fed to one, `[IO.Directory]::Delete`), and refuses a recursive delete of another git repository
+  (`rm -rf ../neighbour`), which it checks on disk. Over 145,023 real commands from 60 days of transcripts the
+  new readings refused nothing the old guard let through [M75].
+- **snapshot** saves the project's uncommitted files (changed tracked ones and new ones .gitignore lets in,
+  under 20 MB each) as a commit on `refs/makarasty/snapshot` before a line that may overwrite or delete what
+  no guard can read: `> file`, `mv`, `cp`, `sed -i`, `Set-Content`, a script, interpreter code. A temporary
+  index and `GIT_OPTIONAL_LOCKS=0`, so nothing the person works with moves and no other chat's git trips on a
+  lock. About a third of real shell lines trigger it; an unchanged tree costs one `git status` (39 ms here,
+  90 ms on an 18,500-file repo), a save about 150 ms [M75]. Restore a file:
+  `git log -g --format="%h %cr %gs" refs/makarasty/snapshot`, then `git show <hash>:<path> > <path>`.
+  Ignored files (`.env`) and files outside the project are not saved. `MAKARASTY_SNAPSHOT=off` turns it off.
 - **budget-guard, secret-guard** were tuned on 605 real verify commands and every git-tracked file of the
   owner's repos until neither refused anything legitimate there [M46], and each refused its real case in a
   live session [M48].
