@@ -619,19 +619,21 @@ async function setup() {
   const done = (code: number) => { process.stdin.pause(); return code; };
 
   const cfg = config();
-  const user = `claude_${randomBytes(3).toString('hex')}_bot`;
-  const before = clipboard().trim();
-  setClipboard(user);
-  say('', 'Telegram notifications - setup', '',
-    `  1. Telegram opens at @BotFather. Press Start (or Menu > /newbot) and send /newbot.`,
-    `  2. It asks for a name, then a username. Paste the same text both times (Ctrl+V): ${user}`,
-    `     It is on the clipboard already. If BotFather says the username is taken, add a digit before "_bot".`,
-    `  3. Tap the token in BotFather's answer to copy it. This picks it up on its own.`,
-    `     No Telegram on this computer? Open https://t.me/BotFather on the phone and paste the token here.`, '');
-  openLink('tg://resolve?domain=BotFather');
+  const found = (s: string) => (s.match(/\b\d{6,}:[\w-]{30,}\b/) || [])[0];
+  // A person who made the bot first and copied its token before asking for setup keeps it: no BotFather round, and the
+  // clipboard is not overwritten with a name.
+  if (!found(clipboard())) {
+    const user = `claude_${randomBytes(3).toString('hex')}_bot`;
+    setClipboard(user);
+    say('', 'Telegram notifications - setup', '',
+      `  1. Telegram opens at @BotFather. Press Start (or Menu > /newbot) and send /newbot.`,
+      `  2. It asks for a name, then a username. Paste the same text both times (Ctrl+V): ${user}`,
+      `     It is on the clipboard already. If BotFather says the username is taken, add a digit before "_bot".`,
+      `  3. Tap the token in BotFather's answer to copy it. This picks it up on its own.`,
+      `     No Telegram on this computer? Open https://t.me/BotFather on the phone and paste the token here.`, '');
+    openLink('tg://resolve?domain=BotFather');
+  } else say('', 'Telegram notifications - setup', '', '  a bot token is on the clipboard: using it', '');
 
-  // A token already on the clipboard before setup started is not taken: it may be an old bot.
-  const found = (s: string) => { const t = (s.match(/\b\d{6,}:[\w-]{30,}\b/) || [])[0]; return t && t !== before.match(/\b\d{6,}:[\w-]{30,}\b/)?.[0] ? t : undefined; };
   let me: { username: string } | undefined, token = '';
   await waitFor(async () => {
     const t = found(lines.splice(0).join(' ')) || found(clipboard());

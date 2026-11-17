@@ -1,5 +1,11 @@
 # Changelog
 
+## makarasty-tools 1.19.51 — 2026-11-17
+
+- **notify setup takes a token already copied**: a person who made the bot first and copied its token before setup
+  ran had it overwritten with a suggested name and the token ignored. Now a token on the clipboard at start is used
+  at once, with no BotFather round.
+
 ## makarasty-tools 1.19.50, makarasty 1.18.15 — 2026-11-17
 
 notify was never set up on this machine, so all 93 phone pushes from the inbox went nowhere. Now it is Telegram only,
