@@ -1,5 +1,5 @@
 // c-gate-contract-merge.test.mts - the stage between a finding and a change: fleet-gate.mjs (clusters, proof,
-// asks, surface), the fleet-contract.mjs PreToolUse gate, then the merge, the retro and the canvas seed.
+// asks, surface), the fleet-contract.mjs PreToolUse gate, then the merge and the retro.
 
 import { setup, SCRIPTS, HOOKS, node, git, hp, nativePath, check, absent, code, starts, truthy, skip, write, read, exists, mk, rm } from './lib.mts';
 import { readFileSync, utimesSync } from 'node:fs';
@@ -497,35 +497,4 @@ if (!exists(rt)) {
   let parsed = 1;
   try { const j: unknown = JSON.parse(out); parsed = Array.isArray(j) && j.length === 1 ? 0 : 1; } catch { parsed = 1; }
   code('the warnings stay off stdout, so --json still parses', 0, parsed);
-}
-
-// --- the canvas seed, and the cover it writes on the way -------------------------------------------
-
-const cv2 = `${SCRIPTS}/fleet-canvas.mjs`;
-if (!exists(cv2)) {
-  skip('fleet-canvas cases', 'no fleet-canvas.mjs');
-} else {
-  const sdir = t.tmp('fleet-seed');
-  write(`${sdir}/src/Cases.vue`, 'x');
-  write(`${sdir}/design/Cases.dc.html`, '<!doctype html>\n'
-    + '<html><head><meta charset="utf-8"><script src="./support.js"></script></head>\n'
-    + '<body><x-dc><helmet><style>body { margin: 0; } a { color: #000; }</style></helmet>\n'
-    + '<div style="width: 1440px; height: 900px">Cases</div></x-dc></body></html>\n');
-  // A stand-in for the design skill's helper, so this asserts on every machine rather than only on one
-  // where /design has run. It answers the only question that matters: was every artboard canvas.json names
-  // actually handed to it.
-  write(`${sdir}/skill/payload.template.html`, '<!-- template -->\n');
-  write(`${sdir}/skill/seed-canvas.mjs`, "import fs from 'node:fs';\n"
-    + 'const a = process.argv.slice(2);\n'
-    + "if (a[0] === '--check') { console.log('CHECK ok'); process.exit(0); }\n"
-    + "const sent = a.filter((x, i) => a[i - 1] === '--artboard');\n"
-    + "const named = JSON.parse(fs.readFileSync(a[a.indexOf('--canvas') + 1], 'utf8')).artboards.map((x) => x.file);\n"
-    + 'const miss = named.filter((n) => !sent.some((s) => s.endsWith(n)));\n'
-    + "console.log(miss.length ? 'MISSING FROM PAYLOAD: ' + miss.join(', ') : 'PAYLOAD COMPLETE: ' + named.join(', '));\n"
-    + "fs.writeFileSync(a[a.indexOf('--out') + 1], 'seeded');\n");
-  node([cv2, 'stamp', 'design/Cases.dc.html', '--source', 'src/Cases.vue', '--frame', '1440x900'], { cwd: sdir });
-  const r = node([cv2, 'seed', 'design', '--title', 'Fixture', '--out', `${sdir}/out.html`, '--skill-dir', `${sdir}/skill`], { cwd: sdir });
-  code('the first seed of a canvas finishes', 0, r.code);
-  check('the cover the layout wrote is in the payload it shipped', 'PAYLOAD COMPLETE: Main.dc.html', r.out);
-  check('and the count it reports is the count it sent', 'seeding 2 artboards', r.out);
 }

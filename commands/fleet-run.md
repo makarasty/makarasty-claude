@@ -298,16 +298,11 @@ repo lane, never in the pane lane". The rest of that file sizes lanes, which is 
 - `needs: verify` - the full suite or the full typecheck is the whole machine. One worker holds it at a
   time and the others verify scoped.
 
-**Kinds that review or capture design** (`critique`, `canvas`, `redesign`): read the kind's section of
+**Kinds that review design** (`critique`): read the kind's section of
 `docs/DESIGN.md` before the first step, and nothing else from it. A `critique` task is a pane task that
 spawns `fleet-design-eye` instead of `fleet-scenario`, with the plugin's `scripts/` directory, the `tabId`,
 the route, the token file and the task's "correct looks like" lines in its prompt; what comes back goes
-through `fleet.sh find`, `rects` included. A `canvas` recon task is a pane task with no spawn: one probe at
-the task's viewport, written to the recon path the task names, then the tab reset to `desktop`. A `canvas`
-screen or `redesign` task is a repo task that writes exactly one new artboard under the canvas directory
-and edits nothing else - no worktree, nothing is shared - and runs `node <plugin>/scripts/fleet-canvas.mjs
-check <file>` before `finish`. An assemble task runs the `fleet-canvas.mjs` calls its task names and files
-an `ask/` when `seed` cannot find the design skill's helper. Publishing the canvas is the planner's step.
+through `fleet.sh find`, `rects` included.
 
 **Kinds that need the running application** (verify, any kind whose steps name a screen) started their pane
 at the top of this file; section 2 is the rest of that gate.

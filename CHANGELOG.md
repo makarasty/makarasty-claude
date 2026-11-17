@@ -1,5 +1,23 @@
 # Changelog
 
+## makarasty-tools 1.19.48 — 2026-11-17
+
+- **`grill`, our own**: rounds of questions on a plan until nothing is assumed, one `AskUserQuestion` per round,
+  the recommended option first, facts looked up instead of asked, a written-back plan and one yes before any code.
+  Replaces the third-party grilling skill (58 runs, the only one of its plugin in use); the operator disabled that
+  plugin on 2026-11-17, freeing its ten other descriptions (about 2,400 characters) from every chat's skill list.
+- **`explain` removed**: 0 runs since it shipped on 2026-10-02 against about 200 prompts with «простым языком»; the
+  first rule of the operator's CLAUDE.md carries the same answer shape in every chat, and Claude Code had already
+  dropped its description as the least used.
+
+## makarasty 1.18.14 — 2026-11-17
+
+- **`fleet-design` and `fleet-redesign` removed**, with `fleet-canvas`, its selftests, the
+  `artboard-carries-provenance` eval and the canvas and redesign kinds (eight mission kinds now). 0 runs since
+  2026-09-08 and no canvas ever asked for; redesigns were done in code. `fleet-design-eye`, critique and `kind: design`
+  stay. Rows still naming the two kinds in docs/ONECHAT.md (149-151) and docs/MODELS.md (79) are left for the chat
+  editing those files.
+
 ## makarasty-tools 1.19.47 — 2026-11-17
 
 - **Plans keep their goal** (operator 11-17: agents lost focus and left plan items as a footnote, "not reviewed"): a new

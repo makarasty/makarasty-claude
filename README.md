@@ -359,8 +359,6 @@ Three more hooks change behaviour without refusing:
 | `fleet-pause <run-id> [off] [reason]` | Stops every worker for real, or lifts the pause |
 | `fleet-resume <run-id>` | After a crash: reopens workers whose context survived, respawns the rest |
 | `fleet-analyze <run-id>` | Where a run's time, turns, tokens and estimated money went, from its transcripts |
-| `fleet-design <screens> [fast]` | Captures screens as artboards and assembles a Claude Design canvas (you only) |
-| `fleet-redesign <screens and direction> [fast]` | Proposes redesigns beside the captured screens (you only) |
 | `fleet-call <who and what about> [fast]` | Facts for a vendor call with evidence, and a bilingual page to read aloud; `live <run-id>` answers during the call (you only) |
 
 "You only" commands carry `disable-model-invocation: true`: they start paid work and wait on your clicks.
@@ -395,7 +393,7 @@ screenshot per candidate), `fleet-naive-user` (a first-time user with no code ac
 | `antislop` | A rule set against AI-looking UI, plus an audit of existing UI [M47] |
 | `forge` | How to build or check a skill, command, hook, agent or plugin, with an A/B script |
 | `craft` | Refactor, dedupe and test rules: pin behaviour first, keep tests seen failing |
-| `explain` | Where this chat's work stands, in plain words |
+| `grill` | Rounds of questions on a plan until nothing is assumed, before any code |
 | `unslop` | Strips assistant tics from text; a fact lock keeps numbers, paths and negations |
 | `say` | Simple English for a vendor call, ticket or email |
 | `selfreview` | This month of your chats against the last one |
@@ -417,7 +415,7 @@ reproduction, a quoted source or a test count ([`docs/LANES.md`](docs/LANES.md))
 
 **Mission kinds.** Each task has a `kind` that sets how the job splits: `verify` by screen, `fix` by file
 cluster, `investigate` by hypothesis, `implement` by seam, `research` by source, and `design`, `critique`,
-`canvas`, `redesign`, `call` by screen or source ([`docs/MISSIONS.md`](docs/MISSIONS.md)). Two workers on one
+`call` by screen or source ([`docs/MISSIONS.md`](docs/MISSIONS.md)). Two workers on one
 slice cost twice and then agree with each other, which looks like corroboration and is not.
 
 **The pane gate.** A browser pane that is not displayed stops drawing and says nothing: screenshots time
@@ -474,8 +472,6 @@ Claimed by design, not measured:
 - The contract hook (an edit that drops a route or config key). No live worker has been stopped by it.
 - The finding-to-fix gate on a real project. It ran on two fixture runs [M65], not on a live backlog.
 - The pane broker ([`docs/BROKER.md`](docs/BROKER.md)). Never run live.
-- A canvas of a real application. `fleet-canvas.mjs` ran on a fixture only; its 2 px tolerance is a
-  starting number.
 - Any fleet on macOS or Linux. Only the self-test runs there.
 
 ## Real runs, and what they cost
@@ -631,10 +627,10 @@ A change reaches users only with a version bump in the plugin's `plugin.json` an
 | [`PULL`](docs/PULL.md) | The queue, claims, heartbeats, budgets, asking the planner |
 | [`RELAUNCH`](docs/RELAUNCH.md) | Replacing the coordinator or workers past their context mark |
 | [`LANES`](docs/LANES.md) | What a fleet queues for; a run with no browser |
-| [`MISSIONS`](docs/MISSIONS.md) | The ten kinds and the axis each splits along |
+| [`MISSIONS`](docs/MISSIONS.md) | The eight kinds and the axis each splits along |
 | [`GATE`](docs/GATE.md) | The stage between a finding and a change |
 | [`BROWSER`](docs/BROWSER.md) | Blind panes, the frame gate, viewports |
-| [`DESIGN`](docs/DESIGN.md) | Critique by geometry, the canvas, redesign |
+| [`DESIGN`](docs/DESIGN.md) | Critique by geometry, implementing a design |
 | [`CALL`](docs/CALL.md) | Vendor-call facts, the page read aloud, the live chat |
 | [`SWEEPS`](docs/SWEEPS.md) | Checks that catch a class of defect |
 | [`MOCKING`](docs/MOCKING.md) | Reaching states the sandbox data will not produce |

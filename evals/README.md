@@ -31,7 +31,6 @@ for the three runs each case asks for.
 | `ends-with-the-banner` | a worker inventing its own closing summary instead of the generated one |
 | `files-through-the-gate` | a worker appending a finding by hand, around the only schema check there is |
 | `reopens-before-releasing` | a planner replacing a crashed worker whose context could have been reopened, or releasing a claim that can still come back [M27] |
-| `artboard-carries-provenance` | a canvas worker claiming a measurement it never made, or naming a source file it never read |
 | `script-speaks-only-facts` | a call script worker speaking a number no fact carries, or leaving a guess out of the traps |
 | `stays-open-while-queue-open` | a worker writing `.done` while the planner still holds `queue-open` |
 | `proves-before-editing` | a fix made before its reproduction was run through `prove` |

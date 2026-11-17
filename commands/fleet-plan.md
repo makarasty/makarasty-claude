@@ -61,7 +61,7 @@ searches in one message, since each round trip costs a full model turn.
 
 The mission's kind decides how it splits, and the wrong axis makes a fleet run worthless. Take the
 axis from `MISSIONS.md`: screen ownership for verify, hypothesis for investigate, seam for implement, file
-cluster for fix, source for research, one screen for design, critique, canvas and redesign.
+cluster for fix, source for research, one screen for design and critique.
 
 A `design` mission also has a wave order the others do not: recon, then the single task that owns the
 shared primitives, then the screens. File all three waves at once and gate wave three on wave two with
@@ -72,10 +72,7 @@ built: with opt-in worktrees the worker serves its own worktree from a dev serve
 (`docs/MISSIONS.md`, "design"); in one chat it uses the main dev server. File it in the pane lane even
 though it also writes code.
 
-A `canvas` or `redesign` mission has its stages fixed and its own planner: `/makarasty:fleet-design` and
-`/makarasty:fleet-redesign` write those queues, gates included, and hand back to the sections below for
-the chips and the watch. Both carry `disable-model-invocation`, so you cannot invoke them from here: say
-which one this mission wants and let the operator run it. A `critique` mission is planned here like a
+A `critique` mission is planned here like a
 verify one, with the "Critique" section of `docs/DESIGN.md` - and nothing else from that file - supplying
 what the task carries: the screens and their states, the token file, and the assertion lines.
 

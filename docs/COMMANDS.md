@@ -11,7 +11,7 @@ model that tries and tells it not to reproduce the steps by hand.
 
 | Command | Flag | Why |
 |---|---|---|
-| `fleet`, `fleet-design`, `fleet-redesign`, `fleet-call` | set | They spend money and depend on the operator's clicks |
+| `fleet`, `fleet-call` | set | They spend money and depend on the operator's clicks |
 | `fleet-plan` | **not set, since 1.5.7** | A coordinator made by handoff, or told "launch the fleet", was blocked from it and launched from memory: no chips, wrong titles, a stale path (2026-10-05). It writes files and starts chips; money is spent only when a chip session starts, by the operator's click or answer |
 | `fleet-run` | **not set, deliberately** | A worker is started from its chip (`start_session`, by the operator's click or answer); the model in that new session is what invokes `fleet-run` there |
 | `fleet-pause` | not set | A coordinator told to "pause the fleet" in words has to be able to do it for real, and a relaunch pauses through it. It writes one marker file and spends nothing |
@@ -22,8 +22,8 @@ model that tries and tells it not to reproduce the steps by hand.
 that stays harmless until somebody tidies the frontmatter to match it.
 
 **Never write an instruction telling the model to invoke a command that carries the flag.** It cannot
-comply, and the failure looks like the model refusing to work. `fleet-redesign` did this: it told the model
-to run `/makarasty:fleet-design` when the canvas was missing. The shape that works is to print the line for
+comply, and the failure looks like the model refusing to work. A command once did this: it told the model
+to run another operator-only command when a precondition was missing. The shape that works is to print the line for
 the operator and stop. Anything a command tells the model to invoke - `fleet-init`, `fleet-wait`,
 `fleet-collect`, `/makarasty-tools:unslop` - must be a command without the flag.
 

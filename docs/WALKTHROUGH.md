@@ -141,5 +141,5 @@ release filed 246 findings in 153 minutes.
 - [`PROTOCOL.md`](PROTOCOL.md) — the run layout, the finding schema, and the two rules a worker must obey.
 - [`LANES.md`](LANES.md) — why a fleet queues for the browser, the test suite, or nothing at all, and how
   wide each lane should be.
-- [`MISSIONS.md`](MISSIONS.md) — the ten kinds of mission and the axis each one splits along.
+- [`MISSIONS.md`](MISSIONS.md) — the eight kinds of mission and the axis each one splits along.
 - [`BROWSER.md`](BROWSER.md) — read before a run that needs the running application.

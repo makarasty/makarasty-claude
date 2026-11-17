@@ -204,43 +204,6 @@ Demand: states named in the task and reached or reported unreached, since the lo
 state somebody already designed. Severity is the agent's, with the screen in front of it, and collection
 copies it. A critique finding becomes a `design` task in the fix queue, never a `fix` one.
 
-## canvas
-
-Recreate the application's screens as artboards on disk, and assemble them into one Claude Design canvas
-the operator can open, pan and edit.
-
-Split by **screen**, one artboard per task, in stages the queue enforces with `after:`: recon (pane,
-measures the screen), the primitives sheet (repo, one task), the screens (repo), an optional compare
-(pane, measures the artboard against the screen), and assemble (repo, one task). The planner publishes.
-
-Isolation: none. A task writes exactly one new file under the canvas directory and edits no source, so
-there is nothing to merge; a task that finds itself editing anything else has left its brief.
-
-**The gate is provenance.** Every artboard names the source files it was built from and, where a recon
-ran, the viewport and the frame count it was measured under; `fleet-canvas.mjs check` refuses one that
-names a file that does not exist or claims a measurement through a blind pane. An artboard recreated from
-memory of an application is the design equivalent of a blind pane.
-
-Demand: exact values from source and recon, never rounded to a grid; real copy; the artboard static, so a
-viewer retypes it in place. Planned by `/makarasty:fleet-design`; format, stages and the compare tolerance
-in [`DESIGN.md`](DESIGN.md).
-
-## redesign
-
-Propose new artboards beside the captured ones, on the same canvas.
-
-Split by **screen**. The design model owns every proposal end to end, for the reason the `design` kind
-gives. When the operator has not chosen a direction, one task sketches two to four first, on their own
-page, and the proposals are filed after the pick.
-
-Isolation: none, for the `canvas` reason.
-
-Demand: a proposal carries its loading and empty states as sibling artboards, keeps the product truth -
-content, function, what the screen lets a person do - and treats the current look as evidence and
-anti-reference. Its provenance names the captured artboard and the source read; nothing was measured and
-`check` says so. Planned by `/makarasty:fleet-redesign`. An approved proposal is the specification a
-`design` mission implements, per "Closing the loop" in [`DESIGN.md`](DESIGN.md).
-
 ## call
 
 Prepare a person to hold a conversation in a language they do not speak well - a vendor's support desk,

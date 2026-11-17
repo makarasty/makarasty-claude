@@ -1,5 +1,5 @@
 // b-hooks-pane-landing.test.mts - the stop hook, the documents and the measurement ledger, the pane broker,
-// landing a run, the design canvas gate, the call script gate and worktree cleanup.
+// landing a run, the call script gate and worktree cleanup.
 //
 // The pane broker and the landing read a run that earlier sections filled, so the start of this file
 // replays the minimum of that run through fleet.sh: one task still claimed, one worker drained, one major.
@@ -222,138 +222,14 @@ r = fleet(['summary', run]);
 check('a chip id that is not a number is counted in the totals, not only in its own row', '"majors":2', r.out);
 rm(`${run}/cid-03.jsonl`);
 
-// ---- the design canvas -------------------------------------------------------------------------------------
+// ---- the design probes -------------------------------------------------------------------------------------
 
-// The canvas gate is a script for the same reason the finding gate is: an artboard that names no source,
-// or claims a measurement through a blind pane, has to be refused somewhere a worker cannot route around.
-const cv = `${SCRIPTS}/fleet-canvas.mjs`;
-if (exists(cv)) {
-  code('design-probe.js parses', 0, node(['--check', `${SCRIPTS}/design-probe.js`]).code);
-  code('visual-probe.js parses', 0, node(['--check', `${SCRIPTS}/visual-probe.js`]).code);
-  const cdir = t.tmp('fleet-canvas');
-  mk(`${cdir}/src`, `${cdir}/design`);
-  write(`${cdir}/src/Cases.vue`, 'x');
-  const artboard = (p: string): void => write(p, `<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <script src="./support.js"></script>
-</head>
-<body>
-<x-dc>
-<helmet><style>body { margin: 0; } a { color: #000; } a:hover { color: #333; }</style></helmet>
-<div style="width: 1440px; height: 900px; background: #fff">Cases</div>
-</x-dc>
-</body>
-</html>
-`);
-  const canvas = (...args: string[]) => node([cv, ...args], { cwd: cdir });
-  artboard(`${cdir}/design/Cases.dc.html`);
-  r = canvas('check', 'design');
-  code('an artboard with no provenance is refused', 1, r.code);
-  check('and told what is missing', 'no provenance block', r.out);
-  // No `/route` here: Git Bash rewrites an argument that starts with `/` into a path under its own
-  // install when sh runs a program, and this case is about the stamp itself. The guard against that
-  // rewrite is tested on its own below, with an argument that never had the slash.
-  r = canvas('stamp', 'design/Cases.dc.html', '--source', 'src/Cases.vue', '--viewport', '1440x900', '--frames', '301', '--frame', '1440x900');
-  code('stamp writes the provenance block', 0, r.code);
-  r = canvas('stamp', 'design/Cases.dc.html', '--frames', '4');
-  code('a frame count under the gate is refused at the stamp', 1, r.code);
-  r = canvas('stamp', 'design/Cases.dc.html', '--frames', '30');
-  code('while 30, a live pane on a loaded machine, is not blind [M38]', 0, r.code);
-  r = canvas('stamp', 'design/Cases.dc.html', '--route', 'cases');
-  code('a route that lost its leading slash is refused at the stamp', 1, r.code);
-  check('and the refusal names the Git Bash rewrite', 'MSYS_NO_PATHCONV', r.out);
-  r = canvas('check', 'design');
-  code('a stamped artboard passes the gate', 0, r.code);
-  check('and the check says what it was measured at', 'measured 1440x900', r.out);
-  artboard(`${cdir}/design/Ghost.dc.html`);
-  canvas('stamp', 'design/Ghost.dc.html', '--source', 'src/Nope.vue');
-  r = canvas('check', 'design');
-  code('an artboard naming a source file that does not exist is refused', 1, r.code);
-  check('by name', 'src/Nope.vue does not exist', r.out);
-  rm(`${cdir}/design/Ghost.dc.html`);
-  // A `$'` in a title is text, not a replacement pattern; a plain render never goes over its artboard.
-  artboard(`${cdir}/Dollar.dc.html`);
-  canvas('stamp', 'Dollar.dc.html', '--source', 'src/Cases.vue', '--title', 'Plan A');
-  canvas('stamp', 'Dollar.dc.html', '--source', 'src/Cases.vue', '--title', "Pro $' tier");
-  const n = read(`${cdir}/Dollar.dc.html`).split('\n').filter((l) => l.includes('<x-dc>')).length;
-  truthy("stamp writes a title with $' as it is", n === 1, `${n} <x-dc> lines`);
-  artboard(`${cdir}/Upper.DC.html`);
-  r = canvas('plain', 'Upper.DC.html');
-  truthy('plain on .DC.html writes beside the artboard',
-    exists(`${cdir}/Upper.plain.html`) && read(`${cdir}/Upper.DC.html`).includes('<x-dc>'), `rc ${r.code}: ${r.out}`);
-  rm(`${cdir}/Dollar.dc.html`, `${cdir}/Upper.DC.html`, `${cdir}/Upper.plain.html`);
-  // `stamp` will not write a blind reading, so plant one by hand: the check has to refuse it on its own.
-  write(`${cdir}/design/Blind.dc.html`, `<!doctype html>
-<!-- fleet-canvas
-source: src/Cases.vue
-route: /cases
-viewport: 1440x900
-frames: 0
--->
-<html><head><meta charset="utf-8"><script src="./support.js"></script></head>
-<body><x-dc><div>x</div></x-dc></body></html>
-`);
-  r = canvas('check', 'design');
-  code('a measurement claimed through a blind pane is refused', 1, r.code);
-  check('with the reading that refused it', 'frames 0 is under the gate', r.out);
-  rm(`${cdir}/design/Blind.dc.html`);
-  write(`${cdir}/design/Cases.Proposed.dc.html`, read(`${cdir}/design/Cases.dc.html`));
-  r = canvas('layout', 'design', '--title', 'Fixture');
-  code('layout writes a canvas.json', 0, r.code);
-  truthy('and a cover Main.dc.html when there is none', exists(`${cdir}/design/Main.dc.html`));
-  check('proposals land on their own page', 'Proposed: Cases.Proposed', r.out);
-  interface Board { file: string; page?: string; x: number; y: number; w: number; h: number }
-  interface Canvas { artboards: Board[]; pages?: unknown[] }
-  const cjson = `${cdir}/design/canvas.json`;
-  let gaps = 0;
-  try {
-    const c = JSON.parse(read(cjson)) as Canvas;
-    const a = c.artboards;
-    for (let i = 0; i < a.length && !gaps; i++) for (let j = i + 1; j < a.length; j++) {
-      const p = a[i], q = a[j];
-      if (!p || !q || (p.page ?? '') !== (q.page ?? '')) continue;
-      const gx = Math.max(p.x, q.x) - Math.min(p.x + p.w, q.x + q.w), gy = Math.max(p.y, q.y) - Math.min(p.y + p.h, q.y + q.h);
-      if (gx < 80 && gy < 120) { gaps = 1; break; }
-    }
-    if (!gaps && (!c.pages || c.pages.length !== 2)) gaps = 2;
-  } catch { gaps = 1; }
-  code('frames on one page keep the gaps the editor needs, and both pages exist', 0, gaps);
-  try {
-    const c = JSON.parse(read(cjson)) as Canvas;
-    const cases = c.artboards.find((b) => b.file === 'Cases.dc.html');
-    if (cases) cases.x = 4321;
-    write(cjson, JSON.stringify(c));
-  } catch { /* the check below reports it */ }
-  canvas('layout', 'design', '--title', 'Fixture');
-  truthy('a second layout keeps a position the operator moved', read(cjson).includes('"x": 4321'));
-  r = canvas('plain', 'design/Cases.dc.html', '--out', `${cdir}/plain.html`);
-  code('plain renders a static artboard standalone', 0, r.code);
-  absent('and the runtime line is gone from it', 'support.js', read(`${cdir}/plain.html`));
-  write(`${cdir}/design/Hole.dc.html`, '<x-dc><div>{{ hole }}</div></x-dc>');
-  r = canvas('plain', 'design/Hole.dc.html');
-  code('an artboard that needs the runtime cannot be rendered plain', 1, r.code);
-  rm(`${cdir}/design/Hole.dc.html`);
-  // The seed needs the design skill's helper, which is on a machine only after that skill has run once.
-  // Either outcome is asserted: the real helper seeds and checks the page, or the refusal names the reason.
-  r = canvas('seed', 'design', '--title', 'Fixture screens', '--out', `${cdir}/fixture-screens.html`);
-  if (r.out.includes('SEEDED')) {
-    truthy("seed drives the design skill's helper and its check (the skill is on this machine)", true);
-    truthy('and the seeded page exists', read(`${cdir}/fixture-screens.html`).length > 0);
-  } else if (r.out.includes('is not on this machine')) {
-    truthy('seed refuses with the reason when the design skill is absent (run /design once to exercise the rest)', true);
-  } else {
-    truthy('seed either seeds or says why it cannot', false, r.out.split('\n').slice(-3).join('\n'));
-  }
-  rm(cdir);
-} else {
-  skip('the design canvas', 'no fleet-canvas.mjs');
-}
+code('design-probe.js parses', 0, node(['--check', `${SCRIPTS}/design-probe.js`]).code);
+code('visual-probe.js parses', 0, node(['--check', `${SCRIPTS}/visual-probe.js`]).code);
 
 // ---- the call script ---------------------------------------------------------------------------------------
 
-// The call gate is a script for the reason the canvas gate is: a page that speaks a number no fact
+// The call gate is a script for the reason the finding gate is: a page that speaks a number no fact
 // carries, or a digit in a line meant to be read aloud, has to be refused where a worker cannot route
 // around it.
 const cl = `${SCRIPTS}/fleet-call.mjs`;

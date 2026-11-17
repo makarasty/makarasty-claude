@@ -9,13 +9,13 @@
   "plugins": [
     {
       "name": "makarasty",
-      "description": "Run one job from one Claude Code chat, workers as background subagents (separate chats on opt-in): a shared task queue, reports written to files, a frame-count check before every browser observation, and a gate that refuses a fix without a reproduction that failed first. Ten mission kinds, from test sweeps and fixes to refactors, research and design.",
+      "description": "Run one job from one Claude Code chat, workers as background subagents (separate chats on opt-in): a shared task queue, reports written to files, a frame-count check before every browser observation, and a gate that refuses a fix without a reproduction that failed first. Eight mission kinds, from test sweeps and fixes to refactors, research and design.",
       "source": "./",
       "category": "workflow"
     },
     {
       "name": "makarasty-tools",
-      "description": "Twenty-five everyday commands: commit and ship under your own name, review a diff with evidence, red-team a plan or change, finish a task in one command, blind-test a screen with first-time-user agents, build tools by measured best practice, hand a chat off before its context runs out, collect bugs until a codeword, explain plainly, strip assistant tics from text, phrase a vendor call in simple English, get a phone message when a chat finishes, one inbox for every chat's questions and session cards, tune the machine for a game, re-check which model and effort each role should use, find what is worth updating and clean up what nobody uses.",
+      "description": "Twenty-five everyday commands: commit and ship under your own name, review a diff with evidence, red-team a plan or change, finish a task in one command, blind-test a screen with first-time-user agents, build tools by measured best practice, hand a chat off before its context runs out, collect bugs until a codeword, grill a plan with rounds of questions, strip assistant tics from text, phrase a vendor call in simple English, get a phone message when a chat finishes, one inbox for every chat's questions and session cards, tune the machine for a game, re-check which model and effort each role should use, find what is worth updating and clean up what nobody uses.",
       "source": "./tools",
       "category": "productivity"
     }

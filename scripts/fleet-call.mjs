@@ -2,7 +2,7 @@
 /**
  * fleet-call.mjs - the gate on a call run. A script that speaks a number nobody wrote down as a fact,
  * a fact with nothing behind it, or a digit in a line meant to be read aloud, is refused here rather
- * than requested in prose. Same reason the finding gate and the canvas gate are scripts.
+ * than requested in prose. Same reason the finding gate is a script.
  *
  *   node fleet-call.mjs check <run-dir|call-dir> [--stale <days>]     exit 0 clean, 1 refused, 2 usage
  *

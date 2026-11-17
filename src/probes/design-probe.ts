@@ -18,8 +18,8 @@
  * When the project publishes tokens, set `window.__fleetScale = { spacing: [...], fontSizes: [...],
  * radii: [...] }` before running, and off-scale means off-token instead of off-histogram.
  *
- * `landmarks` is the recon a canvas run needs: the structural elements of the screen with their rectangles
- * and the styles an artboard has to reproduce. `counts` carries the full totals; the lists are capped.
+ * `landmarks` is the structural elements of the screen with their rectangles
+ * and the styles a recreation of it would have to match. `counts` carries the full totals; the lists are capped.
  *
  * Complements visual-probe.js, which owns collisions, clipping, escaping and offscreen text. Run both.
  */
@@ -311,7 +311,7 @@
     if (chars > LONG_LINE_CH) push('longLines', { selector: selectorFor(el), rect: rectOf(el), charsPerLine: chars, fontSize: px(cs.fontSize) });
   }
 
-  // 8. Landmarks: what an artboard has to reproduce, at the numbers it has to reproduce them at.
+  // 8. Landmarks: the structural elements with their rectangles and styles.
   const landmarks: object[] = [];
   const styleOf = (el: Element) => {
     const cs = getComputedStyle(el); const bg = bgBehind(el); const c = parse(cs.color);

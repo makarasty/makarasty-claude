@@ -37,7 +37,7 @@ Hooks live in `tools/hooks/` (registered in `index.ts`), the inbox in `tools/ski
 
 | id | his words | rule | where |
 |---|---|---|---|
-| T01 | «простым языком на русском» 08-08 e01e0b19; «слишком длинно» 08-24 225b65c6 (~28) | plain, short, his language; what happened, why, what was done, what he must do | `profile.md` Language; `habits`; `unslop`, `explain` skills |
+| T01 | «простым языком на русском» 08-08 e01e0b19; «слишком длинно» 08-24 225b65c6 (~28) | plain, short, his language; what happened, why, what was done, what he must do | `profile.md` Language; `habits`; `unslop` skill (`explain` removed 2026-11-17: 0 runs in ~200 such prompts, CLAUDE.md carries the rule) |
 | T02 | «Мне кажется, ты не доделала работу» 09-10 d67358b8 (~13) | finish asked work; list what was skipped | `habits`, `asking` |
 | T03 | «Твоя проблема, что ты строишь все юайки, от контекста» 10-20 24d97524 | UI checked by eye and a blind user, edge cases | `blindtest`, `antislop`, `proof` skills |
 | T04 | «нужно запретить красной команде тейкать что-то про время» 10-16 42b9433e | effort or time is no reason to reject | `redteam` SKILL |

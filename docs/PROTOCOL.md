@@ -283,7 +283,7 @@ as health: `fleet-wait` now emits a stall line on a quiet interval for exactly t
                        dispatched; `review.md` beside it is the reviewer's, for a code task
   tasks/claimed/<id>/coded         written by `coded` when the coder finished: an implement or design task waiting
                        on it by `after:` may start before its review
-  reports/<subject>.req.md   a mockup or redesign subject's requirements: every operator message on it verbatim,
+  reports/<subject>.req.md   a mockup subject's requirements: every operator message on it verbatim,
                        each under a header `Rn <time> must|nice [supersedes Rm]`, appended only by `fleet.sh req-add`;
                        a superseded header gains ` DROPPED by Rn` and stays. Each round's task embeds it at the top
                        (`docs/DESIGN.md`, "Mockup rounds" [M59])
@@ -407,7 +407,7 @@ line when one crosses a mark, once per mark per session.
 ---
 run-id: 2026-08-26-checkout-flow
 chip-id: "01"
-kind: verify           # verify | investigate | implement | fix | research | design | critique | canvas | redesign | call
+kind: verify           # verify | investigate | implement | fix | research | design | critique | call
 needs: pane            # pane | verify | repo, the lane this brief's work belongs to
 model: sonnet          # the model the work wants; a wish: the chip decides what runs, and a worker below it
                        # delegates the task to one Agent at that tier (see MODELS.md)
@@ -711,9 +711,7 @@ yours from your own machine):
 - Accelerators present: rg, sg, bun. Absent: fd, jq.
 - Concurrency: pane lane max 10 (display), repo lane max 10 (16 GB / 16 cores), verify lane 1
 - Subscription: max tier, rate limits are not the binding constraint on this machine
-- Canvas: design/canvas (optional; where a canvas run writes its artboards, this is the default)
-- Canvas viewport: 1440x900 (optional; the frame a canvas run captures at, this is the default)
-- Design tokens: src/styles/tokens.css (optional; read into the design probe's scale by critique and recon)
+- Design tokens: src/styles/tokens.css (optional; read into the design probe's scale by critique)
 ```
 
 **The `Services` line has one fixed shape, because a program reads it:** `- Services: <url> (start: <how>|operator); <url> (start: ...)`.

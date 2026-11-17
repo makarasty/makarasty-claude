@@ -24,11 +24,9 @@ opt-in, chosen in the plan's first question round.
 | `/makarasty:fleet-analyze <run-id>` | You want to know how a run went: speed, tokens, money, what to change |
 | `/makarasty:fleet-pause <run-id> [off] [reason]` | You want every worker to really stop (they are refused every tool call except `git` and `fleet.sh`, after a 30 s grace), or want the pause lifted. Also what a coordinator relaunch uses |
 | `/makarasty:fleet-resume <run-id>` | The machine restarted mid-run: reopen the workers whose context survived, respawn the rest |
-| `/makarasty:fleet-design <screens>` | You want the application's screens as artboards on disk, assembled into a Claude Design canvas you can open and edit |
-| `/makarasty:fleet-redesign <screens and direction>` | That canvas exists and you want proposals beside the captured screens, states included |
 | `/makarasty:fleet-call <who and what about>` | You have a call, a meeting or an interview to hold in a language you do not speak well, about a system you know: the fleet digs the facts, the top model writes the page you read from, and `live <run-id>` answers beside you during the call |
 
-`fleet`, `fleet-design`, `fleet-redesign` and `fleet-call` carry `disable-model-invocation: true`: they
+`fleet` and `fleet-call` carry `disable-model-invocation: true`: they
 spawn paid work and depend on your clicks, so no agent starts them. `fleet-pause` does not: it spends nothing,
 and a coordinator that is asked to pause has to be able to run it. `fleet-plan` does not either: a
 chat that became a coordinator by handoff, or was told "launch the fleet", could not load it and launched
@@ -58,8 +56,8 @@ the coordinator starts first. When only workers are over, you can choose to repl
 - `docs/WALKTHROUGH.md`: the fifteen-minute first run, for an operator who has never done one.
 - `docs/PROTOCOL.md`: run layout, brief format, finding schema, project configuration.
 - `docs/MEASUREMENTS.md`: the measurement behind every rule, by id.
-- `docs/MISSIONS.md`: the ten mission kinds and how each one splits.
-- `docs/DESIGN.md`: the design half - critique with geometry probes, the canvas on disk, redesign beside it, and the loop back to code.
+- `docs/MISSIONS.md`: the eight mission kinds and how each one splits.
+- `docs/DESIGN.md`: the design half - critique with geometry probes, and implementing a design that came from elsewhere.
 - `docs/CALL.md`: the call half - the facts with their evidence, the page a non-native speaker reads aloud, and the live chat that answers from the same facts.
 - `docs/WORKTREES.md`: how a code worker gets its worktree and how a run removes them without reaching the main checkout.
 - `docs/GATE.md`: what stands between a finding and a change - the reproduction executed, the shared cause ruled on first, and the contract surface a hook refuses to let an edit drop.
