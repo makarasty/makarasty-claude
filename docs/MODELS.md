@@ -126,7 +126,7 @@ wave's default budget is replaced by the run's measured median once three tasks 
 |---|---|---|
 | Maximum (recommended) | Sonnet, effort `high`, never `max`, never `medium`; diagnosis, judgement and design go straight to Opus | Opus, effort `medium`, spawned on every code task; `high` when the diff is over about 400 changed lines or touches security, auth or permissions, money or data deletion |
 | Balanced | Sonnet, effort `high`; Opus on root and design | Opus, effort `high` |
-| Spend for speed | Opus, `high` | Opus, `xhigh` |
+| Spend for speed | Opus, `high` | Opus, `high` |
 
 | Speed against quality | Rounds |
 |---|---|
@@ -159,13 +159,13 @@ leads and the profiler included, runs at `high`; Anthropic's `medium` start for 
 
 ## Reasoning effort
 
-**The operator's policy, 2026-10-08.** `high` is the default for every worker session (`chips --effort`).
-`medium` for plain, well-specified work. `xhigh` for the hardest lanes - coordination, UI, a subtle
-correctness question - and the ceiling: the docs warn `max` "can be prone to overthinking", and the operator
-saw it make workers do far more than asked. `fleet.sh chips` refuses `--effort max`. The agent files keep
-their own effort, each with its reason. For one task that needs more than `xhigh`, the operator turns on
-ultracode (`/effort ultracode`, or the word `ultracode` in a prompt they type), which has Claude run the task
-as a workflow of subagents at the current effort; the coordinator asks for it, since no tool sets it. An effort change keeps the prompt cache on the
+**The operator's policy, 2026-11-12 (replaces 2026-10-08).** Only `medium` and `high`. `high` is the default
+for every worker session (`chips --effort`) and for the hardest lanes - coordination, UI, a subtle
+correctness question; `medium` for plain, well-specified work. Never `low`, `xhigh` or `max` (the docs warn
+`max` "can be prone to overthinking", and the operator saw it make workers do far more than asked), and no
+ultracode. `fleet.sh chips` refuses anything but `medium`, `high` or `any`; a `want/` file left by an older run
+is read `max`/`xhigh` as `high`, `low` as `medium`. The agent files keep
+their own effort, each with its reason. An effort change keeps the prompt cache on the
 5.5 models and Fable 5.1; a model change does not (`code.claude.com/docs/en/prompt-caching`).
 
 Effort is settable per subagent, in the definition file's frontmatter. The `effort` field is documented at
@@ -212,7 +212,7 @@ The tools are the desktop app's session tools, deferred, so load them with ToolS
 
 - `mcp__ccd_session_mgmt__set_session_model`: a `session_id` and a model id as `get_session` prints it.
   A wrong id is refused with the list of ids.
-- `mcp__ccd_session_mgmt__set_session_effort`: `low`, `medium`, `high`, `xhigh` or `max`.
+- `mcp__ccd_session_mgmt__set_session_effort`: the tool takes `low` to `max`; use only `medium` or `high`.
 - `mcp__ccd_session_mgmt__list_sessions` turns the title `fleet <run-id> NN` into a `session_id`; resolve
   it right before each call, because handles are opaque.
 

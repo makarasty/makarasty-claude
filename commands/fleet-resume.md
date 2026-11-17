@@ -135,7 +135,7 @@ for it, which copies the brief to a fresh chip and retires the old one.
 
 Write the released work as new tasks in `tasks/ready/`, then `mcp__ccd_session__start_session` one chip per worker you want (`context` "fresh", `use_worktree` false; `initiation` `user_asked` only when the operator's own message began this turn; otherwise (a watch line, an AskUserQuestion answer in a watch-started turn) `own_initiative`, which shows a card, then PushNotification the operator to start it),
 title, background and prompt verbatim from `sh "$f" chips .fleet/<run-id> <NN>-<NN> <lane> --model <id> --effort <level>`, with the pair `status` shows as `wants` under the workers they replace (`any` is a valid `--effort`; a
-`max` written before 1.5.14 is passed as `xhigh`), numbered past the dead workers. Size the wave off `fleet.sh width`, not off how many
+a `max` or `xhigh` written by an older run is passed as `high`, a `low` as `medium`), numbered past the dead workers. Size the wave off `fleet.sh width`, not off how many
 workers died: the survivors usually finished several tasks before the lights went out.
 
 If the run had a `verify` or `pane` lane, say which lane each new chip is for. A pane worker whose pane is

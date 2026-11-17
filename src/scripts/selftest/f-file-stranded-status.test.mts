@@ -179,6 +179,10 @@ r = fleet(['retire', rt, '02']);
 code('a worker on an older plugin is left to the relaunch ask', 2, r.code);
 r = fleet(['chips', rt, '09', 'repo', '--model', 'claude-opus-5-5', '--effort', 'max']);
 code('effort max is refused for workers', 2, r.code);
+for (const e of ['low', 'xhigh']) {
+  r = fleet(['chips', rt, '09', 'repo', '--model', 'claude-opus-5-5', '--effort', e]);
+  code(`effort ${e} is refused for workers`, 2, r.code);
+}
 rm(rt);
 write(`${fr}/brief-15.md`, '---\nbrief\n---\n');
 r = fleet(['next', fr, '15', 'repo']);

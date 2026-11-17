@@ -54,10 +54,10 @@ function chipBlocks(text: string): string {
   }
   return text ? o : '';
 }
-// `sed 's/ max$/ xhigh/' want/<old> > want/<new>`: the wish travels with the lane, an effort above the
-// ceiling written before 1.5.14 does not.
+// `sed -E 's/ (max|xhigh)$/ high/; s/ low$/ medium/' want/<old> > want/<new>`: the wish travels with the lane,
+// an effort outside medium/high (written by an older run) does not.
 function copyWant(c: Ctx, from: string, to: string): void {
-  writeFileSync(`${c.run}/want/${to}`, lf(read(`${c.run}/want/${from}`)).split('\n').map((l) => l.replace(/ max$/, ' xhigh')).join('\n'));
+  writeFileSync(`${c.run}/want/${to}`, lf(read(`${c.run}/want/${from}`)).split('\n').map((l) => l.replace(/ (max|xhigh)$/, ' high').replace(/ low$/, ' medium')).join('\n'));
 }
 // `date +%Y%m%dT%H%M%S`
 function stamp(): string {

@@ -558,10 +558,9 @@ function chips(c: Ctx, args: string[]): number {
   if (wmodel && wmodel !== 'none' && !wmodel.startsWith('claude-')) {
     err(`--model '${wmodel}' is not a model id: pass it as get_session prints it (claude-opus-5-5), or none to drop the wish\n`); return 2;
   }
-  // max is refused: the docs warn it overthinks, and the operator capped workers at xhigh (docs/MODELS.md).
+  // Only medium or high: the operator's rule of 2026-11-12 (docs/MODELS.md, Reasoning effort).
   if (weffort === 'any') weffort = '';
-  else if (weffort === 'max') { err('effort max is not for workers: use xhigh at most, and ultracode for one hard task (docs/MODELS.md, Reasoning effort)\n'); return 2; }
-  else if (!['', 'low', 'medium', 'high', 'xhigh'].includes(weffort)) { err(`effort '${weffort}' is not low, medium, high or xhigh\n`); return 2; }
+  else if (!['', 'medium', 'high'].includes(weffort)) { err(`effort '${weffort}' is not allowed for workers: use medium or high (docs/MODELS.md, Reasoning effort)\n`); return 2; }
   if (weffort && !wmodel) { err('--effort needs --model beside it\n'); return 2; }
   // A slot's subagent gets its model on its own Agent call: no session reads want/ for it.
   if (agents && wmodel) { err('--model is for chips: a subagent slot takes its model on the Agent call (docs/ONECHAT.md)\n'); return 2; }

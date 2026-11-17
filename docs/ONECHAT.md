@@ -299,7 +299,7 @@ review; then report the commit sha.
 | Step | Maximum economy (default) | Balanced | Spend for speed |
 |---|---|---|---|
 | Coder | Sonnet, effort `high`, never `max` or `medium`; diagnosis, judgement, design: Opus | Sonnet `high`; Opus on root, design | Opus `high` |
-| Reviewer, the verdict | Opus `medium` on every code task; `high` when the diff is over about 400 changed lines or touches security, auth or permissions, money or data deletion [M51] | Opus `high` | Opus `xhigh` |
+| Reviewer, the verdict | Opus `medium` on every code task; `high` when the diff is over about 400 changed lines or touches security, auth or permissions, money or data deletion [M51] | Opus `high` | Opus `high` |
 | Commit, `STATE.md` update, reading a log or a large file | Haiku `[mech]` | Haiku `[mech]` | Haiku `[mech]` |
 | Merge (worktrees, opt-in only) | Sonnet `[exec]` | Sonnet `[exec]` | Sonnet `[exec]` |
 | Design | top tier, always | top tier | top tier |
