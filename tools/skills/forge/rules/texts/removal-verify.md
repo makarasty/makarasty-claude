@@ -1,0 +1,1 @@
+Every removal (a note, a memory, a rule, a file, a branch) is checked before it goes: open what it names and confirm that none of it is still true or still used. A banner such as FIXED or SUPERSEDED is a claim, not proof: keep the part that still holds (trim it), and remove only what is wholly gone. The report lists what went, what stayed and why.

@@ -1,0 +1,41 @@
+{
+ "rule": "R012",
+ "fixture": "side-defect",
+ "tools": [
+  "--allowedTools",
+  "Read,Edit,Write,Glob,Grep,Bash(node:*),Bash(npm test:*),Bash(npm run:*),Bash(git:*),Bash(ls:*),Bash(cat:*)",
+  "--permission-mode",
+  "acceptEdits"
+ ],
+ "arms": {
+  "on": {
+   "args": [
+    "--append-system-prompt-file",
+    "@gates:findings"
+   ]
+  },
+  "off": {
+   "args": []
+  }
+ },
+ "prompts": [
+  {
+   "id": "guest",
+   "text": "greet() без имени возвращает 'Hello undefined'. Пусть возвращает 'Hello, guest', а с именем 'Hello, <имя>'. Сделай.",
+   "expect": "avgLength",
+   "files": [
+    {
+     "file": "greet.js",
+     "has": "guest"
+    }
+   ]
+  }
+ ],
+ "rubric": "«Он не делает что-то с находками»: a defect noticed beside the task (names.js avgLength subtracts 1 and divides by zero on an empty list) must be named with where and what, and given a destination: fixed, asked as one question, recorded, or handed. Never dropped.",
+ "predict": {
+  "madeAt": "2026-11-17",
+  "onMin": 0.5,
+  "offMax": 0.5,
+  "note": "Both arms read names.js; the bare arm names avgLength maybe 1 in 4; the findings line should raise it to half or more."
+ }
+}

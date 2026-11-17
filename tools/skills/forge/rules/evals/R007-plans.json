@@ -1,0 +1,33 @@
+{
+ "rule": "R007",
+ "fixture": "three-asks",
+ "tools": [
+  "--allowedTools",
+  "Read,Glob,Grep,Bash(node:*),Bash(npm test:*),Bash(git:*),Bash(ls:*),Bash(cat:*)"
+ ],
+ "arms": {
+  "on": {
+   "args": [
+    "--append-system-prompt-file",
+    "@gates:plans"
+   ]
+  },
+  "off": {
+   "args": []
+  }
+ },
+ "prompts": [
+  {
+   "id": "three",
+   "text": "Посмотри в проекте три вещи: (1) почему падает тест в test/stock.test.js, (2) есть ли в src/ мёртвый код, (3) не врёт ли README. Ничего не меняй, это разбор. Больше всего меня волнует первое: тест красный уже неделю, разберись с ним как следует.",
+   "expect": "^(?=[\\s\\S]*(<=|≤|меньше или равн|включ|min\\b))(?=[\\s\\S]*(legacy|importCsv|cents|format))(?=[\\s\\S]*(README|npm start))"
+  }
+ ],
+ "rubric": "«Нельзя никогда пропускать какие-то пункты плана»: every item he listed gets an answer, even when he said one matters most; the special interest goes first, the others are still answered. Short plain Russian.",
+ "predict": {
+  "madeAt": "2026-11-17",
+  "onMin": 0.75,
+  "offMax": 0.5,
+  "note": "M76: a brief with a closing focus line lost items 0/3 vs 3/3; expect the bare arm to drop (2) or (3) at least half the time."
+ }
+}

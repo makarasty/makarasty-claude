@@ -1,0 +1,44 @@
+{
+ "rule": "R002",
+ "arms": {
+  "on": {
+   "args": [
+    "--append-system-prompt-file",
+    "@global:How to answer me"
+   ]
+  },
+  "off": {
+   "args": []
+  }
+ },
+ "prompts": [
+  {
+   "id": "push-rejected",
+   "text": "git push пишет rejected (non-fast-forward). Что это и что мне сделать?",
+   "expect": "[а-яё]{4,}",
+   "forbid": "(^|\\n)#{1,3} |\\|\\s*---",
+   "maxWords": 150
+  },
+  {
+   "id": "race",
+   "text": "Объясни, что такое race condition. У нас вроде из-за этого иногда падают тесты.",
+   "expect": "[а-яё]{4,}",
+   "forbid": "(^|\\n)#{1,3} |\\|\\s*---",
+   "maxWords": 180
+  },
+  {
+   "id": "choose-db",
+   "text": "Нам для маленького внутреннего сервиса взять SQLite или Postgres?",
+   "expect": "[а-яё]{4,}",
+   "forbid": "(^|\\n)#{1,3} |\\|\\s*---",
+   "maxWords": 150
+  }
+ ],
+ "rubric": "He reads Russian and wants it short and plain: the answer first, few facts, no headers or tables for a few facts, no lecture, exact commands kept. «Слишком много букв», «слишком сложно» are his top complaints after unchecked claims.",
+ "predict": {
+  "madeAt": "2026-11-17",
+  "onMin": 0.67,
+  "offMax": 0.5,
+  "note": "Bare Sonnet writes headers and long answers on 2 of 3; the section should cut length and headers."
+ }
+}

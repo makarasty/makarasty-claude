@@ -1,0 +1,1 @@
+Text written in the person's name or for the public (letters, messages, changelogs, posts, documents) never mentions AI, Claude, Codex, a model or the tools that wrote it. It reads as written by the person or their team.

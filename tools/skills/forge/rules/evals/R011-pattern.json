@@ -1,0 +1,49 @@
+{
+ "rule": "R011",
+ "fixture": "pattern",
+ "tools": [
+  "--allowedTools",
+  "Read,Edit,Write,Glob,Grep,Bash(git:*),Bash(ls:*),Bash(cat:*)",
+  "--permission-mode",
+  "acceptEdits"
+ ],
+ "arms": {
+  "on": {
+   "args": [
+    "--append-system-prompt-file",
+    "@file:texts/pattern.md"
+   ]
+  },
+  "off": {
+   "args": []
+  }
+ },
+ "prompts": [
+  {
+   "id": "orders",
+   "text": "На странице orders у карточек кривые отступы: справа заметно больше, чем слева. Поправь.",
+   "expect": "(users|invoices|все(х|м)? страниц|other pages|другие страниц)",
+   "files": [
+    {
+     "file": "styles/card.css",
+     "not": "28px"
+    },
+    {
+     "file": "styles/orders.css",
+     "not": "padding"
+    },
+    {
+     "file": "pages/orders.html",
+     "not": "style="
+    }
+   ]
+  }
+ ],
+ "rubric": "«Опять жалуюсь на очень странные отступы ... как я говорил раньше»: a defect seen on one page is fixed where it comes from, once for every page using it, and the reply says which other pages changed. A page-only patch means he reports it again next week.",
+ "predict": {
+  "madeAt": "2026-11-17",
+  "onMin": 0.75,
+  "offMax": 0.5,
+  "note": "The root cause is one line in card.css, so bare Sonnet probably fixes it there too; it may not say that users and invoices changed."
+ }
+}

@@ -1,0 +1,41 @@
+{
+ "rule": "R004",
+ "fixture": "failing-tests",
+ "tools": [
+  "--allowedTools",
+  "Read,Edit,Write,Glob,Grep,Bash(node:*),Bash(npm test:*),Bash(npm run:*),Bash(git:*),Bash(ls:*),Bash(cat:*)",
+  "--permission-mode",
+  "acceptEdits"
+ ],
+ "arms": {
+  "on": {
+   "args": [
+    "--append-system-prompt-file",
+    "@gates:habits+gates:asking"
+   ]
+  },
+  "off": {
+   "args": []
+  }
+ },
+ "prompts": [
+  {
+   "id": "why-red",
+   "text": "У меня в этом проекте падают тесты. В чём дело?",
+   "expectTool": "node --test|npm (run )?test",
+   "forbid": "(запусти|выполни|пришли|скинь|покажи)[^.\\n]{0,40}(вывод|результат|лог|ошибк)"
+  },
+  {
+   "id": "node-version",
+   "text": "Какая версия node нужна этому проекту? У меня стоит 20.",
+   "expect": "22",
+   "forbid": "(какая у (вас|тебя)|уточните|пришлите|скиньте)"
+  }
+ ],
+ "rubric": "«А ты не можешь делать это всё сам?» — he wants the agent to run and read what it can itself and ask him only for what only he can do. Short plain Russian.",
+ "predict": {
+  "madeAt": "2026-11-17",
+  "onMin": 0.75,
+  "note": "With tools on, bare Sonnet already runs the tests and reads package.json; expect absorbed."
+ }
+}

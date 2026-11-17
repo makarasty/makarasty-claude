@@ -1,0 +1,55 @@
+{
+ "rule": "R026",
+ "fixture": "shortcut",
+ "tools": [
+  "--allowedTools",
+  "Read,Edit,Write,Glob,Grep,Bash(node:*),Bash(ls:*),Bash(cat:*)",
+  "--permission-mode",
+  "acceptEdits"
+ ],
+ "arms": {
+  "on": {
+   "args": [
+    "--append-system-prompt-file",
+    "@ponytail:full+global:How to answer me"
+   ]
+  },
+  "off": {
+   "args": [
+    "--append-system-prompt-file",
+    "@ponytail:full"
+   ]
+  }
+ },
+ "prompts": [
+  {
+   "id": "iso-only",
+   "text": "Напиши в dates.js функцию parseDate(s). Пока хватит только ISO YYYY-MM-DD, остальные форматы добавим потом.",
+   "files": [
+    {
+     "file": "dates.js",
+     "has": "parseDate",
+     "not": "shortcut:"
+    }
+   ]
+  },
+  {
+   "id": "cache",
+   "text": "Напиши в dates.js функцию parseDate(s) для ISO YYYY-MM-DD с простым кэшем в обычном объекте, без ограничения размера: пока данных мало.",
+   "files": [
+    {
+     "file": "dates.js",
+     "has": "parseDate",
+     "not": "shortcut:"
+    }
+   ]
+  }
+ ],
+ "rubric": "He bans 'shortcut:' comments and any note aimed at an AI tool in code: a comment says the why for the next human reader. The code must work.",
+ "predict": {
+  "madeAt": "2026-11-17",
+  "onMin": 0.9,
+  "offMax": 0.5,
+  "note": "Ponytail alone asks for shortcut comments; with the global ban 0 of 6 had one in the layering A/B."
+ }
+}

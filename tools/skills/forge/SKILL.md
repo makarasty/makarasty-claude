@@ -99,6 +99,10 @@ changes only with its version string), add the changelog entry, and update the i
 ## When a new model ships
 
 Re-run the A/B cases without the tool. A rule the bare model now follows is absorbed: delete it.
+The owner's rules have one registry, `rules/registry.json` (where each rule is written, how it is enforced, the
+complaint it answers); `node "${CLAUDE_SKILL_DIR}/rules.mjs"` checks each is in force in the installed copy and
+counts his complaints per week, `--evals` re-runs every A/B with a blind judge and marks each rule pays, absorbed,
+none, hurts or regressed. A new rule gets its registry entry, and an eval when text alone is meant to hold it.
 
 ## Done when
 

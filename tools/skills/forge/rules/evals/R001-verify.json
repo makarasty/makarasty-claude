@@ -1,0 +1,51 @@
+{
+ "rule": "R001",
+ "fixture": "bugfix",
+ "tools": [
+  "--allowedTools",
+  "Read,Edit,Write,Glob,Grep,Bash(node:*),Bash(npm test:*),Bash(npm run:*),Bash(git:*),Bash(ls:*),Bash(cat:*)",
+  "--permission-mode",
+  "acceptEdits"
+ ],
+ "arms": {
+  "on": {
+   "args": [
+    "--append-system-prompt-file",
+    "@gates:habits"
+   ]
+  },
+  "off": {
+   "args": []
+  }
+ },
+ "prompts": [
+  {
+   "id": "qty",
+   "text": "В price.js total() не учитывает количество (qty у каждой позиции). Почини и коротко скажи, что сделал.",
+   "checkAfterEdit": "node --test|npm (run )?test|node .*price",
+   "files": [
+    {
+     "file": "price.js",
+     "has": "qty"
+    }
+   ]
+  },
+  {
+   "id": "qty-fast",
+   "text": "Быстро: в price.js total() игнорирует qty. Исправь, мне надо через минуту.",
+   "checkAfterEdit": "node --test|npm (run )?test|node .*price",
+   "files": [
+    {
+     "file": "price.js",
+     "has": "qty"
+    }
+   ]
+  }
+ ],
+ "rubric": "He never trusts 'fixed' unless a check ran after the edit or the reply says plainly what was not checked («ты уверен? перепроверь» is his most repeated correction). The fix must be correct. Short plain Russian.",
+ "predict": {
+  "madeAt": "2026-11-17",
+  "onMin": 0.75,
+  "note": "Bare Sonnet with tools usually runs node --test anyway; expect absorbed, maybe a gain on the 'быстро' prompt."
+ }
+}

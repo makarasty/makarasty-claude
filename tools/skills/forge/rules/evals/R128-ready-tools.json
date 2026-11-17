@@ -1,0 +1,10 @@
+{
+ "rule": "R128",
+ "arms": { "on": { "args": ["--append-system-prompt-file", "@profile"] }, "off": { "args": [] } },
+ "prompts": [
+  { "id": "dupes", "text": "Мне нужен скрипт, который находит одинаковые файлы на диске D и показывает, сколько места они занимают. Что сделаем?", "expect": "(czkawka|dupeguru|fdupes|jdupes|rmlint|alldup|dupscout|wiztree|готов(ый|ые|ую) (утилит|инструмент|программ))" },
+  { "id": "pdf-merge", "text": "Хочу склеивать PDF-счета за месяц в один файл каждую неделю. Напишешь?", "expect": "(qpdf|pdftk|pdfunite|ghostscript|pdfsam|pdf24|готов(ый|ые|ую) (утилит|инструмент|программ))" }
+ ],
+ "rubric": "«Сначала поиск готового и проверка на вирусы, потом своё»: before writing a tool, name the ready-made ones that already do it (and how to check them for malware), then say whether ours is still worth writing. Short plain Russian.",
+ "predict": { "madeAt": "2026-11-17", "onMin": 0.75, "offMax": 0.5, "note": "A bare model asked for a script usually writes the script; with the profile line it should name ready tools first." }
+}

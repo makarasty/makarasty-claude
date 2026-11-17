@@ -1337,6 +1337,34 @@ replies of the last 14 days (6,549 main turns, 2,049 subagents), 5,984 Agent bri
 **Status:** one labeller; 3 runs per cell; the fixture runs at short context, so the guard's main case (a question at
 300k, the rule far back) is shown only by the replay.
 
+## M77 — Which of the owner's rules change behaviour: A/B, replays, field counts (2026-11-17)
+`tools/skills/forge/rules.mjs --evals`: `claude -p` sonnet, the rule's installed text through
+`--append-system-prompt-file` (on) vs nothing (off), tiny fixture repos, a blind Opus judge on a clean context over
+shuffled on/off pairs, the prediction written in the case file before the run. Cases: `tools/skills/forge/rules/evals/`.
+Two passes for the first nine rules (2 then 4 runs per prompt and arm), counts below are both passes together.
+- **Pays, by the script score:** a check run after the last edit (verify) 6/12 vs 0/12, though every passing check was
+  an ad-hoc `node -e`, not the suite, and the on arm committed unasked 5/12; no `shortcut:` comment with the owner's
+  ban beside the ponytail text 12/12 vs 0/12; the shared style fixed at its source and the other pages named 6/6 vs
+  0/6; ready-made tools named before writing a script 6/6 vs 0/6.
+- **Pays, by the judge only:** plain short answers 18:0 pairs, 163 vs 277 words; claims marked unconfirmed 12:0;
+  findings named with place and destination 6:0; do-it-yourself 9:3. Their script scores were equal (both arms at
+  ceiling), and the rubric restates the rule, so these show compliance more than benefit.
+- **No effect at this length:** asking (18/18 both arms; the on arm 58 vs 110 words); no AI words in his text (6/6
+  both); verify-before-removal when the agent judges what is stale (3/3 both); plans walked (judge 2:3:1).
+- **"The owner can be wrong, say so" (rule 11):** 10/18 vs 8/18, judge 7:7. Both arms deleted a still-true note they
+  never opened and downgraded vue-tsc 3 to 2 without asking why, 12/12.
+- **Replays, 60 days, main chats and subagents:** a new `shortcut:` comment in Edit/Write 355 times in 35 days (14-18
+  chats a week, most by subagents; 4 chats in the two days after the 11-16 ban). Replies before the 14 "too long"
+  complaints had median 141 words vs 152 for all replies; the complaint rate above any cap equals the base rate.
+  128 test edits dropped assertions: 7 weakened the test, 68 refactors, 53 unclear (hard-refusal precision 5-10%).
+  A `.md` deleted that the chat never read: 82 of 249 deletes, 41 chats, harm not labelled. A dependency's major
+  lowered: 0 of 12 package.json edits. Plugin guards refuse inside subagents too (git-guard 374, budget-guard 324,
+  secret-guard 26 refusals in subagent transcripts).
+- **Second opinion (Fable):** agrees on no length cap and no hard test guard, builds the comment guard (found three
+  gaps, fixed), keeps the "absorbed" rules because the fixtures sit at ceiling while field complaints continue.
+**Status:** one model, short context, 3-6 runs per cell; the judge sees the reply and the first 30 tool calls; field
+counts are regex hits on his own messages (raw, not hand-read).
+
 ## Appendix: what a pull run spends
 
 Moved here from `PULL.md`, which workers read in full; none of it changes what a worker does.

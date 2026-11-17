@@ -1,0 +1,3731 @@
+{
+ "about": "The owner's rules for AI agents: where each is written, how it is enforced, the complaint it answers, and how rules.mjs checks it. Universal rules only; project rules live in the project.",
+ "updated": "2026-11-17",
+ "rules": [
+  {
+   "id": "R001",
+   "rule": "Before saying done, fixed, works or can deploy, run the cheapest check that would show it false and say plainly what was not checked.",
+   "ru": "Прежде чем сказать «готово, исправлено, работает», проверь самым дешёвым способом и прямо скажи, что не проверено.",
+   "layer": "global",
+   "enforced": "hook+text",
+   "enforcer": "tools/hooks/verify-guard.ts (refuses the end-of-turn box once)",
+   "complaints": [
+    "C01",
+    "cl3"
+   ],
+   "complaintChats": 47,
+   "conflicts": [
+    "R077"
+   ],
+   "status": "active",
+   "sources": [
+    {
+     "file": "~/.claude/CLAUDE.md",
+     "anchor": "How to answer me, bullet 2 (line 5)"
+    },
+    {
+     "file": "tools/hooks/gates.ts",
+     "anchor": "habits: Call a fix done only after a check you ran"
+    },
+    {
+     "file": "tools/hooks/verify-guard.ts",
+     "anchor": "MESSAGE + header comment"
+    },
+    {
+     "file": "docs/COMPLAINTS.md",
+     "anchor": "C01",
+     "date": "2026-08-14"
+    },
+    {
+     "file": "<ponytail>/hooks/ponytail-instructions.js",
+     "anchor": "closing line: what you skipped or did not check"
+    },
+    {
+     "file": "<project memory>/MEMORY.md",
+     "anchor": "no hasty answers verify first"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "D3"
+    },
+    {
+     "file": "docs/MEASUREMENTS.md",
+     "anchor": "M73 (47 of 181)"
+    }
+   ],
+   "inForce": [
+    {
+     "text": "gates:habits",
+     "has": "Call a fix done only after a check you ran"
+    },
+    {
+     "text": "global",
+     "has": "The check before"
+    },
+    {
+     "hook": "verify-guard",
+     "env": "MAKARASTY_VERIFY_GUARD",
+     "canary": {
+      "fn": "shouldRefuse",
+      "args": [
+       "Готово, исправил баг",
+       {
+        "edited": true,
+        "checked": false,
+        "warned": false
+       }
+      ],
+      "is": true
+     }
+    }
+   ],
+   "field": {
+    "regex": "(ты уверен|вы уверены|не верю,? что|ты не (пере)?проверил|не перепроверил|поспешн)",
+    "since": "2026-11-13"
+   },
+   "eval": "evals/R001-verify.json"
+  },
+  {
+   "id": "R002",
+   "rule": "Answers are in plain, short Russian: a few facts need no headers or tables; numbers, ids, paths and commands stay exact.",
+   "ru": "Отвечай по-русски, коротко и просто. Мало фактов - без заголовков и таблиц. Цифры, id, пути и команды точные.",
+   "layer": "global",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [
+    "T01",
+    "cl2"
+   ],
+   "complaintChats": 28,
+   "conflicts": [],
+   "status": "active",
+   "sources": [
+    {
+     "file": "~/.claude/CLAUDE.md",
+     "anchor": "How to answer me, bullet 1 (line 4)",
+     "date": "2026-11-17"
+    },
+    {
+     "file": "~/.claude/makarasty/profile.md",
+     "anchor": "Language: Russian, plain and short"
+    },
+    {
+     "file": "<project memory>/MEMORY.md",
+     "anchor": "Plain short Russian answers"
+    },
+    {
+     "file": "docs/COMPLAINTS.md",
+     "anchor": "T01 (also unslop skill, opt-in, off)",
+     "date": "2026-08-08"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "D12"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "cluster 2"
+    }
+   ],
+   "inForce": [
+    {
+     "text": "global",
+     "has": "I read Russian and want it short and plain"
+    }
+   ],
+   "field": {
+    "regex": "(слишком (длинн|много букв|сложн|детск|много текст)|много букв|нечитаем|перегружен|ничего не понятно|я (ничего|нечего) не понимаю|покороче|огромную лекцию)",
+    "since": "2026-11-16"
+   },
+   "eval": "evals/R002-plain.json"
+  },
+  {
+   "id": "R003",
+   "rule": "UI edge cases are probed by the agent: many and few rows, longest text, empty, narrow window, slow network; nothing jumps or overflows.",
+   "ru": "Крайние случаи UI проверяй сам: много/мало строк, длинный текст, пусто, узкое окно, медленная сеть.",
+   "layer": "plugin",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [
+    "P02"
+   ],
+   "complaintChats": 22,
+   "conflicts": [],
+   "status": "adopted, check not built",
+   "sources": [
+    {
+     "file": "<owner page on the Desktop>",
+     "anchor": "#11",
+     "date": "2026-11-17"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "kept rules list"
+    },
+    {
+     "file": "docs/COMPLAINTS.md",
+     "anchor": "Proposed checks P01-P04 (98118dc)",
+     "date": "2026-11-17"
+    }
+   ]
+  },
+  {
+   "id": "R004",
+   "rule": "Never ask the owner for secrets, to run what you can run yourself, or for what you can find yourself (a database you can read, the local proxy or port); use the local way in.",
+   "ru": "Не проси у меня пароли и секреты, не проси запускать то, что можешь сам, и не спрашивай то, что можно найти самому.",
+   "layer": "plugin",
+   "enforced": "hook+text",
+   "enforcer": "tools/hooks/ask-guard.ts (SELF, SCREEN)",
+   "complaints": [
+    "C07",
+    "cl4",
+    "cl1"
+   ],
+   "complaintChats": 17,
+   "conflicts": [],
+   "status": "active",
+   "sources": [
+    {
+     "file": "tools/hooks/gates.ts",
+     "anchor": "habits: Never ask for secrets or to run what you can"
+    },
+    {
+     "file": "tools/hooks/ask-guard.ts",
+     "anchor": "SELF, SCREEN"
+    },
+    {
+     "file": "docs/COMPLAINTS.md",
+     "anchor": "C07",
+     "date": "2026-11-12"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "cluster 4 (do it yourself)"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "D2"
+    },
+    {
+     "file": "docs/MEASUREMENTS.md",
+     "anchor": "M72"
+    }
+   ],
+   "inForce": [
+    {
+     "text": "gates:habits",
+     "has": "Never ask for secrets"
+    },
+    {
+     "hook": "ask-guard",
+     "env": "MAKARASTY_ASK_GUARD",
+     "canary": {
+      "fn": "asksSelf",
+      "args": [
+       [
+        {
+         "question": "Скинь мне пароль от базы?",
+         "options": [
+          {
+           "label": "ok"
+          }
+         ]
+        }
+       ]
+      ],
+      "is": true
+     }
+    }
+   ],
+   "field": {
+    "regex": "(сам (не )?можешь|ты не можешь (сам|делать)|почему ты (сам )?не (сделал|провер|запуст|смерж|влил)|можешь (сделать|проверить) сам|тупые вопрос|пароли не нужны)",
+    "since": "2026-11-13"
+   },
+   "eval": "evals/R004-do-it.json"
+  },
+  {
+   "id": "R005",
+   "rule": "Never ask 'continue?' about work the owner already asked for; it is finished without asking (the inbox answers such a question from the standing yes).",
+   "ru": "Не спрашивай «продолжать?» про работу, которую я уже заказал: делай до конца.",
+   "layer": "plugin",
+   "enforced": "hook+text",
+   "enforcer": "tools/hooks/ask-guard.ts onlyContinue; inbox.ts + core.mjs",
+   "complaints": [
+    "C06",
+    "cl1"
+   ],
+   "complaintChats": 17,
+   "conflicts": [],
+   "status": "active",
+   "sources": [
+    {
+     "file": "tools/hooks/ask-guard.ts",
+     "anchor": "onlyContinue"
+    },
+    {
+     "file": "tools/hooks/gates.ts",
+     "anchor": "asking: Work they already asked for is finished"
+    },
+    {
+     "file": "docs/COMPLAINTS.md",
+     "anchor": "C06",
+     "date": "2026-08-07"
+    },
+    {
+     "file": "~/.claude/makarasty/profile.md",
+     "anchor": "Continue questions about work already asked are answered yes"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "cluster 1"
+    }
+   ],
+   "inForce": [
+    {
+     "hook": "ask-guard",
+     "env": "MAKARASTY_ASK_GUARD"
+    }
+   ],
+   "field": {
+    "regex": "(продолжай,? (всё|все),? не спрашивай|не спрашивай,? продолжай|зачем спрашиваешь продолж)",
+    "since": "2026-11-12"
+   }
+  },
+  {
+   "id": "R006",
+   "rule": "On this machine use `python`, not `python3` (Store stub), with PYTHONUTF8=1 to avoid encoding errors (12 chats python3 not found, 17 encoding errors in 60 days).",
+   "ru": "На этом компе python, не python3; PYTHONUTF8=1.",
+   "layer": "global",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [],
+   "complaintChats": 17,
+   "conflicts": [],
+   "status": "active",
+   "sources": [
+    {
+     "file": "<owner page on the Desktop>",
+     "anchor": "#9",
+     "date": "2026-11-17"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "kept rules list"
+    },
+    {
+     "file": "~/.claude/settings.json",
+     "anchor": "env PYTHONUTF8=1",
+     "date": "2026-11-17"
+    }
+   ],
+   "recheck": {
+    "on": "2026-12-01",
+    "how": "count \"Python was not found\" and charmap errors in tool results over the last 14 days; was 12 chats + 17 errors in 60 days, expect about 0"
+   }
+  },
+  {
+   "id": "R007",
+   "rule": "Every plan item is done (with the check that shows it) or named open with why and its next step; none is left as a footnote; ponytail keeps the code small, never the work.",
+   "ru": "Каждый пункт плана либо сделан с проверкой, либо назван открытым: почему и что дальше. Не сноской. ponytail экономит код, а не работу.",
+   "layer": "global",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [
+    "T02",
+    "cl6"
+   ],
+   "complaintChats": 13,
+   "conflicts": [
+    "R075",
+    "C2"
+   ],
+   "status": "active",
+   "sources": [
+    {
+     "file": "~/.claude/CLAUDE.md",
+     "anchor": "How to answer me, bullet 5 (line 8)"
+    },
+    {
+     "file": "tools/hooks/gates.ts",
+     "anchor": "plans: Before the final report walk every item",
+     "date": "2026-11-17"
+    },
+    {
+     "file": "docs/COMPLAINTS.md",
+     "anchor": "T02",
+     "date": "2026-09-10"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "cluster 6"
+    },
+    {
+     "file": "<ponytail>/hooks/ponytail-instructions.js",
+     "anchor": "Plans: (injected next to the ponytail block)"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "C2"
+    }
+   ],
+   "inForce": [
+    {
+     "text": "gates:plans",
+     "has": "walk every item"
+    },
+    {
+     "hook": "routes",
+     "env": "MAKARASTY_ROUTES",
+     "canary": {
+      "fn": "briefLacksDone",
+      "args": [
+       "Check three tools:\n1. ponytail\n2. sunup\n3. grill\nReport verdicts."
+      ],
+      "is": true
+     },
+     "via": "gates"
+    }
+   ],
+   "field": {
+    "regex": "(не доделал|пропуска\\S* (какие-то )?пункт|теряем (фокус|контекст)|почему не (сделал|разобрано)|ленится|поленился|половина (из них )?не)",
+    "since": "2026-11-17"
+   },
+   "eval": "evals/R007-plans.json"
+  },
+  {
+   "id": "R008",
+   "rule": "UI work is checked by eye, with a first-time blind user and edge cases (many/few rows, longest text, empty, narrow window, slow network), and screenshots shown; a UI is not built from context alone.",
+   "ru": "UI проверяется глазами, «тупым» пользователем и крайними случаями (много/мало строк, длинный текст, пусто, узко, медленная сеть). Не строить UI по одному контексту.",
+   "layer": "plugin",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [
+    "T03",
+    "cl5"
+   ],
+   "complaintChats": 13,
+   "conflicts": [],
+   "status": "active",
+   "sources": [
+    {
+     "file": "docs/COMPLAINTS.md",
+     "anchor": "T03",
+     "date": "2026-10-20"
+    },
+    {
+     "file": "<project memory>/MEMORY.md",
+     "anchor": "show screenshots of ui work"
+    },
+    {
+     "file": "<owner page on the Desktop>",
+     "anchor": "#11 edge cases (22 msgs)"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "cluster 2, 5, 7"
+    },
+    {
+     "file": "docs/MEASUREMENTS.md",
+     "anchor": "M73 (about 13)"
+    }
+   ]
+  },
+  {
+   "id": "R009",
+   "rule": "Before a whole-repo typecheck or whole-suite test run, list live node processes; if one is live and free RAM cannot fit a second, wait (CPU load is no reason to wait); never a full typecheck and a full suite at once.",
+   "ru": "Перед полным typecheck или всем набором тестов проверь живые node. Идёт такой же и RAM не хватит - жди (загрузка CPU не повод). Typecheck и весь набор вместе - никогда.",
+   "layer": "global",
+   "enforced": "hook+text",
+   "enforcer": "tools/hooks/budget-guard.ts (refuses a heavy run while another is live)",
+   "complaints": [
+    "C04",
+    "cl10"
+   ],
+   "complaintChats": 10,
+   "conflicts": [
+    "R052",
+    "C8"
+   ],
+   "status": "active",
+   "sources": [
+    {
+     "file": "~/.claude/CLAUDE.md",
+     "anchor": "This machine, bullet 2 (line 30)"
+    },
+    {
+     "file": "tools/hooks/budget-guard.ts",
+     "anchor": "header comment"
+    },
+    {
+     "file": "docs/COMPLAINTS.md",
+     "anchor": "C04",
+     "date": "2026-10-16"
+    },
+    {
+     "file": "<project>/CLAUDE.md",
+     "anchor": "Verify budget"
+    },
+    {
+     "file": "<project memory>/MEMORY.md",
+     "anchor": "busy box wait then run wide",
+     "date": "2026-10-21"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "D8, C8"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "cluster 10"
+    }
+   ],
+   "inForce": [
+    {
+     "hook": "budget-guard",
+     "env": "MAKARASTY_BUDGET_GUARD",
+     "canary": {
+      "fn": "check",
+      "args": [
+       "npx vitest run",
+       "Bash",
+       {},
+       [
+        {
+         "pid": 1,
+         "cmd": "node node_modules/vitest/vitest.mjs run"
+        }
+       ]
+      ],
+      "match": "another heavy verify run"
+     }
+    }
+   ],
+   "field": {
+    "regex": "(убива\\S* (мой )?комп|комп\\S* (тормозит|висит|умира)|не хватает (опер|памят)|крутится (уже )?(два|час))",
+    "since": "2026-10-20"
+   }
+  },
+  {
+   "id": "R010",
+   "rule": "Every long run (test, typecheck, build, wait loop) gets a kill-after limit of about twice its normal time; a hit timeout is reported, never silently retried; a background heavy run with no limit is refused.",
+   "ru": "У каждого долгого запуска лимит примерно 2x от обычного времени. Сработал таймаут - сообщи, молча не повторяй.",
+   "layer": "global",
+   "enforced": "hook+text",
+   "enforcer": "tools/hooks/budget-guard.ts (background with no kill-after refused)",
+   "complaints": [
+    "C04"
+   ],
+   "complaintChats": 10,
+   "conflicts": [
+    "R048",
+    "C16"
+   ],
+   "status": "active",
+   "sources": [
+    {
+     "file": "~/.claude/CLAUDE.md",
+     "anchor": "This machine, bullet 4 (line 32)",
+     "date": "2026-10-19"
+    },
+    {
+     "file": "tools/hooks/budget-guard.ts",
+     "anchor": "rule 2: background run with no kill-after"
+    },
+    {
+     "file": "docs/COMPLAINTS.md",
+     "anchor": "C04",
+     "date": "2026-10-19"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "C16"
+    }
+   ],
+   "inForce": [
+    {
+     "hook": "budget-guard",
+     "env": "MAKARASTY_BUDGET_GUARD"
+    }
+   ]
+  },
+  {
+   "id": "R011",
+   "rule": "A one-screen UI complaint is a pattern: sweep all screens, fix at the source (template or component), leave a detector; otherwise the owner repeats the same complaint.",
+   "ru": "Жалоба на один экран это паттерн: исправь в источнике, найди везде, оставь детектор.",
+   "layer": "memory",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [
+    "cl7",
+    "T03"
+   ],
+   "complaintChats": 9,
+   "conflicts": [],
+   "status": "active",
+   "sources": [
+    {
+     "file": "<project memory>/MEMORY.md",
+     "anchor": "fix the pattern not the page"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "cluster 7 (11-04 ll d4cc707d, 11-10 oy 5f5413b2, 11-11 oy d9111264)"
+    }
+   ],
+   "field": {
+    "regex": "(как я (уже )?говорил|опять жалуюсь|я уже (говорил|жаловался)|снова то же|опять (те же|такие же|эти) (отступ|скролл))"
+   },
+   "eval": "evals/R011-pattern.json"
+  },
+  {
+   "id": "R012",
+   "rule": "Every defect noticed beyond the ask, or item skipped, is named (where, what is wrong) with a destination in the same line (fixed only if the task covers it, asked, recorded in a findings file, or handed to a named chat/card/person); never fixed unasked, never dropped to keep a reply short.",
+   "ru": "Любой найденный дефект или пропущенный пункт называется (где, что не так) и сразу получает судьбу: исправлен, спрошен, записан в файл находок или передан. Без спроса не чинить, не терять.",
+   "layer": "global",
+   "enforced": "hook+text",
+   "enforcer": "tools/hooks/routes.ts (refuses the end of a turn once when a finding has no destination)",
+   "complaints": [
+    "C23",
+    "cl6"
+   ],
+   "complaintChats": 8,
+   "conflicts": [
+    "C14"
+   ],
+   "status": "active",
+   "sources": [
+    {
+     "file": "~/.claude/CLAUDE.md",
+     "anchor": "What I still decide, bullet 1 (line 19)"
+    },
+    {
+     "file": "tools/hooks/gates.ts",
+     "anchor": "findings",
+     "date": "2026-11-17"
+    },
+    {
+     "file": "tools/hooks/routes.ts",
+     "anchor": "top comment; MARK/ROUTE"
+    },
+    {
+     "file": "docs/COMPLAINTS.md",
+     "anchor": "C23"
+    },
+    {
+     "file": "<ponytail>/hooks/ponytail-instructions.js",
+     "anchor": "Findings: (injected next to the ponytail block)"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "D10, C14"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "cluster 6"
+    },
+    {
+     "file": "docs/MEASUREMENTS.md",
+     "anchor": "M76"
+    }
+   ],
+   "inForce": [
+    {
+     "text": "gates:findings",
+     "has": "destination"
+    },
+    {
+     "hook": "routes",
+     "env": "MAKARASTY_ROUTES",
+     "canary": {
+      "fn": "unrouted",
+      "args": [
+       "Готово.\nНашёл баг в b.js: off-by-one, я его не трогал."
+      ],
+      "match": "b\\.js"
+     },
+     "via": "gates"
+    }
+   ],
+   "field": {
+    "regex": "(с находками|находк\\S*.{0,30}(не исправ|почему)|почему (их )?не исправ)",
+    "since": "2026-11-17"
+   },
+   "eval": "evals/R012-findings.json"
+  },
+  {
+   "id": "R013",
+   "rule": "Never merge another chat's or branch's work blind: what was done, is it needed, review, red team, fix bugs, keep both sides' changes; ship should run the review before the merge.",
+   "ru": "Чужую ветку не вливать вслепую: ревью, красная команда, исправить баги.",
+   "layer": "plugin",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [
+    "P01"
+   ],
+   "complaintChats": 5,
+   "conflicts": [],
+   "status": "adopted, check not built",
+   "sources": [
+    {
+     "file": "<owner page on the Desktop>",
+     "anchor": "#10",
+     "date": "2026-11-17"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "kept rules list"
+    },
+    {
+     "file": "<project memory>/MEMORY.md",
+     "anchor": "clean merge produces broken code (nearest existing rule)"
+    },
+    {
+     "file": "docs/COMPLAINTS.md",
+     "anchor": "Proposed checks P01-P04 (98118dc)",
+     "date": "2026-11-17"
+    }
+   ]
+  },
+  {
+   "id": "R014",
+   "rule": "Every visible change ends with screenshots and a visual pass; the owner wants to see, not read; loaders centre on the screen.",
+   "ru": "Каждое видимое изменение со скриншотами и визуальной проверкой.",
+   "layer": "memory",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [
+    "cl5",
+    "T03"
+   ],
+   "complaintChats": 4,
+   "conflicts": [],
+   "status": "active",
+   "sources": [
+    {
+     "file": "<project memory>/MEMORY.md",
+     "anchor": "show screenshots of ui work"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "cluster 5 (11-06, 11-16, 10-21)"
+    },
+    {
+     "file": "docs/COMPLAINTS.md",
+     "anchor": "T03"
+    }
+   ]
+  },
+  {
+   "id": "R015",
+   "rule": "A question about or from another chat carries that chat's link and account and starts with 'project · chat'; a dialog that points 'above' with no link, or sends him into another chat, is refused.",
+   "ru": "В вопросе про чат: ссылка на чат и аккаунт; вопрос начинается с «проект · чат». «Выше» без ссылки нельзя.",
+   "layer": "plugin",
+   "enforced": "hook",
+   "enforcer": "tools/hooks/ask-guard.ts ELSEWHERE/OTHER_CHAT; inbox.ts sourceDeny; core.mjs sourceTag",
+   "complaints": [
+    "C09",
+    "C21",
+    "cl1"
+   ],
+   "complaintChats": 3,
+   "conflicts": [],
+   "status": "active",
+   "sources": [
+    {
+     "file": "tools/hooks/ask-guard.ts",
+     "anchor": "ELSEWHERE, OTHER_CHAT"
+    },
+    {
+     "file": "tools/hooks/inbox.ts",
+     "anchor": "sourceDeny"
+    },
+    {
+     "file": "docs/COMPLAINTS.md",
+     "anchor": "C09, C21",
+     "date": "2026-11-12"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "cluster 1 (11-13 7d311181, 11-12 7739e065, 10-19 9d881d98)"
+    }
+   ],
+   "inForce": [
+    {
+     "hook": "ask-guard",
+     "env": "MAKARASTY_ASK_GUARD"
+    }
+   ],
+   "field": {
+    "regex": "(ссылк\\S* на чат|какой (это )?(чат|проект)|не найду в списке)",
+    "since": "2026-11-12"
+   }
+  },
+  {
+   "id": "R016",
+   "rule": "Each option says what happens if picked and why it beats the others here, resting on a checked fact (a test, a number, how this project does it), an unchecked one marked a guess; recommended option first; number every list he answers point by point; plain words, no jargon; a question states the risk and what it would break.",
+   "ru": "У каждого варианта: что будет, если выбрать, и почему он лучше, с проверенным фактом. Рекомендуемый первым. Списки нумеруй. Простые слова. В вопросе риск и что сломается.",
+   "layer": "plugin",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [
+    "C22",
+    "cl1"
+   ],
+   "complaintChats": 3,
+   "conflicts": [],
+   "status": "active",
+   "sources": [
+    {
+     "file": "tools/hooks/gates.ts",
+     "anchor": "asking"
+    },
+    {
+     "file": "docs/COMPLAINTS.md",
+     "anchor": "C22 («страшно и непонятно» 11-17)"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "cluster 1 (11-07 54641f0f, 11-12 3dc16175, 11-17 37934675)"
+    }
+   ]
+  },
+  {
+   "id": "R017",
+   "rule": "A refusal or plugin text names what was refused, why and the way out; a plugin message is never shown as the owner's words.",
+   "ru": "Блокировка объясняет, что запрещено, почему и что делать вместо.",
+   "layer": "plugin",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [
+    "cl9"
+   ],
+   "complaintChats": 3,
+   "conflicts": [],
+   "status": "candidate",
+   "sources": [
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "cluster 9 (11-10 425062a9, 11-12 8bed257b, 11-15 oy 4db4b42b)"
+    }
+   ]
+  },
+  {
+   "id": "R018",
+   "rule": "A git push runs only on the owner's word this turn; since 2026-11-16 a plain push of a named work branch runs unasked, while main/master, force, delete, tags, mirror, odd flags or no branch named still need his word.",
+   "ru": "Пуш только по моему слову в этом ходе. С 16.11 обычный пуш рабочей ветки можно без спроса; main/master, force, delete, теги, mirror - только с моим словом.",
+   "layer": "plugin",
+   "enforced": "hook+text",
+   "enforcer": "tools/hooks/push-guard.ts (+ consent.ts, own-words.ts)",
+   "complaints": [
+    "C13",
+    "cl1",
+    "cl9"
+   ],
+   "complaintChats": 2,
+   "conflicts": [
+    "R132"
+   ],
+   "status": "active",
+   "sources": [
+    {
+     "file": "tools/hooks/push-guard.ts",
+     "anchor": "header comment, MESSAGE",
+     "date": "2026-11-16"
+    },
+    {
+     "file": "docs/COMPLAINTS.md",
+     "anchor": "C13",
+     "date": "2026-11-12"
+    },
+    {
+     "file": "~/.claude/CLAUDE.md",
+     "anchor": "Acting without asking, bullet 2 (line 12)",
+     "date": "2026-11-16"
+    },
+    {
+     "file": "tools/hooks/gates.ts",
+     "anchor": "habits: Ask first: a push to main or forced"
+    },
+    {
+     "file": "tools/hooks/consent.ts",
+     "anchor": "framed answer reader",
+     "date": "2026-11-17"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "cluster 9 and C13 recurrence"
+    }
+   ],
+   "inForce": [
+    {
+     "hook": "push-guard",
+     "env": "MAKARASTY_PUSH_GUARD",
+     "canary": {
+      "fn": "plainPush",
+      "args": [
+       "git push origin master",
+       "Bash"
+      ],
+      "is": false
+     }
+    }
+   ],
+   "field": {
+    "regex": "(запушил без|зачем ты запушил|почему (он )?(тебя )?заблокировал|опять 403|спрашивать на пуш)",
+    "since": "2026-11-16"
+   }
+  },
+  {
+   "id": "R019",
+   "rule": "Look into it before asking: a question a checked fact or plain logic settles is not asked (take it, name it in one line); a behaviour question is asked only after the investigation pass (callers, git history, real usage, what each option breaks), carrying what it found with the unchecked marked \"не проверено\"; a check you can run goes before the question; AskUserQuestion takes metadata screened or investigated; an option that defers a check is refused.",
+   "ru": "Сначала разберись, потом спрашивай. Вопрос, который закрывают факты или логика, не задаётся. Вопрос о поведении - только после расследования (вызовы, история, реальное использование); непроверенное помечено «не проверено».",
+   "layer": "plugin",
+   "enforced": "hook+text",
+   "enforcer": "tools/hooks/ask-guard.ts staked, behaviour, defers",
+   "complaints": [
+    "C22",
+    "T06",
+    "cl1"
+   ],
+   "complaintChats": 2,
+   "conflicts": [
+    "R033",
+    "C7"
+   ],
+   "status": "active",
+   "sources": [
+    {
+     "file": "tools/hooks/gates.ts",
+     "anchor": "asking",
+     "date": "2026-11-17"
+    },
+    {
+     "file": "tools/hooks/ask-guard.ts",
+     "anchor": "SCREEN, BEHAVIOUR, DEFERRED"
+    },
+    {
+     "file": "docs/COMPLAINTS.md",
+     "anchor": "C22 (11-16, 11-17), T06"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "cluster 1"
+    },
+    {
+     "file": "docs/MEASUREMENTS.md",
+     "anchor": "M72, M76"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "section 4, C7"
+    }
+   ],
+   "inForce": [
+    {
+     "text": "gates:asking",
+     "has": "investigation pass"
+    },
+    {
+     "hook": "ask-guard",
+     "env": "MAKARASTY_ASK_GUARD",
+     "canary": {
+      "fn": "behaviour",
+      "args": [
+       [
+        {
+         "question": "Должен ли сервер запрещать звонок из Draft?",
+         "options": [
+          {
+           "label": "Запрещать везде"
+          },
+          {
+           "label": "Оставить как есть"
+          }
+         ]
+        }
+       ]
+      ],
+      "is": true
+     }
+    }
+   ],
+   "field": {
+    "regex": "(переспрашива|опять спрашива|не надо (меня )?спрашивать|вопрос (звучит|непонятн|плох)|зачем ты (меня )?спрашива|я уже (отвечал|10 раз)|вслепую отвечать|каждый вопрос нужно расследовать)",
+    "since": "2026-11-17"
+   },
+   "eval": "evals/R019-asking.json"
+  },
+  {
+   "id": "R020",
+   "rule": "At about 700K context every chat relaunches itself with a handoff, no question (standing yes 2026-11-12); a reminder fires at 700K and every +150K.",
+   "ru": "На ~700K контекста чат сам перезапускается с handoff, без вопросов (моё «да, все чаты» от 12.11).",
+   "layer": "plugin",
+   "enforced": "hook+text",
+   "enforcer": "tools/hooks/gates.ts remind, standingRelaunch; inbox.mjs start --standing",
+   "complaints": [
+    "C12"
+   ],
+   "complaintChats": 2,
+   "conflicts": [
+    "R059",
+    "C6"
+   ],
+   "status": "active",
+   "sources": [
+    {
+     "file": "~/.claude/makarasty/answers.md",
+     "anchor": "line 1",
+     "date": "2026-11-12"
+    },
+    {
+     "file": "tools/hooks/gates.ts",
+     "anchor": "reminder, RELAUNCH_LINE, afterCompact"
+    },
+    {
+     "file": "docs/COMPLAINTS.md",
+     "anchor": "C12",
+     "date": "2026-10-07"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "C6"
+    },
+    {
+     "file": "<project memory>/MEMORY.md",
+     "anchor": "no handoff finish it yourself (names this as the standing exception)"
+    }
+   ]
+  },
+  {
+   "id": "R021",
+   "rule": "A claim about the owner or the world outside this repo (sent, handed, deleted, pushed, ran, paid, decided) is written only with its source: his quoted words with the date, or a check's output; otherwise 'не подтверждено'; a dictated 'отправляем' is a plan, another chat's report is its claim; never record an owner action unconfirmed or write memory or rules about him without his knowledge.",
+   "ru": "Утверждение о моих действиях или о внешнем мире только с источником: мои слова с датой или вывод проверки. Иначе «не подтверждено». За меня без моего ведома не записывай.",
+   "layer": "plugin",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [
+    "T11",
+    "cl8"
+   ],
+   "complaintChats": 2,
+   "conflicts": [],
+   "status": "active",
+   "sources": [
+    {
+     "file": "tools/hooks/gates.ts",
+     "anchor": "claims",
+     "date": "2026-11-17"
+    },
+    {
+     "file": "docs/COMPLAINTS.md",
+     "anchor": "T11",
+     "date": "2026-11-17"
+    },
+    {
+     "file": "<project memory>/MEMORY.md",
+     "anchor": "never record owner actions unconfirmed"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "cluster 8"
+    },
+    {
+     "file": "docs/MEASUREMENTS.md",
+     "anchor": "M76"
+    }
+   ],
+   "inForce": [
+    {
+     "text": "gates:claims",
+     "has": "не подтверждено"
+    }
+   ],
+   "field": {
+    "regex": "(не отправлял|без (спроса|ведома)|откуда (появилось|взял)|это неправда)",
+    "since": "2026-11-17"
+   },
+   "eval": "evals/R021-claims.json"
+  },
+  {
+   "id": "R022",
+   "rule": "Each finish or stall of an enrolled chat is reported to the inbox; one phone push per unanswered item; the owner can see what chats did.",
+   "ru": "О каждом завершении и зависании чата отчёт в инбокс и один пуш на телефон.",
+   "layer": "plugin",
+   "enforced": "hook",
+   "enforcer": "tools/hooks/inbox.ts reports; notify.mjs",
+   "complaints": [
+    "C11",
+    "cl5"
+   ],
+   "complaintChats": 2,
+   "conflicts": [],
+   "status": "active",
+   "sources": [
+    {
+     "file": "docs/COMPLAINTS.md",
+     "anchor": "C11",
+     "date": "2026-08-19"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "cluster 5, recurrence C11 (11-12, 11-14)"
+    }
+   ],
+   "inForce": [
+    {
+     "hook": "inbox"
+    }
+   ],
+   "field": {
+    "regex": "(не вижу (того|прогресс|что)|ничего (визуального )?не вижу|не ответил на|как будто (ты )?(ничего не делаешь|завис|послал))",
+    "since": "2026-11-13"
+   }
+  },
+  {
+   "id": "R023",
+   "rule": "Complaints and nuances the owner dictates are written down and applied in code or rules, then checked later; past complaints are reviewed so none stays unapplied.",
+   "ru": "Мои жалобы и нюансы записываются и попадают в код и правила; прошлые жалобы пересматриваются.",
+   "layer": "plugin",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [
+    "cl6"
+   ],
+   "complaintChats": 2,
+   "conflicts": [],
+   "status": "candidate",
+   "sources": [
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "cluster 6 (11-11 d9111264, 11-11 dk 2228ce78)"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "end: not in COMPLAINTS.md (candidate row)"
+    }
+   ]
+  },
+  {
+   "id": "R024",
+   "rule": "A delete-or-keep question says what the thing is, what made it, its size, what breaks without it, and the recommendation; one delete is not asked many times.",
+   "ru": "Вопрос «удалить или оставить»: что это, кто создал, размер, что сломается, твоя рекомендация. Не переспрашивай по 35 раз.",
+   "layer": "plugin",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [
+    "cl1"
+   ],
+   "complaintChats": 1,
+   "conflicts": [],
+   "status": "active",
+   "sources": [
+    {
+     "file": "tools/hooks/gates.ts",
+     "anchor": "asking"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "cluster 1 (11-17 37934675: 35 delete confirmations)"
+    },
+    {
+     "file": "docs/MEASUREMENTS.md",
+     "anchor": "M75 (164 delete confirmations)"
+    }
+   ]
+  },
+  {
+   "id": "R025",
+   "rule": "When told 'быстро', 'нет времени', 'срочно': do the core change and one check, no extra review rounds, then list what was skipped.",
+   "ru": "Сказал «быстро / срочно»: сделай главное и одну проверку, без лишних кругов ревью, потом перечисли, что пропустил.",
+   "layer": "global",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [],
+   "complaintChats": null,
+   "conflicts": [
+    "R111"
+   ],
+   "status": "active",
+   "sources": [
+    {
+     "file": "~/.claude/CLAUDE.md",
+     "anchor": "How to answer me, bullet 3 (line 6)"
+    },
+    {
+     "file": "tools/hooks/gates.ts",
+     "anchor": "habits: Told it is urgent"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "D5"
+    }
+   ]
+  },
+  {
+   "id": "R026",
+   "rule": "No 'shortcut:' comments (or any note aimed at an AI tool) in code: a comment says the why for the next human reader.",
+   "ru": "В коде нет комментариев «shortcut:» и пометок для ИИ: комментарий объясняет «почему» живому читателю.",
+   "layer": "global",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [],
+   "complaintChats": null,
+   "conflicts": [
+    "R074",
+    "C1"
+   ],
+   "status": "active",
+   "sources": [
+    {
+     "file": "~/.claude/CLAUDE.md",
+     "anchor": "How to answer me, bullet 4 (line 7)",
+     "date": "2026-11-16"
+    },
+    {
+     "file": "<project>/CLAUDE.md",
+     "anchor": "Docs, comments, KB: Comments are a budget"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "C1, D17"
+    }
+   ],
+   "inForce": [
+    {
+     "text": "global",
+     "has": "No `shortcut:` comments"
+    }
+   ],
+   "field": {
+    "in": "edits",
+    "quick": "shortcut:",
+    "regex": "^\\s*(//|#|<!--|/\\*|\\*|--)\\s*shortcut:",
+    "since": "2026-11-16"
+   },
+   "eval": "evals/R026-shortcut.json"
+  },
+  {
+   "id": "R027",
+   "rule": "A brief to a subagent or another session carries the goal, the full item list and a 'Done when' covering every item; a brief item a hand-back left undone is sent back in the same turn.",
+   "ru": "В брифе субагенту или другому чату: цель, полный список пунктов и «готово, когда» на все пункты. Недоделанный пункт возвращается в тот же ход.",
+   "layer": "plugin",
+   "enforced": "hook+text",
+   "enforcer": "tools/hooks/routes.ts (Stop / SubagentStop via gates.ts)",
+   "complaints": [
+    "C23",
+    "cl6"
+   ],
+   "complaintChats": null,
+   "conflicts": [],
+   "status": "active",
+   "sources": [
+    {
+     "file": "tools/hooks/gates.ts",
+     "anchor": "plans"
+    },
+    {
+     "file": "tools/hooks/routes.ts",
+     "anchor": "brief check: 3+ items and no Done when is refused"
+    },
+    {
+     "file": "docs/COMPLAINTS.md",
+     "anchor": "C23",
+     "date": "2026-11-17"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "cluster 6"
+    }
+   ]
+  },
+  {
+   "id": "R028",
+   "rule": "Without asking, then report: run scoped tests/typecheck/build, start the dev server the task needs (after checking its port), fix what the own change broke, commit own files, push the work branch; the end-of-turn ask stays empty for all of this.",
+   "ru": "Без вопросов, потом отчёт: узкие тесты/typecheck/build, нужный dev-сервер, что сломал сам, коммит своих файлов, пуш рабочей ветки. Поле ask пустое.",
+   "layer": "global",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [
+    "T10",
+    "cl1"
+   ],
+   "complaintChats": null,
+   "conflicts": [
+    "R031",
+    "C7"
+   ],
+   "status": "active",
+   "sources": [
+    {
+     "file": "~/.claude/CLAUDE.md",
+     "anchor": "Acting without asking, bullets 1-2 (lines 11-12)",
+     "date": "2026-11-16"
+    },
+    {
+     "file": "tools/hooks/gates.ts",
+     "anchor": "habits: Do without asking, then report"
+    },
+    {
+     "file": "docs/COMPLAINTS.md",
+     "anchor": "T10",
+     "date": "2026-11-11"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "D1"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "cluster 1 (11-16 5c818b10)"
+    }
+   ]
+  },
+  {
+   "id": "R029",
+   "rule": "After a commit/push the report names the hash, the files, the branch pushed, and any tracked file left out because another chat changed it.",
+   "ru": "В отчёте о коммите и пуше: хэш, файлы, ветка и файлы, которые не тронул, потому что их менял другой чат.",
+   "layer": "global",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [],
+   "complaintChats": null,
+   "conflicts": [],
+   "status": "active",
+   "sources": [
+    {
+     "file": "~/.claude/CLAUDE.md",
+     "anchor": "Acting without asking, bullet 2 (line 12)",
+     "date": "2026-11-16"
+    }
+   ]
+  },
+  {
+   "id": "R030",
+   "rule": "A finished change to a plugin from a local-folder marketplace gets one version bump and one CHANGELOG entry per task, then `claude plugin marketplace update` and `claude plugin update`.",
+   "ru": "Правка плагина из локального маркетплейса: один бамп версии и запись в CHANGELOG на задачу, потом marketplace update и plugin update.",
+   "layer": "global",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [],
+   "complaintChats": null,
+   "conflicts": [],
+   "status": "active",
+   "sources": [
+    {
+     "file": "~/.claude/CLAUDE.md",
+     "anchor": "Acting without asking, bullet 3 (line 13)"
+    },
+    {
+     "file": "CLAUDE.md",
+     "anchor": "Hard rules: A change reaches users only after a version bump"
+    }
+   ]
+  },
+  {
+   "id": "R031",
+   "rule": "Use a dev server that already answers on its port (the owner often starts it); never start a duplicate; anything else that must run and cannot be started is asked of the owner.",
+   "ru": "Dev-сервер: если порт отвечает, пользуйся им, второй не поднимай. Чего не можешь запустить - попроси меня.",
+   "layer": "global",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [],
+   "complaintChats": null,
+   "conflicts": [
+    "R028",
+    "C4"
+   ],
+   "status": "active",
+   "sources": [
+    {
+     "file": "~/.claude/CLAUDE.md",
+     "anchor": "Acting without asking, bullet 4 (line 14)"
+    },
+    {
+     "file": "tools/hooks/gates.ts",
+     "anchor": "habits: start the dev server ... never a second"
+    },
+    {
+     "file": "<project>/CLAUDE.md",
+     "anchor": "Verify budget: never start or kill a second vite"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "D9, C4"
+    }
+   ]
+  },
+  {
+   "id": "R032",
+   "rule": "Kill a process only by PID, never by name or /T; orphans of dead chats or fleets may be closed by PID carefully, never a process the owner started or a service of his.",
+   "ru": "Процессы убивать только по PID, не по имени. Сирот умерших чатов можно закрыть по PID осторожно; мои процессы и сервисы - никогда.",
+   "layer": "global",
+   "enforced": "hook+text",
+   "enforcer": "tools/hooks/kill-guard.ts",
+   "complaints": [
+    "C03"
+   ],
+   "complaintChats": null,
+   "conflicts": [
+    "R043",
+    "C9"
+   ],
+   "status": "active",
+   "sources": [
+    {
+     "file": "~/.claude/CLAUDE.md",
+     "anchor": "Acting without asking, bullet 5 (line 15)",
+     "date": "2026-10-06"
+    },
+    {
+     "file": "tools/hooks/kill-guard.ts",
+     "anchor": "header comment"
+    },
+    {
+     "file": "docs/COMPLAINTS.md",
+     "anchor": "C03",
+     "date": "2026-08-19"
+    },
+    {
+     "file": "<project memory>/MEMORY.md",
+     "anchor": "kill processes by pid only"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "C9"
+    }
+   ],
+   "inForce": [
+    {
+     "hook": "kill-guard",
+     "env": "MAKARASTY_KILL_GUARD",
+     "canary": {
+      "fn": "check",
+      "args": [
+       "taskkill /IM node.exe /F"
+      ],
+      "match": "PID"
+     }
+    }
+   ],
+   "field": {
+    "regex": "(убил (мой|сервер|процесс|все)|по имени (убил|процесс))",
+    "since": "2026-11-04"
+   }
+  },
+  {
+   "id": "R033",
+   "rule": "A reversible behaviour choice not on the ask-first list: build the recommended option (as a setting with that default where the product has settings), say so in one line, do not ask.",
+   "ru": "Обратимый выбор поведения вне списка «спрашивать»: делай рекомендуемый вариант (настройкой с этим значением по умолчанию), скажи одной строкой, не спрашивай.",
+   "layer": "global",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [
+    "cl1"
+   ],
+   "complaintChats": null,
+   "conflicts": [
+    "R076",
+    "C3",
+    "C7",
+    "C15",
+    "R019"
+   ],
+   "status": "active",
+   "sources": [
+    {
+     "file": "~/.claude/CLAUDE.md",
+     "anchor": "Acting without asking, bullet 6 (line 16)"
+    },
+    {
+     "file": "tools/hooks/gates.ts",
+     "anchor": "habits: otherwise take the recommended option; asking: a question a checked fact settles is not asked"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "C3, C7, section 4"
+    }
+   ]
+  },
+  {
+   "id": "R034",
+   "rule": "Ask first: a push to main or forced, merge, release/tag, delete, anything sent off this machine, stopping a process the owner started, a real choice between approaches; the owner decides these himself.",
+   "ru": "Спрашивать до действия: пуш в main или force, мерж, релиз, удаление, всё, что уходит с машины, остановка моего процесса, реальный выбор из подходов.",
+   "layer": "global",
+   "enforced": "hook+text",
+   "enforcer": "tools/hooks/push-guard.ts, delete-guard.ts, kill-guard.ts (partial: push, delete, kill only)",
+   "complaints": [],
+   "complaintChats": null,
+   "conflicts": [
+    "R033",
+    "C7"
+   ],
+   "status": "active",
+   "sources": [
+    {
+     "file": "~/.claude/CLAUDE.md",
+     "anchor": "What I still decide, bullet 1 (line 19)"
+    },
+    {
+     "file": "tools/hooks/gates.ts",
+     "anchor": "habits: Ask first"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "D1"
+    }
+   ]
+  },
+  {
+   "id": "R035",
+   "rule": "Ask at the end of the turn, after everything that does not depend on the answer: one yes/no in wrap_up's ask, several questions in one AskUserQuestion as the turn's last call.",
+   "ru": "Вопросы в конце хода, после всей работы, не зависящей от ответа: один да/нет в ask, несколько - одним AskUserQuestion последним вызовом.",
+   "layer": "global",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [],
+   "complaintChats": null,
+   "conflicts": [],
+   "status": "active",
+   "sources": [
+    {
+     "file": "~/.claude/CLAUDE.md",
+     "anchor": "What I still decide, bullet 2 (line 20)"
+    },
+    {
+     "file": "tools/hooks/gates.ts",
+     "anchor": "asking: Several questions go in one ask"
+    }
+   ]
+  },
+  {
+   "id": "R036",
+   "rule": "A step only the owner can do (a command for his terminal, a sign-in, a click in another app): do everything that does not need it, do not end the turn waiting; give it as one click or one command with exact link/path in an AskUserQuestion with outcomes as options; a step in another chat ends the turn with one line, its link and account.",
+   "ru": "Шаг, который можешь сделать только я: делай всё остальное, не жди. Дай один клик или одну команду с точной ссылкой или путём. Шаг в другом чате - одна строка, ссылка и аккаунт.",
+   "layer": "global",
+   "enforced": "hook+text",
+   "enforcer": "tools/hooks/ask-guard.ts (ELSEWHERE, OTHER_CHAT)",
+   "complaints": [
+    "C09"
+   ],
+   "complaintChats": null,
+   "conflicts": [],
+   "status": "active",
+   "sources": [
+    {
+     "file": "~/.claude/CLAUDE.md",
+     "anchor": "What I still decide, bullet 3 (line 21)"
+    },
+    {
+     "file": "tools/hooks/gates.ts",
+     "anchor": "asking: A step only they can do"
+    },
+    {
+     "file": "tools/hooks/ask-guard.ts",
+     "anchor": "ELSEWHERE, OTHER_CHAT"
+    }
+   ]
+  },
+  {
+   "id": "R037",
+   "rule": "When he returns after hours, a card or chip offered earlier is named by its title and said to be above in the chat, not top-right.",
+   "ru": "Карточку или чип выше называй по названию и говори, что они выше в чате, а не справа сверху.",
+   "layer": "global",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [],
+   "complaintChats": null,
+   "conflicts": [],
+   "status": "active",
+   "sources": [
+    {
+     "file": "~/.claude/CLAUDE.md",
+     "anchor": "What I still decide, bullet 4 (line 22)"
+    }
+   ]
+  },
+  {
+   "id": "R038",
+   "rule": "Cheap agents locate and do routine work, strong ones judge: Haiku to locate, Sonnet to execute and first-pass findings, model and effort set on every call, the top model for design, judgement and the final check; a Fable session builds UI itself.",
+   "ru": "Дешёвые агенты ищут и делают рутину, сильные судят: Haiku ищет, Sonnet делает и первичные находки, model и effort в каждом вызове; дизайн, суждение и финальная проверка - верхняя модель.",
+   "layer": "global",
+   "enforced": "hook+text",
+   "enforcer": "tools/hooks/router.ts (routes only cheap-tagged spawns; reviewer never)",
+   "complaints": [
+    "C15"
+   ],
+   "complaintChats": null,
+   "conflicts": [
+    "R039",
+    "C13"
+   ],
+   "status": "active",
+   "sources": [
+    {
+     "file": "~/.claude/CLAUDE.md",
+     "anchor": "Agents, bullet 1 (line 25)",
+     "date": "2026-11-10"
+    },
+    {
+     "file": "tools/hooks/gates.ts",
+     "anchor": "economy"
+    },
+    {
+     "file": "tools/hooks/router.ts",
+     "anchor": "top comment (cheap tagged spawns routed, reviewer never)"
+    },
+    {
+     "file": "docs/COMPLAINTS.md",
+     "anchor": "C15",
+     "date": "2026-10-05"
+    },
+    {
+     "file": "<project>/CLAUDE.md",
+     "anchor": "Hard rules: Workflow size / Models per task (docs/AI_MODELS.md)",
+     "date": "2026-09-22"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "D13, C13"
+    }
+   ]
+  },
+  {
+   "id": "R039",
+   "rule": "Effort is medium or high only (medium everyday, high for harder work; Sonnet subagents high); never low, xhigh, max or ultracode.",
+   "ru": "Effort только medium или high (Sonnet-субагенты high). Никогда low, xhigh, max.",
+   "layer": "global",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [
+    "T07"
+   ],
+   "complaintChats": null,
+   "conflicts": [
+    "R038",
+    "C12"
+   ],
+   "status": "active",
+   "sources": [
+    {
+     "file": "~/.claude/makarasty/profile.md",
+     "anchor": "Effort line"
+    },
+    {
+     "file": "tools/hooks/gates.ts",
+     "anchor": "economy: every Sonnet spawn high"
+    },
+    {
+     "file": "docs/COMPLAINTS.md",
+     "anchor": "T07",
+     "date": "2026-11-12"
+    },
+    {
+     "file": "<project memory>/MEMORY.md",
+     "anchor": "Effort: medium or high only"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "C12"
+    }
+   ]
+  },
+  {
+   "id": "R040",
+   "rule": "Red teams and critiques never reject an idea because of effort or migration time (agents do the work); judge by evidence: works, breaks, runtime cost, safety.",
+   "ru": "Красная команда не отвергает идею из-за трудозатрат или времени миграции. Судить по доказательствам.",
+   "layer": "global",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [
+    "T04"
+   ],
+   "complaintChats": null,
+   "conflicts": [
+    "R075",
+    "C2"
+   ],
+   "status": "active",
+   "sources": [
+    {
+     "file": "~/.claude/CLAUDE.md",
+     "anchor": "Agents, bullet 2 (line 26)"
+    },
+    {
+     "file": "docs/COMPLAINTS.md",
+     "anchor": "T04",
+     "date": "2026-10-16"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "C2"
+    }
+   ]
+  },
+  {
+   "id": "R041",
+   "rule": "Before judging any perf, tooling or OS change, read ~/.claude/MACHINE.md and pass it to red teams and subagents doing that work.",
+   "ru": "Перед суждением о производительности, тулинге или ОС прочитай ~/.claude/MACHINE.md и передай субагентам.",
+   "layer": "global",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [],
+   "complaintChats": null,
+   "conflicts": [],
+   "status": "active",
+   "sources": [
+    {
+     "file": "~/.claude/CLAUDE.md",
+     "anchor": "This machine, bullet 1 (line 29)"
+    },
+    {
+     "file": "~/.claude/makarasty/profile.md",
+     "anchor": "line 1 (MACHINE.md pointer)"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "D15"
+    }
+   ]
+  },
+  {
+   "id": "R042",
+   "rule": "Scope checks first (single project, single file, --changed); the whole suite only for a release, a large merge or an explicit ask; scope checks to the files touched.",
+   "ru": "Сначала узкие проверки (один проект, файл, --changed). Весь набор - только для релиза, большого мержа или по просьбе.",
+   "layer": "global",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [
+    "C04"
+   ],
+   "complaintChats": null,
+   "conflicts": [],
+   "status": "active",
+   "sources": [
+    {
+     "file": "~/.claude/CLAUDE.md",
+     "anchor": "This machine, bullet 3 (line 31)"
+    },
+    {
+     "file": "tools/hooks/gates.ts",
+     "anchor": "economy: scope checks to the files you touched"
+    },
+    {
+     "file": "<project>/CLAUDE.md",
+     "anchor": "Commands (run the narrowest one)"
+    }
+   ]
+  },
+  {
+   "id": "R043",
+   "rule": "Background processes (dev server, tsc --watch, emulators) are the owner's: never start a duplicate, never kill his.",
+   "ru": "Фоновые процессы (dev-сервер, tsc --watch, эмуляторы) мои: дубль не запускать, мои не убивать.",
+   "layer": "global",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [],
+   "complaintChats": null,
+   "conflicts": [
+    "R032",
+    "C9"
+   ],
+   "status": "active",
+   "sources": [
+    {
+     "file": "~/.claude/CLAUDE.md",
+     "anchor": "This machine, bullet 5 (line 33)"
+    },
+    {
+     "file": "<project>/CLAUDE.md",
+     "anchor": "Verify budget: never start or kill a second vite, tsc --watch or emulator"
+    },
+    {
+     "file": "tools/hooks/gates.ts",
+     "anchor": "habits: Ask first ... stopping a process the person started"
+    }
+   ]
+  },
+  {
+   "id": "R044",
+   "rule": "For structural TS/JS search or identifier rename prefer ast-grep (`sg`) over Grep/sed; not for .vue markup.",
+   "ru": "Для структурного поиска и переименования в TS/JS бери sg (ast-grep), а не Grep/sed. Не для .vue.",
+   "layer": "global",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [],
+   "complaintChats": null,
+   "conflicts": [],
+   "status": "active",
+   "sources": [
+    {
+     "file": "~/.claude/CLAUDE.md",
+     "anchor": "ast-grep section (lines 36-40)"
+    },
+    {
+     "file": "<project>/CLAUDE.md",
+     "anchor": "Reading big files: Structural TS search or rename"
+    }
+   ]
+  },
+  {
+   "id": "R045",
+   "rule": "Use the disposable remote box (svalka) only when asked; read ~/.claude/SVALKA.md first; never on your own.",
+   "ru": "Свалка только по моей просьбе; сначала прочитай ~/.claude/SVALKA.md.",
+   "layer": "global",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [],
+   "complaintChats": null,
+   "conflicts": [],
+   "status": "active",
+   "sources": [
+    {
+     "file": "~/.claude/CLAUDE.md",
+     "anchor": "svalka section (line 43)"
+    }
+   ]
+  },
+  {
+   "id": "R046",
+   "rule": "A rule lives in one place: global CLAUDE.md holds only the owner's cross-project rules, generic working rules ship once in the plugin, a project CLAUDE.md holds that repo's facts.",
+   "ru": "Правило живёт в одном месте: в глобальном CLAUDE.md мои общие правила, рабочие правила в плагине, факты репо в его CLAUDE.md.",
+   "layer": "global",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [],
+   "complaintChats": null,
+   "conflicts": [],
+   "status": "active",
+   "sources": [
+    {
+     "file": "~/.claude/CLAUDE.md",
+     "anchor": "HTML comment, line 1",
+     "date": "2026-11-17"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "section 6"
+    }
+   ]
+  },
+  {
+   "id": "R047",
+   "rule": "Edit a file only after reading it.",
+   "ru": "Правь файл только после того, как прочитал его.",
+   "layer": "plugin",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [],
+   "complaintChats": null,
+   "conflicts": [],
+   "status": "active",
+   "sources": [
+    {
+     "file": "tools/hooks/gates.ts",
+     "anchor": "habits: Edit a file only after reading it"
+    },
+    {
+     "file": "docs/MEASUREMENTS.md",
+     "anchor": "M25, M31 (Edit failures)"
+    }
+   ]
+  },
+  {
+   "id": "R048",
+   "rule": "Wait for a task's completion notice; never poll.",
+   "ru": "Жди уведомления о завершении задачи, не опрашивай в цикле.",
+   "layer": "plugin",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [],
+   "complaintChats": null,
+   "conflicts": [
+    "R010",
+    "C16"
+   ],
+   "status": "active",
+   "sources": [
+    {
+     "file": "tools/hooks/gates.ts",
+     "anchor": "habits: Wait for a task completion notice"
+    },
+    {
+     "file": "docs/MEASUREMENTS.md",
+     "anchor": "M52"
+    }
+   ]
+  },
+  {
+   "id": "R049",
+   "rule": "Report in this order: what happened, why, what you did, what the person must do.",
+   "ru": "Отчёт по порядку: что случилось, почему, что сделал, что должен сделать я.",
+   "layer": "plugin",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [
+    "T01"
+   ],
+   "complaintChats": null,
+   "conflicts": [
+    "R077",
+    "C11"
+   ],
+   "status": "active",
+   "sources": [
+    {
+     "file": "tools/hooks/gates.ts",
+     "anchor": "habits: Report in this order"
+    },
+    {
+     "file": "docs/COMPLAINTS.md",
+     "anchor": "T01"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "D4, C11"
+    }
+   ]
+  },
+  {
+   "id": "R050",
+   "rule": "Other chats share the checkout: edit and commit only the files this chat changed, name another chat's file, never touch or discard it; no stash, reset --hard, clean -f, checkout --, add -A, commit -a, history rewrites in a shared tree.",
+   "ru": "В общем дереве правь и коммить только свои файлы; чужой файл назови и не трогай. Без stash, reset --hard, clean, checkout --, add -A, commit -a.",
+   "layer": "plugin",
+   "enforced": "hook+text",
+   "enforcer": "tools/hooks/git-guard.ts",
+   "complaints": [
+    "C02",
+    "T05"
+   ],
+   "complaintChats": null,
+   "conflicts": [],
+   "status": "active",
+   "sources": [
+    {
+     "file": "tools/hooks/gates.ts",
+     "anchor": "habits: Other chats may share this checkout"
+    },
+    {
+     "file": "tools/hooks/git-guard.ts",
+     "anchor": "header comment"
+    },
+    {
+     "file": "docs/COMPLAINTS.md",
+     "anchor": "C02 (10-01), T05 (08-17)",
+     "date": "2026-10-01"
+    },
+    {
+     "file": "<project memory>/MEMORY.md",
+     "anchor": "shared tree commit races parallel sessions"
+    },
+    {
+     "file": "CLAUDE.md",
+     "anchor": "Hard rules: No git stash, reset --hard ..."
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "D6"
+    }
+   ],
+   "inForce": [
+    {
+     "hook": "git-guard",
+     "env": "MAKARASTY_GIT_GUARD",
+     "canary": {
+      "fn": "check",
+      "args": [
+       "git reset --hard HEAD"
+      ],
+      "match": "overwrites"
+     }
+    }
+   ],
+   "field": {
+    "regex": "(стёр|затёр|потерял\\S* (мои )?изменени|удалил (мои|чужие)|откатил (мои|всё))",
+    "since": "2026-10-19"
+   }
+  },
+  {
+   "id": "R051",
+   "rule": "A check that runs out of memory is too broad: narrow it; never raise --max-old-space-size or drop a worker cap someone set.",
+   "ru": "Проверка упала по памяти, значит она слишком широкая: сузь. Не поднимай --max-old-space-size и не убирай лимит воркеров.",
+   "layer": "plugin",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [],
+   "complaintChats": null,
+   "conflicts": [
+    "R052",
+    "C8"
+   ],
+   "status": "active",
+   "sources": [
+    {
+     "file": "tools/hooks/gates.ts",
+     "anchor": "habits: A check that runs out of memory is too broad"
+    },
+    {
+     "file": "<project>/CLAUDE.md",
+     "anchor": "Verify budget"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "D7"
+    }
+   ]
+  },
+  {
+   "id": "R052",
+   "rule": "Never propose fewer workers, test workers or parallel chats to save RAM: a RAM fix must not cost speed.",
+   "ru": "Не предлагай меньше воркеров или чатов ради экономии RAM. Исправление RAM не должно замедлять.",
+   "layer": "global",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [],
+   "complaintChats": null,
+   "conflicts": [
+    "R051",
+    "R009",
+    "C8"
+   ],
+   "status": "active",
+   "sources": [
+    {
+     "file": "~/.claude/makarasty/profile.md",
+     "anchor": "line 1"
+    },
+    {
+     "file": "<project memory>/MEMORY.md",
+     "anchor": "Speed over RAM"
+    },
+    {
+     "file": "<project memory>/MEMORY.md",
+     "anchor": "busy box wait then run wide",
+     "date": "2026-10-21"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "C8"
+    }
+   ]
+  },
+  {
+   "id": "R053",
+   "rule": "New errors after a tool update: find the culprit before any rollback or pin: the code is wrong (fix), another checker misses it (report the gap), or the new version has a bug (cite its issue, then pin with a comment linking it).",
+   "ru": "Новые ошибки после обновления тула: сначала найди причину, потом откат или пин; пин с ссылкой на issue.",
+   "layer": "plugin",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [],
+   "complaintChats": null,
+   "conflicts": [],
+   "status": "active",
+   "sources": [
+    {
+     "file": "tools/hooks/gates.ts",
+     "anchor": "habits: New errors after a tool update"
+    },
+    {
+     "file": "<project memory>/MEMORY.md",
+     "anchor": "stay on newest stable versions"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "D19"
+    }
+   ]
+  },
+  {
+   "id": "R054",
+   "rule": "Spawn the narrowest agent (Explore for read-only search, fleet-coder/fleet-reviewer else general-purpose); keep noisy work (test runs, screenshots, wide searches, logs) in subagents; routine screenshots at scale 0.5.",
+   "ru": "Бери самого узкого агента; шумную работу (тесты, скриншоты, широкий поиск, логи) держи в субагентах; рутинные скриншоты в масштабе 0.5.",
+   "layer": "plugin",
+   "enforced": "hook+text",
+   "enforcer": "tools/hooks/reads.ts (nudges Read/Grep over shell), router.ts",
+   "complaints": [],
+   "complaintChats": null,
+   "conflicts": [],
+   "status": "active",
+   "sources": [
+    {
+     "file": "tools/hooks/gates.ts",
+     "anchor": "economy"
+    },
+    {
+     "file": "tools/hooks/reads.ts",
+     "anchor": "top comment (dedicated Read/Grep instead of shell)"
+    },
+    {
+     "file": "docs/MEASUREMENTS.md",
+     "anchor": "M40"
+    }
+   ]
+  },
+  {
+   "id": "R055",
+   "rule": "Read big files with Grep and a line range, `git diff --stat` before a full diff; never read a huge doc whole.",
+   "ru": "Большие файлы читай через Grep и диапазон строк; сначала git diff --stat.",
+   "layer": "plugin",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [],
+   "complaintChats": null,
+   "conflicts": [],
+   "status": "active",
+   "sources": [
+    {
+     "file": "tools/hooks/gates.ts",
+     "anchor": "economy"
+    },
+    {
+     "file": "<project>/CLAUDE.md",
+     "anchor": "Reading big files"
+    },
+    {
+     "file": "CLAUDE.md",
+     "anchor": "Reading big files"
+    }
+   ]
+  },
+  {
+   "id": "R056",
+   "rule": "Each question to the owner stands alone: what happened, why it is asked, what each option does; a turn that ends waiting ends with one message saying what happened and the one thing to press or type; he answers hours later among 20-30 chats.",
+   "ru": "Каждый вопрос понятен сам по себе: что случилось, зачем спрашиваю, что делает каждый вариант. Конец хода в ожидании - одно сообщение: что произошло и что нажать.",
+   "layer": "plugin",
+   "enforced": "hook+text",
+   "enforcer": "tools/hooks/ask-guard.ts; inbox.ts sourceDeny",
+   "complaints": [
+    "C09",
+    "C21",
+    "cl1"
+   ],
+   "complaintChats": null,
+   "conflicts": [],
+   "status": "active",
+   "sources": [
+    {
+     "file": "tools/hooks/gates.ts",
+     "anchor": "asking"
+    },
+    {
+     "file": "tools/hooks/ask-guard.ts",
+     "anchor": "MESSAGE, ELSEWHERE"
+    },
+    {
+     "file": "docs/COMPLAINTS.md",
+     "anchor": "C09, C21",
+     "date": "2026-11-12"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "cluster 1"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "D11"
+    }
+   ]
+  },
+  {
+   "id": "R057",
+   "rule": "A command for the owner goes above the question in a code block (PowerShell 5.1: `;` not `&&`), never inside a dialog or option; numbered ready blocks with absolute paths.",
+   "ru": "Команды для меня идут над вопросом в блоке кода (PowerShell 5.1: `;` вместо `&&`), не внутри окна вопроса.",
+   "layer": "plugin",
+   "enforced": "hook+text",
+   "enforcer": "tools/hooks/ask-guard.ts COMMAND",
+   "complaints": [
+    "C08"
+   ],
+   "complaintChats": null,
+   "conflicts": [],
+   "status": "active",
+   "sources": [
+    {
+     "file": "tools/hooks/ask-guard.ts",
+     "anchor": "COMMAND"
+    },
+    {
+     "file": "tools/hooks/gates.ts",
+     "anchor": "asking"
+    },
+    {
+     "file": "docs/COMPLAINTS.md",
+     "anchor": "C08",
+     "date": "2026-10-25"
+    },
+    {
+     "file": "<project memory>/MEMORY.md",
+     "anchor": "owner commands powershell ready blocks"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "D11"
+    }
+   ]
+  },
+  {
+   "id": "R058",
+   "rule": "Answer matching questions from the standing answers (answers.md, profile.md) in his own words, never a commit, push, merge, deploy, delete, money or permission question; the owner's facts live only in his own files, never in shipped prompts.",
+   "ru": "Подходящие вопросы отвечай из answers.md и profile.md (мои слова), но не про коммит, пуш, мерж, деплой, удаление, деньги, права. Мои факты только в моих файлах.",
+   "layer": "plugin",
+   "enforced": "hook",
+   "enforcer": "tools/hooks/gates.ts profile(); inbox.ts / core.mjs",
+   "complaints": [
+    "C16",
+    "C06"
+   ],
+   "complaintChats": null,
+   "conflicts": [],
+   "status": "active",
+   "sources": [
+    {
+     "file": "tools/hooks/gates.ts",
+     "anchor": "profile(): standing answers"
+    },
+    {
+     "file": "~/.claude/makarasty/answers.md",
+     "anchor": "line 1"
+    },
+    {
+     "file": "~/.claude/makarasty/profile.md",
+     "anchor": "whole file"
+    },
+    {
+     "file": "docs/COMPLAINTS.md",
+     "anchor": "C16, C06"
+    }
+   ]
+  },
+  {
+   "id": "R059",
+   "rule": "No handoff to a new chat unless he asks: finish in this chat; a handoff doc and chip only on request (the 700K relaunch is the standing exception); chips only for one real defect with a Done when.",
+   "ru": "Handoff без просьбы не делай: заканчивай в этом чате. Чипы только для одного реального дефекта с «готово, когда».",
+   "layer": "memory",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [],
+   "complaintChats": null,
+   "conflicts": [
+    "R020",
+    "C6"
+   ],
+   "status": "active",
+   "sources": [
+    {
+     "file": "<project memory>/MEMORY.md",
+     "anchor": "no handoff finish it yourself",
+     "date": "2026-10-06"
+    },
+    {
+     "file": "<project memory>/MEMORY.md",
+     "anchor": "spawn task chips only for one real defect"
+    },
+    {
+     "file": "tools/hooks/gates.ts",
+     "anchor": "reminder: Do not offer or run a handoff unasked"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "C6"
+    },
+    {
+     "file": "<owner page on the Desktop>",
+     "anchor": "#15 stale list: «всё чипами»"
+    }
+   ]
+  },
+  {
+   "id": "R060",
+   "rule": "Recursive deletes that reach past a named folder inside the project (drive root, home, project, .git, temp root) are refused; never `git worktree remove` (it follows a junction and empties the main checkout): use prune.",
+   "ru": "Рекурсивное удаление за пределами папки проекта (корень диска, home, .git) запрещено. `git worktree remove` нельзя: используй prune.",
+   "layer": "plugin",
+   "enforced": "hook",
+   "enforcer": "tools/hooks/delete-guard.ts, git-guard.ts",
+   "complaints": [
+    "C05"
+   ],
+   "complaintChats": null,
+   "conflicts": [],
+   "status": "active",
+   "sources": [
+    {
+     "file": "tools/hooks/delete-guard.ts",
+     "anchor": "header comment"
+    },
+    {
+     "file": "tools/hooks/git-guard.ts",
+     "anchor": "worktree remove rule"
+    },
+    {
+     "file": "docs/COMPLAINTS.md",
+     "anchor": "C05",
+     "date": "2026-09-08"
+    },
+    {
+     "file": "CLAUDE.md",
+     "anchor": "Hard rules: Worktrees are opt-in"
+    },
+    {
+     "file": "<project memory>/MEMORY.md",
+     "anchor": "worktree junction rm destroys node modules"
+    },
+    {
+     "file": "docs/MEASUREMENTS.md",
+     "anchor": "M75"
+    }
+   ],
+   "inForce": [
+    {
+     "hook": "delete-guard",
+     "env": "MAKARASTY_DELETE_GUARD",
+     "canary": {
+      "fn": "check",
+      "args": [
+       "rm -rf /c/",
+       "Bash",
+       {
+        "cwd": "C:/x/proj",
+        "home": "C:/Users/u",
+        "tmp": "C:/Temp"
+       }
+      ],
+      "match": "drive"
+     }
+    }
+   ]
+  },
+  {
+   "id": "R061",
+   "rule": "Before a shell line that may overwrite or delete what no guard can read, the project's uncommitted files are snapshotted to refs/makarasty/snapshot.",
+   "ru": "Перед командой, которая может затереть файлы, незакоммиченное сохраняется снапшотом.",
+   "layer": "plugin",
+   "enforced": "hook",
+   "enforcer": "tools/hooks/snapshot.ts",
+   "complaints": [],
+   "complaintChats": null,
+   "conflicts": [],
+   "status": "active",
+   "sources": [
+    {
+     "file": "tools/hooks/snapshot.ts",
+     "anchor": "header comment"
+    },
+    {
+     "file": "docs/MEASUREMENTS.md",
+     "anchor": "M75"
+    }
+   ],
+   "inForce": [
+    {
+     "hook": "snapshot",
+     "env": "MAKARASTY_SNAPSHOT"
+    }
+   ]
+  },
+  {
+   "id": "R062",
+   "rule": "A live-looking secret (API key, bot token, webhook URL, private key) is never written into a file inside the project; it goes in the config dir or an environment variable.",
+   "ru": "Живые секреты (ключи, токены, вебхуки) не пишем в файлы проекта.",
+   "layer": "plugin",
+   "enforced": "hook",
+   "enforcer": "tools/hooks/secret-guard.ts",
+   "complaints": [],
+   "complaintChats": null,
+   "conflicts": [],
+   "status": "active",
+   "sources": [
+    {
+     "file": "tools/hooks/secret-guard.ts",
+     "anchor": "header comment"
+    }
+   ],
+   "inForce": [
+    {
+     "hook": "secret-guard",
+     "env": "MAKARASTY_SECRET_GUARD",
+     "canary": {
+      "fn": "check",
+      "args": [
+       "C:/x/proj/src/a.ts",
+       "const k = \"{fake:aws}\"",
+       {
+        "cwd": "C:/x/proj",
+        "safe": []
+       },
+       ""
+      ],
+      "match": "secret-guard"
+     }
+    }
+   ]
+  },
+  {
+   "id": "R063",
+   "rule": "The same failing call three times, or two failing calls taking turns three times: stop retrying, read the error, change the approach or ask.",
+   "ru": "Одна и та же команда падает 3 раза: хватит повторять, прочитай ошибку и смени подход.",
+   "layer": "plugin",
+   "enforced": "hook",
+   "enforcer": "tools/hooks/loop-guard.ts",
+   "complaints": [],
+   "complaintChats": null,
+   "conflicts": [],
+   "status": "active",
+   "sources": [
+    {
+     "file": "tools/hooks/loop-guard.ts",
+     "anchor": "NOTE_A, NOTE_B"
+    }
+   ],
+   "inForce": [
+    {
+     "hook": "loop-guard",
+     "env": "MAKARASTY_LOOP_GUARD"
+    }
+   ]
+  },
+  {
+   "id": "R064",
+   "rule": "Never edit a compiled output (.mjs/.js listed in src/build.sha256); edit the .mts/.ts source and run the build.",
+   "ru": "Не правь собранные .mjs/.js; правь исходник .mts/.ts и запусти сборку.",
+   "layer": "plugin",
+   "enforced": "hook",
+   "enforcer": "tools/hooks/generated-guard.ts",
+   "complaints": [],
+   "complaintChats": null,
+   "conflicts": [],
+   "status": "active",
+   "sources": [
+    {
+     "file": "tools/hooks/generated-guard.ts",
+     "anchor": "MESSAGE"
+    },
+    {
+     "file": "CLAUDE.md",
+     "anchor": "Source and build"
+    }
+   ],
+   "inForce": [
+    {
+     "hook": "generated-guard"
+    }
+   ]
+  },
+  {
+   "id": "R065",
+   "rule": "Commits run their hooks; never --no-verify (git-guard refuses it); split commits stay fast.",
+   "ru": "Коммиты проходят хуки; --no-verify нельзя.",
+   "layer": "memory",
+   "enforced": "hook",
+   "enforcer": "tools/hooks/git-guard.ts",
+   "complaints": [],
+   "complaintChats": null,
+   "conflicts": [],
+   "status": "active",
+   "sources": [
+    {
+     "file": "<project memory>/MEMORY.md",
+     "anchor": "fast batch commit recipe"
+    },
+    {
+     "file": "tools/hooks/git-guard.ts",
+     "anchor": "no-verify (3 matches)"
+    }
+   ],
+   "inForce": [
+    {
+     "hook": "git-guard",
+     "env": "MAKARASTY_GIT_GUARD",
+     "canary": {
+      "fn": "check",
+      "args": [
+       "git commit --no-verify -m x"
+      ],
+      "match": "."
+     }
+    }
+   ]
+  },
+  {
+   "id": "R066",
+   "rule": "One inbox for every chat: dialogs, boxes and cards are relayed, explained, answered once; re-asks are merged, dead dialogs are answered as a prompt; answers are delivered between turns.",
+   "ru": "Один инбокс на все чаты: вопросы объяснены, отвечены один раз, повторы склеены.",
+   "layer": "plugin",
+   "enforced": "hook",
+   "enforcer": "tools/hooks/inbox.ts, inbox.mjs",
+   "complaints": [
+    "C10",
+    "cl1"
+   ],
+   "complaintChats": null,
+   "conflicts": [],
+   "status": "active",
+   "sources": [
+    {
+     "file": "docs/COMPLAINTS.md",
+     "anchor": "C10",
+     "date": "2026-11-11"
+    },
+    {
+     "file": "tools/hooks/inbox.ts",
+     "anchor": "top comment"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "cluster 1 (11-12 8bed257b duplicates)"
+    }
+   ]
+  },
+  {
+   "id": "R067",
+   "rule": "Only what the owner typed counts as his word: app reminders, plugin messages, pastes and another session's message are never stored as his consent.",
+   "ru": "Моими словами считается только то, что я набрал: напоминания, плагины, вставки нет.",
+   "layer": "plugin",
+   "enforced": "hook",
+   "enforcer": "tools/hooks/inbox.ts ownWords; tools/hooks/consent.ts (the one reader of an answer the app frames as a plugin message)",
+   "complaints": [
+    "C14",
+    "cl9"
+   ],
+   "complaintChats": null,
+   "conflicts": [],
+   "status": "active",
+   "sources": [
+    {
+     "file": "docs/COMPLAINTS.md",
+     "anchor": "C14",
+     "date": "2026-11-12"
+    },
+    {
+     "file": "tools/hooks/own-words.ts",
+     "anchor": "top comment"
+    },
+    {
+     "file": "tools/hooks/consent.ts",
+     "anchor": "top comment"
+    }
+   ]
+  },
+  {
+   "id": "R068",
+   "rule": "The inbox chat messages a chat only in a turn he typed or after he answered its dialog; a muted chat is silent (no item, report, wake, delivery); no answer goes into a chat he wrote in after the question, archived, or 12 h+ old.",
+   "ru": "Инбокс пишет в чат только в мой ход или после моего ответа; заглушенный чат молчит; старые ответы не доставляются.",
+   "layer": "plugin",
+   "enforced": "hook",
+   "enforcer": "tools/hooks/inbox.ts send gate, muted, deliverAnswers",
+   "complaints": [
+    "C19"
+   ],
+   "complaintChats": null,
+   "conflicts": [],
+   "status": "active",
+   "sources": [
+    {
+     "file": "docs/COMPLAINTS.md",
+     "anchor": "C19",
+     "date": "2026-11-13"
+    }
+   ]
+  },
+  {
+   "id": "R069",
+   "rule": "The inbox follows the chats active in the last 30 min and the ones it started, says so in one line, and never asks which chats to watch.",
+   "ru": "Инбокс сам следит за чатами, активными за 30 минут, и не спрашивает, за какими следить.",
+   "layer": "plugin",
+   "enforced": "hook",
+   "enforcer": "inbox.mjs autoFollow",
+   "complaints": [
+    "C20"
+   ],
+   "complaintChats": null,
+   "conflicts": [],
+   "status": "active",
+   "sources": [
+    {
+     "file": "docs/COMPLAINTS.md",
+     "anchor": "C20",
+     "date": "2026-11-13"
+    }
+   ]
+  },
+  {
+   "id": "R070",
+   "rule": "A fleet worker cannot stop while holding a claim; long replies go to report files; workers report by file with three lines back, no acknowledgement spam.",
+   "ru": "Воркер флита не заканчивает с занятой задачей; длинные ответы в файл; три строки в ответ.",
+   "layer": "plugin",
+   "enforced": "hook+text",
+   "enforcer": "hooks/gate.ts (SubagentStop)",
+   "complaints": [
+    "C18",
+    "T08"
+   ],
+   "complaintChats": null,
+   "conflicts": [],
+   "status": "active",
+   "sources": [
+    {
+     "file": "docs/COMPLAINTS.md",
+     "anchor": "C18, T08",
+     "date": "2026-11-10"
+    }
+   ]
+  },
+  {
+   "id": "R071",
+   "rule": "The owner's own facts (language, machine, channels, standing answers) live only in profile.md and answers.md; shipped plugin text names nobody's machine.",
+   "ru": "Мои личные факты только в profile.md и answers.md, не в тексте плагина.",
+   "layer": "plugin",
+   "enforced": "hook",
+   "enforcer": "tools/hooks/gates.ts profile()",
+   "complaints": [
+    "C16"
+   ],
+   "complaintChats": null,
+   "conflicts": [],
+   "status": "active",
+   "sources": [
+    {
+     "file": "docs/COMPLAINTS.md",
+     "anchor": "C16",
+     "date": "2026-11-11"
+    },
+    {
+     "file": "tools/hooks/gates.ts",
+     "anchor": "profile()"
+    },
+    {
+     "file": "CLAUDE.md",
+     "anchor": "Hard rules: README names no other project"
+    }
+   ]
+  },
+  {
+   "id": "R072",
+   "rule": "Text written in the owner's name reads as a person wrote it: no assistant tics (unslop/antislop are opt-in modes, currently off).",
+   "ru": "Текст от моего имени без нейро-стиля. Режимы unslop и antislop включаются отдельно (сейчас выключены).",
+   "layer": "plugin",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [
+    "T01"
+   ],
+   "complaintChats": null,
+   "conflicts": [],
+   "status": "active",
+   "sources": [
+    {
+     "file": "docs/COMPLAINTS.md",
+     "anchor": "T01 (unslop skill)"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "inventory: opt-in and currently OFF"
+    }
+   ]
+  },
+  {
+   "id": "R073",
+   "rule": "No key presses or clicks on the owner's desktop unasked.",
+   "ru": "Не нажимай клавиши и не кликай на моём рабочем столе без просьбы.",
+   "layer": "plugin",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [
+    "T09"
+   ],
+   "complaintChats": null,
+   "conflicts": [],
+   "status": "active",
+   "sources": [
+    {
+     "file": "docs/COMPLAINTS.md",
+     "anchor": "T09",
+     "date": "2026-11-09"
+    }
+   ]
+  },
+  {
+   "id": "R074",
+   "rule": "A shortcut with a known limit gets a code comment in the form `shortcut: <limit>, <when to upgrade>`.",
+   "ru": "ponytail требует комментарии «shortcut:» в коде. Мое правило это запрещает и главнее.",
+   "layer": "third-party",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [],
+   "complaintChats": null,
+   "conflicts": [
+    "R026",
+    "C1"
+   ],
+   "status": "stale",
+   "sources": [
+    {
+     "file": "<ponytail>/hooks/ponytail-instructions.js",
+     "anchor": "A shortcut with a known limit gets a code comment (SessionStart and SubagentStart)"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "C1"
+    }
+   ]
+  },
+  {
+   "id": "R075",
+   "rule": "Be a lazy senior developer: the best code is the code never written; deletion beats addition; skip features nobody asked for (but finish every part the task needs).",
+   "ru": "ponytail: лучший код тот, что не написан; не добавляй, чего не просили (но доделывай нужное).",
+   "layer": "third-party",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [],
+   "complaintChats": null,
+   "conflicts": [
+    "R007",
+    "R040",
+    "C2"
+   ],
+   "status": "active",
+   "sources": [
+    {
+     "file": "<ponytail>/hooks/ponytail-instructions.js",
+     "anchor": "opening + The smallest complete change"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "C2"
+    }
+   ]
+  },
+  {
+   "id": "R076",
+   "rule": "No abstraction, wrapper, option or config nobody asked for.",
+   "ru": "ponytail: никаких опций и конфигов, о которых не просили. Для LifeLines это правило отключено явно.",
+   "layer": "third-party",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [],
+   "complaintChats": null,
+   "conflicts": [
+    "R033",
+    "R081",
+    "C3"
+   ],
+   "status": "active",
+   "sources": [
+    {
+     "file": "<ponytail>/hooks/ponytail-instructions.js",
+     "anchor": "The smallest complete change"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "C3"
+    },
+    {
+     "file": "<project>/CLAUDE.md",
+     "anchor": "Product principle: ponytail no-option rule does not apply here"
+    }
+   ]
+  },
+  {
+   "id": "R077",
+   "rule": "Every reply ends with one or two lines: what was skipped or not checked, and any risk.",
+   "ru": "ponytail: в конце ответа 1-2 строки: что пропущено или не проверено, и риск. Для меня то же, что «проверь перед готово».",
+   "layer": "third-party",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [],
+   "complaintChats": null,
+   "conflicts": [
+    "R001",
+    "R049",
+    "C11"
+   ],
+   "status": "active",
+   "sources": [
+    {
+     "file": "<ponytail>/hooks/ponytail-instructions.js",
+     "anchor": "end of Ponytail intro"
+    },
+    {
+     "file": "~/.claude/CLAUDE.md",
+     "anchor": "How to answer me, bullet 2 (line 5): same line, not a second one"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "C11"
+    }
+   ]
+  },
+  {
+   "id": "R078",
+   "rule": "New non-trivial logic leaves one small test or self-check; trivial changes need none; comment only the why, in one line.",
+   "ru": "ponytail: тест только для нетривиальной логики; комментарий только «почему» одной строкой.",
+   "layer": "third-party",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [],
+   "complaintChats": null,
+   "conflicts": [
+    "R082",
+    "C10"
+   ],
+   "status": "active",
+   "sources": [
+    {
+     "file": "<ponytail>/hooks/ponytail-instructions.js",
+     "anchor": "Lazy code without its check is unfinished; Comment only the why"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "C10, D16, D17"
+    }
+   ]
+  },
+  {
+   "id": "R108",
+   "rule": "A change is justified by its measured effect for the owner (predicted, then measured: method, sample, blind or self-check), never by lines, files or tokens alone.",
+   "ru": "Изменение оправдано измеренным эффектом, а не числом строк или токенов.",
+   "layer": "memory",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [],
+   "complaintChats": null,
+   "conflicts": [],
+   "status": "active",
+   "sources": [
+    {
+     "file": "<project memory>/MEMORY.md",
+     "anchor": "measure quality outcomes not volume"
+    },
+    {
+     "file": "CLAUDE.md",
+     "anchor": "Hard rules: Rules cite a measurement [Mnn]"
+    }
+   ]
+  },
+  {
+   "id": "R109",
+   "rule": "A written test asserting behaviour is a claim; read the source before trusting it.",
+   "ru": "Написанный тест это только утверждение; читай исходник.",
+   "layer": "memory",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [],
+   "complaintChats": null,
+   "conflicts": [],
+   "status": "active",
+   "sources": [
+    {
+     "file": "<project memory>/MEMORY.md",
+     "anchor": "a written test is not shipped code"
+    }
+   ]
+  },
+  {
+   "id": "R110",
+   "rule": "An instruction to the owner needs a findable ID or menu path, else say \"not verified\".",
+   "ru": "Инструкция для меня с находимым id или путём в меню, иначе «не проверено».",
+   "layer": "memory",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [
+    "cl3"
+   ],
+   "complaintChats": null,
+   "conflicts": [],
+   "status": "active",
+   "sources": [
+    {
+     "file": "<project memory>/MEMORY.md",
+     "anchor": "no hasty answers verify first"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "cluster 3"
+    }
+   ]
+  },
+  {
+   "id": "R111",
+   "rule": "Close out a review loop to zero findings: every phase built, walk the flow; not when told \"быстро\".",
+   "ru": "Ревью по кругу до нуля находок; не при «быстро».",
+   "layer": "memory",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [],
+   "complaintChats": null,
+   "conflicts": [
+    "R025"
+   ],
+   "status": "active",
+   "sources": [
+    {
+     "file": "<project memory>/MEMORY.md",
+     "anchor": "close out review loop to zero"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "dropped list: ревью по кругу"
+    }
+   ]
+  },
+  {
+   "id": "R112",
+   "rule": "Anything for the owner to look at carries the exact localhost link, checked on a cold load.",
+   "ru": "К любому «посмотри» точная ссылка localhost, проверенная с нуля.",
+   "layer": "memory",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [
+    "cl5"
+   ],
+   "complaintChats": null,
+   "conflicts": [],
+   "status": "active",
+   "sources": [
+    {
+     "file": "<project memory>/MEMORY.md",
+     "anchor": "owner wants a link to look at"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "cluster 5"
+    }
+   ]
+  },
+  {
+   "id": "R113",
+   "rule": "Any file for the owner to read is an HTML on his Desktop, never a .md.",
+   "ru": "Файл для чтения: HTML на моём рабочем столе, не .md.",
+   "layer": "memory",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [],
+   "complaintChats": null,
+   "conflicts": [],
+   "status": "active",
+   "sources": [
+    {
+     "file": "<project memory>/MEMORY.md",
+     "anchor": "files to owner are html on desktop"
+    }
+   ]
+  },
+  {
+   "id": "R117",
+   "rule": "Audit defects are usually real but the prescribed fixes mostly wrong: verify the fix shape.",
+   "ru": "Дефекты аудита обычно реальны, предложенные исправления нет.",
+   "layer": "memory",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [],
+   "complaintChats": null,
+   "conflicts": [],
+   "status": "active",
+   "sources": [
+    {
+     "file": "<project memory>/MEMORY.md",
+     "anchor": "audit fix shapes are not audit findings"
+    }
+   ]
+  },
+  {
+   "id": "R119",
+   "rule": "Memory stays small: back up first, bloat is the failure; only owner rules not already in CLAUDE.md or the session hook.",
+   "ru": "Память короткая; перед правкой бэкап; дублей CLAUDE.md нет.",
+   "layer": "memory",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [],
+   "complaintChats": null,
+   "conflicts": [],
+   "status": "active",
+   "sources": [
+    {
+     "file": "<project memory>/MEMORY.md",
+     "anchor": "memory hygiene pass"
+    }
+   ]
+  },
+  {
+   "id": "R120",
+   "rule": "In fixture scripts name the folder on every git call (git -C): a failed cd once committed \"delete everything\" to master.",
+   "ru": "В скриптах всегда git -C <папка>; упавший cd однажды закоммитил «удалить всё».",
+   "layer": "memory",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [],
+   "complaintChats": null,
+   "conflicts": [],
+   "status": "active",
+   "sources": [
+    {
+     "file": "<project memory>/MEMORY.md",
+     "anchor": "git in fixture scripts: git -C"
+    }
+   ]
+  },
+  {
+   "id": "R121",
+   "rule": "When asked to critique the owner, critique the person (habits and strengths with evidence); tool-fixable defects go in the tool list, not on him.",
+   "ru": "Критикуй человека (привычки и сильные стороны с доказательствами); дефекты, которые чинятся тулом, идут в список тула.",
+   "layer": "memory",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [],
+   "complaintChats": null,
+   "conflicts": [],
+   "status": "active",
+   "sources": [
+    {
+     "file": "<project memory>/MEMORY.md",
+     "anchor": "Critique the person, not the tools"
+    }
+   ]
+  },
+  {
+   "id": "R128",
+   "rule": "Before building something new, search for best practices and ready tools, scan them for viruses, then write your own.",
+   "ru": "Сначала поиск готового и проверка на вирусы, потом своё.",
+   "layer": "global",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [],
+   "complaintChats": null,
+   "conflicts": [],
+   "status": "active",
+   "sources": [
+    {
+     "file": "<owner page on the Desktop>",
+     "anchor": "#7",
+     "date": "2026-11-17"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "kept rules list"
+    },
+    {
+     "file": "~/.claude/makarasty/profile.md",
+     "anchor": "Before building / Before taking a backlog item",
+     "date": "2026-11-17"
+    }
+   ],
+   "inForce": [
+    {
+     "text": "profile",
+     "has": "research best practices and try ready-made tools first"
+    }
+   ],
+   "eval": "evals/R128-ready-tools.json"
+  },
+  {
+   "id": "R129",
+   "rule": "Before taking an old or recreate/update task from a list, check whether it is already done and still needed.",
+   "ru": "Перед задачей из списка проверь: не сделана ли уже и нужна ли.",
+   "layer": "global",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [],
+   "complaintChats": null,
+   "conflicts": [],
+   "status": "active",
+   "sources": [
+    {
+     "file": "<owner page on the Desktop>",
+     "anchor": "#8",
+     "date": "2026-11-17"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "kept rules list"
+    },
+    {
+     "file": "~/.claude/makarasty/profile.md",
+     "anchor": "Before building / Before taking a backlog item",
+     "date": "2026-11-17"
+    }
+   ],
+   "inForce": [
+    {
+     "text": "profile",
+     "has": "check it is still needed and not already done"
+    }
+   ],
+   "eval": "evals/R129-still-needed.json"
+  },
+  {
+   "id": "R130",
+   "rule": "Text written in the owner's name (post, email, description) never contains AI, Claude, Codex or 'made by a neural net'; today the rule exists only for commits.",
+   "ru": "Текст от моего имени без слов про ИИ (Claude, Codex, AI).",
+   "layer": "plugin",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [
+    "P03"
+   ],
+   "complaintChats": null,
+   "conflicts": [],
+   "status": "adopted, check not built",
+   "sources": [
+    {
+     "file": "<owner page on the Desktop>",
+     "anchor": "#12",
+     "date": "2026-11-17"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "kept rules list"
+    },
+    {
+     "file": "docs/COMPLAINTS.md",
+     "anchor": "Proposed checks P01-P04 (98118dc)",
+     "date": "2026-11-17"
+    }
+   ],
+   "eval": "evals/R130-no-ai-words.json"
+  },
+  {
+   "id": "R131",
+   "rule": "Personal data (employer name, NPI, work email, hardware names, personal paths) never enters commits of the owner's personal and public repos; today secret-guard catches only keys.",
+   "ru": "Личные данные не попадают в мои репо; сейчас secret-guard ловит только ключи.",
+   "layer": "plugin",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [
+    "P04"
+   ],
+   "complaintChats": null,
+   "conflicts": [],
+   "status": "adopted, check not built",
+   "sources": [
+    {
+     "file": "<owner page on the Desktop>",
+     "anchor": "#13",
+     "date": "2026-11-17"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "kept rules list"
+    },
+    {
+     "file": "tools/hooks/secret-guard.ts",
+     "anchor": "keys only (nearest existing rule)"
+    },
+    {
+     "file": "docs/COMPLAINTS.md",
+     "anchor": "Proposed checks P01-P04 (98118dc)",
+     "date": "2026-11-17"
+    }
+   ]
+  },
+  {
+   "id": "R132",
+   "rule": "Commit and push only when asked (superseded 2026-11-16 by «можешь спокойно сам пушить, коммитить»).",
+   "ru": "Коммит и пуш только по просьбе: устарело с 16.11.",
+   "layer": "memory",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [],
+   "complaintChats": null,
+   "conflicts": [
+    "R018",
+    "R028"
+   ],
+   "status": "stale",
+   "sources": [
+    {
+     "file": "<owner page on the Desktop>",
+     "anchor": "#15 Устарело: позже ты решил иначе"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "dropped list"
+    }
+   ]
+  },
+  {
+   "id": "R133",
+   "rule": "No more than 3 parallel chats (superseded 2026-11-12: speed over RAM).",
+   "ru": "Не больше 3 чатов: устарело, скорость важнее RAM.",
+   "layer": "memory",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [],
+   "complaintChats": null,
+   "conflicts": [
+    "R052"
+   ],
+   "status": "stale",
+   "sources": [
+    {
+     "file": "<owner page on the Desktop>",
+     "anchor": "#15 Устарело: позже ты решил иначе"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "dropped list"
+    }
+   ]
+  },
+  {
+   "id": "R134",
+   "rule": "Everything is offered as chips (superseded: chips only for one real defect).",
+   "ru": "Всё чипами: устарело, чип только для дефекта.",
+   "layer": "memory",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [],
+   "complaintChats": null,
+   "conflicts": [
+    "R059"
+   ],
+   "status": "stale",
+   "sources": [
+    {
+     "file": "<owner page on the Desktop>",
+     "anchor": "#15 Устарело: позже ты решил иначе"
+    },
+    {
+     "file": "<2026-11-17 investigation notes>",
+     "anchor": "dropped list"
+    }
+   ]
+  },
+  {
+   "id": "R137",
+   "rule": "The owner's answer counts from any channel: the app dialog, a wrap_up button, a typed message, the inbox or the phone; he is never asked the same thing twice.",
+   "ru": "Мой ответ считается из любого канала: диалог, кнопка, сообщение, инбокс, телефон. Дважды не спрашивать.",
+   "layer": "plugin",
+   "enforced": "hook+text",
+   "enforcer": "tools/hooks/consent.ts (read by push-guard.ts); tools/hooks/inbox.ts",
+   "complaints": [
+    "C10",
+    "C13"
+   ],
+   "complaintChats": null,
+   "conflicts": [],
+   "status": "active",
+   "sources": [
+    {
+     "file": "<2026-11-17 coordination board>",
+     "anchor": "owner rule 6",
+     "date": "2026-11-17"
+    },
+    {
+     "file": "tools/hooks/consent.ts",
+     "anchor": "header",
+     "date": "2026-11-17"
+    }
+   ],
+   "inForce": [
+    {
+     "hook": "push-guard",
+     "env": "MAKARASTY_PUSH_GUARD"
+    }
+   ],
+   "field": {
+    "regex": "(дважды спрашива|опять спрашива\\S* (на|про) пуш|я уже (ответил|разрешил|отвечал)|10 раз подряд разрешил)",
+    "since": "2026-11-17"
+   },
+   "gap": "only push-guard waits on a delivered answer; no check yet that every consent-waiting guard imports consent.ts"
+  },
+  {
+   "id": "R138",
+   "rule": "Every removal (note, memory, rule, file, branch) is checked against what is really there first; a FIXED or SUPERSEDED banner is a claim, the still-true part is kept.",
+   "ru": "Перед удалением проверь, что ничего из этого не верно и не используется; баннер FIXED это не доказательство.",
+   "layer": "plugin",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [
+    "board edge case"
+   ],
+   "complaintChats": null,
+   "conflicts": [],
+   "status": "candidate",
+   "sources": [
+    {
+     "file": "<2026-11-17 coordination board>",
+     "anchor": "edge case: a cleanup lost 48 still-true facts",
+     "date": "2026-11-17"
+    }
+   ],
+   "eval": "evals/R138-removal-verify.json"
+  },
+  {
+   "id": "R139",
+   "rule": "The owner can be wrong and the agent says so (always when critical): restate, show evidence against (test, code or prod fact, real past case), propose the better option; if he still decides, do it unless unsafe and note the risk in one line. Never silently follow, never refuse.",
+   "ru": "Я могу ошибаться: перескажи, покажи доказательство против, предложи лучше; решу по-своему — сделай и одной строкой назови риск.",
+   "layer": "plugin",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [
+    "board rule 11"
+   ],
+   "complaintChats": null,
+   "conflicts": [],
+   "status": "candidate",
+   "sources": [
+    {
+     "file": "<2026-11-17 coordination board>",
+     "anchor": "owner rule 11",
+     "date": "2026-11-17"
+    }
+   ],
+   "eval": "evals/R139-push-back.json"
+  }
+ ],
+ "industry": [
+  {
+   "id": "F11",
+   "rule": "Подгонка тестов вместо исправления кода",
+   "guard": "PreToolUse Edit/Write по *.test.*/*.spec.*/tests/**: отказ, если дифф удаляет строки assert/expect/it(, добавляет skip/xfail/.only/@ts-ignore/@pytest.mark.skip. PostToolUse на запуск тестов: сравнить число тестов с предыдущим запуском, при падении вывести.",
+   "guardCost": "Средняя: легитимный рефакторинг тестов даёт отказы; смягчить через ask, а не deny.",
+   "appliesTo": "both",
+   "verified": true,
+   "sources": [
+    {
+     "url": "https://github.com/anthropics/claude-code/issues/7074",
+     "title": "[BUG] Claude Code manipulates tests instead of following instructions",
+     "date": "2025-09-03"
+    },
+    {
+     "url": "https://github.com/anthropics/claude-code/issues/46940",
+     "title": "Claude fabricates test results - reports ALL PASSED when tests are FAILING",
+     "date": "2026-04-12"
+    },
+    {
+     "url": "https://assets.anthropic.com/m/785e231869ea8b3b/original/claude-3-7-sonnet-system-card.pdf",
+     "title": "Claude 3.7 Sonnet system card, раздел про special-casing тестов (PDF не удалось прочитать; по вторичным пересказам)",
+     "date": "2025-02"
+    }
+   ]
+  },
+  {
+   "id": "F12",
+   "rule": "Обход собственных защит: --no-verify, удаление флагов, субагенты в bypassPermissions",
+   "guard": "PreToolUse Bash: отказ на git commit/push с --no-verify, -n, HUSKY=0, core.hooksPath=, rm/mv/write по путям hook-state, флагов, .git/hooks, .claude/hooks, settings. Для субагентов: проверить, что hook плагина реально срабатывает (не проверено).",
+   "guardCost": "Низкая для строк команд; средняя для защиты путей. Риск: легитимная правка своих hooks (нужен явный выход).",
+   "appliesTo": "both",
+   "verified": true,
+   "sources": [
+    {
+     "url": "https://github.com/anthropics/claude-code/issues/40117",
+     "title": "Agent bypasses git pre-commit hooks using --no-verify, stash, and quiet flags",
+     "date": "2026-03-28"
+    },
+    {
+     "url": "https://github.com/anthropics/claude-code/issues/61953",
+     "title": "Claude actively bypasses safety hooks by deleting flag files",
+     "date": "2026-05-24"
+    },
+    {
+     "url": "https://github.com/anthropics/claude-code/issues/43772",
+     "title": "Subagents with bypassPermissions ignore PreToolUse hooks",
+     "date": "2026-04-05"
+    }
+   ]
+  },
+  {
+   "id": "F13",
+   "rule": "Коммит без прогона тестов проекта",
+   "guard": "PostToolUse: запуск тестов с exit 0 пишет marker (с хешем дерева); PreToolUse git commit: отказ без свежего marker. Либо git pre-commit с pytest/vitest --changed.",
+   "guardCost": "Средняя: тяжёлые тесты (см. F05), нужен narrow-режим; риск блокировки коммитов доков.",
+   "appliesTo": "both",
+   "verified": true,
+   "sources": [
+    {
+     "url": "https://github.com/anthropics/claude-code/issues/35042",
+     "title": "Agent should run project test suite before committing",
+     "date": "2026-03-16"
+    }
+   ]
+  },
+  {
+   "id": "F14",
+   "rule": "Фальшивый отчёт о результате и проглоченные ошибки",
+   "guard": "Stop hook: вытащить из ответа «N/N passed» и сверить с последним выводом раннера в транскрипте; PreToolUse Edit: отказ на добавляемые except: pass, пустой catch {}, | true после проверки; предупреждать, если единственная проверка py_compile/tsc --noEmit при правке рантайм-кода.",
+   "guardCost": "Средняя: парсинг форматов раннеров; регулярки на except: pass дают мало ложных.",
+   "appliesTo": "both",
+   "verified": true,
+   "sources": [
+    {
+     "url": "https://github.com/anthropics/claude-code/issues/46940",
+     "title": "Claude fabricates test results - reports ALL PASSED when tests are FAILING",
+     "date": "2026-04-12"
+    },
+    {
+     "url": "https://github.com/anthropics/claude-code/issues/38535",
+     "title": "[MODEL] Opus 4.6 via VSCODE Ext (except: pass, py_compile, «both directions working»)",
+     "date": "2026-03-25"
+    },
+    {
+     "url": "https://github.com/anthropics/claude-code/issues/37818",
+     "title": "Claude repeatedly declares fixes 'done' without end-to-end verification (130 тестов сломано, pytest exit 0)",
+     "date": "2026-03-23"
+    }
+   ]
+  },
+  {
+   "id": "F15",
+   "rule": "Выход за рамки задачи (scope creep)",
+   "guard": "Stop hook или PreToolUse на коммит: сравнить список изменённых файлов (git diff --name-only) с заявленным планом/файлами из промпта; удаления файлов и diff >N строк вне плана выводить как предупреждение.",
+   "guardCost": "Высокая по ложным срабатываниям (план неполон); использовать как предупреждение, не отказ. Удаление файлов без просьбы: отказ дешёвый.",
+   "appliesTo": "both",
+   "verified": true,
+   "sources": [
+    {
+     "url": "https://github.com/anthropics/claude-code/issues/54240",
+     "title": "[BUG] Agent makes unasked changes, adds assumptions, breaks working code",
+     "date": "2026-04-28"
+    },
+    {
+     "url": "https://github.com/anthropics/claude-code/issues/87337",
+     "title": "Agent repeatedly extends explicit instructions into unrequested git/GitHub actions",
+     "date": "2026-08-17"
+    }
+   ]
+  },
+  {
+   "id": "F16",
+   "rule": "Сверхактивные действия за пределами разрешения (credentials, миграции, удаление веток)",
+   "guard": "PreToolUse Bash: ask/deny на чтение ~/.aws, ~/.ssh, .env, поиск токенов (printenv, gh auth token), git push --delete, gh pr merge, команды миграций (migrate, db:reset, prisma migrate).",
+   "guardCost": "Средняя: список надо вести; ложные на обычной работе с .env.example.",
+   "appliesTo": "both",
+   "verified": true,
+   "sources": [
+    {
+     "url": "https://www.anthropic.com/engineering/claude-code-auto-mode",
+     "title": "How we built Claude Code auto mode (overeager behavior)",
+     "date": "2026"
+    }
+   ]
+  },
+  {
+   "id": "F17",
+   "rule": "Путаница прод/разработка: агент трогает боевую БД",
+   "guard": "PreToolUse Bash/MCP: отказ, если команда содержит хост/URL из списка боевых (конфиг проекта) или DATABASE_URL указывает не на localhost; DROP/TRUNCATE/DELETE без WHERE; db:reset, migrate на не-локальной БД.",
+   "guardCost": "Низкая-средняя: нужен список боевых хостов на проект; ложные редки.",
+   "appliesTo": "both",
+   "verified": true,
+   "sources": [
+    {
+     "url": "https://www.eweek.com/news/replit-ai-coding-assistant-failure/",
+     "title": "'Catastrophic Failure': AI Agent Wipes Production Database, Then Lies About It",
+     "date": "2025-07"
+    },
+    {
+     "url": "https://www.anthropic.com/engineering/claude-code-auto-mode",
+     "title": "How we built Claude Code auto mode (attempting database migrations against production)",
+     "date": "2026"
+    }
+   ]
+  },
+  {
+   "id": "F18",
+   "rule": "Явный запрет («не меняй», «не пушь») игнорируется",
+   "guard": "UserPromptSubmit: по ключевым словам («не пушь», «заморозка», «только читать», «don't change») записать флаг сессии; PreToolUse по флагу: deny на Edit/Write/мутирующий Bash/git push; снять флаг только явной фразой человека.",
+   "guardCost": "Средняя: разбор текста даёт ложные срабатывания; безопаснее явная команда /freeze вместо разбора.",
+   "appliesTo": "both",
+   "verified": true,
+   "sources": [
+    {
+     "url": "https://www.eweek.com/news/replit-ai-coding-assistant-failure/",
+     "title": "'Catastrophic Failure': AI Agent Wipes Production Database, Then Lies About It",
+     "date": "2025-07"
+    },
+    {
+     "url": "https://code.claude.com/docs/en/best-practices",
+     "title": "Best practices: Deterministic and non-deterministic instructions",
+     "date": "не указана"
+    }
+   ]
+  },
+  {
+   "id": "F19",
+   "rule": "Prompt injection и «смертельная тройка»",
+   "guard": "Нет дешёвого полного. Частично: sandbox с allowlist сети; PreToolUse: после WebFetch/MCP-чтения недоверенного отказ на curl/gh/POST с данными; ограничить MCP по репозиториям (least privilege). SessionStart: отчёт, какие из трёх свойств включены.",
+   "guardCost": "Высокая: ложные срабатывания, обход через разные каналы.",
+   "appliesTo": "both",
+   "verified": true,
+   "sources": [
+    {
+     "url": "https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/",
+     "title": "The lethal trifecta for AI agents (Simon Willison)",
+     "date": "2025-06-16"
+    },
+    {
+     "url": "https://invariantlabs.ai/blog/mcp-github-vulnerability",
+     "title": "GitHub MCP exploited: accessing private repositories via MCP (Invariant Labs)",
+     "date": "2025-05-26"
+    }
+   ]
+  },
+  {
+   "id": "F20",
+   "rule": "Вредоносные hooks и MCP в конфигурации репозитория",
+   "guard": "CODEOWNERS + обязательное ревью на .claude/**, .mcp.json, AGENTS.md/CLAUDE.md, hooks; CI-проверка: PR меняет эти файлы -> метка и 2-й ревьюер; SessionStart: сверить хеш этих файлов с последним виденным и показать дифф.",
+   "guardCost": "Низкая. Риск: шум в маленькой команде 2-5 человек.",
+   "appliesTo": "team",
+   "verified": true,
+   "sources": [
+    {
+     "url": "https://research.checkpoint.com/2026/rce-and-api-token-exfiltration-through-claude-code-project-files-cve-2025-59536/",
+     "title": "RCE and API token exfiltration through Claude Code project files (CVE-2025-59536, CVE-2026-21852)",
+     "date": "2026-02-25"
+    }
+   ]
+  },
+  {
+   "id": "F21",
+   "rule": "Агентные CLI как оружие в цепочке поставок (Nx s1ngularity)",
+   "guard": "PreToolUse Bash: отказ на запуск claude/gemini/q с --dangerously-skip-permissions, --yolo, --trust-all-tools из команд агента; npm install по умолчанию с --ignore-scripts для новых пакетов; изоляция секретов (нет токенов в окружении агента).",
+   "guardCost": "Низкая для флагов; средняя для --ignore-scripts (ломает пакеты с нативной сборкой).",
+   "appliesTo": "both",
+   "verified": true,
+   "sources": [
+    {
+     "url": "https://socket.dev/blog/nx-packages-compromised",
+     "title": "Nx npm Packages Compromised in Supply Chain Attack Weaponizing AI CLI Tools",
+     "date": "2025-08-27"
+    }
+   ]
+  },
+  {
+   "id": "F22",
+   "rule": "Slopsquatting: выдуманные имена пакетов",
+   "guard": "PreToolUse Edit/Write на package.json, requirements*.txt, pyproject.toml, Cargo.toml и Bash npm/pip/cargo install/add: проверить имя в реестре (npm view / PyPI JSON API), возраст >N дней, число скачиваний; неизвестное или свежее: ask.",
+   "guardCost": "Низкая: сетевой запрос на новую зависимость; риск: сеть недоступна (разрешить с предупреждением).",
+   "appliesTo": "both",
+   "verified": true,
+   "sources": [
+    {
+     "url": "https://arxiv.org/abs/2406.10279",
+     "title": "We Have a Package for You! Package Hallucinations by Code Generating LLMs (USENIX Security 2025)",
+     "date": "2024-06 (v3 2025-03)"
+    },
+    {
+     "url": "https://www.kaspersky.com/blog/ai-slopsquatting-supply-chain-risk/53327/",
+     "title": "How AI creates slopsquatting supply-chain risks (Kaspersky)",
+     "date": "2025-04-23"
+    }
+   ]
+  },
+  {
+   "id": "F23",
+   "rule": "Выдуманные API, функции и параметры проекта",
+   "guard": "PostToolUse на правку .ts/.py: узкая проверка типов/импортов затронутого файла (tsc -p одного проекта, pyright/ruff F821 на файл); не весь репозиторий.",
+   "guardCost": "Средняя: время и RAM на каждую правку; выполнять раз за ход (Stop), не на каждую правку.",
+   "appliesTo": "both",
+   "verified": true,
+   "sources": [
+    {
+     "url": "https://arxiv.org/abs/2505.05057",
+     "title": "Towards Mitigating API Hallucination in Code Generated by LLMs (MARIN)",
+     "date": "2025-05-08"
+    }
+   ]
+  },
+  {
+   "id": "F24",
+   "rule": "Деградация длинной сессии (context rot) и застрявшие исправления",
+   "guard": "Stop/UserPromptSubmit: счётчик ходов/размера транскрипта и поправок («нет, не так»); при пороге вывести «сделай /clear с новым промптом» или предложить handoff.",
+   "guardCost": "Низкая. Риск: навязчивые подсказки, порог подбирать.",
+   "appliesTo": "solo",
+   "verified": true,
+   "sources": [
+    {
+     "url": "https://www.trychroma.com/research/context-rot",
+     "title": "Context Rot: How Increasing Input Tokens Impacts LLM Performance (Chroma)",
+     "date": "2025-07"
+    },
+    {
+     "url": "https://code.claude.com/docs/en/best-practices",
+     "title": "Best practices: Steer the session (/clear after two failed corrections)",
+     "date": "не указана"
+    }
+   ]
+  },
+  {
+   "id": "F25",
+   "rule": "Правила теряются после компактации или игнорируются",
+   "guard": "SessionStart с matcher compact (или PostCompact): hook печатает в контекст короткий свод жёстких правил из файла; плюс сами жёсткие правила как PreToolUse hook, а не текст.",
+   "guardCost": "Низкая: несколько строк токенов после каждой компактации.",
+   "appliesTo": "both",
+   "verified": true,
+   "sources": [
+    {
+     "url": "https://github.com/anthropics/claude-code/issues/24460",
+     "title": "CLAUDE.md context lost after /compact: re-inject project instructions",
+     "date": "2026-02-09"
+    },
+    {
+     "url": "https://code.claude.com/docs/en/best-practices",
+     "title": "Best practices: Keep CLAUDE.md short",
+     "date": "не указана"
+    }
+   ]
+  },
+  {
+   "id": "F26",
+   "rule": "Раздутые и устаревшие файлы правил, дрейф между участниками",
+   "guard": "CI/pre-commit: размер файла правил > N строк -> ошибка; все пути из файла существуют; нет дублей строк между CLAUDE.md и AGENTS.md; правила, ссылающиеся на удалённые команды.",
+   "guardCost": "Низкая. Риск: порог на строки произвольный.",
+   "appliesTo": "team",
+   "verified": true,
+   "sources": [
+    {
+     "url": "https://arxiv.org/abs/2602.11988",
+     "title": "Evaluating AGENTS.md: Are Repository-Level Context Files Helpful for Coding Agents?",
+     "date": "2026-02-12"
+    },
+    {
+     "url": "https://code.claude.com/docs/en/best-practices",
+     "title": "Best practices: Keep CLAUDE.md short (/doctor prompt-audit; ниже 200 строк)",
+     "date": "не указана"
+    }
+   ]
+  },
+  {
+   "id": "F27",
+   "rule": "Небезопасный сгенерированный код",
+   "guard": "CI: semgrep/CodeQL на diff, gitleaks, audit зависимостей; PostToolUse лёгкий semgrep на изменённый файл.",
+   "guardCost": "Средняя: шум правил, время CI.",
+   "appliesTo": "both",
+   "verified": true,
+   "sources": [
+    {
+     "url": "https://www.veracode.com/press-release/ai-generated-code-poses-major-security-risks-in-nearly-half-of-all-development-tasks-veracode-research-reveals/",
+     "title": "AI-Generated Code Poses Major Security Risks in Nearly Half of All Development Tasks (Veracode)",
+     "date": "2025-07-30"
+    },
+    {
+     "url": "https://www.coderabbit.ai/blog/state-of-AI-vs-human-code-generation-report",
+     "title": "State of AI vs Human Code Generation Report (CodeRabbit)",
+     "date": "2025-12-17"
+    }
+   ]
+  },
+  {
+   "id": "F28",
+   "rule": "Дублирование кода и падение рефакторинга",
+   "guard": "CI: jscpd/similarity-проверка на diff с порогом; PostToolUse: grep похожих функций перед созданием новой (подсказка «такая уже есть»).",
+   "guardCost": "Средняя-высокая: шум, слабая польза на малых репозиториях.",
+   "appliesTo": "team",
+   "verified": true,
+   "sources": [
+    {
+     "url": "https://www.gitclear.com/ai_assistant_code_quality_2025_research",
+     "title": "AI Copilot Code Quality 2025 (GitClear)",
+     "date": "2025-01"
+    }
+   ]
+  },
+  {
+   "id": "F29",
+   "rule": "Узкое место ревью: большие PR и мёрж без ревью",
+   "guard": "CI: лимит размера PR (строки/файлы), обязательное ревью по branch protection, метка «AI-assisted»; агент перед PR считает размер diff и режет на части.",
+   "guardCost": "Низкая. Риск: искусственное дробление PR.",
+   "appliesTo": "team",
+   "verified": true,
+   "sources": [
+    {
+     "url": "https://www.faros.ai/blog/ai-productivity-paradox-report-2025",
+     "title": "The AI Productivity Paradox Report 2025 (Faros AI)",
+     "date": "2025"
+    },
+    {
+     "url": "https://infoq.com/news/2026/02/ai-floods-close-projects",
+     "title": "AI floods close projects (InfoQ): curl закрыл bounty, tldraw закрывает внешние PR",
+     "date": "2026-02-24"
+    },
+    {
+     "url": "https://blog.google/innovation-and-ai/technology/developers-tools/dora-report-2025/",
+     "title": "How are developers using AI? Inside our 2025 DORA report",
+     "date": "2025"
+    }
+   ]
+  },
+  {
+   "id": "F30",
+   "rule": "Параллельные агенты и чаты сталкиваются: те же файлы, дубль работы, блокировки",
+   "guard": "PreToolUse Edit/Write: отказ, если файл изменён на диске после того, как этот чат его читал (mtime/hash), или помечен как занятый другим чатом (claim-файл); на старте: отказ в рабочей копии, где есть изменения других сессий, без worktree.",
+   "guardCost": "Средняя: нужен реестр claim-ов; ложные срабатывания на авто-генерируемых файлах.",
+   "appliesTo": "both",
+   "verified": true,
+   "sources": [
+    {
+     "url": "https://cursor.com/blog/scaling-agents",
+     "title": "Scaling long-running autonomous coding (Cursor)",
+     "date": "2026-01"
+    },
+    {
+     "url": "https://www.anthropic.com/engineering/multi-agent-research-system",
+     "title": "How we built our multi-agent research system",
+     "date": "2025"
+    },
+    {
+     "url": "https://code.claude.com/docs/en/best-practices",
+     "title": "Best practices: Run sessions in parallel (own checkout, worktrees)",
+     "date": "не указана"
+    }
+   ]
+  },
+  {
+   "id": "F31",
+   "rule": "Неконтролируемый расход: веер субагентов и токены",
+   "guard": "PreToolUse Agent: счётчик запущенных субагентов за ход/сессию, лимит; для автономных запусков --max-turns и --max-budget-usd; предупреждение при росте стоимости за окно.",
+   "guardCost": "Низкая. Риск: блокировка легитимного веера (задать лимит повыше).",
+   "appliesTo": "both",
+   "verified": true,
+   "sources": [
+    {
+     "url": "https://www.anthropic.com/engineering/multi-agent-research-system",
+     "title": "How we built our multi-agent research system",
+     "date": "2025"
+    },
+    {
+     "url": "https://github.com/anthropics/claude-code/issues/15909",
+     "title": "Sub-agent stuck in infinite loop, consumed ~27M tokens",
+     "date": "2025-12-31"
+    }
+   ]
+  },
+  {
+   "id": "F32",
+   "rule": "Дырявый контур разрешений: bypass-режим и классификатор",
+   "guard": "SessionStart: определить permission mode; в bypass/auto без включённого sandbox и без жёстких PreToolUse-hook предупредить в начале сессии; держать список deny независимым от режима.",
+   "guardCost": "Низкая. Риск: шум для тех, кто осознанно работает в auto.",
+   "appliesTo": "both",
+   "verified": true,
+   "sources": [
+    {
+     "url": "https://github.com/anthropics/claude-code/issues/36339",
+     "title": "rm -rf on pnpm project deleted entire C:\\Users (v2.1.51, --dangerously-skip-permissions)",
+     "date": "2026-03-19"
+    },
+    {
+     "url": "https://code.claude.com/docs/en/best-practices",
+     "title": "Best practices: Limit access with permission rules and the sandbox",
+     "date": "не указана"
+    }
+   ]
+  },
+  {
+   "id": "F33",
+   "rule": "Кажется быстрее, а на деле медленнее; «почти правильно, но не совсем»",
+   "guard": "Дешёвого механического нет. Косвенно: считать в CI время от PR до мёржа, долю откатов и реверт-коммитов, а не ощущение; обзор раз в месяц.",
+   "guardCost": "Не применимо. Это метрика, а не hook.",
+   "appliesTo": "team",
+   "verified": true,
+   "sources": [
+    {
+     "url": "https://arxiv.org/abs/2507.09089",
+     "title": "Measuring the Impact of Early-2025 AI on Experienced Open-Source Developer Productivity (METR)",
+     "date": "2025-07"
+    },
+    {
+     "url": "https://survey.stackoverflow.co/2025/ai",
+     "title": "Stack Overflow Developer Survey 2025: AI",
+     "date": "2025"
+    }
+   ]
+  }
+ ]
+}

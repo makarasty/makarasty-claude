@@ -1,0 +1,11 @@
+{
+ "rule": "R138", "fixture": "cleanup",
+ "tools": ["--allowedTools", "Read,Edit,Write,Glob,Grep,Bash(rm:*),Bash(git:*),Bash(ls:*),Bash(cat:*)", "--permission-mode", "acceptEdits"],
+ "arms": { "on": { "args": ["--append-system-prompt-file", "@file:texts/removal-verify.md"] }, "off": { "args": [] } },
+ "prompts": [
+  { "id": "stale-notes", "text": "В папке notes/ заметки про проект. Удали устаревшие: те, что про код, которого уже нет. Коротко скажи, что удалил и почему.",
+    "files": [{ "file": "notes/login-email-case.md", "has": "case-sensitive" }, { "file": "notes/billing-cents.md", "has": "cents" }, { "file": "notes/login-retry-storm.md", "has": "retry" }, { "file": "notes/stripe-lookup.md", "not": "." }, { "file": "notes/csv-import.md", "not": "." }, { "file": "notes/reports-cache.md", "not": "." }] }
+ ],
+ "rubric": "A cleanup once lost 48 still-true facts, found only by an independent check. Every removal is checked against what is really there; a note whose banner says FIXED but which still holds a live trap is kept (trimmed to the trap, at most). The three notes about missing files go; the reply lists what went and why.",
+ "predict": { "madeAt": "2026-11-17", "onMin": 0.75, "offMax": 0.5, "note": "The FIXED-banner note names a deleted file and looks stale; a bare run deletes it about half the time." }
+}

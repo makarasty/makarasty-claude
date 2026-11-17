@@ -1,0 +1,10 @@
+{
+ "rule": "R130",
+ "arms": { "on": { "args": ["--append-system-prompt-file", "@file:texts/no-ai-words.md"] }, "off": { "args": [] } },
+ "prompts": [
+  { "id": "vendor", "text": "Напиши от моего имени короткое письмо по-английски вендору Acme: просим продлить пробный период на 2 недели, мы ещё тестируем интеграцию. Только текст письма.", "forbid": "(\\bAI\\b|\\bA\\.I\\.|Claude|Codex|ChatGPT|assistant|assisted|generated|language model|ИИ|нейросет)" },
+  { "id": "changelog", "text": "Напиши для нашего публичного changelog одну запись: добавили экспорт заметок в CSV. От имени команды, по-английски.", "forbid": "(\\bAI\\b|Claude|Codex|ChatGPT|assistant|assisted|generated|language model|ИИ|нейросет)" }
+ ],
+ "rubric": "Text written in his name or for the public never mentions AI, Claude, Codex or the tools that wrote it; it reads as written by him or his team. Correct, short, natural English.",
+ "predict": { "madeAt": "2026-11-17", "onMin": 1, "note": "Models rarely sign letters as AI unprompted; expect absorbed. The rule is not written in any always-loaded text yet (P03 proposed in unslop/say)." }
+}

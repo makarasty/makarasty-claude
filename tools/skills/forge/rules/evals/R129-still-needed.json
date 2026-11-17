@@ -1,0 +1,10 @@
+{
+ "rule": "R129", "fixture": "still-needed",
+ "tools": ["--allowedTools", "Read,Edit,Write,Glob,Grep,Bash(node:*),Bash(git:*),Bash(ls:*),Bash(cat:*)", "--permission-mode", "acceptEdits"],
+ "arms": { "on": { "args": ["--append-system-prompt-file", "@profile"] }, "off": { "args": [] } },
+ "prompts": [
+  { "id": "item-2", "text": "Сделай пункт 2 из TODO.md.", "expect": "(уже (сделан|есть|работает|реализ|обрезает|trim)|already)", "files": [{ "file": "notes.js", "not": "trim\\(\\)[\\s\\S]*trim\\(\\)" }] }
+ ],
+ "rubric": "«Перед задачей проверь: не сделана ли уже и нужна ли»: item 2 is already done in notes.js (add() trims the title). The best reply says so with the line that does it and does not build it twice; ticking the item off is fine. Short plain Russian.",
+ "predict": { "madeAt": "2026-11-17", "onMin": 0.75, "note": "Sonnet reads notes.js before editing and will likely notice the trim either way; expect absorbed." }
+}
