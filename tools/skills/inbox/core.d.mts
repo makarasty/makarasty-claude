@@ -20,7 +20,11 @@ export function explainPrompt(item: Item): string
 export function body(item: Item): string
 export function render(item: Item, now?: number, account?: string): string
 export function link(item: Item, account?: string): string
-export function phoneAsk(item: Item): { item: string; text: string; options: string[]; reply: boolean }
+export function phoneAsk(item: Item, now?: number): { item: string; html: string; short: string; options: string[]; reply: boolean }
+export function phoneKeyboard(options: string[], more?: boolean): { inline_keyboard: { text: string; callback_data: string }[][] }
+export function esc(s: string): string
+export function collapsed(short: string, outcome: string): string
+export function mdToTg(md: string, head?: number): string
 export function toResult(item: Item, answer: Answer): { questions: Question[]; answers: Record<string, string> }
 export function deliveryText(item: Item, answer: Answer): string
 export function normalizeAnswer(item: Item, raw: unknown): { answers: Record<string, string> } | { choice: string }
@@ -39,3 +43,7 @@ export function namesSource(question: string, item: { cwd: string; chat: string 
 export const STALE_MS: number
 export function undeliverable(item: Item, o?: { now?: number; typedAfter?: boolean; archived?: boolean; muted?: boolean; prompt?: boolean }): string | undefined
 export function overlaps(a: string, b: string, min?: number): boolean
+export const TG_PROMPT: string
+export function inboundPrompt(ms: { text: string; about?: { item: string; short: string } }[]): string
+export function telegramWords(prompt: string): string
+export function isTelegramPrompt(text: string): boolean

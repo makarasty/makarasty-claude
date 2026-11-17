@@ -155,20 +155,41 @@ test('after 2 minutes an open item gets a plain explanation and one push', async
   expect(w.cli.filter((c) => c[0] === 'push')).toEqual([['push', 'chatA~toolu_4']])
 })
 
-test('a question open on the phone: the timer reads its taps once per 10 s, and not at all with none open', async ($, on) => {
-  const w = world(on)
-  const polls = () => w.cli.filter((c) => c[0] === 'poll').length
-  await $.tool.call({ tool: 'mcp__ccd_turn__wrap_up', recap: 'r', ask: 'Удалить старые отчёты?', actions: [{ label: 'Да' }], tool_use_id: 'toolu_ph' } as never) // starts the timer
+// His Telegram messages (telegram.ts): the inbox chat takes the waiting ones as one prompt when it is idle, and the turn that
+// prompt starts is the one whose answer goes back to his phone as a reply.
+test('a Telegram message for the inbox chat: one prompt when it is idle, its turn marked, and only that turn answers on the phone', async ($, on) => {
+  const w = world(on, { self: 'chatA' })
+  const fetched: { method: string; body: Record<string, any> }[] = []
+  on('http.fetch', (_$, e) => {
+    const method = e.url.split('/').pop()!
+    fetched.push({ method, body: JSON.parse(e.init?.body ?? '{}') })
+    const result = method === 'getUpdates' ? [] : method === 'sendMessage' ? { message_id: 900 } : true
+    return { value: { status: 200, ok: true, headers: {}, text: JSON.stringify({ ok: true, result }) } } as never
+  })
+  on('turn.start', (_$, e) => ({ turnId: e.turnId }))
+  on('turn.complete', (_$, e) => ({ text: e.answer }))
+  const TG = '/cfg/makarasty/telegram'
+  w.disk.set('/cfg/makarasty/notify.json', JSON.stringify({ telegram: { token: '123456789:Zq8Lm3Vb7Nx2Wc5Rt9Yh4Js6', chat_id: '42' } }))
+  w.disk.set(`${TG}/inbound/7.json`, JSON.stringify({ id: 7, text: 'сколько вопросов ждёт?', message_id: 55, at: 1_000_000 }))
+  const prompts = () => w.submitted.filter((s) => s.startsWith('[Telegram]'))
+  await $.prompt.submit({ text: 'hi' } as never) // starts the timer
+  await w.clock.advance(15000)
+  await w.until(() => prompts().length === 1, 'delivered')
+  expect(prompts()[0]).toContain('> сколько вопросов ждёт?')
   await w.clock.advance(15000)
   await new Promise((r) => setTimeout(r, 30))
-  expect(polls()).toBe(0) // nothing open
-  w.disk.set('/cfg/makarasty/notify-asks/open', '')
-  await w.clock.advance(15000)
-  await w.until(() => polls() === 1, 'poll')
-  w.disk.set('/cfg/makarasty/notify-asks/polled', String(1_000_000 + 30000 + 10000)) // another chat polls 5 s before this timer's next tick
-  await w.clock.advance(15000)
-  await new Promise((r) => setTimeout(r, 30))
-  expect(polls()).toBe(1)
+  expect(prompts().length).toBe(1) // taken: not again
+  await $.turn.start({ text: prompts()[0], turnId: 'tg1' } as never)
+  expect(JSON.parse(w.disk.get(`${TG}/turn.json`)!)).toMatchObject({ ids: [7], message_id: 55, turnId: 'tg1' })
+  await $.turn.complete({ answer: 'не про этот ход', reason: 'answer', durationMs: 1000, isAborted: false, turnId: 'other' } as never)
+  expect(fetched.filter((c) => c.method === 'sendMessage')).toEqual([])
+  await $.turn.complete({ answer: 'Ждёт **2** вопроса.', reason: 'answer', durationMs: 1000, isAborted: false, turnId: 'tg1' } as never)
+  const sent = fetched.filter((c) => c.method === 'sendMessage')
+  expect(sent.length).toBe(1)
+  expect(sent[0]!.body.reply_parameters).toMatchObject({ message_id: 55 })
+  expect(sent[0]!.body.text).toContain('<b>2</b>')
+  expect(JSON.parse(w.disk.get(`${TG}/inbound/7.json`)!).done).toBeGreaterThan(0)
+  expect(w.disk.get(`${TG}/turn.json`)).toBe('{}')
 })
 
 test('no notify channel: the explanation is still written, but no push is tried and nothing says one went out', async ($, on) => {
@@ -209,6 +230,13 @@ test('a card offered by chat A enters the inbox with its task id; a click on it 
   expect(w.items()[0]).toMatchObject({ kind: 'card', taskId: 'task_ab12cd34', title: 'Чистка логов' })
   await $.prompt.submit({ text: 'The user started your suggested background task task_ab12cd34' } as never)
   expect(w.cli).toContainEqual(['done', 'chatA~toolu_5'])
+})
+
+test('the chat starting its own proposal (start_session with its proposal_id) closes the card, so it never reaches the phone', async ($, on) => {
+  const w = world(on)
+  await $.tool.call({ tool: 'mcp__ccd_session__start_session', initiation: 'own_initiative', title: 'Чистка логов', prompt: 'Убери старые логи', tool_use_id: 'toolu_p1' } as never)
+  await $.tool.call({ tool: 'mcp__ccd_session__start_session', proposal_id: 'task_ab12cd34', tool_use_id: 'toolu_p2' } as never)
+  expect(w.cli).toContainEqual(['done', 'chatA~toolu_p1'])
 })
 
 test('off: nothing is written and the dialog alone answers', async ($, on) => {

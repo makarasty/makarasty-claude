@@ -8,7 +8,9 @@ AskUserQuestion (the dialog still shows there too), the question of its end-of-t
 2 minutes unanswered the asking chat adds a plain explanation and, only when Telegram is connected (notify), sends one
 Telegram message with a button per option; a tap or a reply there answers the item like this chat would (not
 connected: no push is tried, and `list` and `status` say "phone pushes off"; offer `/makarasty-tools:notify setup`; a
-push that failed is reported as failed, never as sent). This chat
+push that failed is reported as failed, never as sent). A prompt that starts with `[Telegram]` is the person writing
+from his phone: his quoted words are his own, the final message goes to his Telegram as is, so keep it to a few lines
+and ask nothing in a dialog. This chat
 lists them, asks the person once, and writes the answers; each chat picks up its own. Chats switched on for it also
 leave a finish report here when they end a working turn: every session this chat starts (the plugin switches it on),
 and any chat the person switches on. Reports wake this chat in batches, never one by one. The script is

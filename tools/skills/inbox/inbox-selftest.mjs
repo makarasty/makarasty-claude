@@ -76,6 +76,13 @@ try {
   put(item({ id: 'chatA~t5' }))
   writeFileSync(join(root, 'pushed', 'chatA~t5'), JSON.stringify({ fails: 3, at: Date.now() - 3600e3 }))
   check('after 3 failed tries it gives up', run(['push', 'chatA~t5']).status === 0 && sentN() === n0 + 1)
+  // Nothing the phone can do nothing with, or that no longer waits (2026-11-17: cards of started sessions came to Telegram).
+  put(item({ id: 'chatA~c1', kind: 'card', title: 'Чистка логов', taskId: 'task_ab12cd34', questions: undefined }))
+  check('a card is never pushed to the phone', run(['push', 'chatA~c1']).status === 0 && sentN() === n0 + 1)
+  put(item({ id: 'chatA~b1', kind: 'choice', ask: 'Удалить старые отчёты?', actions: ['Да'], questions: undefined, at: Date.now() - 13 * 3600e3 }))
+  const oldBox = run(['push', 'chatA~b1'])
+  check('a box over 12 h old is not pushed, and is marked so no tick tries again', oldBox.status === 0 && sentN() === n0 + 1 && existsSync(join(root, 'pushed', 'chatA~b1')) && /no longer waits/.test(oldBox.stdout), oldBox.stdout)
+  run(['done', 'chatA~c1']); run(['done', 'chatA~b1'])
   check('a failed push says "failed", never "pushed"', /push failed/.test(failed.stderr) && !/pushed/.test(failed.stdout + failed.stderr), failed.stderr)
   // No notify channel (no dry-run sink, empty config dir): no attempt, no record, no "pushed", one "phone pushes off" line.
   const bare = { ...env, NOTIFY_DRY_RUN: '' }, runBare = (/** @type {string[]} */ args) => spawnSync(process.execPath, [cli, ...args], { env: bare, encoding: 'utf8' })

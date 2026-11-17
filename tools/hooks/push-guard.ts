@@ -1,6 +1,7 @@
 import type { Register } from 'claude-code'
 import { gitSubs } from './git-guard.ts'
 import { PLUGIN_FRAME, ownWords } from './own-words.ts'
+import { isTelegramPrompt, telegramWords } from './telegram.ts'
 
 // A push leaves this machine: it runs only on the person's own word in this turn (2026-11-12, asked "block git push
 // without my word in the turn?": «Да, хук»; three pushes nobody asked for on 11-10; docs/COMPLAINTS.md C13). His word:
@@ -84,8 +85,10 @@ export function notePrompt(e: { text: string; turnId?: unknown; origin?: { kind?
     else if (typed && asksPush(e.text)) state.ok = true
     return
   }
+  // His message from Telegram, submitted by this plugin, is his word too (owner, 2026-11-17): only its quoted lines are read.
+  const fromUs = e.origin?.kind === 'plugin' && e.origin.name === 'makarasty-tools'
   state.ok = typed ? asksPush(e.text) || (pushQ(state.lastAsk) && yes(ownWords(e.text)))
-    : e.origin?.kind === 'plugin' && e.origin.name === 'makarasty-tools' && deliveredYes(e.text)
+    : fromUs && (deliveredYes(e.text) || (isTelegramPrompt(e.text) && asksPush(telegramWords(e.text))))
   state.lastAsk = '' // a box's yes counts only as the very next turn's prompt
 }
 

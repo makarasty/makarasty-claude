@@ -19,12 +19,12 @@
 //   node notify.mjs --disarm [--session <id>]
 //   node notify.mjs --status               armed or not, and whether Telegram is connected
 //   node notify.mjs --test                 send a test line
-//   node notify.mjs send <text>            send one message now (fleet.sh landed uses this)
-//   node notify.mjs ask                    stdin {item, text, options?, reply?}: one message with a button per option
-//                                          (and, with reply, "or reply to this message"); prints the message id
-//   node notify.mjs poll                   reads the taps and replies, answers those items through inbox.mjs, marks
-//                                          each message with what was sent, and closes messages whose item was
-//                                          answered on the computer. The inbox hook runs it while an ask is open.
+//   node notify.mjs send <text>            send one message now, plain words (fleet.sh landed uses this)
+//   node notify.mjs send --html [--reply-to <message id>]   HTML on stdin (the headless inbox's answer)
+//   node notify.mjs ask                    stdin {item, html, short, options?, reply?, keyboard?} from the inbox (core.mjs
+//                                          phoneAsk): sends it and keeps the ask in telegram/asks/<message id>.json.
+//                                          The taps, replies and the person's own messages are read by the hook engine
+//                                          (tools/hooks/telegram.ts), not here: an idle poll there starts no process.
 //
 // The channel lives in ~/.claude/makarasty/notify.json (CLAUDE_CONFIG_DIR honoured), outside every repository:
 //   { "telegram": { "token": "123456:ABC...", "chat_id": "42" }, "excerpt": true }
@@ -33,8 +33,9 @@
 // tokens blanked before it is printed or stored. Only the bound chat_id is ever answered: a tap or a reply from
 // anyone else who finds the bot does nothing.
 //
-// What leaves the machine: the status line ("<project>: <label> finished after 12 min"), and for an inbox ask the
-// question and its options. Not the chat's transcript. The excerpt - the last 500 characters of the chat's final
+// Every message is Telegram HTML: fields are escaped, a finish rings silently, a question, needs-you and error ring.
+// What leaves the machine: the status line ("<project> · <label> · готово · 12 мин"), and for an inbox ask the
+// question and its options (the explanation only when he taps "Подробнее"). Not the chat's transcript. The excerpt - the last 500 characters of the chat's final
 // message - can carry code, data or secrets the chat printed, so it is opt-in: MAKARASTY_NOTIFY_EXCERPT=1 in the
 // environment, or "excerpt": true in notify.json ("excerpt": false wins over the variable). When on, the
 // message first passes through redactExcerpt(), which blanks: URLs; Telegram bot tokens; Discord webhooks;
@@ -91,25 +92,26 @@
 // under the 20 s hook timeout, and 4 s at SessionStart, which the chat waits on.
 //
 // Test seams: NOTIFY_DRY_RUN=<file> appends what would be sent to that file instead of sending; NOTIFY_TELEGRAM_API
-// replaces https://api.telegram.org; NOTIFY_CLIPBOARD=<file> is read as the clipboard; NOTIFY_INBOX is the inbox.mjs
-// that poll answers through; NOTIFY_NO_OPEN=1 opens no Telegram link.
+// replaces https://api.telegram.org for a 127.0.0.1/localhost URL only; NOTIFY_CLIPBOARD=<file> is read as the clipboard;
+// NOTIFY_NO_OPEN=1 opens no Telegram link.
 import { readFileSync, writeFileSync, appendFileSync, mkdirSync, rmSync, readdirSync, statSync, renameSync, openSync, readSync, fstatSync, closeSync, existsSync } from 'node:fs';
-import { join, basename, dirname } from 'node:path';
+import { join, basename } from 'node:path';
 import { homedir, hostname } from 'node:os';
 import { randomBytes } from 'node:crypto';
 import { execFileSync, spawn } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
-const here = dirname(fileURLToPath(import.meta.url));
 const home = process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude');
 const dir = join(home, 'makarasty');
 const configFile = join(dir, 'notify.json');
 const markerDir = join(dir, 'notify');
-const asksDir = join(dir, 'notify-asks');
 const markerFile = (session) => join(markerDir, `${session}.json`);
 const validSession = (s) => typeof s === 'string' && /^[\w-]+$/.test(s); // a path would reach the config file
 const now = () => new Date().toISOString();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const API = () => (process.env.NOTIFY_TELEGRAM_API || 'https://api.telegram.org').replace(/\/+$/, '');
+// The test seam is honoured only for a local server: a repository's env must not send the token elsewhere.
+const API = () => { const u = process.env.NOTIFY_TELEGRAM_API; return u && /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?(\/|$)/.test(u) ? u.replace(/\/+$/, '') : 'https://api.telegram.org'; };
+// Telegram's HTML mode: only &, < and > are special. Fields are cut as plain text before this, never after.
+const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const cut = (s, n) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 // Windows refuses a rename over a file another process has open, or one an antivirus is scanning, with
 // EPERM, EBUSY or EACCES, and a read in that instant fails the same way. Both are momentary: wait 20 ms and
 // try again. A missing file is not one of them and still reads as null, "not armed".
@@ -151,7 +153,8 @@ const writeJSON = (file, o) => {
 };
 // Error text can carry the request URL (fetch's "Failed to parse URL from <url>") and so a bot token. It is printed
 // where a chat reads it and stored in the marker, so it passes here.
-const redact = (s) => String(s).replace(/https?:\/\/\S+/gi, '<url>').replace(/\b\d{5,}:[\w-]{20,}/g, '<token>');
+// `[^\s<]`, not `\S`: in an HTML message a match must stop at the next tag.
+const redact = (s) => String(s).replace(/https?:\/\/[^\s<]+/gi, '<url>').replace(/\b\d{5,}:[\w-]{20,}/g, '<token>');
 // The excerpt is free text: redact() plus the token shapes of the commit skill's secret scan and `key: value` pairs.
 const SECRET_SHAPES = [
     /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/g,
@@ -166,7 +169,7 @@ const SECRET_SHAPES = [
     /ntfy\.sh\/[\w-]{8,}/gi,
 ];
 const redactExcerpt = (s) => SECRET_SHAPES.reduce((t, re) => t.replace(re, '<redacted>'), redact(s))
-    .replace(/(api[_-]?key|secret|token|password)([ \t]*[:=][ \t]*)("[^"\n]+"|'[^'\n]+'|\S+)/gi, (all, k, sep, v) => (/^["']/.test(v) || (v.length >= 8 && /\d/.test(v)) ? `${k}${sep}<redacted>` : all));
+    .replace(/(api[_-]?key|secret|token|password)([ \t]*[:=][ \t]*)("[^"\n]+"|'[^'\n]+'|[^\s<]+)/gi, (all, k, sep, v) => (/^["']/.test(v) || (v.length >= 8 && /\d/.test(v)) ? `${k}${sep}<redacted>` : all));
 const str = (v) => (typeof v === 'string' ? v.trim() : '');
 const TOKEN = /^\d+:[\w-]{20,}$/;
 function normalise(o, warn = (m) => console.error(`notify: ${m}`)) {
@@ -189,6 +192,8 @@ const config = () => normalise(readJSON(configFile) || {});
 const connected = (cfg) => !!cfg.telegram?.chat_id;
 const withExcerpt = (cfg) => cfg.excerpt ?? process.env.MAKARASTY_NOTIFY_EXCERPT === '1';
 const SETUP_HINT = `Telegram is not connected yet: ask any chat "настрой уведомления" (it runs "notify.mjs setup")`;
+// Where the phone's open asks live; the hook engine (tools/hooks/telegram.ts) reads them and the taps.
+const tgDir = join(dir, 'telegram');
 // Every request shares one deadline, so retries can never outlast the hook's own timeout.
 let deadline = Infinity;
 const left = () => deadline - Date.now();
@@ -202,18 +207,20 @@ async function post(url, body, headers, ms0 = 6000) {
             const r = await fetch(url, { method: 'POST', headers, body, signal: AbortSignal.timeout(ms) });
             if (r.ok)
                 return r;
-            const text = (await r.text()).slice(0, 200);
-            let why = text;
+            const text = (await r.text()).slice(0, 300);
+            let why = text, wait = 1;
             try {
-                why = JSON.parse(text).description || text;
+                const o = JSON.parse(text);
+                why = o.description || text;
+                wait = Math.min(10, Number(o.parameters?.retry_after) || 1);
             }
             catch { /* not JSON */ }
-            throw Object.assign(new Error(`${r.status} ${why}`), { final: r.status < 500 && r.status !== 429 });
+            throw Object.assign(new Error(`${r.status} ${why}`), { final: r.status < 500 && r.status !== 429, wait });
         }
         catch (e) {
             if (e.final || i >= 2 || left() < 1500)
                 throw e;
-            await sleep(1000);
+            await sleep((e.wait ?? 1) * 1000);
         }
     }
 }
@@ -225,9 +232,12 @@ async function telegram(token, method, body, ms = 6000) {
     return o.result;
 }
 const MARK = { done: '✅ ', wait: '⚠️ ', fail: '❌ ' };
-// One message to the bound chat. extra goes into sendMessage as is (the ask's buttons).
-async function sendWith(cfg, text, excerpt = '', kind, extra = {}) {
-    const body = (kind ? MARK[kind] : '') + (excerpt && withExcerpt(cfg) ? `${text}\n${excerpt}` : text);
+// One message to the bound chat, `html` already escaped. A finish is silent (owner, 2026-11-17: only what needs him
+// rings); a question, a needs-you and an error ring. The excerpt folds into an expandable quote. extra goes into
+// sendMessage as is (an ask's buttons, a reply).
+async function sendWith(cfg, html, excerpt = '', kind, extra = {}) {
+    const body = (kind ? MARK[kind] : '') + html + (excerpt && withExcerpt(cfg) ? `\n<blockquote expandable>${esc(cut(excerpt, 3000))}</blockquote>` : '');
+    extra = { ...(kind === 'done' ? { disable_notification: true } : {}), ...extra };
     const dry = process.env.NOTIFY_DRY_RUN;
     if (dry) {
         try {
@@ -243,14 +253,24 @@ async function sendWith(cfg, text, excerpt = '', kind, extra = {}) {
     if (typeof fetch !== 'function')
         return { sent: [], failed: [{ name: 'node', error: 'node 18 or newer is needed' }] };
     try {
-        const m = await telegram(cfg.telegram.token, 'sendMessage', { chat_id: cfg.telegram.chat_id, text: body.slice(0, 4000), disable_web_page_preview: true, ...extra });
+        const msg = { chat_id: cfg.telegram.chat_id, text: body, parse_mode: 'HTML', link_preview_options: { is_disabled: true }, ...extra };
+        let m;
+        try {
+            m = await telegram(cfg.telegram.token, 'sendMessage', msg);
+        }
+        catch (e) {
+            // HTML Telegram cannot parse (a cut in the wrong place, a stray tag): the same words once as plain text.
+            if (!/parse entities/i.test(e.message))
+                throw e;
+            m = await telegram(cfg.telegram.token, 'sendMessage', { ...msg, parse_mode: undefined, text: body.replace(/<[^>]+>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&') });
+        }
         return { sent: ['telegram'], failed: [], message_id: m.message_id };
     }
     catch (e) {
         return { sent: [], failed: [{ name: 'telegram', error: redact(e?.message || e) }] };
     }
 }
-const send = (text, excerpt, kind) => sendWith(config(), text, excerpt, kind);
+const send = (html, excerpt, kind) => sendWith(config(), html, excerpt, kind);
 // Finishes that were written but never delivered, sent now. Setup saving the channel and a reopened
 // chat both call this. A marker whose send is still running (done written, no unsent yet) is another
 // hook's job: it is skipped for a minute, after which its hook is past its 20 s timeout and dead. own is
@@ -311,7 +331,7 @@ async function flushUnsent(cfg, own) {
             putBack(claim, file);
             continue;
         } // re-armed meanwhile
-        const r = await sendWith(cfg, `${m.text}\n(finished at ${m.done}; this could not be delivered at the time)`, m.excerpt, 'done');
+        const r = await sendWith(cfg, `${m.text}\n<i>не дошло вовремя, готово было ${m.done.slice(11, 16)} UTC</i>`, m.excerpt, 'done');
         if (r.sent.length) {
             n++;
             rmSync(claim, { force: true });
@@ -328,7 +348,7 @@ const still = (file, m) => { const cur = readJSON(file); return cur && cur.armed
 // prompt that made a --next marker live, else the arming. Under a minute it says nothing.
 function elapsed(m) {
     const min = Math.round((Date.now() - Date.parse(m.resumed || m.started || m.armed)) / 60e3);
-    return min < 1 ? '' : ` after ${min >= 60 ? `${Math.floor(min / 60)} h ${min % 60} min` : `${min} min`}`;
+    return min < 1 ? '' : ` · ${min >= 60 ? `${Math.floor(min / 60)} ч ${min % 60} мин` : `${min} мин`}`;
 }
 const recent = (ts) => !!ts && Date.now() - Date.parse(ts) < 5 * 60 * 1000;
 // A marker older than seven days belongs to a chat that died unreopened. Left alone it keeps the guard in gates.ts
@@ -454,7 +474,8 @@ async function hook() {
     if (!m)
         return;
     deadline = Date.now() + (p.hook_event_name === 'SessionStart' ? 4000 : 15000);
-    const who = `${basename(m.cwd || p.cwd || process.cwd())}${m.label ? ': ' + m.label : ''}`;
+    // "<b>project</b> · label", escaped: every line below is HTML.
+    const who = `<b>${esc(basename(m.cwd || p.cwd || process.cwd()))}</b>${m.label ? ` · ${esc(cut(m.label, 120))}` : ''}`;
     switch (p.hook_event_name) {
         case 'UserPromptSubmit':
             if (m.pending && /^(user|sdk)?$/.test(p.source || '')) {
@@ -480,7 +501,7 @@ async function hook() {
                 m.paused = now();
                 m.pausedJobs = ids;
                 writeJSON(file, m);
-                await send(`${who} paused: ${ids.length} background job${ids.length > 1 ? 's' : ''} still running`, '');
+                await send(`${who} · пауза: ещё идут фоновые задачи (${ids.length})`, '', 'done');
                 return;
             }
             if (p.transcript_path) {
@@ -495,8 +516,8 @@ async function hook() {
             // A trailing question still finishes the arming: see the header. Markdown or a bracket after the
             // question mark does not hide it.
             const question = /[?？][^\p{L}\p{N}]*$/u.test(last);
-            const note = m.resumed ? ' (the chat had been reopened after an interruption)' : '';
-            m.text = `${who} finished${elapsed(m)}${question ? ', with a question for you' : ''}${note}`;
+            const note = m.resumed ? ' · чат перезапускался' : '';
+            m.text = `${who} · ${question ? 'готово, есть вопрос к тебе' : 'готово'}${elapsed(m)}${note}`;
             m.excerpt = tail(redactExcerpt(last));
             m.done = now();
             writeJSON(file, m); // durable before the network: a message that never arrives loses nothing
@@ -519,7 +540,7 @@ async function hook() {
                 return;
             m.failed = now();
             writeJSON(file, m);
-            report(await send(`${who} stopped on an error${elapsed(m)}: ${p.error || 'unknown'}. Reopen the chat to continue.`, undefined, 'fail'), true);
+            report(await send(`${who} · упал на ошибке${elapsed(m)}: ${esc(cut(redactExcerpt(p.error || 'неизвестно'), 300))}. Открой чат, чтобы продолжить.`, undefined, 'fail'), true);
             return;
         case 'Notification': {
             if (m.pending)
@@ -530,7 +551,7 @@ async function hook() {
                 return;
             m.waited = now();
             writeJSON(file, m);
-            report(await send(`${who} needs you${elapsed(m)}: ${p.message || p.notification_type}`, undefined, 'wait'), true);
+            report(await send(`${who} · ждёт тебя${elapsed(m)}: ${esc(cut(redactExcerpt(p.message || p.notification_type || ''), 300))}`, undefined, 'wait'), true);
             return;
         }
         case 'SessionStart': {
@@ -558,149 +579,50 @@ async function hook() {
         default:
     }
 }
-// ---- the inbox's questions on the phone ----
-const askFile = (msg) => join(asksDir, `${msg}.json`);
-const openFlag = join(asksDir, 'open'); // the inbox hook polls only while this exists
-const inboxJs = () => process.env.NOTIFY_INBOX || join(here, '..', 'skills', 'inbox', 'inbox.mjs');
 async function ask() {
     let a;
+    const usage = 'notify: ask wants {item, html, short, options?, reply?, keyboard?} on stdin';
     try {
         a = JSON.parse(readFileSync(0, 'utf8'));
     }
     catch {
-        console.error('notify: ask wants {item, text, options?, reply?} on stdin');
+        console.error(usage);
         return 2;
     }
-    if (typeof a.item !== 'string' || !a.item || typeof a.text !== 'string') {
-        console.error('notify: ask wants {item, text, options?, reply?} on stdin');
+    if (typeof a.item !== 'string' || !a.item || typeof a.html !== 'string' || typeof a.short !== 'string') {
+        console.error(usage);
         return 2;
     }
-    const options = (Array.isArray(a.options) ? a.options : []).map((o) => String(o).trim()).filter(Boolean).slice(0, 8);
-    const text = a.text + (a.reply ? `\n\n${options.length ? 'Tap an answer, or reply' : 'Reply'} to this message with your own.` : '');
-    // callback_data is the option's index: Telegram caps it at 64 bytes, and the label is kept on disk by message id.
-    const keyboard = options.length ? { reply_markup: { inline_keyboard: options.map((o, i) => [{ text: o.slice(0, 60), callback_data: String(i) }]) } } : {};
-    const r = await sendWith(config(), text, '', undefined, keyboard);
+    // The question can carry what a chat printed: the same secret shapes as an excerpt stay out of Telegram.
+    // The short line (an answered message collapses to it) and the button labels too; options stay as they are, since a
+    // tap answers with the chat's own label.
+    const clean = (s) => redactExcerpt(s).replace(/<(redacted|url|token)>/g, '[скрыто]');
+    const html = clean(a.html), short = clean(a.short);
+    const keyboard = a.keyboard ? JSON.parse(JSON.stringify(a.keyboard), (k, v) => (k === 'text' && typeof v === 'string' ? clean(v) : v)) : undefined;
+    const r = await sendWith(config(), html, '', undefined, keyboard ? { reply_markup: keyboard } : {});
     if (!r.sent.length)
         return report(r);
-    if (r.message_id) {
-        writeJSON(askFile(r.message_id), { item: a.item, text, options, reply: !!a.reply, at: now() });
-        writeFileSync(openFlag, '');
-    }
+    if (r.message_id)
+        writeJSON(join(tgDir, 'asks', `${r.message_id}.json`), { item: a.item, html, short, options: (a.options ?? []).map(String), reply: !!a.reply, at: Date.now() });
+    prunePhone();
     console.log(`notify: asked, message ${r.message_id}`);
     return 0;
 }
-// Answers one item through the inbox, as `inbox.mjs answer` does for the inbox chat. Returns the line to show.
-function answerItem(item, text) {
-    try {
-        const out = execFileSync(process.execPath, [inboxJs(), 'answer', item], { input: text, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], timeout: 20000 });
-        const line = out.trim().split('\n').pop() ?? '';
-        return { ok: !/NOT SENT/.test(line), line: line.replace(/^inbox: /, '') };
-    }
-    catch (e) {
-        const x = e;
-        return { ok: false, line: (String(x.stdout || '').trim() || String(x.stderr || '').trim() || x.message).split('\n')[0].replace(/^inbox: /, '') };
-    }
-}
-// One poll at a time across every chat: a lock file, taken from a dead poll after a minute.
-function lock() {
-    mkdirSync(asksDir, { recursive: true });
-    const f = join(asksDir, 'poll.lock');
-    for (let i = 0; i < 2; i++) {
+function prunePhone() {
+    for (const sub of ['asks', 'inbound']) {
+        let files = [];
         try {
-            writeFileSync(f, String(Date.now()), { flag: 'wx' });
-            return () => rmSync(f, { force: true });
+            files = readdirSync(join(tgDir, sub));
         }
         catch {
-            try {
-                if (Date.now() - statSync(f).mtimeMs > 60e3)
-                    rmSync(f, { force: true });
-                else
-                    return null;
-            }
-            catch { /* gone meanwhile */ }
+            continue;
         }
-    }
-    return null;
-}
-async function poll() {
-    const cfg = config();
-    if (!connected(cfg))
-        return 0;
-    const release = lock();
-    if (!release)
-        return 0;
-    const { token } = cfg.telegram;
-    const me = cfg.telegram.chat_id;
-    const tg = (method, body) => telegram(token, method, { chat_id: me, ...body }).catch(() => undefined);
-    const close = async (msg, a, note) => { await tg('editMessageText', { message_id: msg, text: `${a.text}\n\n${note}` }); rmSync(askFile(msg), { force: true }); };
-    deadline = Date.now() + 25000;
-    try {
-        writeFileSync(join(asksDir, 'polled'), String(Date.now()));
-        const offsetFile = join(asksDir, 'offset');
-        const offset = Number((() => { try {
-            return readFileSync(offsetFile, 'utf8');
+        for (const f of files) {
+            const o = readJSON(join(tgDir, sub, f));
+            const at = o?.closed ?? o?.done;
+            if (at && Date.now() - at > 2 * 86400e3)
+                rmSync(join(tgDir, sub, f), { force: true });
         }
-        catch {
-            return '0';
-        } })()) || 0;
-        const ups = await telegram(token, 'getUpdates', { offset, timeout: 0, allowed_updates: ['message', 'callback_query'] });
-        // The offset moves on after each update is acted on, in finally so a skipped one moves it too. A repeat after a
-        // crash is refused by the inbox as already answered.
-        for (const u of ups)
-            try {
-                const cq = u.callback_query, msg = u.message;
-                if (cq) {
-                    if (String(cq.from.id) !== me) {
-                        await telegram(token, 'answerCallbackQuery', { callback_query_id: cq.id, text: 'Not your bot.' }).catch(() => undefined);
-                        continue;
-                    }
-                    const id = cq.message?.message_id ?? 0, a = readJSON(askFile(id)), pick = a?.options[Number(cq.data)];
-                    if (!a || pick === undefined) {
-                        await telegram(token, 'answerCallbackQuery', { callback_query_id: cq.id, text: 'This question is already closed.' }).catch(() => undefined);
-                        await tg('editMessageReplyMarkup', { message_id: id, reply_markup: { inline_keyboard: [] } });
-                        continue;
-                    }
-                    const r = answerItem(a.item, pick);
-                    await telegram(token, 'answerCallbackQuery', { callback_query_id: cq.id, text: r.ok ? 'Sent to the chat.' : r.line.slice(0, 190) }).catch(() => undefined);
-                    await close(id, a, r.ok ? `➡️ ${pick}` : `➡️ ${pick}\n(${r.line})`);
-                }
-                else if (msg && String(msg.chat.id) === me && msg.text && !msg.text.startsWith('/')) {
-                    const id = msg.reply_to_message?.message_id, a = id ? readJSON(askFile(id)) : null;
-                    if (!a || !a.reply) {
-                        await tg('sendMessage', { text: 'To answer a question, tap one of its buttons or reply to that message (swipe it left).', reply_to_message_id: msg.message_id });
-                        continue;
-                    }
-                    const r = answerItem(a.item, msg.text);
-                    await tg('sendMessage', { text: r.ok ? 'Sent to the chat.' : r.line, reply_to_message_id: msg.message_id });
-                    await close(id, a, `➡️ ${msg.text}${r.ok ? '' : `\n(${r.line})`}`);
-                }
-            }
-            finally {
-                writeFileSync(offsetFile, String(u.update_id + 1));
-            }
-        // An ask answered on the computer, or gone, or a day old, loses its buttons, so a tap cannot land on a closed item.
-        const inbox = join(dir, 'inbox');
-        let open = 0;
-        for (const f of readdirSync(asksDir).filter((x) => /^\d+\.json$/.test(x))) {
-            const id = Number(f.slice(0, -5)), a = readJSON(askFile(id));
-            if (!a)
-                continue;
-            const done = existsSync(join(inbox, 'answers', `${a.item}.json`)) ? 'Answered on the computer.' : !existsSync(join(inbox, 'items', `${a.item}.json`)) ? 'Closed.' : Date.now() - Date.parse(a.at) > 86400e3 ? 'Expired.' : '';
-            if (done)
-                await close(id, a, done);
-            else
-                open++;
-        }
-        if (!open)
-            rmSync(openFlag, { force: true });
-        return 0;
-    }
-    catch (e) {
-        console.error(`notify: poll failed: ${redact(e.message)}`);
-        return 1;
-    }
-    finally {
-        release();
     }
 }
 // ---- setup: the person's own bot, with taps in Telegram and no typing ----
@@ -829,12 +751,14 @@ async function setup() {
     // Confirm the updates read here, so the first poll does not see the Start again.
     await telegram(token, 'getUpdates', { offset, timeout: 0 }).catch(() => undefined);
     const one = { ...cfg, telegram: { token, chat_id: chat } };
-    const r = await sendWith(one, `Claude Code on ${hostname()} is connected. Finished chats and questions from the inbox come here; tap a button to answer.`, '', 'done');
+    const r = await sendWith(one, `<b>Claude Code на ${esc(hostname())} подключён.</b>\nСюда придут вопросы чатов с кнопками и итоги, о которых ты просил. Напиши /help.`, '', 'wait');
     if (!r.sent.length) {
         say(`  not delivered: ${r.failed.map((x) => x.error).join('; ')}`, '  Nothing was saved. Run setup again.');
         return done(1);
     }
     writeJSON(configFile, one);
+    // The menu beside the message box; a failure costs only the menu.
+    await telegram(token, 'setMyCommands', { commands: [{ command: 'status', description: 'что ждёт ответа' }, { command: 'ideas', description: 'последние идеи' }, { command: 'help', description: 'что умеет бот' }] }).catch(() => undefined);
     say(`  connected: a test message is in Telegram now. Saved to ${configFile}`);
     const flushed = await flushUnsent(one);
     if (flushed)
@@ -852,16 +776,21 @@ async function main() {
         await hook();
         return 0;
     }
-    if (cmd === 'send')
-        return report(await send(args.slice(1).join(' ')));
+    if (cmd === 'send') {
+        // send <text>: plain words, escaped. send --html [--reply-to <id>]: HTML on stdin (the headless inbox's answer).
+        if (args[1] === '--html') {
+            const to = args[2] === '--reply-to' ? Number(args[3]) : 0;
+            const html = redactExcerpt(readFileSync(0, 'utf8')).replace(/<(redacted|url|token)>/g, '[скрыто]');
+            return report(await sendWith(config(), html, '', undefined, to ? { reply_parameters: { message_id: to, allow_sending_without_reply: true } } : {}));
+        }
+        return report(await send(esc(args.slice(1).join(' '))));
+    }
     if (cmd === '--test')
-        return report(await send(`test from Claude Code on ${hostname()}: Telegram works`));
+        return report(await send(`<i>проверка с ${esc(hostname())}: Telegram работает</i>`));
     if (cmd === 'setup')
         return setup();
     if (cmd === 'ask')
         return ask();
-    if (cmd === 'poll')
-        return poll();
     const on = connected(config());
     const other = take('--session');
     const session = other || process.env.CLAUDE_CODE_SESSION_ID;

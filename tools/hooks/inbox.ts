@@ -3,6 +3,7 @@ import { PUSH_AFTER_MS, clean, contextOf, continueAnswer, deliveryText, dueRepor
 import { find as secretIn } from './secret-guard.ts'
 import { notePrompt } from './push-guard.ts'
 import { PLUGIN_FRAME, ownWords } from './own-words.ts'
+import { isTelegramPrompt, inboundPrompt, takeInbound, telegramInbound, telegramTick, telegramTurnComplete, telegramTurnStart, telegramWords } from './telegram.ts'
 
 // The cross-chat inbox (skill /makarasty-tools:inbox, layout in skills/inbox/core.mjs). Off unless
 // <config>/makarasty/inbox.on exists. In every chat it:
@@ -11,7 +12,8 @@ import { PLUGIN_FRAME, ownWords } from './own-words.ts'
 //   2. wrap_up with an `ask`, and an own_initiative session card: writes the item after the call; an inbox answer comes
 //      back as a prompt this chat's timer submits once the chat is idle [M63].
 //   3. Every 15 s (own items only): after 2 min unanswered, a plain explanation by a small model and, only if Telegram is
-//      connected (notify.mjs), one phone message with a button per option; any chat's timer reads the taps (pollPhone).
+//      connected (notify.mjs), one phone message with a button per option. Every chat's timer also polls Telegram
+//      (telegram.ts, one poll per interval across chats); the inbox chat's timer turns his messages into one prompt.
 //   4. A prompt the person types here closes this chat's open boxes; a started card closes its card item.
 //   5. A chat switched on for finish reports (reports/on/<id>: every session the inbox chat starts, or `inbox.mjs report
 //      on`) writes one report per working turn it ends: wrap_up called, or the turn died on an error. Not when the turn
@@ -19,7 +21,7 @@ import { PLUGIN_FRAME, ownWords } from './own-words.ts'
 //      batches (core.mjs QUIET_MS / MAX_MS), with the next item wake, or when the person types there.
 // Measured need: 608 asks a month, p90 wait 23 min, 24.5% answered in free text, 32 "unclear" complaints [M63].
 
-type D = Pick<EngineInterface, 'env' | 'fs' | 'process' | 'plugin' | 'session' | 'clock' | 'model' | 'prompt'>
+type D = Pick<EngineInterface, 'env' | 'fs' | 'http' | 'process' | 'plugin' | 'session' | 'clock' | 'model' | 'prompt'>
 
 const TICK_MS = 15000
 const WAIT_MS = 590000 // one waiter lives at most this long, then is started again: $.process.run refuses over 600000
@@ -212,9 +214,15 @@ export const register: Register = (on) => {
 
   on('tool.call', { tool: 'mcp__ccd_session__start_session' }, async ($, e, next) => {
     const r = await next(e)
-    const input = e as unknown as { initiation?: string; title?: string; prompt?: string; background?: string; tool_use_id?: string }
+    const input = e as unknown as { initiation?: string; title?: string; prompt?: string; background?: string; tool_use_id?: string; proposal_id?: string }
     const text = r.text ?? (typeof r.result === 'string' ? r.result : JSON.stringify(r.result ?? ''))
     const taskId = /task_id:\s*(task_\w+)/.exec(text)?.[1]
+    // The chat started its own proposal (start_session with its proposal_id, on his word here): its card is done, not
+    // left open to reach the inbox and his phone later (2026-11-17: three started cards came to Telegram).
+    if (input.proposal_id && !r.isError && !r.deny) {
+      const a0 = await active($).catch(() => undefined)
+      for (const it of a0 ? await openItems($, a0).catch(() => []) : []) if (it.kind === 'card' && it.taskId === input.proposal_id) await cli($, a0!.dir, ['done', it.id]).catch(() => undefined)
+    }
     // A session the inbox chat starts reports its finishes here (the operator's rule: reports from the coordinator's chats).
     const started = !r.isError && !r.deny && input.initiation !== 'own_initiative' ? /local_[0-9a-f]{8}-[0-9a-f-]{27}/.exec(text)?.[0] : undefined
     const me = started ? await inboxSelf($).catch(() => undefined) : undefined
@@ -232,6 +240,7 @@ export const register: Register = (on) => {
     await markTurn($, 'busy').catch(() => undefined)
     const me = await inboxSelf($).catch(() => undefined)
     if (me) await $.fs.write(`${me.root}/turn`, `busy ${await $.clock.now()}`).catch(() => undefined) // the watchdog reads it
+    if (me) await telegramTurnStart($, me.dir, e.text, e.turnId).catch(() => undefined)
     return next(e)
   }).catch(($, e, next) => next(e))
 
@@ -247,6 +256,7 @@ export const register: Register = (on) => {
     const me = await inboxSelf($).catch(() => undefined)
     if (me) {
       await $.fs.write(`${me.root}/turn`, `idle ${await $.clock.now()}`).catch(() => undefined)
+      await telegramTurnComplete($, me.dir, e).catch(() => undefined) // the answer to his Telegram message goes back to him
       await $.fs.write(`${me.root}/heard`, '').catch(() => undefined) // his word was for that turn only
       // At once, not at the next tick: items that came in while this turn ran (2026-11-12: a dialog here stayed open an
       // hour, three items arrived, and the person typed his next prompt 9 s after it closed, before any tick) [M63].
@@ -286,6 +296,11 @@ export const register: Register = (on) => {
     const started = /started your suggested background task (task_\w+)/.exec(e.text)?.[1]
     const typed = e.origin?.kind === 'composer' || e.origin?.kind === 'bridge'
     if (typed) await capture($, e.text).catch(() => undefined)
+    // His message from Telegram is his word (owner, 2026-11-17: «Да, как с клавиатуры»): a start's consent and a send's.
+    if (e.origin?.kind === 'plugin' && e.origin.name === 'makarasty-tools' && isTelegramPrompt(e.text)) {
+      const me = await inboxSelf($).catch(() => undefined)
+      if (me) { await capture($, telegramWords(e.text)).catch(() => undefined); await hear($, me.root) }
+    }
     if (typed) {
       // The person writes to the inbox chat: the finish reports waiting for their batch go with this prompt.
       const me = await inboxSelf($).catch(() => undefined)
@@ -772,26 +787,34 @@ async function deliverAnswers($: D, a: { root: string; session: string }): Promi
   }
 }
 
-// While a question is open on the phone (notify.mjs ask writes notify-asks/open), read its taps and replies: one poll per
-// 10 s across every chat, since each chat's timer gets here. `polled` is written before the spawn, so the others skip.
-async function pollPhone($: D): Promise<void> {
-  const dir = await claudeDir($)
-  if (!dir) return
-  const asks = `${dir}/makarasty/notify-asks`
-  if (!(await $.fs.exists(`${asks}/open`))) return
+// Messages the person wrote to the bot, for the inbox chat: one prompt for all that wait, once this chat is idle (a crash
+// that left the turn busy lets the headless inbox take them instead: telegram.ts). Not while another such turn is open.
+async function telegramDeliver($: D, me: { dir: string; root: string; session: string }): Promise<void> {
+  if (inTurn) return
   const now = await $.clock.now()
-  if (now - (Number(String(await $.fs.read(`${asks}/polled`).catch(() => '0'))) || 0) < 10000) return
-  await $.fs.write(`${asks}/polled`, String(now))
-  await $.process.run(['node', `${$.plugin.root}/hooks/notify.mjs`, 'poll'], { timeoutMs: 30000, env: { CLAUDE_CONFIG_DIR: dir } })
+  const t = /^busy (\d+)/.exec(String(await $.fs.read(`${me.root}/turn`).catch(() => '')).trim())
+  if (t && now - Number(t[1]) < CRASH_MS) return
+  // A prompt whose turn never began (2 min, no turn id) or never ended (30 min) goes again with whatever came since.
+  const open = await readJSON<{ ids?: number[]; at?: number; turnId?: string }>($, `${me.dir}/makarasty/telegram/turn.json`)
+  let retry: number[] = []
+  if (open?.ids?.length) {
+    if (now - (open.at ?? 0) < (open.turnId ? 30 : 2) * 60000) return
+    retry = open.ids
+  }
+  const ms = await telegramInbound($, me.dir, retry)
+  if (!ms.length) return
+  await takeInbound($, me.dir, ms)
+  await $.prompt.submit({ text: inboundPrompt(ms) })
 }
 
 // The last answer to "is a notify channel configured?" and when it was asked (tick keeps it 10 min).
 let chan = { at: -Infinity, yes: true }
 export async function tick($: D): Promise<void> {
-  void pollPhone($).catch(() => undefined) // not awaited: a slow Telegram must not hold the beat or the wake
+  void telegramTick($).catch(() => undefined) // not awaited: a slow Telegram must not hold the beat or the wake
   const me = await inboxSelf($)
   if (me) {
     await $.fs.write(`${me.root}/beat`, String(await $.clock.now())).catch(() => undefined) // the watchdog's sign the timer runs
+    await telegramDeliver($, me).catch(() => undefined)
     void drainStarts($, me).catch(() => undefined) // not awaited: it can run minutes, and the beat and the wake must not wait for it
     return wakeOnce($, me)
   }

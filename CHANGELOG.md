@@ -1,5 +1,25 @@
 # Changelog
 
+## makarasty-tools 1.19.52 — 2026-11-17
+
+The Telegram bot works both ways and stays quiet unless the person is needed (docs/TELEGRAM.md, 27 edge cases).
+- **Read in the hook engine**: every chat's inbox timer polls Telegram through `$.http.fetch`; one poll per 15 s
+  across all chats (3 s for 5 min after he writes), no process at idle. A claim file and `seen.json` keep two pollers,
+  or a crash, from handling an update twice; 401/403 pause it 10 min; a day offline is told.
+- **The look he picked (B3)**: the question first and bold, "project · kind · age" under it, a button per option and
+  "❔ Подробнее", which writes the explanation only when tapped. A tap is acknowledged at once; the message then
+  collapses to one grey line "question — answer" (answered on the computer, closed or past 12 h too). Russian, HTML,
+  finishes silent.
+- **He can write to the bot**: "идея …"/💡 saves to ideas.md, /ideas, /status, /help, all without the model; anything
+  else goes to the inbox chat as one `[Telegram]` prompt and its answer comes back as a reply, or to a headless inbox
+  turn (`inbox.mjs telegram`) when no inbox chat runs. A reply to a question answers it, or asks about it with "?".
+  His taps and messages count as his word, read only from a prompt that starts with the Telegram head.
+- **Nothing stale reaches the phone**: cards are never pushed (the phone cannot start one); a box he answered by
+  writing in its chat, an archived or muted chat, an item over 12 h old is not pushed; a chat starting its own
+  proposal closes its card.
+- Strangers, groups and forwarded messages get nothing; the question, its short line, button labels, /status and every
+  answer pass the secret redaction; `NOTIFY_TELEGRAM_API` works only for localhost.
+
 ## makarasty-tools 1.19.51 — 2026-11-17
 
 - **notify setup takes a token already copied**: a person who made the bot first and copied its token before setup

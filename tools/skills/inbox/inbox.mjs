@@ -13,6 +13,8 @@
 //   node inbox.mjs done <id>                the chat answered it itself (dialog, box button, card click, Esc)
 //   node inbox.mjs wait <id>[,<id>...] <ms> block until every item is answered; prints the answer JSON (exit 3: timed out)
 //   node inbox.mjs push <id>                one phone message for the item through notify.mjs, once; with no notify channel: no attempt, no record
+//   node inbox.mjs telegram                 answer the person's waiting Telegram messages with one headless inbox turn (the hook runs it
+//                                           when no inbox chat is running)
 //   node inbox.mjs channels                 `channels: yes` or `channels: none` (notify.mjs --status; a dry-run sink counts as yes)
 //   node inbox.mjs open <id>|local_<id>     bring that chat up in the app window of its own account (profile)
 //   node inbox.mjs start <profile> <folder> <name> --said "<his words>" [--model m] [--effort e] [--mode default|plan|auto]
@@ -43,7 +45,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { freemem, homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { REPORT_TTL_MS, TTL_MS, UNSEEN_REPORT_TTL_MS, clean, contextOf, expired, itemId, normalizeAnswer, phoneAsk, render, renderReports, safe, sourceTag, undeliverable } from './core.mjs'
+import { REPORT_TTL_MS, TTL_MS, UNSEEN_REPORT_TTL_MS, clean, contextOf, expired, inboundPrompt, itemId, mdToTg, normalizeAnswer, phoneAsk, phoneKeyboard, render, renderReports, safe, sourceTag, undeliverable } from './core.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const base = join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'makarasty')
@@ -524,6 +526,47 @@ async function startCmd(/** @type {string | undefined} */ id, /** @type {string[
 }
 
 
+// ---- telegram: the person's messages when no inbox chat is running ----
+// The hook engine (tools/hooks/telegram.ts) writes his messages to <config>/makarasty/telegram/inbound/ and, when the
+// inbox chat's beat is older than a minute, runs this: one headless turn of one persistent session (`claude -p`,
+// resumed each time, so it keeps its own context), whose answer goes back as a reply. One run at a time (a lock); what
+// arrives during a run is taken by the next round of the same run, up to three.
+async function telegramTurn() {
+  const tg = join(base, 'telegram'), lockF = join(tg, 'headless.lock')
+  mkdirSync(join(tg, 'inbound'), { recursive: true })
+  if (!create(lockF, String(Date.now()))) {
+    try { if (Date.now() - statSync(lockF).mtimeMs < 8 * 60e3) return 0 } catch { /* gone meanwhile */ }
+    rmSync(lockF, { force: true })
+    if (!create(lockF, String(Date.now()))) return 0
+  }
+  const notify = (/** @type {string[]} */ args, /** @type {string} */ input) => { try { execFileSync(process.execPath, [notifyJs, ...args], { input, stdio: ['pipe', 'pipe', 'pipe'], timeout: 30000 }) } catch { /* the reply is lost; the next message still works */ } }
+  const t0 = Date.now()
+  try {
+    // A new round only while the run is young: the hook kills it at 400 s, and a round cut off mid-turn would leave its
+    // messages taken and unanswered. Taken over 10 min ago with no answer: a killed run's, so taken again.
+    for (let round = 0; round < 3 && (round === 0 || Date.now() - t0 < 60e3); round++) {
+      const files = readdirSync(join(tg, 'inbound')).filter((f) => f.endsWith('.json'))
+      const ms = files.map((f) => readJSON(join(tg, 'inbound', f))).filter((m) => m && !m.done && (!m.taken || Date.now() - m.taken > 10 * 60e3)).sort((a, b) => a.id - b.id)
+      if (!ms.length) break
+      const now = Date.now()
+      for (const m of ms) writeFileSync(join(tg, 'inbound', `${m.id}.json`), JSON.stringify({ ...m, taken: now }))
+      const sess = readJSON(join(tg, 'headless.json')) ?? {}, sid = typeof sess.sid === 'string' ? sess.sid : randomUUID()
+      /** @type {string[]} */ let profs = []; try { profs = readdirSync(profilesDir()) } catch { /* no app profiles: the CLI on PATH */ }
+      const prof = profs.includes('main') ? 'main' : profs[0]
+      const cli = bundledCli({ name: prof ?? '', dir: join(profilesDir(), prof ?? '') })
+      const argv = ['-p', inboundPrompt(ms), ...(sess.sid ? ['--resume', sid] : ['--session-id', sid, '-n', 'Telegram inbox']), '--permission-mode', 'auto']
+      let out = '', ok = false
+      try { out = execFileSync(cli, argv, { cwd: homedir(), encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 300e3, maxBuffer: 16 << 20 }); ok = true }
+      catch (e) { out = String(/** @type {{stdout?: string}} */ (e).stdout ?? '') }
+      if (!sess.sid && (ok || out)) writeFileSync(join(tg, 'headless.json'), JSON.stringify({ sid, at: now }))
+      const html = ok && out.trim() ? mdToTg(out) : '<i>Не успел ответить: фоновый инбокс не закончил за 5 минут. Напиши ещё раз или открой инбокс на компьютере.</i>'
+      notify(['send', '--html', '--reply-to', String(ms[ms.length - 1].message_id)], html)
+      for (const m of ms) writeFileSync(join(tg, 'inbound', `${m.id}.json`), JSON.stringify({ ...m, taken: now, done: Date.now() }))
+    }
+    return 0
+  } finally { rmSync(lockF, { force: true }) }
+}
+
 // ---- scan: questions that wait in chats which filed no item ----
 // Run when a chat becomes the inbox (list's first mark, or --take) and by `inbox.mjs scan`. Every account's transcripts sit in the
 // one shared <config>/projects tree. For each chat of the registry active in the last 24 h (not archived, not the inbox chat, not a
@@ -904,7 +947,11 @@ async function main() {
   }
 
   if (cmd === 'push') {
-    if (!item || answered(item.id)) return 0
+    // Nothing goes to the phone that no longer waits for him (owner, 2026-11-17: cards of sessions long started came):
+    // a card (it starts only from the inbox chat, so the phone can do nothing with it), an answered item, or one an
+    // answer could no longer reach (he wrote in that chat since, it is archived or muted, a box over 12 h old).
+    if (!item || item.kind === 'card' || answered(item.id)) return 0
+    if (stale(item, hosts())) { writeFileSync(join(dir('pushed'), item.id), ''); say('inbox: no push, the item no longer waits'); return 0 }
     // The marker is empty once pushed; while notify has failed it holds {fails, at}: tried again after 5 min, 3 times at most.
     const mark = join(dir('pushed'), item.id), now = Date.now(), prev = existsSync(mark) ? readJSON(mark) : undefined
     if (existsSync(mark) && !prev) return 0
@@ -912,11 +959,14 @@ async function main() {
     if (!hasChannel()) { say('inbox: no push, no notify channel'); return 0 } // no attempt, no failure record
     const attempt = JSON.stringify({ fails: (prev?.fails ?? 0) + 1, at: now })
     if (prev) writeFileSync(mark, attempt); else if (!create(mark, attempt)) return 0
-    try { execFileSync(process.execPath, [notifyJs, 'ask'], { input: JSON.stringify(phoneAsk(item)), stdio: ['pipe', 'pipe', 'pipe'], timeout: 20000 }) } catch (e) { console.error(`inbox: push failed: ${/** @type {Error} */ (e).message.split('\n')[0]}`); return 1 } // the attempt record stays: a later tick retries
+    const phone = phoneAsk(item)
+    try { execFileSync(process.execPath, [notifyJs, 'ask'], { input: JSON.stringify({ ...phone, keyboard: phoneKeyboard(phone.options) }), stdio: ['pipe', 'pipe', 'pipe'], timeout: 20000 }) } catch (e) { console.error(`inbox: push failed: ${/** @type {Error} */ (e).message.split('\n')[0]}`); return 1 } // the attempt record stays: a later tick retries
     writeFileSync(mark, '')
     say('inbox: pushed')
     return 0
   }
+
+  if (cmd === 'telegram') return telegramTurn()
 
   if (cmd === 'open') {
     const host = id.startsWith('local_') ? id : item?.host

@@ -82,14 +82,24 @@ anyone else. One setup serves every account that shares this config dir. `test` 
   comes on the later turn. A turn another plugin's Stop hook blocked sends nothing.
 - **could not be delivered at the time** - the finish was saved and goes out at the next chance: the chat
   reopening, or setup connecting Telegram.
-- **inbox questions** - with the inbox on, a question nobody answered for 2 minutes comes to Telegram with a
-  button per option (one-question asks and end-of-turn boxes) and can be answered by a tap or by replying to
-  the message. The answer goes to the chat within about 15 seconds, and the message then shows what was sent.
-  A question answered on the computer loses its buttons. Session cards and several-question asks come as
-  text, answered in the inbox chat.
+- **inbox questions** - with the inbox on, a question nobody answered for 2 minutes comes to Telegram: the
+  question bold, "project · kind · age" under it, a button per option and "❔ Подробнее" (a plain explanation,
+  written only when tapped). A tap or a reply answers it; a reply ending in "?" asks the inbox about it. The
+  message then collapses to one grey line "question — answer"; answered on the computer, it collapses too.
 
-What leaves the machine for Telegram: these lines and the inbox question with its options and the small
-model's plain explanation. Never the chat's transcript.
+All messages are Telegram HTML in Russian; a finish rings silently, everything that needs the person rings.
+Nothing is sent for routine steps (an edit, an agent starting or ending).
+
+## What the person can write to the bot
+
+His messages are read by the hook engine of any running chat (no process at idle). "идея …" or 💡 saves an idea,
+`/ideas` lists them, `/status` shows what waits for an answer, `/help` the rest; none of these uses the model.
+Anything else goes to the inbox chat, or to a headless inbox turn when no inbox chat runs, and its short answer
+comes back as a reply. His taps and messages count as his word, like typing. Details and edge cases:
+`docs/TELEGRAM.md` in the plugin repository.
+
+What leaves the machine for Telegram: these lines, the inbox question with its options, the explanation he asks
+for, and the inbox's answers to him. Never a chat's transcript.
 
 `/clear` drops this chat's marker: the person is at the screen. Closing the chat, or a crash, keeps it.
 

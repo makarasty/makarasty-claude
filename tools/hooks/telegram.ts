@@ -1,0 +1,300 @@
+import type { EngineInterface } from 'claude-code'
+import { collapsed, esc, explainPrompt, inboundPrompt, isTelegramPrompt, mdToTg, phoneKeyboard, STALE_MS, TG_PROMPT, telegramWords, type Item } from '../skills/inbox/core.mjs'
+
+// The Telegram side of notify, read inside the hook engine: `$.http.fetch`, so an idle poll starts no process. Every chat's
+// inbox timer calls telegramTick (inbox.ts); one of them polls per interval. The person's taps answer inbox items, "❔
+// Подробнее" writes the explanation on demand, a message he writes goes to the inbox chat (or a headless inbox turn when
+// none runs), and ideas, /status and /ideas are answered here with no model. Layout under <config>/makarasty/telegram/:
+//   polled          "<ms> <session>": the last claim to poll; the writer reads it back and polls only if it is still his
+//   active          ms of the last message or tap: 3 s polls for 5 min after it, else 15 s
+//   offset, lastok  getUpdates offset; when a poll last worked (a gap over 23 h is told: Telegram keeps updates 24 h)
+//   seen/<update>   written before an update's effects, so a second poller that got the same batch skips it
+//   asks/<msg>.json an open ask on the phone (notify.mjs ask writes it): item, html, short, options, reply, at
+//   inbound/<update>.json  a message for the inbox chat: text, message_id, at, about (an ask's item), taken (ms)
+//   turn.json       the inbox turn that answers inbound messages: ids, message_id, turnId
+// Design and edge cases: docs/TELEGRAM.md.
+
+type D = Pick<EngineInterface, 'env' | 'fs' | 'http' | 'process' | 'plugin' | 'session' | 'clock' | 'model'>
+type Ask = { item: string; html: string; short: string; options: string[]; reply: boolean; at: number; more?: boolean; closed?: number }
+type Msg = { message_id: number; chat: { id: number; type?: string }; from?: { id: number }; text?: string; caption?: string; reply_to_message?: { message_id: number }; forward_origin?: unknown; voice?: unknown; photo?: unknown; document?: unknown; sticker?: unknown; video?: unknown }
+type Update = { update_id: number; message?: Msg; callback_query?: { id: string; from: { id: number }; data?: string; message?: Msg } }
+export type Inbound = { id: number; text: string; message_id: number; at: number; about?: { item: string; short: string }; taken?: number; done?: number }
+
+const IDLE_MS = 15000, BUSY_MS = 3000, BUSY_FOR = 5 * 60000, ALIVE_MS = 60000
+const API = 'https://api.telegram.org'
+
+async function configDir($: D): Promise<string | undefined> {
+  const cfg = await $.env.get('CLAUDE_CONFIG_DIR')
+  if (cfg) return cfg.replace(/[\\/]+$/, '')
+  const home = (await $.env.get('USERPROFILE')) || (await $.env.get('HOME'))
+  return home ? `${home.replace(/[\\/]+$/, '')}/.claude` : undefined
+}
+async function readJSON<T>($: D, p: string): Promise<T | undefined> {
+  try { return JSON.parse(String(await $.fs.read(p)).replace(/^﻿/, '')) as T } catch { return undefined }
+}
+// The bound chat, or undefined: a token with no chat bound at setup answers nobody.
+async function bot($: D, dir: string): Promise<{ token: string; me: string } | undefined> {
+  const c = await readJSON<{ telegram?: { token?: unknown; chat_id?: unknown } }>($, `${dir}/makarasty/notify.json`)
+  const token = c?.telegram?.token, me = c?.telegram?.chat_id
+  return typeof token === 'string' && /^\d+:[\w-]{20,}$/.test(token) && (typeof me === 'string' || typeof me === 'number') && String(me) ? { token, me: String(me) } : undefined
+}
+
+// One Bot API call. A 429 waits what Telegram asks (up to 5 s); an HTML message Telegram cannot parse goes once as plain text.
+async function call<T = unknown>($: D, token: string, method: string, body: Record<string, unknown>): Promise<T | undefined> {
+  for (let i = 0; i < 2; i++) {
+    const r = await $.http.fetch(`${API}/bot${token}/${method}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+    let o: { ok?: boolean; result?: T; description?: string; parameters?: { retry_after?: number } } = {}
+    try { o = JSON.parse(r.text) } catch { /* not JSON */ }
+    if (o.ok) return o.result
+    if (r.status === 429 && i === 0) { await $.clock.sleep(Math.min(5, o.parameters?.retry_after ?? 1) * 1000); continue }
+    if (r.status === 400 && /parse entities/i.test(o.description ?? '') && body.parse_mode && i === 0) {
+      body = { ...body, parse_mode: undefined, text: typeof body.text === 'string' ? body.text.replace(/<[^>]+>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&') : body.text }
+      continue
+    }
+    throw Object.assign(new Error(`${r.status} ${o.description ?? ''}`.trim()), { status: r.status })
+  }
+  return undefined
+}
+
+// Every chat's timer comes here; the chat that saw traffic also runs a 3 s timer for 5 min.
+let fast: { cancel: () => void } | undefined
+let pausedUntil = 0
+// One poll at a time in this chat: a slow tap ("Подробнее" waits up to 60 s on the model) must not let the 3 s timer
+// start a second poll that handles the same updates beside it.
+let polling = false
+export async function telegramTick($: D): Promise<void> {
+  if (polling) return
+  polling = true
+  try { await pollOnce($) } finally { polling = false }
+}
+async function pollOnce($: D): Promise<void> {
+  const dir = await configDir($)
+  if (!dir) return
+  const now = await $.clock.now()
+  if (now < pausedUntil) return
+  const b = await bot($, dir)
+  if (!b) return
+  const tg = `${dir}/makarasty/telegram`
+  const active = Number(String(await $.fs.read(`${tg}/active`).catch(() => '0'))) || 0
+  const every = now - active < BUSY_FOR ? BUSY_MS : IDLE_MS
+  if (fast && now - active >= BUSY_FOR) { fast.cancel(); fast = undefined }
+  const last = Number(String(await $.fs.read(`${tg}/polled`).catch(() => '0')).split(' ')[0]) || 0
+  if (now - last < every - 500) return
+  const session = await $.session.id()
+  const claim = `${now} ${session}`
+  await $.fs.write(`${tg}/polled`, claim)
+  if (String(await $.fs.read(`${tg}/polled`).catch(() => '')) !== claim) return // another chat claimed this poll
+  let ups: Update[] | undefined
+  const offset = Number(String(await $.fs.read(`${tg}/offset`).catch(() => ''))) || Number(String(await $.fs.read(`${tg}/offset.bak`).catch(() => ''))) || 0
+  try { ups = await call<Update[]>($, b.token, 'getUpdates', { offset, timeout: 0, allowed_updates: ['message', 'callback_query'] }) }
+  catch (e) {
+    // A revoked token (401) or a bot the person blocked (403): wait 10 min, never a loop of failures.
+    if ([401, 403, 404].includes((e as { status?: number }).status ?? 0)) pausedUntil = now + 600000
+    return
+  }
+  // Two chats can both pass the age check before either writes its claim; the later claim wins, the other drops its batch.
+  if (String(await $.fs.read(`${tg}/polled`).catch(() => '')) !== claim) return
+  const lastOk = Number(String(await $.fs.read(`${tg}/lastok`).catch(() => '0'))) || 0
+  await $.fs.write(`${tg}/lastok`, String(now))
+  if (lastOk && now - lastOk > 23 * 3600e3) await send($, b, `<i>Компьютер был недоступен ${Math.round((now - lastOk) / 3600e3)} ч: что ты писал раньше, чем за сутки, Telegram не сохранил.</i>`, { disable_notification: true }).catch(() => undefined)
+  let traffic = false
+  // $.fs has no delete: the last 300 update ids in one file, read again before each update and written before its effects.
+  for (const u of ups ?? []) {
+    const seen = ((await readJSON<number[]>($, `${tg}/seen.json`)) ?? []).filter((x) => typeof x === 'number')
+    if (seen.includes(u.update_id)) continue
+    seen.push(u.update_id)
+    await $.fs.write(`${tg}/seen.json`, JSON.stringify(seen.slice(-300)))
+    try { if (await handle($, dir, b, u, now)) traffic = true } catch { /* one bad update never blocks the rest */ }
+    await $.fs.write(`${tg}/offset`, String(u.update_id + 1))
+    await $.fs.write(`${tg}/offset.bak`, String(u.update_id + 1))
+  }
+  if (traffic) {
+    await $.fs.write(`${tg}/active`, String(now))
+    fast ??= $.clock.every(BUSY_MS, () => { void telegramTick($).catch(() => undefined) })
+  }
+  await sweep($, dir, b, now).catch(() => undefined)
+}
+
+// Function declarations, not arrows, wherever `$` is passed: the engine follows `$` only into a declaration.
+function send($: D, b: { token: string; me: string }, html: string, extra: Record<string, unknown> = {}) {
+  return call<{ message_id: number }>($, b.token, 'sendMessage', { chat_id: b.me, text: html, parse_mode: 'HTML', link_preview_options: { is_disabled: true }, ...extra })
+}
+const replyTo = (id: number) => ({ reply_parameters: { message_id: id, allow_sending_without_reply: true } })
+
+// Returns whether it was the person (traffic). A stranger, a group, a forwarded text: nothing, not even a reply.
+async function handle($: D, dir: string, b: { token: string; me: string }, u: Update, now: number): Promise<boolean> {
+  const tg = `${dir}/makarasty/telegram`
+  const cq = u.callback_query
+  if (cq) {
+    const ack = (text: string) => call($, b.token, 'answerCallbackQuery', { callback_query_id: cq.id, text }).catch(() => undefined)
+    if (String(cq.from.id) !== b.me) { await ack(''); return false }
+    const msg = cq.message?.message_id ?? 0
+    const a = await openAsk($, `${tg}/asks/${msg}.json`)
+    if (!a) { await ack('Уже закрыто'); await call($, b.token, 'editMessageReplyMarkup', { chat_id: b.me, message_id: msg, reply_markup: { inline_keyboard: [] } }).catch(() => undefined); return true }
+    if (cq.data === 'm') { await ack('Пишу пояснение…'); await explain($, dir, b, msg, a); return true }
+    const i = Number(/^a?(\d+)$/.exec(cq.data ?? '')?.[1] ?? NaN)
+    const pick = a.options[i]
+    if (pick === undefined) { await ack('Уже закрыто'); return true }
+    await ack('Принято')
+    await answer($, dir, b, msg, a, pick)
+    return true
+  }
+  const m = u.message
+  if (!m || m.chat.type !== 'private' || String(m.chat.id) !== b.me || String(m.from?.id) !== b.me || m.forward_origin) return false
+  const text = (m.text ?? m.caption ?? '').trim()
+  if (!text) { await send($, b, 'Понимаю только текст: напиши словами.', replyTo(m.message_id)).catch(() => undefined); return true }
+  const extra = !m.text && (m.photo || m.document || m.video) ? ' (картинку или файл я не вижу, только подпись)' : ''
+  const command = /^\/(\w+)(?:@\w+)?\s*([\s\S]*)$/.exec(text)
+  // \b is ASCII-only: «идея купить» needs a letter-aware end of word.
+  const IDEA = /^(💡|(идея|idea)(?![\p{L}\p{N}]))[:\s-]*/iu
+  const idea = command?.[1] === 'idea' ? command[2] : IDEA.test(text) ? text.replace(IDEA, '') : undefined
+  if (idea !== undefined) {
+    if (!idea.trim()) { await send($, b, 'Напиши идею после слова: «идея …»', replyTo(m.message_id)).catch(() => undefined); return true }
+    // shortcut: read-and-rewrite (no append in $.fs); two ideas within the same millisecond from two pollers is not a case.
+    const old = String(await $.fs.read(`${dir}/makarasty/ideas.md`).catch(() => ''))
+    const day = new Date(now).toISOString().slice(0, 16).replace('T', ' ')
+    await $.fs.write(`${dir}/makarasty/ideas.md`, `${old}${old && !old.endsWith('\n') ? '\n' : ''}- ${day} ${idea.trim().replace(/\s*\n\s*/g, ' ')}\n`)
+    const n = (old.match(/^- /gm) ?? []).length + 1
+    await send($, b, `<i>Записал идею №${n}${esc(extra)}</i>`, { ...replyTo(m.message_id), disable_notification: true }).catch(() => undefined)
+    return true
+  }
+  if (command && ['start', 'help'].includes(command[1]!)) { await send($, b, HELP).catch(() => undefined); return true }
+  if (command?.[1] === 'ideas') {
+    const lines = String(await $.fs.read(`${dir}/makarasty/ideas.md`).catch(() => '')).split('\n').filter((l) => l.startsWith('- ')).slice(-10)
+    await send($, b, lines.length ? `<b>Последние идеи</b>\n${lines.map((l) => esc(l.slice(2))).join('\n')}` : '<i>Идей пока нет. Напиши «идея …».</i>').catch(() => undefined)
+    return true
+  }
+  if (command?.[1] === 'status') { await send($, b, await status($, dir, now)).catch(() => undefined); return true }
+  // A reply to an ask: a question about it goes to the inbox; anything else is the answer, where a free answer fits.
+  const about = m.reply_to_message ? await openAsk($, `${tg}/asks/${m.reply_to_message.message_id}.json`) : undefined
+  if (about && m.reply_to_message && !/[?？]\s*$/.test(text) && about.reply) { await answer($, dir, b, m.reply_to_message.message_id, about, text, m.message_id); return true }
+  const inbound: Inbound = { id: u.update_id, text: text + extra, message_id: m.message_id, at: now, ...(about ? { about: { item: about.item, short: about.short } } : {}) }
+  await $.fs.write(`${tg}/inbound/${u.update_id}.json`, JSON.stringify(inbound))
+  await call($, b.token, 'setMessageReaction', { chat_id: b.me, message_id: m.message_id, reaction: [{ type: 'emoji', emoji: '👀' }] }).catch(() => undefined)
+  // The inbox chat takes it at its next idle tick; with none alive, one headless inbox turn answers it.
+  const beat = Number(String(await $.fs.read(`${dir}/makarasty/inbox/beat`).catch(() => '0'))) || 0
+  if (now - beat > ALIVE_MS) void $.process.run(['node', `${$.plugin.root}/skills/inbox/inbox.mjs`, 'telegram'], { timeoutMs: 400000, env: { CLAUDE_CONFIG_DIR: dir } }).catch(() => undefined)
+  return true
+}
+
+const HELP = [
+  '<b>Что умеет бот</b>',
+  '• вопросы чатов приходят сюда: нажми кнопку или ответь на сообщение своими словами',
+  '• «❔ Подробнее» — пояснение к вопросу; ответ вопросом на сообщение — спросит инбокс',
+  '• любое другое сообщение — задача или вопрос инбоксу, ответ придёт сюда',
+  '• «идея …» или 💡 — записать идею, /ideas — последние идеи',
+  '• /status — что ждёт ответа',
+  '<i>Telegram хранит сообщения для бота сутки: если компьютер выключен дольше, старое пропадёт.</i>',
+].join('\n')
+
+async function status($: D, dir: string, now: number): Promise<string> {
+  const root = `${dir}/makarasty/inbox`
+  const open: Item[] = []
+  for (const f of await $.fs.list(`${root}/items`).catch(() => [])) {
+    if (!f.name.endsWith('.json') || (await $.fs.exists(`${root}/answers/${f.name}`))) continue
+    const it = await readJSON<Item>($, `${root}/items/${f.name}`)
+    if (it && now - it.at < STALE_MS) open.push(it)
+  }
+  const beat = Number(String(await $.fs.read(`${root}/beat`).catch(() => '0'))) || 0
+  const q = (it: Item) => (it.kind === 'ask' ? it.questions?.[0]?.question : it.kind === 'choice' ? it.ask : `карточка «${it.title}»`) ?? ''
+  const proj = (cwd: string) => cwd.replace(/[\\/]+$/, '').split(/[\\/]/).pop() ?? cwd
+  const lines = open.sort((x, y) => x.at - y.at).slice(0, 8).map((it) => `• ${esc(redact(q(it)).slice(0, 80))} <i>${esc(proj(it.cwd))} · ${Math.max(1, Math.round((now - it.at) / 60000))} мин</i>`)
+  return [`<b>Ждут ответа: ${open.length}</b>`, ...lines, `<i>инбокс ${now - beat < ALIVE_MS ? 'на компьютере работает' : 'не запущен: на сообщения ответит фоновый инбокс'}</i>`].join('\n')
+}
+
+// The tap or reply answers the item through `inbox.mjs answer`, as the inbox chat would; the message then collapses.
+async function answer($: D, dir: string, b: { token: string; me: string }, msg: number, a: Ask, pick: string, replyId?: number): Promise<void> {
+  const r = await $.process.run(['node', `${$.plugin.root}/skills/inbox/inbox.mjs`, 'answer', a.item], { stdin: pick, timeoutMs: 20000, env: { CLAUDE_CONFIG_DIR: dir } }).catch(() => undefined)
+  const line = `${r?.stdout ?? ''}\n${r?.stderr ?? ''}`.trim().split('\n').filter(Boolean).pop()?.replace(/^inbox: /, '') ?? 'не получилось'
+  const sent = r?.exitCode === 0 && !/NOT SENT/.test(line)
+  const outcome = sent ? pick : /already answered/.test(line) ? `${pick} (уже было отвечено)` : `${pick} (не отправлено: ${line.replace(/^answered \S+, NOT SENT to the chat: /, '')})`
+  await call($, b.token, 'editMessageText', { chat_id: b.me, message_id: msg, text: collapsed(a.short, outcome), parse_mode: 'HTML' }).catch(() => undefined)
+  if (replyId && !sent) await send($, b, esc(outcome), replyTo(replyId)).catch(() => undefined)
+  await close($, `${dir}/makarasty/telegram/asks/${msg}.json`, a)
+}
+
+// "❔ Подробнее": the explanation the inbox already made, or a small model's now; the buttons stay, without this one.
+async function explain($: D, dir: string, b: { token: string; me: string }, msg: number, a: Ask): Promise<void> {
+  const file = `${dir}/makarasty/inbox/items/${a.item}.json`
+  const it = await readJSON<Item>($, file)
+  let text = it?.explain
+  if (it && !text) {
+    const r = await $.model.complete({ model: 'haiku', prompt: explainPrompt(it), maxTokens: 600, timeoutMs: 60000 }).catch(() => undefined)
+    text = r?.isAnswered ? r.text.trim() : undefined
+    const cur = text ? await readJSON<Item>($, file) : undefined
+    if (cur && text) await $.fs.write(file, JSON.stringify({ ...cur, explain: text }))
+  }
+  const body = text ? `${a.html}\n\n<blockquote>${esc(redact(text).slice(0, 1500))}</blockquote>\n<i>Непонятно — ответь на это сообщение вопросом.</i>` : `${a.html}\n\n<i>Пояснения нет: чат ушёл из инбокса. Ответь на это сообщение вопросом.</i>`
+  await call($, b.token, 'editMessageText', { chat_id: b.me, message_id: msg, text: body, parse_mode: 'HTML', reply_markup: phoneKeyboard(a.options, false) }).catch(() => undefined)
+  await $.fs.write(`${dir}/makarasty/telegram/asks/${msg}.json`, JSON.stringify({ ...a, html: body, more: true }))
+}
+
+// An ask answered on the computer, gone, or past the inbox's 12 h: collapsed, so no tap lands on a closed item.
+async function sweep($: D, dir: string, b: { token: string; me: string }, now: number): Promise<void> {
+  const tg = `${dir}/makarasty/telegram`, root = `${dir}/makarasty/inbox`
+  for (const f of await $.fs.list(`${tg}/asks`).catch(() => [])) {
+    if (!/^\d+\.json$/.test(f.name)) continue
+    const a = await openAsk($, `${tg}/asks/${f.name}`)
+    if (!a) continue
+    const why = (await $.fs.exists(`${root}/answers/${a.item}.json`)) ? 'отвечено на компьютере' : !(await $.fs.exists(`${root}/items/${a.item}.json`)) ? 'закрыто' : now - a.at > STALE_MS ? 'устарело' : ''
+    if (!why) continue
+    await call($, b.token, 'editMessageText', { chat_id: b.me, message_id: Number(f.name.slice(0, -5)), text: collapsed(a.short, why), parse_mode: 'HTML' }).catch(() => undefined)
+    await close($, `${tg}/asks/${f.name}`, a)
+  }
+}
+
+// $.fs has no delete: a closed ask keeps its file with `closed`, and notify.mjs ask prunes closed files after two days.
+async function openAsk($: D, p: string): Promise<Ask | undefined> { const a = await readJSON<Ask>($, p); return a && !a.closed ? a : undefined }
+async function close($: D, p: string, a: Ask): Promise<void> { await $.fs.write(p, JSON.stringify({ ...a, closed: await $.clock.now() })).catch(() => undefined) }
+
+// ---- the inbox chat's side: waiting messages become one prompt; that turn's answer goes back as a reply ----
+
+export { TG_PROMPT, inboundPrompt, isTelegramPrompt, telegramWords }
+export async function telegramInbound($: D, dir: string, retry: number[] = []): Promise<Inbound[]> {
+  const tg = `${dir}/makarasty/telegram`
+  const out: Inbound[] = []
+  for (const f of await $.fs.list(`${tg}/inbound`).catch(() => [])) {
+    if (!f.name.endsWith('.json')) continue
+    const m = await readJSON<Inbound>($, `${tg}/inbound/${f.name}`)
+    if (m && !m.done && (!m.taken || retry.includes(m.id))) out.push(m)
+  }
+  return out.sort((x, y) => x.id - y.id)
+}
+
+
+export async function takeInbound($: D, dir: string, ms: Inbound[]): Promise<void> {
+  const tg = `${dir}/makarasty/telegram`, now = await $.clock.now()
+  for (const m of ms) await $.fs.write(`${tg}/inbound/${m.id}.json`, JSON.stringify({ ...m, taken: now }))
+  await $.fs.write(`${tg}/turn.json`, JSON.stringify({ ids: ms.map((m) => m.id), message_id: ms[ms.length - 1]!.message_id, at: now }))
+}
+
+// turn.start of the inbox chat: the turn its Telegram prompt started is the one whose answer goes back.
+export async function telegramTurnStart($: D, dir: string, text: string, turnId: string): Promise<void> {
+  if (!isTelegramPrompt(text)) return
+  const t = await readJSON<{ ids?: number[]; message_id: number; at: number; turnId?: string }>($, `${dir}/makarasty/telegram/turn.json`)
+  if (t?.ids?.length && !t.turnId) await $.fs.write(`${dir}/makarasty/telegram/turn.json`, JSON.stringify({ ...t, turnId }))
+}
+
+export async function telegramTurnComplete($: D, dir: string, e: { turnId?: string; reason?: string; answer?: string; isAborted?: boolean }): Promise<void> {
+  const tg = `${dir}/makarasty/telegram`
+  const t = await readJSON<{ ids: number[]; message_id: number; turnId?: string }>($, `${tg}/turn.json`)
+  if (!t?.turnId || t.turnId !== e.turnId || !t.ids?.length) return
+  const b = await bot($, dir)
+  const text = e.reason === 'answer' && !e.isAborted && e.answer?.trim() ? mdToTg(redact(e.answer)) : '<i>Не получилось ответить: ход в инбоксе прервался. Напиши ещё раз.</i>'
+  if (b) await send($, b, text, replyTo(t.message_id)).catch(() => undefined)
+  const now = await $.clock.now()
+  await $.fs.write(`${tg}/turn.json`, '{}')
+  for (const id of t.ids) { const m = await readJSON<Inbound>($, `${tg}/inbound/${id}.json`); if (m) await $.fs.write(`${tg}/inbound/${id}.json`, JSON.stringify({ ...m, done: now })) }
+}
+
+// The secret shapes notify.mjs blanks in an excerpt, for what the engine sends (an explanation, an inbox answer).
+const SECRETS = [
+  /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/g,
+  /\b\d{5,}:[\w-]{20,}/g, /(?<![A-Za-z0-9])sk-(?:ant-)?[\w-]{20,}/g, /sk_(?:live|test)_[A-Za-z0-9]{16,}/g,
+  /gh[pousr]_[A-Za-z0-9]{30,}|github_pat_\w{22,}/g, /(?:AKIA|ASIA)[0-9A-Z]{16}/g, /xox[abposr]-[A-Za-z0-9-]{10,}/g,
+  /AIza[\w-]{35}/g, /eyJ[\w-]{10,}\.eyJ[\w.-]*/g, /glpat-[\w-]{20,}/g, /npm_[A-Za-z0-9]{36}/g, /SG\.[\w-]{22}\.[\w-]{43}/g,
+  /discord(?:app)?\.com\/api\/webhooks\/\d+\/[\w-]{20,}/gi,
+]
+export const redact = (s: string): string => SECRETS.reduce((t, re) => t.replace(re, '[скрыто]'), s)
+  .replace(/(["']?(?:api[_-]?key|secret|token|password|bearer)["']?)([ \t]*[:=]?[ \t]*)("[^"\n]+"|'[^'\n]+'|\S+)/gi,
+    (all, k: string, sep: string, v: string) => (sep.trim() || /^bearer/i.test(k)) && (/^["']/.test(v) || (v.length >= 8 && /\d/.test(v))) ? `${k}${sep}[скрыто]` : all)

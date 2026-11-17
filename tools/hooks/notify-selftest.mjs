@@ -3,7 +3,7 @@
 // no tokens, about fifteen seconds (four of them the SessionStart time budget against a local server that
 // never answers, three a local server that answers slowly, three the wait a Stop with a transcript makes).
 // It feeds the hook the events Claude Code would, through the exact commands plugin.json runs, drives the
-// fake Telegram (a local server) for setup, ask and poll, and asserts what reached the sink and what stayed on disk. The unslop switch and
+// fake Telegram (a local server) for setup, ask, send --html, the retries and the finish's silence, and asserts what reached the sink and what stayed on disk. The unslop switch and
 // its SessionStart hook are checked at the end, then the context reminder.
 //
 //   node tools/hooks/notify-selftest.mjs         the compiled test
@@ -116,7 +116,7 @@ out = both(node([n, '--arm', 'the', 'build'], { cwd: tmp }));
 check('arm reports the label', '"the build"', out);
 check('and the channel', 'channels: telegram', out);
 out = hook('{"hook_event_name":"Notification","session_id":"s1","notification_type":"permission_prompt","message":"Claude needs your permission"}').out;
-check('a permission prompt pings', 'needs you: Claude needs your permission', read(sink));
+check('a permission prompt pings', '· ждёт тебя: Claude needs your permission', read(sink));
 if (out === '')
     ok('and prints nothing to stdout, which a hook reserves for context');
 else
@@ -128,7 +128,7 @@ if (exists(marker))
 else
     bad('the marker survives a ping');
 guard('{"hook_event_name":"Stop","session_id":"s1","cwd":"/x/proj","last_assistant_message":"All green.\\n12 tests pass."}');
-check('Stop says finished with the project and label', `notify-selftest-${process.pid}: the build finished`, last());
+check('Stop says finished with the project and label', `✅ <b>notify-selftest-${process.pid}</b> · the build · готово`, last());
 check('and carries the tail of the last message', 'All green. 12 tests pass.', last());
 if (exists(marker))
     bad('Stop consumes the marker');
@@ -139,7 +139,7 @@ count('the next Stop sends nothing', 2);
 section('a question still finishes the arming');
 node([n, '--arm']);
 hook('{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"Should I delete the old branch?"}');
-check('a last message ending in ? says finished, with a question', 'finished, with a question for you', last());
+check('a last message ending in ? says finished, with a question', 'готово, есть вопрос к тебе', last());
 check('and carries the question', 'Should I delete the old branch?', last());
 if (exists(marker))
     bad('and consumes the marker: one message per arming');
@@ -147,11 +147,11 @@ else
     ok('and consumes the marker: one message per arming');
 node([n, '--arm']);
 hook('{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"All done. Want me to **push**?)`"}');
-check('markdown after the ? still reads as a question', 'with a question for you', last());
+check('markdown after the ? still reads as a question', 'есть вопрос к тебе', last());
 node([n, '--arm']);
 const long = `start-of-reply ${'x'.repeat(600)} VERDICT: all green`;
 hook(`{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"${long}"}`);
-check('a plain finish sends', 'finished | ...', last());
+check('a plain finish sends', 'готово | <blockquote expandable>...', last());
 check('with the END of a long message', 'VERDICT: all green', last());
 if (last().includes('start-of-reply'))
     bad('and not its start');
@@ -167,7 +167,7 @@ count("the arming turn's prompt, error and Stop send nothing", 5);
 hook('{"hook_event_name":"UserPromptSubmit","session_id":"s1","prompt":"go"}');
 hook('{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"went"}');
 count("the next turn's Stop sends", 6);
-check('with the label', 'later finished', last());
+check('with the label', 'later · готово', last());
 section('delivery fails, the chat is reopened');
 const nowhere = `${tmp}/no/such/dir/sink`;
 node([n, '--arm', 'the', 'deploy']);
@@ -181,7 +181,7 @@ hook('{"hook_event_name":"SessionStart","session_id":"s1","source":"startup"}');
 count('a plain startup resends nothing', 6);
 hook('{"hook_event_name":"SessionStart","session_id":"s1","source":"resume"}');
 count('a resume resends it', 7);
-check('and says when it had finished', 'could not be delivered at the time', last());
+check('and says when it had finished', 'не дошло вовремя', last());
 if (exists(marker))
     bad('and consumes the marker');
 else
@@ -212,7 +212,7 @@ else
 section('the chat dies before it finishes');
 node([n, '--arm', 'the', 'migration']);
 hook('{"hook_event_name":"StopFailure","session_id":"s1","error":"rate_limit"}');
-check('an API error is reported', 'stopped on an error: rate_limit', last());
+check('an API error is reported', 'упал на ошибке: rate_limit', last());
 if (exists(marker))
     ok('and the marker stays for the reopened chat');
 else
@@ -222,23 +222,23 @@ check('a resume before the finish tells the chat to check its work', 'check whet
 check('and how long it was gone', '90 minutes', out);
 count('and sends nothing itself', 11);
 hook('{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"The migration had already run; nothing left to do."}');
-check('the finish after a reopen says so', 'reopened after an interruption', last());
+check('the finish after a reopen says so', 'чат перезапускался', last());
 section('elapsed time, and the mark per kind');
 const armedAgo = (min) => { const o = JSON.parse(read(marker)); o.armed = new Date(Date.now() - min * 60e3).toISOString(); writeFileSync(marker, JSON.stringify(o)); };
 node([n, '--arm', 'long', 'job']);
 armedAgo(12);
 hook('{"hook_event_name":"Notification","session_id":"s1","notification_type":"permission_prompt","message":"ok?"}');
-check('a needs-you ping says how long the work has run', 'long job needs you after 12 min: ok?', last());
+check('a needs-you ping says how long the work has run', 'long job · ждёт тебя · 12 мин: ok?', last());
 hook('{"hook_event_name":"StopFailure","session_id":"s1","error":"overloaded"}');
-check('so does an error', 'stopped on an error after 12 min: overloaded', last());
+check('so does an error', 'упал на ошибке · 12 мин: overloaded', last());
 armedAgo(75);
 hook('{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"done"}');
-check('and a finish, in hours past 59 minutes', 'long job finished after 1 h 15 min', last());
+check('and a finish, in hours past 59 minutes', 'long job · готово · 1 ч 15 мин', last());
 node([n, '--arm', '--next', 'late']);
 armedAgo(30);
 hook('{"hook_event_name":"UserPromptSubmit","session_id":"s1","prompt":"go"}');
 hook('{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"done"}');
-if (last().includes(' after '))
+if (/готово · \d/.test(last()))
     bad('a --next marker counts from the prompt, not from the arming', last());
 else
     ok('a --next marker counts from the prompt, not from the arming');
@@ -246,8 +246,8 @@ node([n, '--arm', 'weekend']);
 armedAgo(70 * 60 + 12);
 hook('{"hook_event_name":"SessionStart","session_id":"s1","source":"resume"}');
 hook('{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"done"}');
-check('a reopened chat counts from the resume, not the closed time', 'weekend finished', last());
-if (/finished after \d/.test(last()))
+check('a reopened chat counts from the resume, not the closed time', 'weekend · готово', last());
+if (/готово · \d/.test(last()))
     bad('and not from the arming', last());
 else
     ok('and not from the arming');
@@ -261,15 +261,15 @@ hook('{"hook_event_name":"StopFailure","session_id":"s1","error":"overloaded"}')
 const markFail = last();
 hook('{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"done"}');
 const markDone = last();
-if (markWait.startsWith('⚠️ ') && markWait.includes(': marks needs you'))
+if (markWait.startsWith('⚠️ ') && markWait.includes('marks · ждёт тебя'))
     ok('needs you starts with the warning mark');
 else
     bad('needs you starts with the warning mark', markWait);
-if (markFail.startsWith('❌ ') && markFail.includes(': marks stopped on an error'))
+if (markFail.startsWith('❌ ') && markFail.includes('marks · упал на ошибке'))
     ok('an error starts with the cross');
 else
     bad('an error starts with the cross', markFail);
-if (markDone.startsWith('✅ ') && markDone.includes(': marks finished'))
+if (markDone.startsWith('✅ ') && markDone.includes('marks · готово'))
     ok('a finish starts with the check mark');
 else
     bad('a finish starts with the check mark', markDone);
@@ -298,7 +298,7 @@ section('the excerpt');
 writeFileSync(conf, confPlain);
 node([n, '--arm', 'the', 'secret']);
 hook('{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"API_KEY=abc123"}');
-check('the head still goes out', 'the secret finished', last());
+check('the head still goes out', 'the secret · готово', last());
 if (last().includes('API_KEY'))
     bad('the excerpt is off by default');
 else
@@ -329,7 +329,7 @@ for (const [what, v] of secrets) {
 // A quoted value is blanked whole; the JSON payload carries the quotes escaped.
 node([n, '--arm', 'the', 'secret']);
 hook('{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"before password: \\"hunter2hunter2\\" after"}', { MAKARASTY_NOTIFY_EXCERPT: '1' });
-if (last().includes('hunter2') || !last().includes('before password: <redacted> after'))
+if (last().includes('hunter2') || !last().includes('before password: &lt;redacted&gt; after'))
     bad('a quoted password value is blanked', last().slice(0, 200));
 else
     ok('a quoted password value is blanked');
@@ -409,13 +409,13 @@ let b = lines();
 hook('{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"Started it in the background.","background_tasks":[{"id":"b1","status":"running"}],"session_crons":[]}');
 hook('{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"Looping.","background_tasks":[],"session_crons":[{"id":"c1"}]}');
 count('a Stop with a background job or a loop sends one pause message, not a finish', b + 1);
-check('which says paused and how many jobs', 'the job paused: 1 background job still running', last());
+check('which says paused and how many jobs', 'the job · пауза: ещё идут фоновые задачи (1)', last());
 if (exists(marker))
     ok('and keeps the marker for the turn they wake');
 else
     bad('and keeps the marker for the turn they wake');
 hook('{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"Build done, server still up.","background_tasks":[{"id":"b1","status":"running"}],"session_crons":[{"id":"c1"}]}');
-check('a later Stop with only the jobs seen at the pause is the finish', 'the job finished', last());
+check('a later Stop with only the jobs seen at the pause is the finish', 'the job · готово', last());
 if (exists(marker))
     bad('and consumes the marker');
 else
@@ -474,7 +474,7 @@ if (read(`${tmp}/makarasty/notify/s9.json`).includes('cwd'))
 else
     ok('--session stores no cwd of the arming chat');
 hook('{"hook_event_name":"Stop","session_id":"s9","cwd":"/x/theirproj","last_assistant_message":"done"}');
-check("and the finish names that chat's project", 'theirproj: their build finished', last());
+check("and the finish names that chat's project", '<b>theirproj</b> · their build · готово', last());
 section('a slow send, and error text that carries a secret');
 const s2 = server('require("http").createServer((q, r) => { q.resume(); setTimeout(() => { r.writeHead(400, { "content-type": "application/json" }); r.end(JSON.stringify({ ok: false, description: "no such hook https://hooks.example/T0/SECRETSECRET 123456:ABCDEFGHIJKLMNOPQRSTUVWXYZ" })); }, 1500); }).listen(0, "127.0.0.1", function () { require("fs").writeFileSync(process.argv[1], String(this.address().port)); })', `${tmp}/port2`);
 writeFileSync(conf, confPlain);
@@ -614,8 +614,24 @@ if (saved.telegram?.chat_id === '42' && saved.telegram?.token === botTok)
 else
     bad('the chat that sent the code is saved', read(conf));
 const sentTexts = calls('sendMessage').map((c) => `${c.body.chat_id} ${c.body.text}`).join('|');
-check('a test message went to that chat', '42 ✅ Claude Code on', sentTexts);
-check('and the finish that was waiting went out', 'the report finished', sentTexts);
+check('a test message went to that chat', '42 ⚠️ <b>Claude Code на ', sentTexts);
+check('and says it is connected', 'подключён.</b>', sentTexts);
+check('and the finish that was waiting went out', 'the report · готово', sentTexts);
+const connectMsg = calls('sendMessage').find((c) => String(c.body.text).includes('подключён'))?.body ?? {};
+const waitingFinish = calls('sendMessage').find((c) => String(c.body.text).includes('the report · готово'))?.body ?? {};
+if (connectMsg.disable_notification === undefined && connectMsg.parse_mode === 'HTML')
+    ok('the connect message rings and is HTML');
+else
+    bad('the connect message rings and is HTML', JSON.stringify(connectMsg));
+if (waitingFinish.disable_notification === true)
+    ok('a finish goes out silently');
+else
+    bad('a finish goes out silently', JSON.stringify(waitingFinish));
+const menu = calls('setMyCommands')[0]?.body.commands?.map((c) => c.command).join() ?? '';
+if (menu === 'status,ideas,help')
+    ok('setup sets the bot menu');
+else
+    bad('setup sets the bot menu', menu);
 if (exists(marker))
     bad('and its marker is gone');
 else
@@ -628,114 +644,197 @@ if (read(setupLog).includes(botTok))
     bad('and never printed');
 else
     ok('and never printed');
-section('ask and poll, against the same fake');
+section('ask, against the same fake');
 writeFileSync(conf, confPlain);
-const asks = `${tmp}/makarasty/notify-asks`, inboxDir = `${tmp}/makarasty/inbox`, stubLog = `${tmp}/inbox.log`, stub = `${tmp}/inbox-stub.cjs`;
-writeFileSync(stub, `const fs = require("fs"); fs.appendFileSync(${JSON.stringify(stubLog)}, process.argv.slice(2).join(" ") + " | " + fs.readFileSync(0, "utf8") + "\\n"); console.log("inbox: answered " + process.argv[3]);\n`);
-const liveTg = { NOTIFY_DRY_RUN: '', NOTIFY_TELEGRAM_API: api, NOTIFY_INBOX: stub };
-// The inbox's files that poll looks at: the item, and its answer when it was answered on the computer.
-const item = (id, answered = false) => {
-    mkdirSync(`${inboxDir}/items`, { recursive: true });
-    mkdirSync(`${inboxDir}/answers`, { recursive: true });
-    writeFileSync(`${inboxDir}/items/${id}.json`, '{}');
-    if (answered)
-        writeFileSync(`${inboxDir}/answers/${id}.json`, '{}');
-};
-const askMsg = (id) => {
-    resetLog();
-    const a = node([n, 'ask'], { input: JSON.stringify({ item: id, text: `Question ${id}?`, options: ['Yes', 'No'], reply: true }), env: liveTg });
-    return { ...a, id: /message (\d+)/.exec(a.out)?.[1] ?? '' };
-};
-const poll = (updates = []) => { resetLog(); if (updates.length)
-    writeFileSync(updatesFile, JSON.stringify(updates)); return node([n, 'poll'], { env: liveTg }); };
-let upd = 10;
-const tap = (from, id, data) => ({ update_id: upd++, callback_query: { id: `cb${upd}`, from: { id: from }, data, message: { message_id: Number(id), chat: { id: 42 } } } });
-const say = (text, replyTo) => ({ update_id: upd++, message: { message_id: 50 + upd, chat: { id: 42 }, from: { id: 42 }, text, ...(replyTo ? { reply_to_message: { message_id: Number(replyTo) } } : {}) } });
-const answered = () => (read(stubLog).match(/^answer /gm) ?? []).length;
-item('i1');
-const a1 = askMsg('i1');
+const askDir = `${tmp}/makarasty/telegram/asks`, inboundDir = `${tmp}/makarasty/telegram/inbound`;
+const liveTg = { NOTIFY_DRY_RUN: '', NOTIFY_TELEGRAM_API: api };
+// What the inbox makes (core.mjs phoneAsk, phoneKeyboard): the HTML, the short line, the options and the keyboard.
+const kbd = { inline_keyboard: [[{ text: 'Да', callback_data: 'a0' }, { text: 'Нет', callback_data: 'a1' }, { text: '❔ Подробнее', callback_data: 'm' }]] };
+const askIn = { item: 'i1', html: '<b>Запушить ветку?</b>\n<i>proj · да/нет · 3 мин</i>', short: 'Запушить ветку?', options: ['Да', 'Нет'], reply: true, keyboard: kbd };
+resetLog();
+const a1 = node([n, 'ask'], { input: JSON.stringify(askIn), env: liveTg });
 code('ask exits 0', 0, a1.code);
 check('and prints the message id', 'asked, message', a1.out);
+const askId = /message (\d+)/.exec(a1.out)?.[1] ?? '';
 const sm = calls('sendMessage')[0]?.body ?? {};
-const kb = (sm.reply_markup?.inline_keyboard ?? []).map((row) => row.map((b) => `${b.text}=${b.callback_data}`).join());
-if (kb.join('|') === 'Yes=0|No=1')
-    ok('the options go out as inline buttons, their data the index');
+if (sm.text === askIn.html && sm.parse_mode === 'HTML' && sm.chat_id === '42')
+    ok('the question goes out as the inbox made it, HTML, to the bound chat');
 else
-    bad('the options go out as inline buttons', JSON.stringify(sm));
-check('and reply:true says so in the text', 'reply', String(sm.text));
-const map1 = JSON.parse(read(`${asks}/${a1.id}.json`) || '{}');
-if (map1.item === 'i1' && String(map1.options) === 'Yes,No' && map1.reply === true)
-    ok('the ask is saved under its message id');
+    bad('the question goes out as the inbox made it', JSON.stringify(sm));
+if (JSON.stringify(sm.reply_markup) === JSON.stringify(kbd))
+    ok('with its keyboard as given');
 else
-    bad('the ask is saved under its message id', JSON.stringify(map1));
-if (exists(`${asks}/open`))
-    ok('and the open flag is set');
+    bad('with its keyboard as given', JSON.stringify(sm.reply_markup));
+if (sm.disable_notification === undefined)
+    ok('and a question rings');
 else
-    bad('and the open flag is set');
-poll([tap(99, a1.id, '1')]);
-if (answered() === 0)
-    ok('a tap from another user id does not reach the inbox');
+    bad('and a question rings', JSON.stringify(sm));
+const saved1 = JSON.parse(read(`${askDir}/${askId}.json`) || '{}');
+if (saved1.item === 'i1' && saved1.short === askIn.short && saved1.html === askIn.html && String(saved1.options) === 'Да,Нет' && saved1.reply === true && typeof saved1.at === 'number')
+    ok('the ask is saved under its message id for the hook engine');
 else
-    bad('a tap from another user id does not reach the inbox', read(stubLog));
-check('and is refused', 'Not your bot', JSON.stringify(calls('answerCallbackQuery').map((c) => c.body)));
-if (exists(`${asks}/${a1.id}.json`))
-    ok('and the question stays open');
+    bad('the ask is saved under its message id', JSON.stringify(saved1));
+// A question can carry what a chat printed: no secret leaves, in the message or in the saved copy.
+resetLog();
+const leak = 'sk-' + body;
+const a2 = node([n, 'ask'], { input: JSON.stringify({ item: 'i2', html: `<b>Ключ ${leak} верен?</b>`, short: 'Ключ?', options: [], reply: false }), env: liveTg });
+const sm2 = String(calls('sendMessage')[0]?.body.text ?? '');
+if (!sm2.includes(leak.slice(-12)) && sm2.includes('[скрыто]'))
+    ok('a secret in the question is blanked before it is sent');
 else
-    bad('and the question stays open');
-poll([tap(42, a1.id, '1')]);
-check('a tap from the bound chat answers the item with the label', 'answer i1 | No', read(stubLog));
-check('and is acknowledged', 'Sent to the chat.', JSON.stringify(calls('answerCallbackQuery').map((c) => c.body)));
-const edit = calls('editMessageText')[0]?.body ?? {};
-if (edit.message_id === Number(a1.id) && String(edit.text).includes('➡️ No'))
-    ok('the message is edited to show the answer');
+    bad('a secret in the question is blanked', sm2);
+if (read(`${askDir}/${/message (\d+)/.exec(a2.out)?.[1]}.json`).includes(leak.slice(-12)))
+    bad('and in the saved ask');
 else
-    bad('the message is edited to show the answer', JSON.stringify(edit));
-if (exists(`${asks}/${a1.id}.json`))
-    bad('and the ask is removed');
+    ok('and in the saved ask');
+resetLog();
+r = node([n, 'ask'], { input: 'not json', env: liveTg });
+code('ask with input that is not JSON exits 2', 2, r.code);
+r = node([n, 'ask'], { input: JSON.stringify({ item: 'x' }), env: liveTg });
+code('ask with no html exits 2', 2, r.code);
+if (calls('sendMessage').length === 0)
+    ok('and sends nothing');
 else
-    ok('and the ask is removed');
-if (exists(`${asks}/open`))
-    bad('and so is the open flag, none being left');
+    bad('and sends nothing');
+r = node([n, 'ask'], { input: JSON.stringify({ ...askIn, item: 'dry' }) });
+if (r.code === 0 && !exists(`${askDir}/0.json`))
+    ok('a dry run saves no ask (it has no message id)');
 else
-    ok('and so is the open flag, none being left');
-item('i2');
-const a2 = askMsg('i2');
-poll([say('stray words'), say('On Friday', a2.id)]);
-check('a reply to the ask answers with its text', 'answer i2 | On Friday', read(stubLog));
-check('a message that is not a reply is told how to answer', 'To answer a question', JSON.stringify(calls('sendMessage').map((c) => c.body.text)));
-if (answered() === 2)
-    ok('and answers nothing');
+    bad('a dry run saves no ask', both(r));
+// The engine cannot delete: the asks it closed and the messages it answered are pruned here after two days.
+mkdirSync(inboundDir, { recursive: true });
+const day = 86400e3;
+writeFileSync(`${askDir}/900.json`, JSON.stringify({ item: 'a', closed: Date.now() - 3 * day }));
+writeFileSync(`${askDir}/901.json`, JSON.stringify({ item: 'b', closed: Date.now() - 3600e3 }));
+writeFileSync(`${askDir}/902.json`, JSON.stringify({ item: 'c', at: Date.now() - 3 * day }));
+writeFileSync(`${inboundDir}/5.json`, JSON.stringify({ id: 5, done: Date.now() - 3 * day }));
+writeFileSync(`${inboundDir}/6.json`, JSON.stringify({ id: 6, done: Date.now() - 3600e3 }));
+writeFileSync(`${inboundDir}/7.json`, JSON.stringify({ id: 7, taken: Date.now() - 3 * day }));
+node([n, 'ask'], { input: JSON.stringify({ ...askIn, item: 'i3' }), env: liveTg });
+if (!exists(`${askDir}/900.json`) && !exists(`${inboundDir}/5.json`))
+    ok('a closed ask and an answered message older than two days are pruned');
 else
-    bad('and answers nothing', read(stubLog));
-if (exists(`${asks}/${a2.id}.json`))
-    bad('the answered ask is removed');
+    bad('old closed asks and answered messages are pruned');
+if (exists(`${askDir}/901.json`) && exists(`${askDir}/902.json`) && exists(`${inboundDir}/6.json`) && exists(`${inboundDir}/7.json`))
+    ok('a fresh closed one, an open one and an unanswered message stay');
 else
-    ok('the answered ask is removed');
-item('i3', true);
-item('i5');
-const a3 = askMsg('i3'), a4 = askMsg('i4'), a5 = askMsg('i5');
-poll();
-const closed = JSON.stringify(calls('editMessageText').map((c) => `${c.body.message_id} ${c.body.text}`));
-check('an ask answered on the computer is closed', 'Answered on the computer.', closed);
-check('so is one whose item is gone', 'Closed.', closed);
-if (!exists(`${asks}/${a3.id}.json`) && !exists(`${asks}/${a4.id}.json`) && exists(`${asks}/${a5.id}.json`))
-    ok('and an open one stays');
+    bad('fresh, open and unanswered files stay');
+section('send --html and plain send, against the same fake');
+resetLog();
+r = node([n, 'send', '--html', '--reply-to', '77'], { input: `<b>ответ</b>\n<i>строка</i> ${tok}`, env: liveTg });
+code('send --html exits 0', 0, r.code);
+const sh1 = calls('sendMessage')[0]?.body ?? {};
+if (String(sh1.text).startsWith('<b>ответ</b>\n<i>строка</i>') && sh1.parse_mode === 'HTML')
+    ok('the HTML on stdin goes out as it is');
 else
-    bad('and an open one stays');
-if (exists(`${asks}/open`))
-    ok('with the open flag');
+    bad('the HTML on stdin goes out as it is', JSON.stringify(sh1));
+if (sh1.reply_parameters?.message_id === 77)
+    ok('as a reply to that message');
 else
-    bad('with the open flag');
-rmSync(`${inboxDir}/items/i5.json`);
-poll();
-if (exists(`${asks}/${a5.id}.json`) || exists(`${asks}/open`))
-    bad('the last one closes and the flag goes');
+    bad('as a reply to that message', JSON.stringify(sh1.reply_parameters));
+if (String(sh1.text).includes(tok.slice(-12)) || !String(sh1.text).includes('[скрыто]'))
+    bad('a bot token in it is blanked', String(sh1.text));
 else
-    ok('the last one closes and the flag goes');
-if (answered() === 2)
-    ok('closing answers nothing');
+    ok('a bot token in it is blanked');
+resetLog();
+node([n, 'send', 'a < b & c'], { env: liveTg });
+check('plain send escapes what Telegram HTML reads as markup', 'a &lt; b &amp; c', String(calls('sendMessage')[0]?.body.text));
+section('finishes are silent, the rest ring');
+resetLog();
+writeFileSync(conf, confPlain);
+node([n, '--arm', 'quiet'], { cwd: tmp });
+hook('{"hook_event_name":"Notification","session_id":"s1","notification_type":"permission_prompt","message":"ok?"}', liveTg);
+hook('{"hook_event_name":"StopFailure","session_id":"s1","error":"overloaded"}', liveTg);
+hook('{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"done"}', liveTg);
+const [mWait, mFail, mDone] = calls('sendMessage').map((c) => c.body);
+if (mWait && mFail && mDone)
+    ok('a needs-you, an error and a finish each went out');
 else
-    bad('closing answers nothing', read(stubLog));
+    bad('three messages went out', JSON.stringify(calls('sendMessage')));
+if (mDone?.disable_notification === true && mDone.text.startsWith('✅ '))
+    ok('a done message carries disable_notification');
+else
+    bad('a done message carries disable_notification', JSON.stringify(mDone));
+if (mWait?.disable_notification === undefined && mWait.text.startsWith('⚠️ '))
+    ok('a wait message does not');
+else
+    bad('a wait message does not', JSON.stringify(mWait));
+if (mFail?.disable_notification === undefined && mFail.text.startsWith('❌ '))
+    ok('nor does an error');
+else
+    bad('nor does an error', JSON.stringify(mFail));
+section('the Bot API override, a 429 and Telegram HTML it cannot parse');
+// A server that answers from <portFile>.script (a JSON array of {status, body}, the last repeated) and logs each call.
+const scripted = `const http = require("http"), fs = require("fs");
+const pf = process.argv[1]; let i = 0;
+http.createServer((q, r) => {
+  let b = ""; q.on("data", (d) => b += d);
+  q.on("end", () => {
+    const sc = JSON.parse(fs.readFileSync(pf + ".script", "utf8")), x = sc[Math.min(i++, sc.length - 1)];
+    fs.appendFileSync(pf + ".log", JSON.stringify({ method: q.url.split("/").pop(), body: b ? JSON.parse(b) : {} }) + "\\n");
+    r.writeHead(x.status, { "content-type": "application/json" }); r.end(JSON.stringify(x.body));
+  });
+}).listen(0, "127.0.0.1", function () { fs.writeFileSync(pf, String(this.address().port)); });`;
+const okBody = { ok: true, result: { message_id: 5 } };
+const withScript = (name, script) => {
+    writeFileSync(`${tmp}/${name}.script`, JSON.stringify(script));
+    const s = server(scripted, `${tmp}/${name}`);
+    return { ...s, api: `http://127.0.0.1:${s.port}`, log: () => read(`${tmp}/${name}.log`).split('\n').filter(Boolean).map((l) => JSON.parse(l)) };
+};
+// A 429 asks to wait: one retry after retry_after, then it goes through.
+const s429 = withScript('s429', [{ status: 429, body: { ok: false, description: 'Too Many Requests: retry after 1', parameters: { retry_after: 1 } } }, { status: 200, body: okBody }]);
+const t0 = Date.now();
+r = node([n, 'send', 'hello'], { env: { NOTIFY_DRY_RUN: '', NOTIFY_TELEGRAM_API: s429.api } });
+const waited = Date.now() - t0;
+s429.srv.kill();
+if (r.code === 0 && s429.log().length === 2)
+    ok('a 429 with retry_after is retried and then sent');
+else
+    bad('a 429 with retry_after is retried and then sent', `${both(r)} ${s429.log().length} calls`);
+if (waited >= 900)
+    ok('after the wait Telegram asked for');
+else
+    bad('after the wait Telegram asked for', `${waited} ms`);
+// Text Telegram cannot parse as HTML goes once more as plain words, tags gone and entities back.
+const sBad = withScript('sbad', [{ status: 400, body: { ok: false, description: "Bad Request: can't parse entities: Unsupported start tag" } }, { status: 200, body: okBody }]);
+r = node([n, 'send', 'a < b & c'], { env: { NOTIFY_DRY_RUN: '', NOTIFY_TELEGRAM_API: sBad.api } });
+const [first, second] = sBad.log().map((c) => c.body);
+sBad.srv.kill();
+if (r.code === 0 && first?.parse_mode === 'HTML' && first.text === 'a &lt; b &amp; c')
+    ok('an HTML parse error: the first try is HTML');
+else
+    bad('an HTML parse error: the first try is HTML', JSON.stringify(first));
+if (second && second.parse_mode === undefined && second.text === 'a < b & c')
+    ok('and the second is plain text, unescaped');
+else
+    bad('and the second is plain text, unescaped', JSON.stringify(second));
+// Any other 400 is the config's fault: one try.
+const s400 = withScript('s400', [{ status: 400, body: { ok: false, description: 'Bad Request: chat not found' } }]);
+r = node([n, 'send', 'x'], { env: { NOTIFY_DRY_RUN: '', NOTIFY_TELEGRAM_API: s400.api } });
+s400.srv.kill();
+if (r.code === 1 && s400.log().length === 1)
+    ok('another 400 is not retried');
+else
+    bad('another 400 is not retried', `${both(r)} ${s400.log().length} calls`);
+// The override is for a local server only: a repository's env must not send the bot token elsewhere. The request is caught by
+// a fetch stand-in preloaded into node, so none leaves the machine whichever way the check goes.
+const spy = `${tmp}/spy.cjs`, spyLog = `${tmp}/spy.log`;
+writeFileSync(spy, `globalThis.fetch = async (url) => { require("fs").appendFileSync(${JSON.stringify(spyLog)}, String(url) + "\\n"); return new Response(JSON.stringify({ ok: true, result: { message_id: 1 } }), { status: 200 }); };`);
+const via = (apiUrl) => { rmSync(spyLog, { force: true }); node(['-r', spy, n, 'send', 'x'], { env: { NOTIFY_DRY_RUN: '', NOTIFY_TELEGRAM_API: apiUrl } }); return read(spyLog).trim(); };
+for (const bad1 of ['https://evil.example', 'http://evil.example:8080', 'http://127.0.0.1.evil.example', 'http://localhost.evil.example', 'http://user@evil.example', 'http://10.0.0.5:1234', 'ftp://127.0.0.1']) {
+    const url = via(bad1);
+    if (url.startsWith(`https://api.telegram.org/bot${tok}/`))
+        ok(`the override ${bad1} is ignored`);
+    else
+        bad(`the override ${bad1} is ignored`, url);
+}
+for (const good of ['http://127.0.0.1:9', 'http://localhost:9']) {
+    const url = via(good);
+    if (url.startsWith(`${good}/bot${tok}/`))
+        ok(`the override ${good} is honoured`);
+    else
+        bad(`the override ${good} is honoured`, url);
+}
 tg.srv.kill();
 section('unslop');
 const unslop = `${here}/unslop.mjs`;
