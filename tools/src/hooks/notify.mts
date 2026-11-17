@@ -96,7 +96,8 @@
 // NOTIFY_NO_OPEN=1 opens no Telegram link.
 
 import { readFileSync, writeFileSync, appendFileSync, mkdirSync, rmSync, readdirSync, statSync, renameSync, openSync, readSync, fstatSync, closeSync, existsSync } from 'node:fs';
-import { join, basename } from 'node:path';
+import { join, basename, dirname } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { homedir, hostname } from 'node:os';
 import { randomBytes } from 'node:crypto';
 import { execFileSync, spawn } from 'node:child_process';
@@ -160,6 +161,19 @@ interface Ask { item: string; text: string; options: string[]; reply: boolean; a
 
 const home = process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude');
 const dir = join(home, 'makarasty');
+// Every word the person sees comes from skills/notify/strings.mjs, in the language of his profile (profile.md, its
+// Language: line). Imported at run time by path, so tsc here needs no declaration for it; if the file is missing the
+// keys themselves show, which is a visible defect rather than a lost message.
+type Tr = (key: string, vars?: Record<string, string | number>) => string;
+let tr: Tr = (key) => key;
+async function loadStrings() {
+  try {
+    const m = await import(pathToFileURL(join(dirname(fileURLToPath(import.meta.url)), '..', 'skills', 'notify', 'strings.mjs')).href) as { langOf: (profile: string) => string; t: (lang: string, key: string, vars?: Record<string, string | number>) => string };
+    let profile = ''; try { profile = readFileSync(join(dir, 'profile.md'), 'utf8'); } catch { /* no profile: English */ }
+    const lang = m.langOf(profile);
+    tr = (key, vars) => m.t(lang, key, vars);
+  } catch { /* strings.mjs missing */ }
+}
 const configFile = join(dir, 'notify.json');
 const markerDir = join(dir, 'notify');
 const markerFile = (session: string) => join(markerDir, `${session}.json`);
@@ -235,7 +249,7 @@ const config = () => normalise(readJSON<RawConfig>(configFile) || {});
 // could be a stranger who found it.
 const connected = (cfg: Config) => !!cfg.telegram?.chat_id;
 const withExcerpt = (cfg: Config) => cfg.excerpt ?? process.env.MAKARASTY_NOTIFY_EXCERPT === '1';
-const SETUP_HINT = `Telegram is not connected yet: ask any chat "настрой уведомления" (it runs "notify.mjs setup")`;
+const setupHint = () => tr('setupHint');
 // Where the phone's open asks live; the hook engine (tools/hooks/telegram.ts) reads them and the taps.
 const tgDir = join(dir, 'telegram');
 
@@ -283,7 +297,7 @@ async function sendWith(cfg: Config, html: string, excerpt = '', kind?: Kind, ex
     try { appendFileSync(dry, body.replace(/\n/g, ' | ') + '\n'); return { sent: ['dry-run'], failed: [], message_id: 0 }; }
     catch (e) { return { sent: [], failed: [{ name: 'dry-run', error: (e as Error).message }] }; }
   }
-  if (!connected(cfg)) return { sent: [], failed: [{ name: 'config', error: `${SETUP_HINT} (${configFile})` }] };
+  if (!connected(cfg)) return { sent: [], failed: [{ name: 'config', error: `${setupHint()} (${configFile})` }] };
   if (typeof fetch !== 'function') return { sent: [], failed: [{ name: 'node', error: 'node 18 or newer is needed' }] };
   try {
     const msg = { chat_id: cfg.telegram!.chat_id, text: body, parse_mode: 'HTML', link_preview_options: { is_disabled: true }, ...extra };
@@ -326,7 +340,7 @@ async function flushUnsent(cfg: Config, own?: string) {
     const claim = `${file}.flushing-${Date.now()}`;
     try { renameSync(file, claim); } catch { continue; } // another chat claimed it
     if (readJSON<Marker>(claim)?.armed !== m.armed) { putBack(claim, file); continue; } // re-armed meanwhile
-    const r = await sendWith(cfg, `${m.text}\n<i>не дошло вовремя, готово было ${m.done.slice(11, 16)} UTC</i>`, m.excerpt, 'done');
+    const r = await sendWith(cfg, `${m.text}\n<i>${esc(tr('late', { time: m.done.slice(11, 16) }))}</i>`, m.excerpt, 'done');
     if (r.sent.length) { n++; rmSync(claim, { force: true }); }
     else putBack(claim, file); // a newer arming that took the name wins; this finish then stays undelivered
   }
@@ -340,7 +354,7 @@ const still = (file: string, m: Marker) => { const cur = readJSON<Marker>(file);
 // prompt that made a --next marker live, else the arming. Under a minute it says nothing.
 function elapsed(m: Marker) {
   const min = Math.round((Date.now() - Date.parse(m.resumed || m.started || m.armed)) / 60e3);
-  return min < 1 ? '' : ` · ${min >= 60 ? `${Math.floor(min / 60)} ч ${min % 60} мин` : `${min} мин`}`;
+  return min < 1 ? '' : ` · ${min >= 60 ? tr('elapsedHM', { h: Math.floor(min / 60), m: min % 60 }) : tr('elapsedM', { m: min })}`;
 }
 const recent = (ts: string | undefined) => !!ts && Date.now() - Date.parse(ts) < 5 * 60 * 1000;
 
@@ -444,7 +458,7 @@ async function hook() {
         m.paused = now();
         m.pausedJobs = ids;
         writeJSON(file, m);
-        await send(`${who} · пауза: ещё идут фоновые задачи (${ids.length})`, '', 'done');
+        await send(`${who} · ${esc(tr('paused', { n: ids.length }))}`, '', 'done');
         return;
       }
       if (p.transcript_path) { await sleep(1500); m = still(file, m); if (!m) return; }
@@ -453,8 +467,8 @@ async function hook() {
       // A trailing question still finishes the arming: see the header. Markdown or a bracket after the
       // question mark does not hide it.
       const question = /[?？][^\p{L}\p{N}]*$/u.test(last);
-      const note = m.resumed ? ' · чат перезапускался' : '';
-      m.text = `${who} · ${question ? 'готово, есть вопрос к тебе' : 'готово'}${elapsed(m)}${note}`;
+      const note = m.resumed ? ` · ${esc(tr('resumed'))}` : '';
+      m.text = `${who} · ${esc(tr(question ? 'doneQ' : 'done'))}${elapsed(m)}${note}`;
       m.excerpt = tail(redactExcerpt(last));
       m.done = now();
       writeJSON(file, m); // durable before the network: a message that never arrives loses nothing
@@ -467,14 +481,14 @@ async function hook() {
     case 'StopFailure':
       if (m.pending || recent(m.failed)) return;
       m.failed = now(); writeJSON(file, m);
-      report(await send(`${who} · упал на ошибке${elapsed(m)}: ${esc(cut(redactExcerpt(p.error || 'неизвестно'), 300))}. Открой чат, чтобы продолжить.`, undefined, 'fail'), true);
+      report(await send(`${who} · ${tr('failed', { elapsed: elapsed(m), error: esc(cut(redactExcerpt(p.error || tr('unknown')), 300)) })}`, undefined, 'fail'), true);
       return;
     case 'Notification': {
       if (m.pending) return;
       if (!/^(permission_prompt|agent_needs_input|elicitation_dialog|elicitation_url_dialog)$/.test(p.notification_type || '')) return;
       if (recent(m.waited)) return;
       m.waited = now(); writeJSON(file, m);
-      report(await send(`${who} · ждёт тебя${elapsed(m)}: ${esc(cut(redactExcerpt(p.message || p.notification_type || ''), 300))}`, undefined, 'wait'), true);
+      report(await send(`${who} · ${tr('waiting', { elapsed: elapsed(m), message: esc(cut(redactExcerpt(p.message || p.notification_type || ''), 300)) })}`, undefined, 'wait'), true);
       return;
     }
     case 'SessionStart': {
@@ -510,7 +524,7 @@ async function ask() {
   // The question can carry what a chat printed: the same secret shapes as an excerpt stay out of Telegram.
   // The short line (an answered message collapses to it) and the button labels too; options stay as they are, since a
   // tap answers with the chat's own label.
-  const clean = (s: string) => redactExcerpt(s).replace(/<(redacted|url|token)>/g, '[скрыто]');
+  const clean = (s: string) => redactExcerpt(s).replace(/<(redacted|url|token)>/g, tr('hidden'));
   const html = clean(a.html), short = clean(a.short);
   const keyboard = a.keyboard ? JSON.parse(JSON.stringify(a.keyboard), (k, v) => (k === 'text' && typeof v === 'string' ? clean(v) : v)) : undefined;
   const r = await sendWith(config(), html, '', undefined, keyboard ? { reply_markup: keyboard } : {});
@@ -615,11 +629,11 @@ async function setup() {
   await telegram(token, 'getUpdates', { offset, timeout: 0 }).catch(() => undefined);
 
   const one: Config = { ...cfg, telegram: { token, chat_id: chat } };
-  const r = await sendWith(one, `<b>Claude Code на ${esc(hostname())} подключён.</b>\nСюда придут вопросы чатов с кнопками и итоги, о которых ты просил. Напиши /help.`, '', 'wait');
+  const r = await sendWith(one, `<b>${esc(tr('connectedTitle', { host: hostname() }))}</b>\n${esc(tr('connectedBody'))}`, '', 'wait');
   if (!r.sent.length) { say(`  not delivered: ${r.failed.map((x) => x.error).join('; ')}`, '  Nothing was saved. Run setup again.'); return done(1); }
   writeJSON(configFile, one);
   // The menu beside the message box; a failure costs only the menu.
-  await telegram(token, 'setMyCommands', { commands: [{ command: 'status', description: 'что ждёт ответа' }, { command: 'ideas', description: 'последние идеи' }, { command: 'help', description: 'что умеет бот' }] }).catch(() => undefined);
+  await telegram(token, 'setMyCommands', { commands: [{ command: 'status', description: tr('cmdStatus') }, { command: 'ideas', description: tr('cmdIdeas') }, { command: 'help', description: tr('cmdHelp') }] }).catch(() => undefined);
   say(`  connected: a test message is in Telegram now. Saved to ${configFile}`);
   const flushed = await flushUnsent(one);
   if (flushed) say(`  and ${flushed} message(s) that were waiting went out now`);
@@ -631,18 +645,19 @@ async function main() {
   const take = (flag: string) => { const i = args.indexOf(flag); if (i < 0) return null; const v = args[i + 1]; args.splice(i, 2); return v; };
   const has = (flag: string) => { const i = args.indexOf(flag); if (i < 0) return false; args.splice(i, 1); return true; };
   const cmd = args[0];
+  await loadStrings();
   if (!cmd) { await hook(); return 0; }
 
   if (cmd === 'send') {
     // send <text>: plain words, escaped. send --html [--reply-to <id>]: HTML on stdin (the headless inbox's answer).
     if (args[1] === '--html') {
       const to = args[2] === '--reply-to' ? Number(args[3]) : 0;
-      const html = redactExcerpt(readFileSync(0, 'utf8')).replace(/<(redacted|url|token)>/g, '[скрыто]');
+      const html = redactExcerpt(readFileSync(0, 'utf8')).replace(/<(redacted|url|token)>/g, tr('hidden'));
       return report(await sendWith(config(), html, '', undefined, to ? { reply_parameters: { message_id: to, allow_sending_without_reply: true } } : {}));
     }
     return report(await send(esc(args.slice(1).join(' '))));
   }
-  if (cmd === '--test') return report(await send(`<i>проверка с ${esc(hostname())}: Telegram работает</i>`));
+  if (cmd === '--test') return report(await send(`<i>${esc(tr('testLine', { host: hostname() }))}</i>`));
   if (cmd === 'setup') return setup();
   if (cmd === 'ask') return ask();
 
@@ -656,7 +671,7 @@ async function main() {
   if (cmd === '--status') {
     const m = readJSON<Marker>(file);
     console.log(m ? `notify: armed${m.pending ? ' for the next turn' : ''} (${m.label || 'no label'}, since ${m.armed})` : 'notify: not armed for this chat');
-    console.log(on ? 'channels: telegram' : `channels: none - ${SETUP_HINT}`);
+    console.log(on ? 'channels: telegram' : `channels: none - ${setupHint()}`);
     return 0;
   }
   if (cmd === '--disarm') { rmSync(file, { force: true }); console.log('notify: disarmed'); return 0; }

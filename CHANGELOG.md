@@ -1,5 +1,17 @@
 # Changelog
 
+## makarasty-tools 1.19.57 — 2026-11-17
+
+The look of the phone channel is global, not tied to one channel or hard-coded in Russian (owner, 2026-11-17).
+- **One string table**: `tools/skills/notify/strings.mjs` holds every word the person sees, en and ru; the language
+  comes from the `Language:` line of his profile.md, English with none. Input words he types (idea, yes, consent
+  stems) still read both languages.
+- **One renderer**: `tools/skills/notify/render.mjs` holds the Telegram HTML layout (question, meta line, buttons,
+  collapsed line, help, status, ideas, Markdown answers). The inbox decides what a message says, the renderer how it
+  looks, so a second channel is a second renderer over the same messages.
+- `strings.test.ts` checks the language pick and that each path speaks English with no profile and today's Russian
+  with `Language: Russian`.
+
 ## makarasty-tools 1.19.56 — 2026-11-17
 
 The person's "Да, пушь" from the phone or the inbox was refused by push-guard, and the chat asked again (2026-11-17).

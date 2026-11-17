@@ -63,6 +63,12 @@ try {
   const p1 = run(['push', 'chatA~t3']), p2 = run(['push', 'chatA~t3'])
   const sent = existsSync(sink) ? readFileSync(sink, 'utf8').trim().split('\n') : []
   check('one push, once, naming the project and the question', p1.status === 0 && p2.status === 0 && sent.length === 1 && sent[0].includes('reports-app') && sent[0].includes(Q), `${p1.stderr} ${sent.join(' / ')}`)
+  check('with no profile the phone message is English', sent[0].includes('reports-app · question · '), sent[0])
+  const profile = join(tmp, 'makarasty', 'profile.md')
+  writeFileSync(profile, 'Language: Russian, plain and short.')
+  put(item({ id: 'chatA~t3r' })); run(['push', 'chatA~t3r']); run(['answer', 'chatA~t3r', 'Postgres'])
+  check('with Language: Russian it is the Russian one', (readFileSync(sink, 'utf8').trim().split('\n').pop() ?? '').includes('reports-app · вопрос · '))
+  rmSync(profile)
   // A push that fails leaves no marker, so the next tick retries it.
   put(item({ id: 'chatA~t4' }))
   const sentN = () => (existsSync(sink) ? readFileSync(sink, 'utf8').trim().split('\n').length : 0)

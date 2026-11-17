@@ -45,11 +45,15 @@ import { createHash, randomUUID } from 'node:crypto'
 import { freemem, homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { REPORT_TTL_MS, TTL_MS, UNSEEN_REPORT_TTL_MS, clean, contextOf, expired, inboundPrompt, itemId, mdToTg, normalizeAnswer, phoneAsk, phoneKeyboard, render, renderReports, safe, sourceTag, undeliverable } from './core.mjs'
+import { REPORT_TTL_MS, TTL_MS, UNSEEN_REPORT_TTL_MS, clean, contextOf, expired, inboundPrompt, itemId, normalizeAnswer, phoneAsk, render, renderReports, safe, sourceTag, undeliverable } from './core.mjs'
+import { mdToTg, note, phoneKeyboard } from '../notify/render.mjs'
+import { langOf, t } from '../notify/strings.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const base = join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'makarasty')
 const root = join(base, 'inbox')
+// The person's language, for every word that goes to his phone: the Language: line of his profile.
+const lang = () => langOf(readOr(join(base, 'profile.md')))
 const dir = (/** @type {string} */ d) => { const p = join(root, d); mkdirSync(p, { recursive: true }); return p }
 const readJSON = (/** @type {string} */ p) => { try { return JSON.parse(readFileSync(p, 'utf8').replace(/^﻿/, '')) } catch { return undefined } }
 const say = (/** @type {string} */ s) => process.stdout.write(`${s}\n`)
@@ -559,7 +563,7 @@ async function telegramTurn() {
       try { out = execFileSync(cli, argv, { cwd: homedir(), encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 300e3, maxBuffer: 16 << 20 }); ok = true }
       catch (e) { out = String(/** @type {{stdout?: string}} */ (e).stdout ?? '') }
       if (!sess.sid && (ok || out)) writeFileSync(join(tg, 'headless.json'), JSON.stringify({ sid, at: now }))
-      const html = ok && out.trim() ? mdToTg(out) : '<i>Не успел ответить: фоновый инбокс не закончил за 5 минут. Напиши ещё раз или открой инбокс на компьютере.</i>'
+      const html = ok && out.trim() ? mdToTg(out) : note(t(lang(), 'headlessFailed'))
       notify(['send', '--html', '--reply-to', String(ms[ms.length - 1].message_id)], html)
       for (const m of ms) writeFileSync(join(tg, 'inbound', `${m.id}.json`), JSON.stringify({ ...m, taken: now, done: Date.now() }))
     }
@@ -959,8 +963,8 @@ async function main() {
     if (!hasChannel()) { say('inbox: no push, no notify channel'); return 0 } // no attempt, no failure record
     const attempt = JSON.stringify({ fails: (prev?.fails ?? 0) + 1, at: now })
     if (prev) writeFileSync(mark, attempt); else if (!create(mark, attempt)) return 0
-    const phone = phoneAsk(item)
-    try { execFileSync(process.execPath, [notifyJs, 'ask'], { input: JSON.stringify({ ...phone, keyboard: phoneKeyboard(phone.options) }), stdio: ['pipe', 'pipe', 'pipe'], timeout: 20000 }) } catch (e) { console.error(`inbox: push failed: ${/** @type {Error} */ (e).message.split('\n')[0]}`); return 1 } // the attempt record stays: a later tick retries
+    const L = lang(), phone = phoneAsk(item, Date.now(), L)
+    try { execFileSync(process.execPath, [notifyJs, 'ask'], { input: JSON.stringify({ ...phone, keyboard: phoneKeyboard(phone.options, true, L) }), stdio: ['pipe', 'pipe', 'pipe'], timeout: 20000 }) } catch (e) { console.error(`inbox: push failed: ${/** @type {Error} */ (e).message.split('\n')[0]}`); return 1 } // the attempt record stays: a later tick retries
     writeFileSync(mark, '')
     say('inbox: pushed')
     return 0

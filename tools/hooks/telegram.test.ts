@@ -15,11 +15,13 @@ let worlds = 0
 
 // o.config: notify.json text (null: none). o.steal: another session overwrites the poll claim at once. o.getUpdates: the
 // n-th getUpdates answer (status and body); by default the same `updates` list every time, as Telegram does until the offset moves.
-function world(o: { config?: string | null; steal?: boolean; getUpdates?: (n: number) => [number, object] } = {}) {
+function world(o: { config?: string | null; profile?: string | null; steal?: boolean; getUpdates?: (n: number) => [number, object] } = {}) {
   const NOW = 1_000_000_000 + ++worlds * 100_000_000 // a module that keeps state between tests never sees a time it has paused until
   let t = NOW
   const disk = new Map<string, string>()
   if (o.config !== null) disk.set('/cfg/makarasty/notify.json', o.config ?? JSON.stringify({ telegram: { token: TOKEN, chat_id: '42' } }))
+  // The words follow the profile: Russian by default here (most cases pin the Russian texts), null for no profile (English).
+  if (o.profile !== null) disk.set('/cfg/makarasty/profile.md', o.profile ?? 'Language: Russian')
   const calls: Call[] = []
   const log: string[] = [] // every fetch and process.run, in order
   const runs: { argv: string[]; stdin?: string }[] = []
@@ -338,4 +340,48 @@ test('the sweep collapses an ask past 12 h, one answered on the computer and one
   expect(edits).toEqual({ 201: '<i>S-old — устарело</i>', 202: '<i>S-ans — отвечено на компьютере</i>', 203: '<i>S-gone — закрыто</i>' })
   for (const id of [201, 202, 203]) expect(typeof w.json(`${TG}/asks/${id}.json`).closed).toBe('number')
   expect(w.json(`${TG}/asks/204.json`).closed).toBeUndefined()
+})
+
+// The language of every word: no profile is English, "Language: Russian" is the Russian texts above.
+test('no profile: a tap is acknowledged and collapsed in English', async () => {
+  const w = world({ profile: null })
+  w.item('chatB~t1'); w.ask(70)
+  w.put(`${INBOX}/answers/chatB~t1.json`, { id: 'chatB~t1', at: 1, by: 'chat' })
+  w.feed([tap(1, 42, 70, 'a1'), tap(2, 42, 70, 'a9')])
+  await w.tick()
+  expect(w.sent('answerCallbackQuery').map((c) => c.body.text)).toEqual(['Already answered in the app', 'Already closed'])
+  expect(w.sent('editMessageText')[0]!.body.text).toContain('answered in the app')
+})
+
+test('no profile: /help, /status and /ideas are English; Language: Russian gives the Russian ones', async () => {
+  const en = world({ profile: null })
+  en.item('chatB~t1', { at: en.NOW - 5 * 60000 })
+  en.feed([say(7, '/help'), say(8, '/status'), say(9, '/ideas')])
+  await en.tick()
+  const [help, status, ideas] = en.sent('sendMessage').map((c) => c.body.text as string)
+  expect(help).toContain('<b>What the bot does</b>')
+  expect(status).toContain('<b>Waiting for an answer: 1</b>')
+  expect(status).toContain(`${Q} <i>reports-app · 5 min</i>`)
+  expect(status).toContain('the inbox is not running')
+  expect(ideas).toBe('<i>No ideas yet. Write "idea ...".</i>')
+  for (const text of [help, status, ideas]) expect(text).not.toMatch(/Что умеет|Ждут|Идей|мин|запущен/) // the question itself (Q) is the chat's own Russian text
+  const ru = world()
+  ru.feed([say(7, '/help'), say(8, '/ideas')])
+  await ru.tick()
+  const [rhelp, rideas] = ru.sent('sendMessage').map((c) => c.body.text as string)
+  expect(rhelp).toContain('<b>Что умеет бот</b>')
+  expect(rhelp).toContain('• «❔ Подробнее» — пояснение к вопросу')
+  expect(rideas).toBe('<i>Идей пока нет. Напиши «идея …».</i>')
+})
+
+test('Язык: русский in the profile counts, and the explanation hint follows the language', async () => {
+  for (const [profile, hint] of [['Язык: русский', 'Непонятно — ответь на это сообщение вопросом.'], [null, 'Not clear? Reply to this message with a question.']] as const) {
+    const w = world({ profile })
+    w.item('chatB~t1', { explain: 'x' }); w.ask(101)
+    w.feed([tap(1, 42, 101, 'm')])
+    await w.tick()
+    const edit = w.sent('editMessageText')[0]!.body
+    expect(edit.text).toContain(hint)
+    expect(JSON.stringify(edit.reply_markup)).not.toContain(profile ? 'Details' : 'Подробнее')
+  }
 })

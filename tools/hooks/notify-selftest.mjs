@@ -28,6 +28,9 @@ const here = fwd(basename(dirname(self)) === 'src' ? resolve(self, '..', '..', '
 const n = `${here}/notify.mjs`;
 const tmp = fwd(join(tmpdir(), `notify-selftest-${process.pid}`));
 mkdirSync(`${tmp}/makarasty`, { recursive: true });
+// The words the person sees follow his profile; the cases below pin the Russian ones, and the last section drops it for English.
+const profile = `${tmp}/makarasty/profile.md`;
+writeFileSync(profile, 'Language: Russian, plain and short.');
 const sink = `${tmp}/sent`;
 process.env.CLAUDE_CONFIG_DIR = tmp;
 process.env.NOTIFY_DRY_RUN = sink;
@@ -990,6 +993,31 @@ if (out === '')
     ok('and says nothing on a plain resume');
 else
     bad('and says nothing on a plain resume', out);
+section('language: no profile says it in English, Language: Russian in Russian');
+rmSync(profile, { force: true });
+writeFileSync(conf, confExcerpt);
+node([n, '--arm', 'lang']);
+hook('{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"Ship it?"}');
+check('with no profile a finish with a question is English', '· done, with a question for you', last());
+if (/готово|вопрос/.test(last()))
+    bad('and has no Russian in it', last());
+else
+    ok('and has no Russian in it');
+node([n, '--arm', 'lang']);
+hook('{"hook_event_name":"StopFailure","session_id":"s1","error":"overloaded"}');
+check('an error is English too', 'failed on an error: overloaded. Open the chat to continue.', last());
+hook('{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"ok"}');
+r = node([n, '--test']);
+check('--test is English', 'check from', read(sink));
+writeFileSync(conf, '{}');
+check('the setup hint is English', 'ask any chat "set up notifications"', both(node([n, '--status'])));
+writeFileSync(conf, confExcerpt);
+writeFileSync(profile, 'Язык: русский');
+node([n, '--arm', 'lang']);
+hook('{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"ok"}');
+check('a profile that says Язык: русский gets Russian', '· готово', last());
+check('and the setup hint keeps the phrase to type', '"настрой уведомления"', (writeFileSync(conf, '{}'), both(node([n, '--status']))));
+rmSync(profile, { force: true });
 console.log('');
 rmSync(tmp, { recursive: true, force: true });
 console.log(`${pass} passed, ${fail} failed`);

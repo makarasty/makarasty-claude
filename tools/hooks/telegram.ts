@@ -1,5 +1,7 @@
 import type { EngineInterface } from 'claude-code'
-import { collapsed, esc, explainPrompt, inboundPrompt, isTelegramPrompt, mdToTg, phoneKeyboard, STALE_MS, TG_PROMPT, telegramWords, type Item } from '../skills/inbox/core.mjs'
+import { explainPrompt, inboundPrompt, isTelegramPrompt, STALE_MS, TG_PROMPT, telegramWords, type Item } from '../skills/inbox/core.mjs'
+import { collapsed, esc, explainHtml, helpHtml, ideasHtml, mdToTg, note, phoneKeyboard, statusHtml } from '../skills/notify/render.mjs'
+import { langOf, t } from '../skills/notify/strings.mjs'
 
 // The Telegram side of notify, read inside the hook engine: `$.http.fetch`, so polling starts no process. Every chat with
 // the inbox on runs a 1 s timer here (startTelegram, from inbox.ts), its own: the inbox timer can be busy for a minute
@@ -35,6 +37,15 @@ async function configDir($: D): Promise<string | undefined> {
 }
 async function readJSON<T>($: D, p: string): Promise<T | undefined> {
   try { return JSON.parse(String(await $.fs.read(p)).replace(/^﻿/, '')) as T } catch { return undefined }
+}
+// The language of every word sent to the person: the Language: line of his profile, read at most once a minute.
+let langAt = -Infinity, langIs = 'en'
+async function lang($: D, dir: string): Promise<string> {
+  const now = await $.clock.now()
+  if (now - langAt < 60000) return langIs
+  langIs = langOf(String(await $.fs.read(`${dir}/makarasty/profile.md`).catch(() => '')))
+  langAt = now
+  return langIs
 }
 // The bound chat, or undefined: a token with no chat bound at setup answers nobody.
 async function bot($: D, dir: string): Promise<{ token: string; me: string } | undefined> {
@@ -114,7 +125,7 @@ async function pollOnce($: D, now: number): Promise<void> {
   if (String(await $.fs.read(`${tg}/polled`).catch(() => '')).split(' ')[1] !== session) return
   const lastOk = Number(String(await $.fs.read(`${tg}/lastok`).catch(() => '0'))) || 0
   await $.fs.write(`${tg}/lastok`, String(got))
-  if (lastOk && got - lastOk > 23 * 3600e3) await send($, b, `<i>Компьютер был недоступен ${Math.round((got - lastOk) / 3600e3)} ч: что ты писал раньше, чем за сутки, Telegram не сохранил.</i>`, { disable_notification: true }).catch(() => undefined)
+  if (lastOk && got - lastOk > 23 * 3600e3) await send($, b, note(t(await lang($, dir), 'offline', { h: Math.round((got - lastOk) / 3600e3) })), { disable_notification: true }).catch(() => undefined)
   // $.fs has no delete: the last 300 update ids in one file, read again before each update and written before its effects.
   for (const u of ups ?? []) {
     const seen = ((await readJSON<number[]>($, `${tg}/seen.json`)) ?? []).filter((x) => typeof x === 'number')
@@ -142,54 +153,55 @@ const replyTo = (id: number) => ({ reply_parameters: { message_id: id, allow_sen
 // Returns what it was, for the log. A stranger, a group, a forwarded text: nothing, not even a reply.
 async function handle($: D, dir: string, b: { token: string; me: string }, u: Update, now: number): Promise<string> {
   const tg = `${dir}/makarasty/telegram`
+  const L = await lang($, dir)
   const cq = u.callback_query
   if (cq) {
     const ack = (text: string) => call($, b.token, 'answerCallbackQuery', { callback_query_id: cq.id, text }).catch(() => undefined)
     if (String(cq.from.id) !== b.me) { await ack(''); return 'stranger' }
     const msg = cq.message?.message_id ?? 0
     const a = await openAsk($, `${tg}/asks/${msg}.json`)
-    if (!a) { await ack('Уже закрыто'); await call($, b.token, 'editMessageReplyMarkup', { chat_id: b.me, message_id: msg, reply_markup: { inline_keyboard: [] } }).catch(() => undefined); return 'tap-closed' }
-    if (cq.data === 'm') { await ack('Пишу пояснение…'); await explain($, dir, b, msg, a); return 'more' }
+    if (!a) { await ack(t(L, 'ackClosed')); await call($, b.token, 'editMessageReplyMarkup', { chat_id: b.me, message_id: msg, reply_markup: { inline_keyboard: [] } }).catch(() => undefined); return 'tap-closed' }
+    if (cq.data === 'm') { await ack(t(L, 'ackExplain')); await explain($, dir, b, msg, a); return 'more' }
     const i = Number(/^a?(\d+)$/.exec(cq.data ?? '')?.[1] ?? NaN)
     const pick = a.options[i]
-    if (pick === undefined) { await ack('Уже закрыто'); return 'tap-closed' }
+    if (pick === undefined) { await ack(t(L, 'ackClosed')); return 'tap-closed' }
     // Answered in the app meanwhile: say so at once, and the message collapses with it.
     if (await $.fs.exists(`${dir}/makarasty/inbox/answers/${a.item}.json`)) {
-      await ack('Уже отвечено в приложении')
-      await call($, b.token, 'editMessageText', { chat_id: b.me, message_id: msg, text: collapsed(a.short, 'отвечено в приложении'), parse_mode: 'HTML' }).catch(() => undefined)
+      await ack(t(L, 'ackAnsweredApp'))
+      await call($, b.token, 'editMessageText', { chat_id: b.me, message_id: msg, text: collapsed(a.short, t(L, 'outAnsweredApp')), parse_mode: 'HTML' }).catch(() => undefined)
       await close($, `${tg}/asks/${msg}.json`, a)
       return 'tap-answered'
     }
-    await ack('Принято, отправляю в чат')
+    await ack(t(L, 'ackTaken'))
     await answer($, dir, b, msg, a, pick)
     return 'tap'
   }
   const m = u.message
   if (!m || m.chat.type !== 'private' || String(m.chat.id) !== b.me || String(m.from?.id) !== b.me || m.forward_origin) return 'ignored'
   const text = (m.text ?? m.caption ?? '').trim()
-  if (!text) { await send($, b, 'Понимаю только текст: напиши словами.', replyTo(m.message_id)).catch(() => undefined); return 'no-text' }
-  const extra = !m.text && (m.photo || m.document || m.video) ? ' (картинку или файл я не вижу, только подпись)' : ''
+  if (!text) { await send($, b, esc(t(L, 'textOnly')), replyTo(m.message_id)).catch(() => undefined); return 'no-text' }
+  const extra = !m.text && (m.photo || m.document || m.video) ? t(L, 'pictureNote') : ''
   const command = /^\/(\w+)(?:@\w+)?\s*([\s\S]*)$/.exec(text)
   // \b is ASCII-only: «идея купить» needs a letter-aware end of word.
   const IDEA = /^(💡|(идея|idea)(?![\p{L}\p{N}]))[:\s-]*/iu
   const idea = command?.[1] === 'idea' ? command[2] : IDEA.test(text) ? text.replace(IDEA, '') : undefined
   if (idea !== undefined) {
-    if (!idea.trim()) { await send($, b, 'Напиши идею после слова: «идея …»', replyTo(m.message_id)).catch(() => undefined); return 'idea' }
+    if (!idea.trim()) { await send($, b, esc(t(L, 'ideaPrompt')), replyTo(m.message_id)).catch(() => undefined); return 'idea' }
     // shortcut: read-and-rewrite (no append in $.fs); two ideas within the same millisecond from two pollers is not a case.
     const old = String(await $.fs.read(`${dir}/makarasty/ideas.md`).catch(() => ''))
     const day = new Date(now).toISOString().slice(0, 16).replace('T', ' ')
     await $.fs.write(`${dir}/makarasty/ideas.md`, `${old}${old && !old.endsWith('\n') ? '\n' : ''}- ${day} ${idea.trim().replace(/\s*\n\s*/g, ' ')}\n`)
     const n = (old.match(/^- /gm) ?? []).length + 1
-    await send($, b, `<i>Записал идею №${n}${esc(extra)}</i>`, { ...replyTo(m.message_id), disable_notification: true }).catch(() => undefined)
+    await send($, b, note(`${t(L, 'ideaSaved', { n })}${extra}`), { ...replyTo(m.message_id), disable_notification: true }).catch(() => undefined)
     return 'idea'
   }
-  if (command && ['start', 'help'].includes(command[1]!)) { await send($, b, HELP).catch(() => undefined); return 'help' }
+  if (command && ['start', 'help'].includes(command[1]!)) { await send($, b, helpHtml(L)).catch(() => undefined); return 'help' }
   if (command?.[1] === 'ideas') {
     const lines = String(await $.fs.read(`${dir}/makarasty/ideas.md`).catch(() => '')).split('\n').filter((l) => l.startsWith('- ')).slice(-10)
-    await send($, b, lines.length ? `<b>Последние идеи</b>\n${lines.map((l) => esc(l.slice(2))).join('\n')}` : '<i>Идей пока нет. Напиши «идея …».</i>').catch(() => undefined)
+    await send($, b, ideasHtml(L, lines.map((l) => l.slice(2)))).catch(() => undefined)
     return 'ideas'
   }
-  if (command?.[1] === 'status') { await send($, b, await status($, dir, now)).catch(() => undefined); return 'status' }
+  if (command?.[1] === 'status') { await send($, b, await status($, dir, now, L)).catch(() => undefined); return 'status' }
   // A reply to an ask: a question about it goes to the inbox; anything else is the answer, where a free answer fits.
   const about = m.reply_to_message ? await openAsk($, `${tg}/asks/${m.reply_to_message.message_id}.json`) : undefined
   if (about && m.reply_to_message && !/[?？]\s*$/.test(text) && about.reply) { await answer($, dir, b, m.reply_to_message.message_id, about, text, m.message_id); return 'reply' }
@@ -202,17 +214,7 @@ async function handle($: D, dir: string, b: { token: string; me: string }, u: Up
   return 'inbound'
 }
 
-const HELP = [
-  '<b>Что умеет бот</b>',
-  '• вопросы чатов приходят сюда: нажми кнопку или ответь на сообщение своими словами',
-  '• «❔ Подробнее» — пояснение к вопросу; ответ вопросом на сообщение — спросит инбокс',
-  '• любое другое сообщение — задача или вопрос инбоксу, ответ придёт сюда',
-  '• «идея …» или 💡 — записать идею, /ideas — последние идеи',
-  '• /status — что ждёт ответа',
-  '<i>Telegram хранит сообщения для бота сутки: если компьютер выключен дольше, старое пропадёт.</i>',
-].join('\n')
-
-async function status($: D, dir: string, now: number): Promise<string> {
+async function status($: D, dir: string, now: number, L: string): Promise<string> {
   const root = `${dir}/makarasty/inbox`
   const open: Item[] = []
   for (const f of await $.fs.list(`${root}/items`).catch(() => [])) {
@@ -221,18 +223,19 @@ async function status($: D, dir: string, now: number): Promise<string> {
     if (it && now - it.at < STALE_MS) open.push(it)
   }
   const beat = Number(String(await $.fs.read(`${root}/beat`).catch(() => '0'))) || 0
-  const q = (it: Item) => (it.kind === 'ask' ? it.questions?.[0]?.question : it.kind === 'choice' ? it.ask : `карточка «${it.title}»`) ?? ''
+  const q = (it: Item) => (it.kind === 'ask' ? it.questions?.[0]?.question : it.kind === 'choice' ? it.ask : t(L, 'statusCard', { title: it.title ?? '' })) ?? ''
   const proj = (cwd: string) => cwd.replace(/[\\/]+$/, '').split(/[\\/]/).pop() ?? cwd
-  const lines = open.sort((x, y) => x.at - y.at).slice(0, 8).map((it) => `• ${esc(redact(q(it)).slice(0, 80))} <i>${esc(proj(it.cwd))} · ${Math.max(1, Math.round((now - it.at) / 60000))} мин</i>`)
-  return [`<b>Ждут ответа: ${open.length}</b>`, ...lines, `<i>инбокс ${now - beat < ALIVE_MS ? 'на компьютере работает' : 'не запущен: на сообщения ответит фоновый инбокс'}</i>`].join('\n')
+  const items = open.sort((x, y) => x.at - y.at).slice(0, 8).map((it) => ({ question: redact(q(it), t(L, 'hidden')).slice(0, 80), where: proj(it.cwd), age: t(L, 'ageMin', { n: Math.max(1, Math.round((now - it.at) / 60000)) }) }))
+  return statusHtml(L, open.length, items, now - beat < ALIVE_MS)
 }
 
 // The tap or reply answers the item through `inbox.mjs answer`, as the inbox chat would; the message then collapses.
 async function answer($: D, dir: string, b: { token: string; me: string }, msg: number, a: Ask, pick: string, replyId?: number): Promise<void> {
+  const L = await lang($, dir)
   const r = await $.process.run(['node', `${$.plugin.root}/skills/inbox/inbox.mjs`, 'answer', a.item], { stdin: pick, timeoutMs: 20000, env: { CLAUDE_CONFIG_DIR: dir } }).catch(() => undefined)
-  const line = `${r?.stdout ?? ''}\n${r?.stderr ?? ''}`.trim().split('\n').filter(Boolean).pop()?.replace(/^inbox: /, '') ?? 'не получилось'
+  const line = `${r?.stdout ?? ''}\n${r?.stderr ?? ''}`.trim().split('\n').filter(Boolean).pop()?.replace(/^inbox: /, '') ?? t(L, 'outFailed')
   const sent = r?.exitCode === 0 && !/NOT SENT/.test(line)
-  const outcome = sent ? pick : /already answered/.test(line) ? `${pick} (уже было отвечено)` : `${pick} (не отправлено: ${line.replace(/^answered \S+, NOT SENT to the chat: /, '')})`
+  const outcome = sent ? pick : /already answered/.test(line) ? t(L, 'outAlready', { pick }) : t(L, 'outNotSent', { pick, why: line.replace(/^answered \S+, NOT SENT to the chat: /, '') })
   await call($, b.token, 'editMessageText', { chat_id: b.me, message_id: msg, text: collapsed(a.short, outcome), parse_mode: 'HTML' }).catch(() => undefined)
   if (replyId && !sent) await send($, b, esc(outcome), replyTo(replyId)).catch(() => undefined)
   await close($, `${dir}/makarasty/telegram/asks/${msg}.json`, a)
@@ -240,6 +243,7 @@ async function answer($: D, dir: string, b: { token: string; me: string }, msg: 
 
 // "❔ Подробнее": the explanation the inbox already made, or a small model's now; the buttons stay, without this one.
 async function explain($: D, dir: string, b: { token: string; me: string }, msg: number, a: Ask): Promise<void> {
+  const L = await lang($, dir)
   const file = `${dir}/makarasty/inbox/items/${a.item}.json`
   const it = await readJSON<Item>($, file)
   let text = it?.explain
@@ -249,19 +253,19 @@ async function explain($: D, dir: string, b: { token: string; me: string }, msg:
     const cur = text ? await readJSON<Item>($, file) : undefined
     if (cur && text) await $.fs.write(file, JSON.stringify({ ...cur, explain: text }))
   }
-  const body = text ? `${a.html}\n\n<blockquote>${esc(redact(text).slice(0, 1500))}</blockquote>\n<i>Непонятно — ответь на это сообщение вопросом.</i>` : `${a.html}\n\n<i>Пояснения нет: чат ушёл из инбокса. Ответь на это сообщение вопросом.</i>`
-  await call($, b.token, 'editMessageText', { chat_id: b.me, message_id: msg, text: body, parse_mode: 'HTML', reply_markup: phoneKeyboard(a.options, false) }).catch(() => undefined)
+  const body = explainHtml(L, a.html, text ? redact(text, t(L, 'hidden')).slice(0, 1500) : undefined)
+  await call($, b.token, 'editMessageText', { chat_id: b.me, message_id: msg, text: body, parse_mode: 'HTML', reply_markup: phoneKeyboard(a.options, false, L) }).catch(() => undefined)
   await $.fs.write(`${dir}/makarasty/telegram/asks/${msg}.json`, JSON.stringify({ ...a, html: body, more: true }))
 }
 
 // An ask answered on the computer, gone, or past the inbox's 12 h: collapsed, so no tap lands on a closed item.
 async function sweep($: D, dir: string, b: { token: string; me: string }, now: number): Promise<void> {
-  const tg = `${dir}/makarasty/telegram`, root = `${dir}/makarasty/inbox`
+  const tg = `${dir}/makarasty/telegram`, root = `${dir}/makarasty/inbox`, L = await lang($, dir)
   for (const f of await $.fs.list(`${tg}/asks`).catch(() => [])) {
     if (!/^\d+\.json$/.test(f.name)) continue
     const a = await openAsk($, `${tg}/asks/${f.name}`)
     if (!a) continue
-    const why = (await $.fs.exists(`${root}/answers/${a.item}.json`)) ? 'отвечено на компьютере' : !(await $.fs.exists(`${root}/items/${a.item}.json`)) ? 'закрыто' : now - a.at > STALE_MS ? 'устарело' : ''
+    const why = (await $.fs.exists(`${root}/answers/${a.item}.json`)) ? t(L, 'outAnsweredPc') : !(await $.fs.exists(`${root}/items/${a.item}.json`)) ? t(L, 'outClosed') : now - a.at > STALE_MS ? t(L, 'outStale') : ''
     if (!why) continue
     await call($, b.token, 'editMessageText', { chat_id: b.me, message_id: Number(f.name.slice(0, -5)), text: collapsed(a.short, why), parse_mode: 'HTML' }).catch(() => undefined)
     await close($, `${tg}/asks/${f.name}`, a)
@@ -302,14 +306,15 @@ export async function telegramTurnStart($: D, dir: string, text: string, turnId:
 
 export async function telegramTurnComplete($: D, dir: string, e: { turnId?: string; reason?: string; answer?: string; isAborted?: boolean }): Promise<void> {
   const tg = `${dir}/makarasty/telegram`
-  const t = await readJSON<{ ids: number[]; message_id: number; turnId?: string }>($, `${tg}/turn.json`)
-  if (!t?.turnId || t.turnId !== e.turnId || !t.ids?.length) return
+  const turn = await readJSON<{ ids: number[]; message_id: number; turnId?: string }>($, `${tg}/turn.json`)
+  if (!turn?.turnId || turn.turnId !== e.turnId || !turn.ids?.length) return
   const b = await bot($, dir)
-  const text = e.reason === 'answer' && !e.isAborted && e.answer?.trim() ? mdToTg(redact(e.answer)) : '<i>Не получилось ответить: ход в инбоксе прервался. Напиши ещё раз.</i>'
-  if (b) await send($, b, text, replyTo(t.message_id)).catch(() => undefined)
+  const L = await lang($, dir)
+  const text = e.reason === 'answer' && !e.isAborted && e.answer?.trim() ? mdToTg(redact(e.answer, t(L, 'hidden'))) : note(t(L, 'turnFailed'))
+  if (b) await send($, b, text, replyTo(turn.message_id)).catch(() => undefined)
   const now = await $.clock.now()
   await $.fs.write(`${tg}/turn.json`, '{}')
-  for (const id of t.ids) { const m = await readJSON<Inbound>($, `${tg}/inbound/${id}.json`); if (m) await $.fs.write(`${tg}/inbound/${id}.json`, JSON.stringify({ ...m, done: now })) }
+  for (const id of turn.ids) { const m = await readJSON<Inbound>($, `${tg}/inbound/${id}.json`); if (m) await $.fs.write(`${tg}/inbound/${id}.json`, JSON.stringify({ ...m, done: now })) }
 }
 
 // The secret shapes notify.mjs blanks in an excerpt, for what the engine sends (an explanation, an inbox answer).
@@ -320,6 +325,6 @@ const SECRETS = [
   /AIza[\w-]{35}/g, /eyJ[\w-]{10,}\.eyJ[\w.-]*/g, /glpat-[\w-]{20,}/g, /npm_[A-Za-z0-9]{36}/g, /SG\.[\w-]{22}\.[\w-]{43}/g,
   /discord(?:app)?\.com\/api\/webhooks\/\d+\/[\w-]{20,}/gi,
 ]
-export const redact = (s: string): string => SECRETS.reduce((t, re) => t.replace(re, '[скрыто]'), s)
+export const redact = (s: string, mask: string): string => SECRETS.reduce((text, re) => text.replace(re, mask), s)
   .replace(/(["']?(?:api[_-]?key|secret|token|password|bearer)["']?)([ \t]*[:=]?[ \t]*)("[^"\n]+"|'[^'\n]+'|\S+)/gi,
-    (all, k: string, sep: string, v: string) => (sep.trim() || /^bearer/i.test(k)) && (/^["']/.test(v) || (v.length >= 8 && /\d/.test(v))) ? `${k}${sep}[скрыто]` : all)
+    (all, k: string, sep: string, v: string) => (sep.trim() || /^bearer/i.test(k)) && (/^["']/.test(v) || (v.length >= 8 && /\d/.test(v))) ? `${k}${sep}${mask}` : all)

@@ -1,5 +1,5 @@
 // core.mjs - the inbox's pure part, shared by the hook (tools/hooks/inbox.ts, no Node there) and the CLI (inbox.mjs).
-// No imports: the hooks module runs without Node, so nothing here may touch fs, path or process.
+// Imports only the notify words and layout (strings.mjs, render.mjs): the hooks module runs without Node, so nothing here may touch fs, path or process.
 //
 // Disk layout under <claude config dir>/makarasty/inbox/ (read by both sides):
 //   items/<id>.json      one pending thing a chat waits on: an AskUserQuestion ("ask"), a wrap_up yes/no ("choice"),
@@ -18,6 +18,9 @@
 //                        session it starts, the person for any chat (`inbox.mjs report on`)
 //   reports/announced/<id>, reports/seen/<id>   woken about it once; shown by `list` once
 // The switch is the file <claude config dir>/makarasty/inbox.on.
+
+import { t } from '../notify/strings.mjs'
+import { phoneHtml } from '../notify/render.mjs'
 
 /** @typedef {{ label: string, description?: string, preview?: string }} Option */
 /** @typedef {{ question: string, header?: string, options?: Option[], multiSelect?: boolean }} Question */
@@ -134,81 +137,26 @@ export function render(/** @type {Item} */ item, now = Date.now(), /** @type {st
   ].filter(Boolean).join('\n')
 }
 
-// ---- Telegram (HTML parse_mode): the phone side of an item ----
+// ---- Telegram: the phone side of an item. The decisions are here; the words are notify/strings.mjs, the layout notify/render.mjs ----
 
-/** Text for Telegram's HTML mode: only &, < and > are special there. Cut fields as plain text first, then escape. */
-export const esc = (/** @type {string} */ s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-const PHONE_KIND = { ask: 'вопрос', choice: 'да/нет', card: 'карточка' }
-const agoRu = (/** @type {number} */ ms) => (ms < 3600e3 ? `${Math.max(1, Math.round(ms / 60e3))} мин` : `${Math.round(ms / 3600e3)} ч`)
+const age = (/** @type {string} */ lang, /** @type {number} */ ms) => (ms < 3600e3 ? t(lang, 'ageMin', { n: Math.max(1, Math.round(ms / 60e3)) }) : t(lang, 'ageH', { n: Math.round(ms / 3600e3) }))
 
 /**
- * The phone message (notify.mjs ask), the owner's pick B3 (2026-11-17): the question first and bold, so a lock screen shows
- * it; "project · kind · age" small under it; a button per option and "❔ Подробнее", which makes the explanation only when
- * tapped. Buttons answer only where one tap is a whole answer: a one-question ask that is not multi-select, or a box's
- * actions. A card is started from the inbox chat (it needs a new session) and a multi-question ask needs every answer at
- * once: those say so, with only "Подробнее". `short` is the question cut for the one grey line an answered message becomes.
+ * The phone message (notify.mjs ask): which question, which options, whether a tap or a reply is a whole answer. Buttons
+ * answer only where one tap is a whole answer: a one-question ask that is not multi-select, or a box's actions. A card is
+ * started from the inbox chat (it needs a new session) and a multi-question ask needs every answer at once: those say so,
+ * with only the details button. `message` is the channel-neutral text, `html` its Telegram rendering; `short` is the question
+ * cut for the one grey line an answered message becomes. `lang` is the person's (strings.mjs langOf), en when not given.
  */
-export function phoneAsk(/** @type {Item} */ item, now = Date.now()) {
+export function phoneAsk(/** @type {Item} */ item, now = Date.now(), /** @type {string | undefined} */ lang = undefined) {
   const qs = item.questions ?? []
   const one = item.kind === 'ask' && qs.length === 1 && !qs[0].multiSelect
-  const first = (item.kind === 'ask' ? qs[0]?.question : item.kind === 'choice' ? item.ask : `Запустить «${item.title}»?`) ?? ''
+  const first = (item.kind === 'ask' ? qs[0]?.question : item.kind === 'choice' ? item.ask : t(lang, 'cardQuestion', { title: item.title ?? '' })) ?? ''
   const options = one ? (qs[0].options ?? []).map((o) => o.label) : item.kind === 'choice' ? (item.actions ?? []) : []
-  const rest = item.kind === 'ask' && qs.length > 1 ? `\nещё ${qs.length - 1} в том же окне: ответ в инбоксе на компьютере` : item.kind === 'card' ? '\nзапуск из инбокса на компьютере' : ''
-  const meta = `${project(item.cwd)} · ${PHONE_KIND[item.kind]} · ${agoRu(now - item.at)}`
-  return { item: item.id, html: `<b>${esc(cut(first, 600))}</b>\n<i>${esc(meta)}${esc(rest)}</i>`, short: cut(first, 90), options, reply: one || item.kind === 'choice' }
-}
-
-/** The inline keyboard: options in one row when short (up to 3, 34 characters together), else one per row; "Подробнее" last. */
-export function phoneKeyboard(/** @type {string[]} */ options, more = true) {
-  const btn = (/** @type {string} */ text, /** @type {string} */ data) => ({ text: cut(text, 40), callback_data: data })
-  const row = options.length <= 3 && options.join('').length <= 34
-  const rows = row ? (options.length ? [options.map((o, i) => btn(o, `a${i}`))] : []) : options.map((o, i) => [btn(o, `a${i}`)])
-  if (more) { if (row && rows.length) rows[0].push(btn('❔ Подробнее', 'm')); else rows.push([btn('❔ Подробнее', 'm')]) }
-  return { inline_keyboard: rows }
-}
-
-/** What an answered message becomes: one grey line, no emoji, easy to scroll past and to read back later. */
-export const collapsed = (/** @type {string} */ short, /** @type {string} */ outcome) => `<i>${esc(short)} — ${esc(cut(outcome, 200))}</i>`
-
-/**
- * A model's Markdown answer as Telegram HTML: **bold**, `code`, ``` blocks, # headings as bold, - lists as •. Short: the first
- * paragraphs up to about `head` characters are shown, the rest folds into an expandable quote; the whole is kept under 3800.
- * Converted paragraph by paragraph, so a cut never lands inside a tag.
- */
-export function mdToTg(/** @type {string} */ md, head = 700) {
-  const inline = (/** @type {string} */ s) => esc(s)
-    .replace(/`([^`\n]+)`/g, '<code>$1</code>')
-    .replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>')
-    .replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s).,!?]|$)/g, '$1<i>$2</i>')
-  const para = (/** @type {string} */ p) => {
-    if (/^```/.test(p)) return `<pre>${esc(p.replace(/^```[^\n]*\n?/, '').replace(/\n?```\s*$/, ''))}</pre>`
-    return p.split('\n').map((l) => {
-      const h = /^#{1,6}\s+(.*)$/.exec(l)
-      if (h) return `<b>${inline(h[1])}</b>`
-      const li = /^\s*[-*+]\s+(.*)$/.exec(l)
-      return li ? `• ${inline(li[1])}` : inline(l)
-    }).join('\n')
-  }
-  // A fenced block is one paragraph whatever blank lines it holds.
-  const paras = String(md).trim().replace(/\r\n/g, '\n').split(/(```[\s\S]*?(?:```|$))/).flatMap((part) => (part.startsWith('```') ? [part] : part.split(/\n{2,}/))).map((p) => p.trim()).filter(Boolean)
-  const shown = [], folded = []
-  let n = 0
-  for (const p of paras) { if (n + p.length <= head || !shown.length) shown.push(p); else folded.push(p); n += p.length }
-  // A first paragraph too long even alone (tags and escapes grow it) is cut until it fits, never dropped: an empty text
-  // is refused by Telegram and the answer would be lost.
-  const fit = (/** @type {string[]} */ ps, /** @type {number} */ max) => {
-    const out = []; let len = 0
-    for (const p of ps) {
-      let h = para(cut(p, max))
-      for (let n = max; !out.length && h.length > max && n > 50; n = Math.floor(n * 0.7)) h = para(cut(p, n))
-      if (len + h.length > max) break
-      out.push(h); len += h.length + 2
-    }
-    return out.join('\n\n')
-  }
-  const top = fit(shown, 2000) || esc(cut(String(md).trim(), 1500))
-  const rest = folded.length ? fit(folded, 3700 - top.length) : ''
-  return rest ? `${top}\n<blockquote expandable>${rest}</blockquote>` : top
+  const note = item.kind === 'ask' && qs.length > 1 ? t(lang, 'moreQuestions', { n: qs.length - 1 }) : item.kind === 'card' ? t(lang, 'cardNote') : ''
+  const kind = t(lang, { ask: 'kindAsk', choice: 'kindChoice', card: 'kindCard' }[item.kind])
+  const message = { question: first, meta: `${project(item.cwd)} · ${kind} · ${age(lang ?? 'en', now - item.at)}`, note }
+  return { item: item.id, html: phoneHtml(message), message, short: cut(first, 90), options, reply: one || item.kind === 'choice' }
 }
 
 /** What an AskUserQuestion hook returns for an inbox answer: the tool's own result shape, so the model reads it as the dialog's. */

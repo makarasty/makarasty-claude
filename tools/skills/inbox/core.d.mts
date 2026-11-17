@@ -20,11 +20,7 @@ export function explainPrompt(item: Item): string
 export function body(item: Item): string
 export function render(item: Item, now?: number, account?: string): string
 export function link(item: Item, account?: string): string
-export function phoneAsk(item: Item, now?: number): { item: string; html: string; short: string; options: string[]; reply: boolean }
-export function phoneKeyboard(options: string[], more?: boolean): { inline_keyboard: { text: string; callback_data: string }[][] }
-export function esc(s: string): string
-export function collapsed(short: string, outcome: string): string
-export function mdToTg(md: string, head?: number): string
+export function phoneAsk(item: Item, now?: number, lang?: string): { item: string; html: string; message: { question: string; meta: string; note: string }; short: string; options: string[]; reply: boolean }
 export function toResult(item: Item, answer: Answer): { questions: Question[]; answers: Record<string, string> }
 export function deliveryText(item: Item, answer: Answer): string
 export function normalizeAnswer(item: Item, raw: unknown): { answers: Record<string, string> } | { choice: string }
