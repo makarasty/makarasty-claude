@@ -3259,7 +3259,7 @@
     "regex": "(дважды спрашива|опять спрашива\\S* (на|про) пуш|я уже (ответил|разрешил|отвечал)|10 раз подряд разрешил)",
     "since": "2026-11-17"
    },
-   "gap": "only push-guard waits on a delivered answer; no check yet that every consent-waiting guard imports consent.ts"
+   "gap": "an inbox or phone yes to a push is not seen by push-guard: the engine sends a plugin's own prompt.submit past the hook that calls it, so notePrompt never sees the delivered answer (found 2026-11-17 by the notifications chat; fix waits on the owner). Until then a push needs his yes in the chat's own dialog."
   },
   {
    "id": "R138",
