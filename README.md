@@ -351,7 +351,7 @@ Three more hooks change behaviour without refusing:
 |---|---|
 | `fleet` | Lists the commands and when to use each (you only) |
 | `fleet-init` | Prepares a project: origin, services, agent login, `FLEET.md`, lane widths |
-| `fleet-plan <mission> [fast]` | Four pace questions, the plan, the queue, then runs it in this chat |
+| `fleet-plan <mission> [fast]` | Pace from your profile, the plan, the queue, then runs it in this chat |
 | `fleet-run <brief or run dir>` | A worker works one brief or a queue (opt-in worker chats) |
 | `fleet-login [origin]` | Opens and signs in to the app in this chat's pane |
 | `fleet-wait <run-id> [n]` | Waits without model turns, then collects |

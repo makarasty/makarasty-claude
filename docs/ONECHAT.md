@@ -274,10 +274,9 @@ that is both in `dirty-at-start` and changed by a task is the operator's call: l
 
 Cadence, from the pace line: **one commit at the end of the run** (the default and the cheapest), or one per
 wave; with opt-in worktrees each task commits on its own branch. Reviews read the uncommitted diff of `owns:`, so none of them waits on a commit.
-The cadence says when a commit is due, not that the operator agreed to it: every commit to the main checkout is
-asked first. List the paths and end that turn with one yes/no (the desktop app's end-of-turn `ask`, else
-`AskUserQuestion`); the run does not wait for the answer. On yes the Haiku agent commits; on no or no answer the
-files stay uncommitted and the end report lists them. A "continue?" rule never answers this question.
+A due commit of the run's own paths is made without asking (the operator's commit rule, 2026-11-16), and the
+status line lists its paths; a push of the work branch is not asked either. Still asked, as one yes/no at the
+end of the turn: a push to `main`/`master` or a forced push, a merge, and any path that is not the run's own.
 
 **A pre-commit failure that is not the run's [M59].** The commit agent does not fix, wait or retry: it returns
 the failed check names and the files they name, and stops. You apply the `foreign=` word of the `pace:` line

@@ -106,9 +106,9 @@ turns it off.
 
 ## Pace
 
-The questionnaire (`fleet-plan`, at most four questions in one `AskUserQuestion` call, each with a
-recommended first option) is what picks the tiers and the review rounds. The answers go to the `pace:` line
-of `STATE.md`. Width is never an answer: it is `fleet.sh width`. The loop that uses these is in
+The `Fleet pace:` line of the operator's profile picks the tiers and the review rounds (`fleet-plan`,
+Round 0); only when it is missing, or the mission says `ask`, are its three questions asked, in one
+`AskUserQuestion`, and the answer written back to the profile. The words go to the `pace:` line of `STATE.md`. Width is never an answer: it is `fleet.sh width`. The loop that uses these is in
 [`ONECHAT.md`](ONECHAT.md).
 
 | Scale | What it edits in the plan |

@@ -1,5 +1,5 @@
 ---
-description: Plan a fleet run and launch it - ask the four pace questions, interview the operator, split the mission into a queue or briefs, run it from this chat with one subagent per task (separate worker chats are opt-in), arm the watch. Use when the person asks to run, launch or start a fleet ("запусти флит", "запускай флот на это"), or a handoff or a relaunch makes this chat a fleet's coordinator. Never start one unasked.
+description: Plan a fleet run and launch it - take the pace from the person's profile, interview the operator, split the mission into a queue or briefs, run it from this chat with one subagent per task (separate worker chats are opt-in), arm the watch. Use when the person asks to run, launch or start a fleet ("запусти флит", "запускай флот на это"), or a handoff or a relaunch makes this chat a fleet's coordinator. Never start one unasked.
 argument-hint: <mission in plain words> [fast]
 ---
 

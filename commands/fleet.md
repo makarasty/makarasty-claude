@@ -16,7 +16,7 @@ opt-in, chosen in the plan's first question round.
 | Command | Reach for it when |
 |---|---|
 | `/makarasty:fleet-init` | A project has never run a fleet: writes FLEET.md, sets up the agent login, sizes the machine. The other commands run it themselves when they find it missing |
-| `/makarasty:fleet-plan <mission> [fast]` | You have a mission: four pace questions, a queue, then the run from that chat with one subagent per task (chips per worker only with separate chats) |
+| `/makarasty:fleet-plan <mission> [fast]` | You have a mission: pace from your profile (asked once if missing), a queue, then the run from that chat with one subagent per task (chips per worker only with separate chats) |
 | `/makarasty:fleet-run <brief>` | Opt-in separate chats: you are inside a worker session and want it to execute its brief |
 | `/makarasty:fleet-login [origin]` | A session needs the project's app open and authenticated, at `FLEET.md`'s origin or the one given |
 | `/makarasty:fleet-wait <run-id> [n]` | Workers are running and you want each finish to announce itself |
@@ -38,7 +38,7 @@ its chip (`start_session`), and the model in that new session is what invokes `f
 
 ## A run, start to finish
 
-1. `/makarasty:fleet-plan <mission>` in a planning session. It asks four pace questions in one card, writes
+1. `/makarasty:fleet-plan <mission>` in a planning session. It takes the pace from your profile (three questions in one card only the first time), writes
    the queue, registers the subagent slots and starts the loop in that chat. Keep its Browser pane on
    screen when the mission has browser work.
 2. `/makarasty:fleet-wait <run-id> <slot count>` watches for what a task notification does not bring:
