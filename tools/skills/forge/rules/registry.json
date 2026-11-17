@@ -2918,9 +2918,9 @@
    "id": "R113",
    "rule": "Any file for the owner to read is an HTML on his Desktop, never a .md.",
    "ru": "Файл для чтения: HTML на моём рабочем столе, не .md.",
-   "layer": "memory",
-   "enforced": "text",
-   "enforcer": null,
+   "layer": "plugin",
+   "enforced": "test",
+   "enforcer": "tools/skills/report (SKILL.md + report.mjs, refuses to write the file on an ERROR)",
    "complaints": [],
    "complaintChats": null,
    "conflicts": [],
@@ -2929,6 +2929,17 @@
     {
      "file": "<project memory>/MEMORY.md",
      "anchor": "files to owner are html on desktop"
+    },
+    {
+     "file": "tools/skills/report/report.mjs",
+     "anchor": "build checks (7ef586d, M78)",
+     "date": "2026-11-17"
+    }
+   ],
+   "inForce": [
+    {
+     "text": "tools:skills/report/report.mjs",
+     "has": "fail("
     }
    ]
   },
@@ -3293,6 +3304,89 @@
     }
    ],
    "eval": "evals/R139-push-back.json"
+  },
+  {
+   "id": "R140",
+   "rule": "A change shown to the owner states its effect for him, measured (a number and the sample) or forecast, never its size as the reason.",
+   "ru": "Изменение показывается эффектом для меня (замер с числом и выборкой или прогноз), а не объёмом.",
+   "layer": "plugin",
+   "enforced": "test",
+   "enforcer": "tools/skills/report/report.mjs effect checks",
+   "complaints": [
+    "board rule 2"
+   ],
+   "complaintChats": null,
+   "conflicts": [],
+   "status": "active",
+   "sources": [
+    {
+     "file": "<2026-11-17 coordination board>",
+     "anchor": "owner rule 2",
+     "date": "2026-11-17"
+    },
+    {
+     "file": "tools/skills/report/report.mjs",
+     "anchor": "build checks (7ef586d, M78)",
+     "date": "2026-11-17"
+    }
+   ],
+   "inForce": [
+    {
+     "text": "tools:skills/report/report.mjs",
+     "has": "effect.basis must be"
+    }
+   ],
+   "gap": "checked only in report pages; chat replies are text only"
+  },
+  {
+   "id": "R141",
+   "rule": "A report never asks the reader to act on history (changelog, git log, commits) without saying what current state was checked.",
+   "ru": "Просьба ко мне по журналу изменений только после проверки текущего состояния.",
+   "layer": "plugin",
+   "enforced": "test",
+   "enforcer": "tools/skills/report/report.mjs HISTORY check",
+   "complaints": [
+    "T11",
+    "board rule 4"
+   ],
+   "complaintChats": null,
+   "conflicts": [],
+   "status": "active",
+   "sources": [
+    {
+     "file": "tools/skills/report/report.mjs",
+     "anchor": "build checks (7ef586d, M78)",
+     "date": "2026-11-17"
+    }
+   ],
+   "inForce": [
+    {
+     "text": "tools:skills/report/report.mjs",
+     "has": "the source is history"
+    }
+   ]
+  },
+  {
+   "id": "R142",
+   "rule": "Secrets (tokens, keys, passwords) are never printed to a log, a reply or a report, including by a checking agent.",
+   "ru": "Секреты не печатать нигде: ни в лог, ни в ответ, ни в отчёт.",
+   "layer": "plugin",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [
+    "report rule 0"
+   ],
+   "complaintChats": null,
+   "conflicts": [],
+   "status": "active",
+   "sources": [
+    {
+     "file": "tools/skills/report/SKILL.md",
+     "anchor": "rule 0",
+     "date": "2026-11-17"
+    }
+   ],
+   "gap": "text only; secret-guard checks files written, not tool output or replies (a Haiku printed a bot token into its log, 2026-11-17)"
   }
  ],
  "industry": [

@@ -57,6 +57,8 @@ export async function textOf(ref) {
     const [kind, ...rest] = ref.split(':'), arg = rest.join(':');
     if (kind === 'gates') { const d = toolsDir(); return d ? String((await gates(d))[arg] ?? '') : ''; }
     if (kind === 'global') { const p = join(HOME, 'CLAUDE.md'); return existsSync(p) ? section(readFileSync(p, 'utf8'), arg) : ''; }
+    // A file of the installed makarasty-tools copy: a check that lives in a skill's script, not in a hook.
+    if (kind === 'tools') { const d = toolsDir(), p = d && join(d, arg); return p && existsSync(p) ? readFileSync(p, 'utf8') : ''; }
     if (kind === 'profile') { const p = join(HOME, 'makarasty', 'profile.md'); return existsSync(p) ? readFileSync(p, 'utf8') : ''; }
     if (kind === 'ponytail') {
         const d = installed('ponytail@ponytail');
