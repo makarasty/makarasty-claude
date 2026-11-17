@@ -134,10 +134,20 @@ export function render(/** @type {Item} */ item, now = Date.now(), /** @type {st
   ].filter(Boolean).join('\n')
 }
 
-/** The phone line: project, kind, the first question. One line, under ~300 chars. */
-export function pushText(/** @type {Item} */ item) {
-  const first = item.kind === 'ask' ? item.questions?.[0]?.question : item.kind === 'choice' ? item.ask : `start "${item.title}"?`
-  return cut(`${project(item.cwd)}: ${KIND[item.kind]} — ${first ?? ''}. Answer: /makarasty-tools:inbox`, 300)
+/**
+ * The phone message (notify.mjs ask): the project and the question, a button per option, and a reply when a free answer
+ * fits. Buttons only where one tap is a whole answer: a one-question ask that is not multi-select, or a box's actions.
+ * A card is started from the inbox chat (it needs a new session), and a multi-question ask needs every answer at once,
+ * so those come as text with no buttons.
+ */
+export function phoneAsk(/** @type {Item} */ item) {
+  const qs = item.questions ?? []
+  const one = item.kind === 'ask' && qs.length === 1 && !qs[0].multiSelect
+  const first = item.kind === 'ask' ? qs[0]?.question : item.kind === 'choice' ? item.ask : `start "${item.title}"?`
+  const options = one ? (qs[0].options ?? []).map((o) => o.label) : item.kind === 'choice' ? (item.actions ?? []) : []
+  const plainly = item.explain ? `\n\n${cut(item.explain, 600)}` : ''
+  const rest = item.kind === 'ask' && qs.length > 1 ? `\n(+${qs.length - 1} more question${qs.length > 2 ? 's' : ''}: answer in the inbox chat)` : item.kind === 'card' ? '\n(answer in the inbox chat)' : ''
+  return { item: item.id, text: `${project(item.cwd)}: ${KIND[item.kind]}\n${cut(first ?? '', 700)}${plainly}${rest}`, options, reply: one || item.kind === 'choice' }
 }
 
 /** What an AskUserQuestion hook returns for an inbox answer: the tool's own result shape, so the model reads it as the dialog's. */

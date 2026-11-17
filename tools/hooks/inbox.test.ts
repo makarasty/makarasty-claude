@@ -39,7 +39,7 @@ function world(on: On, o: { on?: boolean; session?: string; self?: string; child
   on('process.run', async (_$, e) => {
     const [, script, cmd, id] = e.argv
     cli.push(e.argv.slice(2) as string[])
-    expect(script).toMatch(/skills\/inbox\/inbox\.mjs$/)
+    expect(script).toMatch(/skills\/inbox\/inbox\.mjs$|hooks\/notify\.mjs$/)
     const ans = `/cfg/makarasty/inbox/answers/${id}.json`
     const ok = (stdout = '') => ({ value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } })
     if (cmd === 'wait') {
@@ -153,6 +153,22 @@ test('after 2 minutes an open item gets a plain explanation and one push', async
   await w.until(() => w.cli.some((c) => c[0] === 'push'), 'push')
   expect(w.items()[0].explain).toContain('спрашивает')
   expect(w.cli.filter((c) => c[0] === 'push')).toEqual([['push', 'chatA~toolu_4']])
+})
+
+test('a question open on the phone: the timer reads its taps once per 10 s, and not at all with none open', async ($, on) => {
+  const w = world(on)
+  const polls = () => w.cli.filter((c) => c[0] === 'poll').length
+  await $.tool.call({ tool: 'mcp__ccd_turn__wrap_up', recap: 'r', ask: 'Удалить старые отчёты?', actions: [{ label: 'Да' }], tool_use_id: 'toolu_ph' } as never) // starts the timer
+  await w.clock.advance(15000)
+  await new Promise((r) => setTimeout(r, 30))
+  expect(polls()).toBe(0) // nothing open
+  w.disk.set('/cfg/makarasty/notify-asks/open', '')
+  await w.clock.advance(15000)
+  await w.until(() => polls() === 1, 'poll')
+  w.disk.set('/cfg/makarasty/notify-asks/polled', String(1_000_000 + 30000 + 10000)) // another chat polls 5 s before this timer's next tick
+  await w.clock.advance(15000)
+  await new Promise((r) => setTimeout(r, 30))
+  expect(polls()).toBe(1)
 })
 
 test('no notify channel: the explanation is still written, but no push is tried and nothing says one went out', async ($, on) => {

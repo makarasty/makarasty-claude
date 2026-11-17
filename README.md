@@ -264,21 +264,19 @@ $ node tools/skills/prune/prune.mjs scan
 trash 0, ask 1, keep 1
 ```
 
-**`/makarasty-tools:notify [what you wait for]`** — "скинь в телеграм когда закончишь". Sends one message to
-your phone when this chat, another chat or a fleet run finishes: Telegram, Discord, ntfy or a webhook. Setup
-is one command in your own terminal; it saves the token to `~/.claude/makarasty/notify.json` only after a
-test message arrives, so the token never passes through a chat:
-
-```bash
-node <makarasty-tools installPath>/hooks/notify.mjs setup
-```
+**`/makarasty-tools:notify [what you wait for]`** — "скинь в телеграм когда закончишь". Sends one Telegram
+message when this chat, another chat or a fleet run finishes, and with the inbox on, sends its questions with a
+button per option that answers the chat from the phone. Say "настрой уведомления": the chat runs setup, which
+opens BotFather, puts a bot name on the clipboard, picks the token up from the clipboard when you tap it, and
+binds your chat when you press Start in the new bot. Four taps, nothing typed, and the token never passes
+through a chat (it lands in `~/.claude/makarasty/notify.json`). By hand: `node <makarasty-tools installPath>/hooks/notify.mjs setup`.
 
 **Real**, before setup:
 
 ```
 $ node tools/hooks/notify.mjs --arm --session demo-sid "tests on the billing branch"
 notify: armed - "tests on the billing branch"
-channels: none yet. The person runs "notify.mjs setup" in a terminal; the marker waits, and a finish that happens before that is delivered when a channel is saved.
+channels: none yet. Run "notify.mjs setup" (a chat can run it in the background); the marker waits, and a finish that happens before that is delivered when Telegram is connected.
 $ node tools/hooks/notify.mjs --status --session demo-sid
 notify: armed (tests on the billing branch, since 2026-11-11T21:32:50.101Z)
 ```

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// notify.mjs - one message to the operator's phone when a chat they walked away from ends its turn.
+// notify.mjs - Telegram messages from Claude Code chats: one when a chat the person walked away from ends its turn,
+// and the inbox's questions with buttons that answer them from the phone.
 //
 // A chat cannot tell whether a person is watching it, and a Stop hook fires at the end of every turn
 // either way. So the person arms it: `--arm` writes a marker for one session, the hook sends exactly one
@@ -7,42 +8,40 @@
 // nothing, ever.
 //
 //   node notify.mjs                        hook mode: the event on stdin; never blocks, never exits non-zero
-//   node notify.mjs setup                  a wizard in the terminal: pick a channel, paste the one value it
-//                                          needs, a test message must arrive, then it is saved. The token
-//                                          never passes through a chat, and no browser tab is opened.
+//   node notify.mjs setup                  connects the person's own Telegram bot. Needs no typing: it opens BotFather,
+//                                          puts the bot's username on the clipboard, picks the token up from the
+//                                          clipboard once the person taps it in Telegram (a line pasted on stdin works
+//                                          too), opens the new bot, and binds the chat that presses Start with a one-time
+//                                          code. A chat may run it in the background: the token never reaches its output.
 //   node notify.mjs --arm [--next] [--session <id>] [label]
 //                                          arm this session (CLAUDE_CODE_SESSION_ID) or another one.
 //                                          --next: fire at the end of the NEXT turn, not the one arming it
 //   node notify.mjs --disarm [--session <id>]
-//   node notify.mjs --status               armed or not, and which channels are configured
-//   node notify.mjs --test                 send a test line to every configured channel
+//   node notify.mjs --status               armed or not, and whether Telegram is connected
+//   node notify.mjs --test                 send a test line
 //   node notify.mjs send <text>            send one message now (fleet.sh landed uses this)
+//   node notify.mjs ask                    stdin {item, text, options?, reply?}: one message with a button per option
+//                                          (and, with reply, "or reply to this message"); prints the message id
+//   node notify.mjs poll                   reads the taps and replies, answers those items through inbox.mjs, marks
+//                                          each message with what was sent, and closes messages whose item was
+//                                          answered on the computer. The inbox hook runs it while an ask is open.
 //
-// Channels live in ~/.claude/makarasty/notify.json (CLAUDE_CONFIG_DIR honoured), outside every repository.
-// The setup wizard writes it; by hand it is:
-//   {
-//     "telegram": { "token": "123456:ABC...", "chat_id": "42" },   chat_id may be left out: whoever
-//                                                                  messaged the bot last fills it in (the
-//                                                                  wizard names that person and asks first)
-//     "discord":  { "url": "https://discord.com/api/webhooks/...", "everyone": true },
-//     "ntfy":     "https://ntfy.sh/<an-unguessable-topic>",
-//     "webhook":  "https://hooks.slack.com/services/...",          any URL that takes POST {"text": "..."}
-//     "excerpt":  true                                              see below
-//   }
-// Every key is optional; every configured one gets every message. A plain string under "discord" is
-// read as the URL with no mention. A value that is not a string, or not an http(s) URL, is left out with
-// a line that names the key and never the value: the value is a secret, and the line can land in a chat.
-// For the same reason every error text has its URLs and bot tokens blanked before it is printed or stored.
+// The channel lives in ~/.claude/makarasty/notify.json (CLAUDE_CONFIG_DIR honoured), outside every repository:
+//   { "telegram": { "token": "123456:ABC...", "chat_id": "42" }, "excerpt": true }
+// A token that does not look like a bot token is left out with a line that names the key and never the value: the
+// value is a secret, and the line can land in a chat. For the same reason every error text has its URLs and bot
+// tokens blanked before it is printed or stored. Only the bound chat_id is ever answered: a tap or a reply from
+// anyone else who finds the bot does nothing.
 //
-// The excerpt - the last 500 characters of the chat's final message - can carry code, data or secrets the
-// chat printed, so by default only the status line goes out. It is opt-in: MAKARASTY_NOTIFY_EXCERPT=1 in the
+// What leaves the machine: the status line ("<project>: <label> finished after 12 min"), and for an inbox ask the
+// question and its options. Not the chat's transcript. The excerpt - the last 500 characters of the chat's final
+// message - can carry code, data or secrets the chat printed, so it is opt-in: MAKARASTY_NOTIFY_EXCERPT=1 in the
 // environment, or "excerpt": true in notify.json ("excerpt": false wins over the variable). When on, the
 // message first passes through redactExcerpt(), which blanks: URLs; Telegram bot tokens; Discord webhooks;
 // sk-/sk-ant-, sk_live_/sk_test_, gh*_ and github_pat_ keys; AKIA/ASIA ids; xox* tokens; AIza keys; JWTs
 // (eyJ...eyJ); ntfy topics; PRIVATE KEY blocks; and the value after api_key / secret / token / password
 // followed by : or =, when the value is quoted or is 8+ characters with no space and a digit (prose such as
-// "the token: refresh now rotates" is left alone). Anything else a chat printed still goes out. The excerpt never goes to the public
-// ntfy.sh server (www.ntfy.sh, ntfy.sh:443 and ntfy.sh. are the same server).
+// "the token: refresh now rotates" is left alone). Anything else a chat printed still goes out.
 //
 // What the hook does with an armed session:
 //   Stop          send "<project>: <label> finished" plus the end of the last message, then disarm.
@@ -62,9 +61,7 @@
 //   Notification  permission_prompt and the other "needs a person" kinds: one ping per five minutes,
 //                 marker kept, because the work is not done.
 //   Finished, error and needs-you texts say how long the work has run ("finished after 12 min"; under a
-//                 minute, nothing).
-//                 ntfy also gets a Priority and Tags header per kind: finished default + white_check_mark,
-//                 needs you high + warning, error high + x. Telegram and Discord have the words only.
+//                 minute, nothing), and start with a mark a lock screen shows at a glance: ✅, ⚠️, ❌.
 //   A --next marker ignores Stop, StopFailure and Notification until the next prompt makes it live.
 //   SessionStart  source resume only. A message that was written but never delivered is sent now, and
 //                 a chat reopened before it finished is told, in context, to check whether the work is
@@ -77,49 +74,44 @@
 //   SessionEnd    reason clear only: the person typed /clear, so they are at the screen and the old
 //                 conversation will not finish on its own; its marker goes. Every other end keeps it. An
 //                 armed chat that is closed (or whose app crashed) still owes its finish on resume, and an
-//                 undelivered finish still goes out at the next resume or when the wizard saves a channel.
+//                 undelivered finish still goes out at the next resume or when setup saves the channel.
 //
-// Cost: the hook command in plugin.json only starts node when a marker file exists in this config dir, so
-// a session nobody armed pays one shell glob per event and never a node start. A marker is removed on
-// delivery; one older than seven days is pruned by every hook run and every --arm, so a chat that died
-// unreopened cannot keep that guard open for every session for good.
+// Cost: the function hook in gates.ts only starts node when this session has a marker, so a session nobody armed
+// never pays a node start. A marker is removed on delivery; one older than seven days is pruned by every hook run
+// and every --arm.
 //
 // A marker is written to a temp file and renamed into place, and after a send the hook re-reads it and
 // touches it only if it is still the same arming: a re-arm or disarm made while a slow send was running
 // is newer, and wins.
 //
 // A finish that could not be delivered - no channel yet, network down - stays on disk as the marker, and
-// goes out at the next chance: the chat reopening, or the setup wizard saving a channel.
+// goes out at the next chance: the chat reopening, or setup saving the channel.
 //
 // Network: a transient failure (network, 5xx, 429) is retried while the hook's time budget lasts - 15 s,
 // under the 20 s hook timeout, and 4 s at SessionStart, which the chat waits on.
 //
-// NOTIFY_DRY_RUN=<file> appends what would be sent to that file instead of sending. The self-test uses it.
+// Test seams: NOTIFY_DRY_RUN=<file> appends what would be sent to that file instead of sending; NOTIFY_TELEGRAM_API
+// replaces https://api.telegram.org; NOTIFY_CLIPBOARD=<file> is read as the clipboard; NOTIFY_INBOX is the inbox.mjs
+// that poll answers through; NOTIFY_NO_OPEN=1 opens no Telegram link.
 
 import { readFileSync, writeFileSync, appendFileSync, mkdirSync, rmSync, readdirSync, statSync, renameSync, openSync, readSync, fstatSync, closeSync, existsSync } from 'node:fs';
-import { join, basename } from 'node:path';
+import { join, basename, dirname } from 'node:path';
 import { homedir, hostname } from 'node:os';
 import { randomBytes } from 'node:crypto';
+import { execFileSync, spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
-type Channel = 'telegram' | 'discord' | 'ntfy' | 'webhook';
-type SetupChannel = 'telegram' | 'discord' | 'ntfy';
 interface Config {
   telegram?: { token: string; chat_id?: string };
-  discord?: { url: string; everyone: boolean };
-  ntfy?: string;
-  webhook?: string;
   excerpt?: boolean;
 }
 // notify.json as a hand may have written it: every value can be any JSON.
 interface RawConfig {
   telegram?: { token?: unknown; chat_id?: unknown };
-  discord?: string | { url?: unknown; everyone?: unknown };
-  ntfy?: unknown;
-  webhook?: unknown;
   excerpt?: unknown;
 }
 interface Failure { name: string; error: string }
-interface Result { sent: string[]; failed: Failure[] }
+interface Result { sent: string[]; failed: Failure[]; message_id?: number }
 interface Marker {
   armed: string;
   label: string;
@@ -152,19 +144,31 @@ interface HookEvent {
   reason?: string;
 }
 interface TgMessage {
-  chat?: { id?: number; title?: string };
-  from?: { first_name?: string; last_name?: string; username?: string };
+  message_id: number;
+  chat: { id: number };
+  from?: { id: number };
+  text?: string;
+  reply_to_message?: { message_id: number };
 }
-interface TgUpdate { message?: TgMessage; my_chat_member?: TgMessage }
+interface TgUpdate {
+  update_id: number;
+  message?: TgMessage;
+  callback_query?: { id: string; from: { id: number }; data?: string; message?: TgMessage };
+}
+// One open inbox ask on the phone, by its Telegram message id.
+interface Ask { item: string; text: string; options: string[]; reply: boolean; at: string }
 
+const here = dirname(fileURLToPath(import.meta.url));
 const home = process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude');
 const dir = join(home, 'makarasty');
 const configFile = join(dir, 'notify.json');
 const markerDir = join(dir, 'notify');
+const asksDir = join(dir, 'notify-asks');
 const markerFile = (session: string) => join(markerDir, `${session}.json`);
 const validSession = (s: unknown): s is string => typeof s === 'string' && /^[\w-]+$/.test(s); // a path would reach the config file
 const now = () => new Date().toISOString();
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const API = () => (process.env.NOTIFY_TELEGRAM_API || 'https://api.telegram.org').replace(/\/+$/, '');
 
 // Windows refuses a rename over a file another process has open, or one an antivirus is scanning, with
 // EPERM, EBUSY or EACCES, and a read in that instant fails the same way. Both are momentary: wait 20 ms and
@@ -176,7 +180,7 @@ const readJSON = <T,>(file: string): T | null => {
     try { return JSON.parse(readFileSync(file, 'utf8')); } catch (e) { if (!busy(e) || i >= 1) return null; pause(20); }
   }
 };
-// Temp file and rename: a reader never sees half a file, and the guard's *.json glob never sees the temp.
+// Temp file and rename: a reader never sees half a file, and a *.json listing never sees the temp.
 // A rename still refused after five tries falls back to writing the file in place: a marker that might be
 // read half-written for a moment beats a throw that loses the finish.
 const writeJSON = (file: string, o: unknown) => {
@@ -191,8 +195,8 @@ const writeJSON = (file: string, o: unknown) => {
   rmSync(tmp, { force: true });
 };
 
-// Error text can carry the request URL (fetch's "Failed to parse URL from <url>") and so a webhook token,
-// a topic or a bot token. It is printed where a chat reads it and stored in the marker, so it passes here.
+// Error text can carry the request URL (fetch's "Failed to parse URL from <url>") and so a bot token. It is printed
+// where a chat reads it and stored in the marker, so it passes here.
 const redact = (s: unknown) => String(s).replace(/https?:\/\/\S+/gi, '<url>').replace(/\b\d{5,}:[\w-]{20,}/g, '<token>');
 // The excerpt is free text: redact() plus the token shapes of the commit skill's secret scan and `key: value` pairs.
 const SECRET_SHAPES = [
@@ -211,48 +215,33 @@ const redactExcerpt = (s: string) => SECRET_SHAPES.reduce((t, re) => t.replace(r
   .replace(/(api[_-]?key|secret|token|password)([ \t]*[:=][ \t]*)("[^"\n]+"|'[^'\n]+'|\S+)/gi,
     (all, k: string, sep: string, v: string) => (/^["']/.test(v) || (v.length >= 8 && /\d/.test(v)) ? `${k}${sep}<redacted>` : all));
 
-// One shape on disk whatever the wizard or a hand wrote. A bad value is dropped with a line naming the key.
 const str = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
-const isURL = (s: string) => { try { return /^https?:$/.test(new URL(s).protocol); } catch { return false; } };
+const TOKEN = /^\d+:[\w-]{20,}$/;
 function normalise(o: RawConfig, warn = (m: string) => console.error(`notify: ${m}`)): Config {
   const c: Config = {};
-  const url = (key: string, v: string) => { if (!v || isURL(v)) return v; warn(`the ${key} value is not an http(s) URL, so it is left out`); return ''; };
-  // Present but not a string ({"ntfy": {"url": ...}}) is a mistake to name, not a channel to drop quietly.
-  const text = (key: string, v: unknown) => { if (v === undefined || v === null || typeof v === 'string') return str(v); warn(`the ${key} value is not a string, so it is left out`); return ''; };
-  const token = text('telegram token', o.telegram?.token);
-  const chat = o.telegram?.chat_id;
-  if (token && !/^\d+:[\w-]+$/.test(token)) warn('the telegram token does not look like a bot token (digits:letters), so it is left out');
+  const t = o.telegram?.token;
+  if (t !== undefined && t !== null && typeof t !== 'string') warn('the telegram token is not a string, so it is left out');
+  const token = str(t), chat = o.telegram?.chat_id;
+  if (token && !TOKEN.test(token)) warn('the telegram token does not look like a bot token (digits:letters), so it is left out');
   else if (token) c.telegram = { token, ...(typeof chat === 'number' || str(chat) ? { chat_id: String(chat).trim() } : {}) };
-  const d = typeof o.discord === 'string' ? { url: o.discord, everyone: false } : o.discord;
-  if (d !== undefined && d !== null && typeof d !== 'object') warn('the discord value is not a string or an object, so it is left out');
-  const du = url('discord', text('discord url', d?.url));
-  if (du) c.discord = { url: du, everyone: d!.everyone !== false };
-  // A bare word is a topic on the public server; anything with a dot, slash or colon is a host someone typed
-  // without the scheme.
-  let t = text('ntfy', o.ntfy);
-  if (t && !/^https?:\/\//i.test(t)) t = (/[./:]/.test(t) ? 'https://' : 'https://ntfy.sh/') + t;
-  t = url('ntfy', t);
-  if (t) c.ntfy = t;
-  const w = url('webhook', text('webhook', o.webhook));
-  if (w) c.webhook = w;
   if (typeof o.excerpt === 'boolean') c.excerpt = o.excerpt;
   return c;
 }
 const config = () => normalise(readJSON<RawConfig>(configFile) || {});
-const CHANNELS: Channel[] = ['telegram', 'discord', 'ntfy', 'webhook'];
-const channels = (cfg: Config) => CHANNELS.filter((k) => cfg[k]);
-// By host, not by string prefix: www.ntfy.sh, ntfy.sh:443, ntfy.sh. and NTFY.SH are all the public server.
-const publicNtfy = (u: string) => { try { return new URL(u).hostname.replace(/\.$/, '').replace(/^www\./, '') === 'ntfy.sh'; } catch { return true; } };
-const withExcerpt = (cfg: Config, name: string) => (cfg.excerpt ?? process.env.MAKARASTY_NOTIFY_EXCERPT === '1') && !(name === 'ntfy' && publicNtfy(cfg.ntfy!));
+// Connected means a token and the chat bound at setup. A token alone answers nobody: whoever wrote to the bot last
+// could be a stranger who found it.
+const connected = (cfg: Config) => !!cfg.telegram?.chat_id;
+const withExcerpt = (cfg: Config) => cfg.excerpt ?? process.env.MAKARASTY_NOTIFY_EXCERPT === '1';
+const SETUP_HINT = `Telegram is not connected yet: ask any chat "настрой уведомления" (it runs "notify.mjs setup")`;
 
 // Every request shares one deadline, so retries can never outlast the hook's own timeout.
 let deadline = Infinity;
 const left = () => deadline - Date.now();
 
 // A transient failure (network, 5xx, 429) is retried up to twice; any other 4xx is the config's fault.
-async function post(url: string, body: string, headers: Record<string, string>): Promise<Response> {
+async function post(url: string, body: string, headers: Record<string, string>, ms0 = 6000): Promise<Response> {
   for (let i = 0; ; i++) {
-    const ms = Math.min(6000, left());
+    const ms = Math.min(ms0, left());
     try {
       if (ms < 500) throw Object.assign(new Error('out of time'), { final: true });
       const r = await fetch(url, { method: 'POST', headers, body, signal: AbortSignal.timeout(ms) });
@@ -267,63 +256,37 @@ async function post(url: string, body: string, headers: Record<string, string>):
   }
 }
 
-async function telegram<T = unknown>(token: string, method: string, body?: object): Promise<T> {
-  const r = await post(`https://api.telegram.org/bot${token}/${method}`, JSON.stringify(body || {}), { 'content-type': 'application/json' });
+async function telegram<T = unknown>(token: string, method: string, body?: object, ms = 6000): Promise<T> {
+  const r = await post(`${API()}/bot${token}/${method}`, JSON.stringify(body || {}), { 'content-type': 'application/json' }, ms);
   const o = await r.json() as { ok: boolean; description?: string; result: T };
   if (!o.ok) throw new Error(o.description || `${r.status}`);
   return o.result;
 }
 
-// The chat of whoever messaged the bot last, with a name for the wizard to show: a bot anyone can find may
-// have heard from someone else first.
-async function telegramChat(token: string) {
-  for (const u of (await telegram<TgUpdate[]>(token, 'getUpdates')).reverse()) {
-    const up = u.message ?? u.my_chat_member;
-    if (up?.chat?.id === undefined) continue;
-    const f = up.from || {};
-    const name = up.chat.title || [f.first_name, f.last_name].filter(Boolean).join(' ') || 'someone';
-    return { id: String(up.chat.id), name: f.username ? `${name} (@${f.username})` : name };
-  }
-  throw new Error('the bot has not heard from you yet: open it in Telegram, press Start, then try again');
-}
+// ✅ ⚠️ ❌: what kind of message it is, before a word of it is read on a lock screen.
+type Kind = 'done' | 'wait' | 'fail';
+const MARK: Record<Kind, string> = { done: '✅ ', wait: '⚠️ ', fail: '❌ ' };
 
-// Returns { sent: [names], failed: [{ name, error }] }. Partial delivery counts as delivered. A Telegram
-// chat_id learnt on the way is written into cfg, and into the file when cfg came from it. The excerpt goes
-// under the text on the channels withExcerpt allows.
-async function sendWith(cfg: Config, text: string, persist: boolean, excerpt = '', kind?: Kind): Promise<Result> {
-  const full = (name: string) => (excerpt && withExcerpt(cfg, name) ? `${text}\n${excerpt}` : text);
+// One message to the bound chat. extra goes into sendMessage as is (the ask's buttons).
+async function sendWith(cfg: Config, text: string, excerpt = '', kind?: Kind, extra: object = {}): Promise<Result> {
+  const body = (kind ? MARK[kind] : '') + (excerpt && withExcerpt(cfg) ? `${text}\n${excerpt}` : text);
   const dry = process.env.NOTIFY_DRY_RUN;
   if (dry) {
-    const names = channels(cfg);
-    const line = excerpt && (!names.length || names.some((n) => withExcerpt(cfg, n))) ? `${text}\n${excerpt}` : text;
-    try { appendFileSync(dry, line.replace(/\n/g, ' | ') + '\n'); return { sent: ['dry-run'], failed: [] }; }
+    try { appendFileSync(dry, body.replace(/\n/g, ' | ') + '\n'); return { sent: ['dry-run'], failed: [], message_id: 0 }; }
     catch (e) { return { sent: [], failed: [{ name: 'dry-run', error: (e as Error).message }] }; }
   }
+  if (!connected(cfg)) return { sent: [], failed: [{ name: 'config', error: `${SETUP_HINT} (${configFile})` }] };
   if (typeof fetch !== 'function') return { sent: [], failed: [{ name: 'node', error: 'node 18 or newer is needed' }] };
-  const json = { 'content-type': 'application/json' };
-  const jobs: Record<Channel, () => Promise<unknown>> = {
-    telegram: async () => {
-      const t = cfg.telegram!;
-      if (!t.chat_id) { t.chat_id = (await telegramChat(t.token)).id; if (persist) writeJSON(configFile, cfg); }
-      await telegram(t.token, 'sendMessage', { chat_id: t.chat_id, text: full('telegram').slice(0, 4000), disable_web_page_preview: true });
-    },
-    discord: () => post(cfg.discord!.url, JSON.stringify({
-      content: (cfg.discord!.everyone ? '@everyone ' : '') + full('discord').slice(0, 1900),
-      allowed_mentions: { parse: cfg.discord!.everyone ? ['everyone'] : [] },
-    }), json),
-    ntfy: () => post(cfg.ntfy!, full('ntfy').slice(0, 4000), { Title: 'Claude Code', ...(kind && NTFY_KIND[kind]), 'content-type': 'text/plain; charset=utf-8' }),
-    webhook: () => post(cfg.webhook!, JSON.stringify({ text: full('webhook').slice(0, 4000) }), json),
-  };
-  const names = channels(cfg);
-  const results = await Promise.allSettled(names.map((n) => jobs[n]()));
-  const out: Result = { sent: [], failed: [] };
-  results.forEach((r, i) => (r.status === 'fulfilled' ? out.sent.push(names[i]) : out.failed.push({ name: names[i], error: redact(r.reason?.message || r.reason) })));
-  if (!names.length) out.failed.push({ name: 'config', error: `no channel yet: run "notify.mjs setup" in a terminal (${configFile})` });
-  return out;
+  try {
+    const m = await telegram<{ message_id: number }>(cfg.telegram!.token, 'sendMessage', { chat_id: cfg.telegram!.chat_id, text: body.slice(0, 4000), disable_web_page_preview: true, ...extra });
+    return { sent: ['telegram'], failed: [], message_id: m.message_id };
+  } catch (e) {
+    return { sent: [], failed: [{ name: 'telegram', error: redact((e as Error)?.message || e) }] };
+  }
 }
-const send = (text: string, excerpt?: string, kind?: Kind) => sendWith(config(), text, true, excerpt, kind);
+const send = (text: string, excerpt?: string, kind?: Kind) => sendWith(config(), text, excerpt, kind);
 
-// Finishes that were written but never delivered, sent now. The wizard saving a channel and a reopened
+// Finishes that were written but never delivered, sent now. Setup saving the channel and a reopened
 // chat both call this. A marker whose send is still running (done written, no unsent yet) is another
 // hook's job: it is skipped for a minute, after which its hook is past its 20 s timeout and dead. own is
 // the reopened chat's own marker, which no other hook can be sending. Two chats reopened at once both flush:
@@ -348,7 +311,7 @@ async function flushUnsent(cfg: Config, own?: string) {
     const claim = `${file}.flushing-${Date.now()}`;
     try { renameSync(file, claim); } catch { continue; } // another chat claimed it
     if (readJSON<Marker>(claim)?.armed !== m.armed) { putBack(claim, file); continue; } // re-armed meanwhile
-    const r = await sendWith(cfg, `${m.text}\n(finished at ${m.done}; this could not be delivered at the time)`, false, m.excerpt, 'done');
+    const r = await sendWith(cfg, `${m.text}\n(finished at ${m.done}; this could not be delivered at the time)`, m.excerpt, 'done');
     if (r.sent.length) { n++; rmSync(claim, { force: true }); }
     else putBack(claim, file); // a newer arming that took the name wins; this finish then stays undelivered
   }
@@ -358,14 +321,6 @@ async function flushUnsent(cfg: Config, own?: string) {
 // The marker as it is on disk now, if it is still the arming this process read. A send can take seconds,
 // and a re-arm or a disarm made meanwhile is newer than what this process holds, so it must win.
 const still = (file: string, m: Marker) => { const cur = readJSON<Marker>(file); return cur && cur.armed === m.armed ? cur : null; };
-// ntfy's phone-side look per kind of message (header names and values: docs.ntfy.sh/publish, "Message
-// priority" and "Tags & emojis"). A message with no kind - paused, test, send - gets ntfy's defaults.
-type Kind = 'done' | 'wait' | 'fail';
-const NTFY_KIND: Record<Kind, Record<string, string>> = {
-  done: { Priority: 'default', Tags: 'white_check_mark' },
-  wait: { Priority: 'high', Tags: 'warning' },
-  fail: { Priority: 'high', Tags: 'x' },
-};
 // " after 12 min" since the work began: the resume of a reopened chat (the closed time is not work), else the
 // prompt that made a --next marker live, else the arming. Under a minute it says nothing.
 function elapsed(m: Marker) {
@@ -374,8 +329,8 @@ function elapsed(m: Marker) {
 }
 const recent = (ts: string | undefined) => !!ts && Date.now() - Date.parse(ts) < 5 * 60 * 1000;
 
-// A marker older than seven days belongs to a chat that died unreopened. Left alone it keeps the shell guard
-// in plugin.json open, and node starting, on every hook of every session.
+// A marker older than seven days belongs to a chat that died unreopened. Left alone it keeps the guard in gates.ts
+// open, and node starting, on every hook of that session.
 function prune() {
   let files: string[] = []; try { files = readdirSync(markerDir); } catch { return; }
   for (const f of files) {
@@ -420,9 +375,9 @@ function lastFromTranscript(file: string | undefined) {
 // does show it is the transcript: Claude Code writes the block as a user line "Stop hook feedback: ..."
 // and the turn goes on. So the caller waits a moment, and this reads back from the end: a feedback line
 // reached before this turn's own last message means the turn was blocked, and its real end is a later Stop.
-// A real prompt from the person, or the start of the file, ends the search. shortcut: finds this turn's
-// message by its text and trusts the transcript to be written within the wait; if it ever lags past that
-// after an earlier block in the same turn, the finish reads as blocked and is not sent.
+// A real prompt from the person, or the start of the file, ends the search. It finds this turn's message by its
+// text and trusts the transcript to be written within the wait; if it ever lags past that after an earlier block
+// in the same turn, the finish reads as blocked and is not sent.
 function blockedBy(file: string | undefined, last: string) {
   if (!file || !last) return false;
   const lines = transcript(file);
@@ -525,93 +480,194 @@ async function hook() {
   }
 }
 
-// ---- setup: a wizard in the terminal, so a token goes keyboard -> this process -> file and nowhere else ----
-// No browser tab: one node process for as long as the person is typing, then nothing.
+// ---- the inbox's questions on the phone ----
 
-const STEPS = {
-  telegram: [
-    'Open @BotFather in Telegram (https://t.me/BotFather) and send /newbot.',
-    'Answer its two questions: a name, then a username ending in "bot".',
-    'Copy the token it gives you. It looks like 123456789:ABC...',
-  ],
-  discord: [
-    'Make a private server for yourself, or pick a channel nobody else reads.',
-    'Channel settings (the gear) > Integrations > Webhooks > New Webhook > Copy Webhook URL.',
-  ],
-  ntfy: [
-    'Install the ntfy app: Android https://play.google.com/store/apps/details?id=io.heckel.ntfy',
-    '                      iPhone  https://apps.apple.com/app/ntfy/id1625396347',
-    'In the app press + and subscribe to the topic below. The topic is your password: keep it to yourself.',
-  ],
-};
+const askFile = (msg: number | string) => join(asksDir, `${msg}.json`);
+const openFlag = join(asksDir, 'open'); // the inbox hook polls only while this exists
+const inboxJs = () => process.env.NOTIFY_INBOX || join(here, '..', 'skills', 'inbox', 'inbox.mjs');
 
-async function setup() {
-  // Lines are queued rather than asked for one at a time, so a pipe that delivers every answer at once
-  // (the self-test) and a person typing them get the same treatment. readline's own question() drops a
-  // line that arrives while no question is pending.
-  const { createInterface } = await import('node:readline');
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
-  const queue: string[] = []; let waiter: ((l: string | null) => void) | null = null; let ended = false;
-  rl.on('line', (l) => { if (waiter) { const w = waiter; waiter = null; w(l); } else queue.push(l); });
-  rl.on('close', () => { ended = true; if (waiter) { const w = waiter; waiter = null; w(null); } });
-  const ask = async (q: string, def = '') => {
-    process.stdout.write(`${q}${def ? ` [${def}]` : ''}: `);
-    const a = queue.length ? queue.shift()! : ended ? null : await new Promise<string | null>((r) => { waiter = r; });
-    if (a === null) throw new Error('no input');
-    return a.trim() || def;
-  };
-  const say = (...l: string[]) => console.log(l.join('\n'));
-  const warn = (m: string) => say(`  ${m}`);
-  const cfg = config();
-  const test = `test from Claude Code on ${hostname()}: this channel works`;
+async function ask() {
+  let a: Partial<Ask>;
+  try { a = JSON.parse(readFileSync(0, 'utf8')); } catch { console.error('notify: ask wants {item, text, options?, reply?} on stdin'); return 2; }
+  if (typeof a.item !== 'string' || !a.item || typeof a.text !== 'string') { console.error('notify: ask wants {item, text, options?, reply?} on stdin'); return 2; }
+  const options = (Array.isArray(a.options) ? a.options : []).map((o) => String(o).trim()).filter(Boolean).slice(0, 8);
+  const text = a.text + (a.reply ? `\n\n${options.length ? 'Tap an answer, or reply' : 'Reply'} to this message with your own.` : '');
+  // callback_data is the option's index: Telegram caps it at 64 bytes, and the label is kept on disk by message id.
+  const keyboard = options.length ? { reply_markup: { inline_keyboard: options.map((o, i) => [{ text: o.slice(0, 60), callback_data: String(i) }]) } } : {};
+  const r = await sendWith(config(), text, '', undefined, keyboard);
+  if (!r.sent.length) return report(r);
+  if (r.message_id) { writeJSON(askFile(r.message_id), { item: a.item, text, options, reply: !!a.reply, at: now() } satisfies Ask); writeFileSync(openFlag, ''); }
+  console.log(`notify: asked, message ${r.message_id}`);
+  return 0;
+}
+
+// Answers one item through the inbox, as `inbox.mjs answer` does for the inbox chat. Returns the line to show.
+function answerItem(item: string, text: string): { ok: boolean; line: string } {
   try {
-    say('', 'Claude Code notifications - setup', channels(cfg).length ? `configured now: ${channels(cfg).join(', ')}` : '', '');
-    for (;;) {
-      const pick = await ask('Which channel? 1 Telegram, 2 Discord, 3 ntfy (no account, quickest)', '1');
-      const ch = ({ 1: 'telegram', 2: 'discord', 3: 'ntfy' } as Record<string, SetupChannel | undefined>)[pick];
-      if (!ch) continue;
-      say('', ...STEPS[ch].map((l, i) => `  ${i + 1}. ${l}`), '');
-      let one;
-      if (ch === 'telegram') {
-        const token = await ask('Paste the token');
-        let me; try { me = await telegram<{ username: string }>(token, 'getMe'); } catch (e) { say(`  that token was refused: ${redact((e as Error).message)}`, ''); continue; }
-        say(`  Your bot is @${me.username}. Open https://t.me/${me.username} and press Start.`);
-        await ask('Press Enter once you have pressed Start');
-        // The chat is whoever wrote to the bot last, and a bot can be found by anyone: name them, ask first.
-        let chat; try { chat = await telegramChat(token); } catch (e) { say(`  ${redact((e as Error).message)}`, ''); continue; }
-        if (!/^y/i.test(await ask(`Messages will go to ${chat.name}. Is that you? y/n`, 'y'))) {
-          say('  Then press Start (or send any message) to the bot from your own account, and pick Telegram again.', ''); continue;
+    const out = execFileSync(process.execPath, [inboxJs(), 'answer', item], { input: text, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], timeout: 20000 });
+    const line = out.trim().split('\n').pop() ?? '';
+    return { ok: !/NOT SENT/.test(line), line: line.replace(/^inbox: /, '') };
+  } catch (e) {
+    const x = e as { stdout?: string; stderr?: string; message: string };
+    return { ok: false, line: (String(x.stdout || '').trim() || String(x.stderr || '').trim() || x.message).split('\n')[0].replace(/^inbox: /, '') };
+  }
+}
+
+// One poll at a time across every chat: a lock file, taken from a dead poll after a minute.
+function lock() {
+  mkdirSync(asksDir, { recursive: true });
+  const f = join(asksDir, 'poll.lock');
+  for (let i = 0; i < 2; i++) {
+    try { writeFileSync(f, String(Date.now()), { flag: 'wx' }); return () => rmSync(f, { force: true }); }
+    catch { try { if (Date.now() - statSync(f).mtimeMs > 60e3) rmSync(f, { force: true }); else return null; } catch { /* gone meanwhile */ } }
+  }
+  return null;
+}
+
+async function poll() {
+  const cfg = config();
+  if (!connected(cfg)) return 0;
+  const release = lock();
+  if (!release) return 0;
+  const { token } = cfg.telegram!;
+  const me = cfg.telegram!.chat_id!;
+  const tg = (method: string, body: object) => telegram(token, method, { chat_id: me, ...body }).catch(() => undefined);
+  const close = async (msg: number, a: Ask, note: string) => { await tg('editMessageText', { message_id: msg, text: `${a.text}\n\n${note}` }); rmSync(askFile(msg), { force: true }); };
+  deadline = Date.now() + 25000;
+  try {
+    writeFileSync(join(asksDir, 'polled'), String(Date.now()));
+    const offsetFile = join(asksDir, 'offset');
+    const offset = Number((() => { try { return readFileSync(offsetFile, 'utf8'); } catch { return '0'; } })()) || 0;
+    const ups = await telegram<TgUpdate[]>(token, 'getUpdates', { offset, timeout: 0, allowed_updates: ['message', 'callback_query'] });
+    // The offset moves on after each update is acted on, in finally so a skipped one moves it too. A repeat after a
+    // crash is refused by the inbox as already answered.
+    for (const u of ups) try {
+      const cq = u.callback_query, msg = u.message;
+      if (cq) {
+        if (String(cq.from.id) !== me) { await telegram(token, 'answerCallbackQuery', { callback_query_id: cq.id, text: 'Not your bot.' }).catch(() => undefined); continue; }
+        const id = cq.message?.message_id ?? 0, a = readJSON<Ask>(askFile(id)), pick = a?.options[Number(cq.data)];
+        if (!a || pick === undefined) {
+          await telegram(token, 'answerCallbackQuery', { callback_query_id: cq.id, text: 'This question is already closed.' }).catch(() => undefined);
+          await tg('editMessageReplyMarkup', { message_id: id, reply_markup: { inline_keyboard: [] } });
+          continue;
         }
-        one = normalise({ telegram: { token, chat_id: chat.id } }, warn);
-      } else if (ch === 'discord') {
-        const url = await ask('Paste the webhook URL');
-        if (!url) { say('  nothing entered', ''); continue; }
-        const buzz = await ask('Mention @everyone so the phone buzzes? y/n (yes on a private server)', 'y');
-        one = normalise({ discord: { url, everyone: /^y/i.test(buzz) } }, warn);
-      } else {
-        const topic = 'claude-' + randomBytes(8).toString('base64url').replace(/[^a-zA-Z0-9]/g, 'x');
-        say(`  topic: ${topic}`);
-        one = normalise({ ntfy: await ask('Press Enter once subscribed, or type a topic of your own', topic) }, warn);
+        const r = answerItem(a.item, pick);
+        await telegram(token, 'answerCallbackQuery', { callback_query_id: cq.id, text: r.ok ? 'Sent to the chat.' : r.line.slice(0, 190) }).catch(() => undefined);
+        await close(id, a, r.ok ? `➡️ ${pick}` : `➡️ ${pick}\n(${r.line})`);
+      } else if (msg && String(msg.chat.id) === me && msg.text && !msg.text.startsWith('/')) {
+        const id = msg.reply_to_message?.message_id, a = id ? readJSON<Ask>(askFile(id)) : null;
+        if (!a || !a.reply) { await tg('sendMessage', { text: 'To answer a question, tap one of its buttons or reply to that message (swipe it left).', reply_to_message_id: msg.message_id }); continue; }
+        const r = answerItem(a.item, msg.text);
+        await tg('sendMessage', { text: r.ok ? 'Sent to the chat.' : r.line, reply_to_message_id: msg.message_id });
+        await close(id!, a, `➡️ ${msg.text}${r.ok ? '' : `\n(${r.line})`}`);
       }
-      if (!channels(one).length) { say('  not saved: pick the channel again', ''); continue; }
-      const r = await sendWith(one, test, false);
-      if (!r.sent.length) { say(`  not delivered: ${r.failed.map((x) => x.error).join('; ')}`, '  Fix that and pick the channel again.', ''); continue; }
-      Object.assign(cfg, one);
-      writeJSON(configFile, cfg);
-      say(`  delivered - check your phone. Saved ${ch} to ${configFile}`, '');
-      const flushed = await flushUnsent(cfg);
-      if (flushed) say(`  and ${flushed} message(s) that were waiting for a channel went out now`, '');
-      if (!/^y/i.test(await ask('Add another channel? y/n', 'n'))) break;
+    } finally { writeFileSync(offsetFile, String(u.update_id + 1)); }
+    // An ask answered on the computer, or gone, or a day old, loses its buttons, so a tap cannot land on a closed item.
+    const inbox = join(dir, 'inbox');
+    let open = 0;
+    for (const f of readdirSync(asksDir).filter((x) => /^\d+\.json$/.test(x))) {
+      const id = Number(f.slice(0, -5)), a = readJSON<Ask>(askFile(id));
+      if (!a) continue;
+      const done = existsSync(join(inbox, 'answers', `${a.item}.json`)) ? 'Answered on the computer.' : !existsSync(join(inbox, 'items', `${a.item}.json`)) ? 'Closed.' : Date.now() - Date.parse(a.at) > 86400e3 ? 'Expired.' : '';
+      if (done) await close(id, a, done); else open++;
     }
-    say('', `done: ${channels(cfg).join(', ') || 'no channel'}. Any chat can now be told "ping me when this is done".`);
-    rl.close();
+    if (!open) rmSync(openFlag, { force: true });
     return 0;
   } catch (e) {
-    rl.close();
-    if ((e as Error).message !== 'no input') throw e;
-    say('', 'notify: setup needs a terminal to type into. Run it there:', `  node "${process.argv[1]}" setup`);
+    console.error(`notify: poll failed: ${redact((e as Error).message)}`);
     return 1;
-  }
+  } finally { release(); }
+}
+
+// ---- setup: the person's own bot, with taps in Telegram and no typing ----
+
+// The clipboard as text, or '' where it cannot be read. Windows' Get-Clipboard, macOS pbpaste, else wl-paste or xclip.
+function clipboard(): string {
+  const f = process.env.NOTIFY_CLIPBOARD;
+  if (f) { try { return readFileSync(f, 'utf8'); } catch { return ''; } }
+  const tries: [string, string[]][] = process.platform === 'win32' ? [['powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', 'Get-Clipboard -Raw']]]
+    : process.platform === 'darwin' ? [['pbpaste', []]] : [['wl-paste', ['-n']], ['xclip', ['-o', '-selection', 'clipboard']]];
+  for (const [cmd, args] of tries) { try { return execFileSync(cmd, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 }); } catch { /* next */ } }
+  return '';
+}
+function setClipboard(text: string) {
+  const f = process.env.NOTIFY_CLIPBOARD;
+  if (f) { writeFileSync(f, text); return true; }
+  const tries: [string, string[]][] = process.platform === 'win32' ? [['clip.exe', []]] : process.platform === 'darwin' ? [['pbcopy', []]] : [['wl-copy', []], ['xclip', ['-selection', 'clipboard']]];
+  for (const [cmd, args] of tries) { try { execFileSync(cmd, args, { input: text, stdio: ['pipe', 'ignore', 'ignore'], timeout: 5000 }); return true; } catch { /* next */ } }
+  return false;
+}
+// tg:// opens the Telegram app straight away. explorer.exe, not `cmd /c start`: cmd would split the link at its &.
+// With no Telegram app nothing opens, and the https link printed beside it is the way.
+function openLink(tg: string) {
+  if (process.env.NOTIFY_NO_OPEN === '1') return;
+  const cmd = process.platform === 'win32' ? 'explorer.exe' : process.platform === 'darwin' ? 'open' : 'xdg-open';
+  try { spawn(cmd, [tg], { detached: true, stdio: 'ignore', windowsHide: true }).on('error', () => { /* the printed link stays */ }).unref(); } catch { /* the printed link stays */ }
+}
+
+async function setup() {
+  const say = (...l: string[]) => console.log(l.join('\n'));
+  // A line typed or pasted into the terminal counts as well as the clipboard. With no stdin (a chat running this in the
+  // background) the clipboard is the only way in.
+  const lines: string[] = [];
+  if (process.stdin.isTTY) process.stdin.setEncoding('utf8').on('data', (d: string) => lines.push(...d.split(/\r?\n/)));
+  const limit = Date.now() + 15 * 60e3;
+  const waitFor = async <T,>(get: () => Promise<T | undefined> | T | undefined, every = 1500): Promise<T | undefined> => {
+    while (Date.now() < limit) { const v = await get(); if (v !== undefined) return v; await sleep(every); }
+    return undefined;
+  };
+  const done = (code: number) => { process.stdin.pause(); return code; };
+
+  const cfg = config();
+  const user = `claude_${randomBytes(3).toString('hex')}_bot`;
+  const before = clipboard().trim();
+  setClipboard(user);
+  say('', 'Telegram notifications - setup', '',
+    `  1. Telegram opens at @BotFather. Press Start (or Menu > /newbot) and send /newbot.`,
+    `  2. It asks for a name, then a username. Paste the same text both times (Ctrl+V): ${user}`,
+    `     It is on the clipboard already. If BotFather says the username is taken, add a digit before "_bot".`,
+    `  3. Tap the token in BotFather's answer to copy it. This picks it up on its own.`,
+    `     No Telegram on this computer? Open https://t.me/BotFather on the phone and paste the token here.`, '');
+  openLink('tg://resolve?domain=BotFather');
+
+  // A token already on the clipboard before setup started is not taken: it may be an old bot.
+  const found = (s: string) => { const t = (s.match(/\b\d{6,}:[\w-]{30,}\b/) || [])[0]; return t && t !== before.match(/\b\d{6,}:[\w-]{30,}\b/)?.[0] ? t : undefined; };
+  let me: { username: string } | undefined, token = '';
+  await waitFor(async () => {
+    const t = found(lines.splice(0).join(' ')) || found(clipboard());
+    if (!t) return undefined;
+    try { me = await telegram<{ username: string }>(t, 'getMe'); token = t; return true; }
+    catch (e) { say(`  that token was refused: ${redact((e as Error).message)}`); return undefined; }
+  });
+  if (!me) { say('', 'notify: no bot token arrived within 15 minutes; nothing was saved. Run setup again when ready.'); return done(1); }
+  setClipboard(''); // the token does not stay where any app can read it
+
+  // The one-time code in the Start link binds the chat that opened it, not whoever wrote to the bot last.
+  const code = randomBytes(6).toString('hex');
+  say(`  4. Your bot is @${me.username}. Telegram opens it now: press Start.`, `     (or open https://t.me/${me.username}?start=${code})`, '');
+  openLink(`tg://resolve?domain=${me.username}&start=${code}`);
+  let offset = 0;
+  const chat = await waitFor(async () => {
+    let ups: TgUpdate[] = [];
+    try { ups = await telegram<TgUpdate[]>(token, 'getUpdates', { offset, timeout: 20, allowed_updates: ['message'] }, 25000); } catch { return undefined; }
+    for (const u of ups) {
+      offset = u.update_id + 1;
+      if (u.message?.text?.trim() === `/start ${code}`) return String(u.message.chat.id);
+    }
+    return undefined;
+  }, 200);
+  if (!chat) { say('', `notify: Start was not pressed within 15 minutes; nothing was saved. Run setup again.`); return done(1); }
+  // Confirm the updates read here, so the first poll does not see the Start again.
+  await telegram(token, 'getUpdates', { offset, timeout: 0 }).catch(() => undefined);
+
+  const one: Config = { ...cfg, telegram: { token, chat_id: chat } };
+  const r = await sendWith(one, `Claude Code on ${hostname()} is connected. Finished chats and questions from the inbox come here; tap a button to answer.`, '', 'done');
+  if (!r.sent.length) { say(`  not delivered: ${r.failed.map((x) => x.error).join('; ')}`, '  Nothing was saved. Run setup again.'); return done(1); }
+  writeJSON(configFile, one);
+  say(`  connected: a test message is in Telegram now. Saved to ${configFile}`);
+  const flushed = await flushUnsent(one);
+  if (flushed) say(`  and ${flushed} message(s) that were waiting went out now`);
+  return done(0);
 }
 
 async function main() {
@@ -622,10 +678,12 @@ async function main() {
   if (!cmd) { await hook(); return 0; }
 
   if (cmd === 'send') return report(await send(args.slice(1).join(' ')));
-  if (cmd === '--test') return report(await send(`test from Claude Code on ${hostname()}: this channel works`));
+  if (cmd === '--test') return report(await send(`test from Claude Code on ${hostname()}: Telegram works`));
   if (cmd === 'setup') return setup();
+  if (cmd === 'ask') return ask();
+  if (cmd === 'poll') return poll();
 
-  const list = channels(config());
+  const on = connected(config());
   const other = take('--session');
   const session = other || process.env.CLAUDE_CODE_SESSION_ID;
   if (!session) { console.error('notify: no session id. Run this inside the chat, or pass --session <id>.'); return 1; }
@@ -635,7 +693,7 @@ async function main() {
   if (cmd === '--status') {
     const m = readJSON<Marker>(file);
     console.log(m ? `notify: armed${m.pending ? ' for the next turn' : ''} (${m.label || 'no label'}, since ${m.armed})` : 'notify: not armed for this chat');
-    console.log(list.length ? `channels: ${list.join(', ')}` : `channels: none configured yet - run "notify.mjs setup" in a terminal (${configFile})`);
+    console.log(on ? 'channels: telegram' : `channels: none - ${SETUP_HINT}`);
     return 0;
   }
   if (cmd === '--disarm') { rmSync(file, { force: true }); console.log('notify: disarmed'); return 0; }
@@ -651,8 +709,8 @@ async function main() {
     // cwd is left out and the hook takes the one in that chat's own events.
     writeJSON(file, { armed: now(), label, ...(other ? {} : { cwd: process.cwd() }), ...(next ? { pending: true } : {}) });
     console.log(`notify: armed${next ? ' for the end of the next turn' : ''}${label ? ` - "${label}"` : ''}`);
-    if (list.length) console.log(`channels: ${list.join(', ')}`);
-    else console.log('channels: none yet. The person runs "notify.mjs setup" in a terminal; the marker waits, and a finish that happens before that is delivered when a channel is saved.');
+    if (on) console.log('channels: telegram');
+    else console.log('channels: none yet. Run "notify.mjs setup" (a chat can run it in the background); the marker waits, and a finish that happens before that is delivered when Telegram is connected.');
     return 0;
   }
   console.error(`notify: unknown argument ${cmd}`); return 2;

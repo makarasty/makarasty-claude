@@ -20,7 +20,7 @@ export function explainPrompt(item: Item): string
 export function body(item: Item): string
 export function render(item: Item, now?: number, account?: string): string
 export function link(item: Item, account?: string): string
-export function pushText(item: Item): string
+export function phoneAsk(item: Item): { item: string; text: string; options: string[]; reply: boolean }
 export function toResult(item: Item, answer: Answer): { questions: Question[]; answers: Record<string, string> }
 export function deliveryText(item: Item, answer: Answer): string
 export function normalizeAnswer(item: Item, raw: unknown): { answers: Record<string, string> } | { choice: string }

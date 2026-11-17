@@ -10,7 +10,8 @@ import { PLUGIN_FRAME, ownWords } from './own-words.ts'
 //      first wins. An inbox answer is returned as the tool's own result, so the model reads it as the dialog's [M63].
 //   2. wrap_up with an `ask`, and an own_initiative session card: writes the item after the call; an inbox answer comes
 //      back as a prompt this chat's timer submits once the chat is idle [M63].
-//   3. Every 15 s (own items only): after 2 min unanswered, a plain explanation by a small model and, only if a notify channel is configured, one phone message.
+//   3. Every 15 s (own items only): after 2 min unanswered, a plain explanation by a small model and, only if Telegram is
+//      connected (notify.mjs), one phone message with a button per option; any chat's timer reads the taps (pollPhone).
 //   4. A prompt the person types here closes this chat's open boxes; a started card closes its card item.
 //   5. A chat switched on for finish reports (reports/on/<id>: every session the inbox chat starts, or `inbox.mjs report
 //      on`) writes one report per working turn it ends: wrap_up called, or the turn died on an error. Not when the turn
@@ -771,9 +772,23 @@ async function deliverAnswers($: D, a: { root: string; session: string }): Promi
   }
 }
 
+// While a question is open on the phone (notify.mjs ask writes notify-asks/open), read its taps and replies: one poll per
+// 10 s across every chat, since each chat's timer gets here. `polled` is written before the spawn, so the others skip.
+async function pollPhone($: D): Promise<void> {
+  const dir = await claudeDir($)
+  if (!dir) return
+  const asks = `${dir}/makarasty/notify-asks`
+  if (!(await $.fs.exists(`${asks}/open`))) return
+  const now = await $.clock.now()
+  if (now - (Number(String(await $.fs.read(`${asks}/polled`).catch(() => '0'))) || 0) < 10000) return
+  await $.fs.write(`${asks}/polled`, String(now))
+  await $.process.run(['node', `${$.plugin.root}/hooks/notify.mjs`, 'poll'], { timeoutMs: 30000, env: { CLAUDE_CONFIG_DIR: dir } })
+}
+
 // The last answer to "is a notify channel configured?" and when it was asked (tick keeps it 10 min).
 let chan = { at: -Infinity, yes: true }
 export async function tick($: D): Promise<void> {
+  void pollPhone($).catch(() => undefined) // not awaited: a slow Telegram must not hold the beat or the wake
   const me = await inboxSelf($)
   if (me) {
     await $.fs.write(`${me.root}/beat`, String(await $.clock.now())).catch(() => undefined) // the watchdog's sign the timer runs

@@ -143,9 +143,9 @@ It writes `FINISHED` into the run directory when it passes. That file, not anybo
 notification, answers "did this run end".
 
 The same call sends the headline to the operator's phone when the `makarasty-tools` plugin is installed and
-`~/.claude/makarasty/notify.json` names a channel (Telegram, Discord, ntfy, a webhook): run id and counts,
-once, the first time `FINISHED` is written, and never findings text. Findings can carry data from the
-application under test, and a webhook is egress. You have nothing to do for it; it is mentioned so
+`~/.claude/makarasty/notify.json` connects Telegram: run id and counts, once, the first time `FINISHED` is
+written, and never findings text. Findings can carry data from the application under test, and Telegram is
+egress. You have nothing to do for it; it is mentioned so
 you do not send a second one by hand.
 
 Then, in this order. A notification is an event and events get missed, so everything durable is already
@@ -205,9 +205,9 @@ fleet still stalled after a revive attempt failed, and nothing else. A worker as
 never page at night, because a sleeping operator cannot open a pane; the paneless lane and the
 panes-open-before-bed rule in `fleet-plan` exist for that.
 
-**A channel URL belongs outside the repository.** `landed` already posted the headline to every channel in
+**A channel belongs outside the repository.** `landed` already posted the headline to the Telegram chat in
 `~/.claude/makarasty/notify.json`; a `FLEET.md` that names a webhook is the old shape, and the operator
-should move that URL into the file the notifier reads (`/makarasty-tools:notify test` proves it).
+connects Telegram instead (`/makarasty-tools:notify setup`; `test` proves it).
 
 ## Enforce the evidence contract
 

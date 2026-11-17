@@ -43,7 +43,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { freemem, homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { REPORT_TTL_MS, TTL_MS, UNSEEN_REPORT_TTL_MS, clean, contextOf, expired, itemId, normalizeAnswer, pushText, render, renderReports, safe, sourceTag, undeliverable } from './core.mjs'
+import { REPORT_TTL_MS, TTL_MS, UNSEEN_REPORT_TTL_MS, clean, contextOf, expired, itemId, normalizeAnswer, phoneAsk, render, renderReports, safe, sourceTag, undeliverable } from './core.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const base = join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'makarasty')
@@ -57,7 +57,7 @@ function hasChannel() {
   if (process.env.NOTIFY_DRY_RUN) return true
   try { return !/^channels: none/m.test(execFileSync(process.execPath, [notifyJs, '--status', '--session', 'inbox'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 20000 })) } catch { return true }
 }
-const pushLine = () => (hasChannel() ? 'phone pushes: on (a notify channel is configured)' : `phone pushes off: no notify channel; \`node ${notifyJs} setup\` turns them on`)
+const pushLine = () => (hasChannel() ? 'phone pushes: on (Telegram, with answer buttons)' : `phone pushes off: no notify channel; \`node ${notifyJs} setup\` connects Telegram (a chat can run it in the background)`)
 
 // Created exclusively: two writers at once (two inbox chats, the inbox and the dialog) leave exactly one answer.
 function create(/** @type {string} */ path, /** @type {string} */ text) {
@@ -912,7 +912,7 @@ async function main() {
     if (!hasChannel()) { say('inbox: no push, no notify channel'); return 0 } // no attempt, no failure record
     const attempt = JSON.stringify({ fails: (prev?.fails ?? 0) + 1, at: now })
     if (prev) writeFileSync(mark, attempt); else if (!create(mark, attempt)) return 0
-    try { execFileSync(process.execPath, [join(here, '..', '..', 'hooks', 'notify.mjs'), 'send', pushText(item)], { stdio: ['ignore', 'pipe', 'pipe'], timeout: 20000 }) } catch (e) { console.error(`inbox: push failed: ${/** @type {Error} */ (e).message.split('\n')[0]}`); return 1 } // the attempt record stays: a later tick retries
+    try { execFileSync(process.execPath, [notifyJs, 'ask'], { input: JSON.stringify(phoneAsk(item)), stdio: ['pipe', 'pipe', 'pipe'], timeout: 20000 }) } catch (e) { console.error(`inbox: push failed: ${/** @type {Error} */ (e).message.split('\n')[0]}`); return 1 } // the attempt record stays: a later tick retries
     writeFileSync(mark, '')
     say('inbox: pushed')
     return 0

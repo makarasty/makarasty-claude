@@ -1,5 +1,22 @@
 # Changelog
 
+## makarasty-tools 1.19.50, makarasty 1.18.15 — 2026-11-17
+
+notify was never set up on this machine, so all 93 phone pushes from the inbox went nowhere. Now it is Telegram only,
+it works both ways, and setting it up takes four taps.
+- **Telegram only**: the Discord, ntfy and webhook channels and ntfy's priority headers are gone. A finish, needs-you
+  and error line start with ✅, ⚠️ and ❌. A token with no chat bound at setup counts as not connected; the old
+  "whoever wrote to the bot last" fallback is gone.
+- **Setup with no typing**: `notify.mjs setup` opens BotFather, puts a free bot username on the clipboard, picks the
+  token up from the clipboard when it is tapped, checks it, clears the clipboard, opens the new bot and binds the chat
+  that presses Start with a one-time code. A chat runs it in the background; its output never holds the token.
+- **Inbox answers from the phone**: an unanswered inbox question goes out as `notify.mjs ask` with a button per option
+  (one-question asks and end-of-turn boxes), and a reply to the message gives a free answer. `notify.mjs poll` answers
+  the item through `inbox.mjs answer`, marks the message with what was sent, refuses taps from anyone but the bound
+  chat, and takes the buttons off a question answered on the computer. Any chat's inbox timer runs the poll, once per
+  10 s across all chats, and only while an ask is open.
+- fleet-collect, README and the inbox skill name Telegram instead of the old channel list.
+
 ## makarasty-tools 1.19.49 — 2026-11-17
 
 From the delete audit of 11-17 [M75].

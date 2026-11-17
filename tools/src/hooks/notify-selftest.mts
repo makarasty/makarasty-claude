@@ -3,7 +3,7 @@
 // no tokens, about fifteen seconds (four of them the SessionStart time budget against a local server that
 // never answers, three a local server that answers slowly, three the wait a Stop with a transcript makes).
 // It feeds the hook the events Claude Code would, through the exact commands plugin.json runs, drives the
-// wizard through a pipe, and asserts what reached the sink and what stayed on disk. The unslop switch and
+// fake Telegram (a local server) for setup, ask and poll, and asserts what reached the sink and what stayed on disk. The unslop switch and
 // its SessionStart hook are checked at the end, then the context reminder.
 //
 //   node tools/hooks/notify-selftest.mjs         the compiled test
@@ -19,6 +19,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
+import { pathToFileURL } from 'node:url';
 
 // Forward slashes everywhere: sh and node both take C:/x, and a backslash path pasted into a sh command
 // line or a JSON payload would need escaping.
@@ -36,6 +37,10 @@ process.env.NOTIFY_DRY_RUN = sink;
 process.env.CLAUDE_CODE_SESSION_ID = 's1';
 const marker = `${tmp}/makarasty/notify/s1.json`;
 const conf = `${tmp}/makarasty/notify.json`;
+// A made-up bot token and the config that connects it to chat 42; the Telegram calls go to a local fake or the sink.
+const tok = '123456789:' + 'Zq8Lm3Vb7Nx2Wc5Rt9Yh4Js6';
+const cfgWith = (extra = '') => `{"telegram":{"token":"${tok}","chat_id":"42"}${extra}}\n`;
+const confExcerpt = cfgWith(',"excerpt":true'), confPlain = cfgWith();
 let pass = 0, fail = 0;
 
 type Env = Record<string, string | undefined>;
@@ -95,14 +100,14 @@ function server(script: string, portFile: string) {
 console.log(`notify selftest, dir ${tmp}`);
 section('nothing armed');
 let out = node([n, '--status']).out; check('status says not armed', 'not armed', out);
-check('and names the missing config', 'none configured', out);
+check('and names the missing config', 'channels: none', out);
 hook('{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"done"}');
 count('an unarmed Stop sends nothing', 0);
 
 section('armed in the same turn as the work');
-writeFileSync(conf, '{"ntfy":"https://ntfy.example.org/selftest","excerpt":true}\n');
+writeFileSync(conf, confExcerpt);
 out = both(node([n, '--arm', 'the', 'build'], { cwd: tmp })); check('arm reports the label', '"the build"', out);
-check('and the channel', 'channels: ntfy', out);
+check('and the channel', 'channels: telegram', out);
 out = hook('{"hook_event_name":"Notification","session_id":"s1","notification_type":"permission_prompt","message":"Claude needs your permission"}').out;
 check('a permission prompt pings', 'needs you: Claude needs your permission', read(sink));
 if (out === '') ok('and prints nothing to stdout, which a hook reserves for context'); else bad('hook stdout stays empty', out);
@@ -186,7 +191,7 @@ count('and sends nothing itself', 11);
 hook('{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"The migration had already run; nothing left to do."}');
 check('the finish after a reopen says so', 'reopened after an interruption', last());
 
-section('elapsed time, and the ntfy priority and tags per kind');
+section('elapsed time, and the mark per kind');
 const armedAgo = (min: number) => { const o = JSON.parse(read(marker)); o.armed = new Date(Date.now() - min * 60e3).toISOString(); writeFileSync(marker, JSON.stringify(o)); };
 node([n, '--arm', 'long', 'job']); armedAgo(12);
 hook('{"hook_event_name":"Notification","session_id":"s1","notification_type":"permission_prompt","message":"ok?"}');
@@ -205,24 +210,25 @@ hook('{"hook_event_name":"SessionStart","session_id":"s1","source":"resume"}');
 hook('{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"done"}');
 check('a reopened chat counts from the resume, not the closed time', 'weekend finished', last());
 if (/finished after \d/.test(last())) bad('and not from the arming', last()); else ok('and not from the arming');
-// A local server records the headers ntfy would get; the sink skips the network, so it cannot show them.
-const hs = server('require("http").createServer((q, r) => { q.resume(); require("fs").appendFileSync(process.argv[1] + ".h", `${q.headers.priority}/${q.headers.tags}\n`); r.end("ok"); }).listen(0, "127.0.0.1", function () { require("fs").writeFileSync(process.argv[1], String(this.address().port)); })', `${tmp}/porth`);
-writeFileSync(conf, `{"ntfy":"http://127.0.0.1:${hs.port}/t"}\n`);
-node([n, '--arm', 'hdr']);
-const live = { NOTIFY_DRY_RUN: '' };
-hook('{"hook_event_name":"Notification","session_id":"s1","notification_type":"permission_prompt","message":"ok?"}', live);
-hook('{"hook_event_name":"StopFailure","session_id":"s1","error":"overloaded"}', live);
-hook('{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"done"}', live);
-hs.srv.kill();
-check('needs you goes out as high + warning', 'high/warning', read(`${tmp}/porth.h`));
-check('an error as high + x', 'high/x', read(`${tmp}/porth.h`));
-check('a finish as default + white_check_mark', 'default/white_check_mark', read(`${tmp}/porth.h`));
-writeFileSync(conf, '{"ntfy":"https://ntfy.example.org/selftest","excerpt":true}\n');
+// The mark leads the message: a lock screen shows what kind it is before a word is read.
+const marks = ['✅ ', '⚠️ ', '❌ '];
+const marked = (s: string) => marks.some((m) => s.startsWith(m));
+node([n, '--arm', 'marks']);
+hook('{"hook_event_name":"Notification","session_id":"s1","notification_type":"permission_prompt","message":"ok?"}');
+const markWait = last();
+hook('{"hook_event_name":"StopFailure","session_id":"s1","error":"overloaded"}');
+const markFail = last();
+hook('{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"done"}');
+const markDone = last();
+if (markWait.startsWith('⚠️ ') && markWait.includes(': marks needs you')) ok('needs you starts with the warning mark'); else bad('needs you starts with the warning mark', markWait);
+if (markFail.startsWith('❌ ') && markFail.includes(': marks stopped on an error')) ok('an error starts with the cross'); else bad('an error starts with the cross', markFail);
+if (markDone.startsWith('✅ ') && markDone.includes(': marks finished')) ok('a finish starts with the check mark'); else bad('a finish starts with the check mark', markDone);
 node([n, '--disarm']);
 
 section('direct sends');
 node([n, 'send', 'fleet 2026-09-08-x FINISHED: 3 findings']);
 check('send posts the text as given', 'fleet 2026-09-08-x FINISHED: 3 findings', last());
+if (marked(last())) bad('and adds no mark of its own', last()); else ok('and adds no mark of its own');
 out = node([n, '--test']).out; check('test reports the channel', 'sent to dry-run', out);
 out = node([n, '--disarm', '--session', 'other']).out; check('disarm on a session that was never armed is quiet', 'disarmed', out);
 let r = node([n, '--arm'], { env: { CLAUDE_CODE_SESSION_ID: '' } });
@@ -232,16 +238,12 @@ r = node([n, '--disarm', '--session', '../notify']);
 code('a session id that is a path is refused', 1, r.code);
 if (exists(conf)) ok('and the config it pointed at survives'); else bad('and the config it pointed at survives');
 
-section('the excerpt on the public ntfy server');
-writeFileSync(conf, '{"ntfy":"https://ntfy.sh/selftest"}\n');
+section('the excerpt');
+writeFileSync(conf, confPlain);
 node([n, '--arm', 'the', 'secret']);
 hook('{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"API_KEY=abc123"}');
 check('the head still goes out', 'the secret finished', last());
-if (last().includes('API_KEY')) bad('ntfy.sh gets no excerpt by default'); else ok('ntfy.sh gets no excerpt by default');
-writeFileSync(conf, '{"ntfy":"https://ntfy.example.org/selftest"}\n');
-node([n, '--arm', 'the', 'secret']);
-hook('{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"API_KEY=abc123"}');
-if (last().includes('API_KEY')) bad('a private ntfy gets no excerpt by default either'); else ok('a private ntfy gets no excerpt by default either');
+if (last().includes('API_KEY')) bad('the excerpt is off by default'); else ok('the excerpt is off by default');
 node([n, '--arm', 'the', 'secret']);
 hook('{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"Build green, 12 tests pass."}', { MAKARASTY_NOTIFY_EXCERPT: '1' });
 check('MAKARASTY_NOTIFY_EXCERPT=1 turns the excerpt on', 'Build green, 12 tests pass.', last());
@@ -275,37 +277,33 @@ for (const prose of ['The secret: nothing leaked; password = hashed with bcrypt'
 node([n, '--arm', 'the', 'secret']);
 hook('{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"key\\n-----BEGIN ' + 'RSA PRIVATE KEY-----\\nMIIEowIBAAKCAQEAu1SU1LfVLPHCoz\\n-----END ' + 'RSA PRIVATE KEY-----\\ndone"}', { MAKARASTY_NOTIFY_EXCERPT: '1' });
 if (last().includes('MIIEow') || !last().includes('done')) bad('a PRIVATE KEY block in the excerpt is blanked', last().slice(0, 200)); else ok('a PRIVATE KEY block in the excerpt is blanked');
-writeFileSync(conf, '{"ntfy":"https://ntfy.sh/selftest","excerpt":true}\n');
-node([n, '--arm', 'the', 'secret']);
-hook('{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"API_KEY=abc123"}', { MAKARASTY_NOTIFY_EXCERPT: '1' });
-if (last().includes('API_KEY')) bad('the public ntfy.sh never gets it, even opted in'); else ok('the public ntfy.sh never gets it, even opted in');
-for (const u of ['https://www.ntfy.sh/selftest', 'https://ntfy.sh:443/selftest', 'https://ntfy.sh./selftest', 'https://NTFY.SH/selftest']) {
-  writeFileSync(conf, `{"ntfy":"${u}"}\n`);
-  node([n, '--arm', 'the', 'secret']);
-  hook('{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"API_KEY=abc123"}');
-  if (last().includes('API_KEY')) bad(`nor does ${u}, the same server`); else ok(`nor does ${u}, the same server`);
-}
 
-section('config values that are not URLs');
-writeFileSync(conf, '{"webhook":"hooks.slack.com/services/T0/B0/SECRETSECRET","discord":{"url":42},"telegram":{"token":["x"]},"ntfy":"https://ntfy.sh/selftest","excerpt":true}\n');
+section('config values of the wrong type');
+writeFileSync(conf, '{"telegram":{"token":["x"],"chat_id":"42"},"excerpt":true}\n');
 r = node([n, '--test']); out = both(r);
-code('values of the wrong type do not crash it', 0, r.code);
-check('a webhook with no scheme is named', 'the webhook value is not an http(s) URL', out);
-if (out.includes('SECRETSECRET')) bad('and its value is never printed', out); else ok('and its value is never printed');
-check('the good channel still sends', 'sent to dry-run', out);
-writeFileSync(conf, '{"ntfy":{"url":"https://ntfy.example.com/SECRETTOPIC"},"discord":{"url":42},"telegram":{"token":["x"]}}\n');
+code('a token that is not a string does not crash it', 0, r.code);
+check('it is named', 'the telegram token is not a string', out);
+check('and the dry run still sends', 'sent to dry-run', out);
+writeFileSync(conf, '{"telegram":{"token":987654321012,"chat_id":"42"}}\n');
 out = both(node([n, '--status']));
-check('a channel written as an object, not a string, is named', 'the ntfy value is not a string', out);
-check('and so is a discord url that is not a string', 'the discord url value is not a string', out);
-check('and a telegram token that is not a string', 'the telegram token value is not a string', out);
-if (out.includes('SECRETTOPIC')) bad('with no value printed', out); else ok('with no value printed');
+check('a number as the token is named too', 'the telegram token is not a string', out);
+if (out.includes('987654321012')) bad('and its value is never printed', out); else ok('and its value is never printed');
+writeFileSync(conf, '{"telegram":{"token":"SECRETSECRET-not-a-bot-token","chat_id":"42"}}\n');
+out = both(node([n, '--status']));
+check('a token that is not a bot token is named', 'does not look like a bot token', out);
+if (out.includes('SECRETSECRET')) bad('and its value is never printed', out); else ok('and its value is never printed');
+check('and the channel is left out', 'channels: none', out);
+writeFileSync(conf, `{"telegram":{"token":"${tok}"}}\n`);
+check('a token with no chat is not connected', 'channels: none', both(node([n, '--status'])));
+writeFileSync(conf, confPlain);
+check('a token with its chat is', 'channels: telegram', both(node([n, '--status'])));
 
 section('a marker file Windows holds for a moment (EPERM on rename or read)');
 // notify.mjs loaded in a child process with node:fs's renameSync and readFileSync swapped for ones that
 // fail with EPERM a set number of times, the way a second writer or an antivirus scan makes them fail.
 // The child reads the module source from stdin: it is longer than a Windows command line takes.
 function flaky(file: string, renameFails: number, readFails: number): string {
-  const src = readFileSync(n, 'utf8').replace(/^main\(\)\.then.*$/m, '')
+  const src = readFileSync(n, 'utf8').replace(/^main\(\)\.then.*$/m, '').replaceAll('import.meta.url', JSON.stringify(pathToFileURL(n).href)) // the module runs from a data: URL, which has no directory of its own
     .replace(/^import \{[^}]*\} from .node:fs.;$/m, (l) => l.replace(/\breadFileSync\b/, 'readFileSync as realRead').replace(/\brenameSync\b/, 'renameSync as realRename'));
   const m = JSON.stringify(file);
   const harness = `let rf = +process.env.RENAME_FAILS, rd = +process.env.READ_FAILS;
@@ -330,7 +328,7 @@ out = flaky(`${fl}/c.json`, 0, 2);
 check('a read refused twice reads as not armed, not as a crash', 'null', out);
 
 section('not a finish yet');
-writeFileSync(conf, '{"ntfy":"https://ntfy.example.org/selftest","excerpt":true}\n');
+writeFileSync(conf, confExcerpt);
 node([n, '--arm', 'the', 'job']);
 let b = lines();
 hook('{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"Started it in the background.","background_tasks":[{"id":"b1","status":"running"}],"session_crons":[]}');
@@ -390,17 +388,17 @@ hook('{"hook_event_name":"Stop","session_id":"s9","cwd":"/x/theirproj","last_ass
 check("and the finish names that chat's project", 'theirproj: their build finished', last());
 
 section('a slow send, and error text that carries a secret');
-const s2 = server('require("http").createServer((q, r) => { q.resume(); setTimeout(() => { r.writeHead(400); r.end("no such hook https://hooks.example/T0/SECRETSECRET 123456:ABCDEFGHIJKLMNOPQRSTUVWXYZ"); }, 1500); }).listen(0, "127.0.0.1", function () { require("fs").writeFileSync(process.argv[1], String(this.address().port)); })', `${tmp}/port2`);
-writeFileSync(conf, `{"ntfy":"http://127.0.0.1:${s2.port}/t"}\n`);
+const s2 = server('require("http").createServer((q, r) => { q.resume(); setTimeout(() => { r.writeHead(400, { "content-type": "application/json" }); r.end(JSON.stringify({ ok: false, description: "no such hook https://hooks.example/T0/SECRETSECRET 123456:ABCDEFGHIJKLMNOPQRSTUVWXYZ" })); }, 1500); }).listen(0, "127.0.0.1", function () { require("fs").writeFileSync(process.argv[1], String(this.address().port)); })', `${tmp}/port2`);
+writeFileSync(conf, confPlain);
 node([n, '--arm', 'first']);
-const errText = hook('{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"done"}', { NOTIFY_DRY_RUN: '' }).err;
-check('a failed send says what failed', 'ntfy failed: 400 no such hook <url> <token>', errText);
+const errText = hook('{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"done"}', { NOTIFY_DRY_RUN: '', NOTIFY_TELEGRAM_API: `http://127.0.0.1:${s2.port}` }).err;
+check('a failed send says what failed', 'telegram failed: 400 no such hook <url> <token>', errText);
 if (/SECRETSECRET|ABCDEFGHIJ/.test(errText + read(marker))) bad('with no URL or token in the error or the marker'); else ok('with no URL or token in the error or the marker');
 node([n, '--arm', 'first']);
 // Its stdin is a file, not a pipe: a pipe write would wait for the event loop the blocking sleep holds.
 writeFileSync(`${tmp}/slow-in`, '{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"done"}');
 const slowIn = openSync(`${tmp}/slow-in`, 'r');
-const slow = spawn(process.execPath, [n], { env: { ...process.env, NOTIFY_DRY_RUN: '' }, stdio: [slowIn, 'ignore', 'ignore'] });
+const slow = spawn(process.execPath, [n], { env: { ...process.env, NOTIFY_DRY_RUN: '', NOTIFY_TELEGRAM_API: `http://127.0.0.1:${s2.port}` }, stdio: [slowIn, 'ignore', 'ignore'] });
 const slowDone = new Promise((res) => slow.on('close', res));
 sleep(0.7); node([n, '--arm', 'second']); await slowDone; closeSync(slowIn);
 check('a re-arm during a slow send survives it', '"label": "second"', read(marker));
@@ -410,18 +408,18 @@ node([n, '--disarm']);
 
 section('the SessionStart time budget, against a local server that never answers');
 const s1 = server('require("http").createServer(() => {}).listen(0, "127.0.0.1", function () { require("fs").writeFileSync(process.argv[1], String(this.address().port)); })', `${tmp}/port`);
-writeFileSync(conf, `{"ntfy":"http://127.0.0.1:${s1.port}/t"}\n`);
+writeFileSync(conf, confPlain);
 node([n, '--arm', 'the', 'hang']);
 hook('{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"hung"}', { NOTIFY_DRY_RUN: nowhere });
 const start = Date.now();
-hook('{"hook_event_name":"SessionStart","session_id":"s1","source":"resume"}', { NOTIFY_DRY_RUN: '' });
+hook('{"hook_event_name":"SessionStart","session_id":"s1","source":"resume"}', { NOTIFY_DRY_RUN: '', NOTIFY_TELEGRAM_API: `http://127.0.0.1:${s1.port}` });
 const ms = Date.now() - start, took = Math.round(ms / 1000);
 s1.srv.kill();
 // The limit on the exact time, not the rounded one, so 7.4 s cannot round down into a pass.
 if (ms <= 7000) ok(`a resume gives up after about four seconds (took ${took}s, hook timeout 10)`); else bad('a resume gives up after about four seconds', `took ${took}s`);
 if (exists(marker)) ok('and the undelivered finish stays on disk'); else bad('and the undelivered finish stays on disk');
 node([n, '--disarm']);
-writeFileSync(conf, '{"ntfy":"https://ntfy.example.org/selftest","excerpt":true}\n');
+writeFileSync(conf, confExcerpt);
 
 // Whether node starts at all is the arming test in gates.ts (tests in gates.test.ts: no marker, a marker, another config
 // dir, ~/.claude when CLAUDE_CONFIG_DIR is unset). What is left here is what notify.mjs itself does.
@@ -443,28 +441,130 @@ hook('{"hook_event_name":"SessionEnd","session_id":"s1","reason":"clear"}');
 if (exists(marker)) bad('/clear drops it'); else ok('/clear drops it');
 node([n, '--disarm']);
 
-section('the wizard');
+// A fake Telegram in its own process. It logs every call to <portFile>.log, answers getMe, hands out message ids from
+// 101, and returns the JSON array in <portFile>.updates once for getUpdates (then []).
+interface Call { method: string; url: string; body: Record<string, any> }
+const tgScript = `const http = require("http"), fs = require("fs");
+const pf = process.argv[1]; let id = 100;
+http.createServer((q, r) => {
+  let b = ""; q.on("data", (d) => b += d);
+  q.on("end", () => {
+    const method = q.url.split("/").pop();
+    fs.appendFileSync(pf + ".log", JSON.stringify({ url: q.url, method, body: b ? JSON.parse(b) : {} }) + "\\n");
+    let result = true;
+    if (method === "getMe") result = { username: "claude_test_bot" };
+    else if (method === "sendMessage") result = { message_id: ++id };
+    else if (method === "getUpdates") { try { result = JSON.parse(fs.readFileSync(pf + ".updates", "utf8")); fs.unlinkSync(pf + ".updates"); } catch { result = []; } }
+    r.setHeader("content-type", "application/json"); r.end(JSON.stringify({ ok: true, result }));
+  });
+}).listen(0, "127.0.0.1", function () { fs.writeFileSync(pf, String(this.address().port)); });`;
+
+section('setup, against a fake Telegram');
+const tg = server(tgScript, `${tmp}/porttg`);
+const api = `http://127.0.0.1:${tg.port}`;
+const tgLog = () => read(`${tmp}/porttg.log`).split('\n').filter(Boolean).map((l) => JSON.parse(l) as Call);
+const calls = (method: string) => tgLog().filter((c) => c.method === method);
+const resetLog = () => rmSync(`${tmp}/porttg.log`, { force: true });
+const updatesFile = `${tmp}/porttg.updates`;
+// Async, so the setup child's events keep flowing while this waits.
+const until = async (cond: () => boolean, sec = 10) => { for (let i = 0; i < sec * 20 && !cond(); i++) await new Promise((res) => setTimeout(res, 50)); return cond(); };
 rmSync(conf, { force: true });
 node([n, '--arm', 'the', 'report']);
 hook('{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"report written"}', { NOTIFY_DRY_RUN: nowhere });
-r = node([n, 'setup']); out = both(r);
-code('with nothing to type into, setup refuses', 1, r.code);
-check('and prints the command for a terminal', 'setup needs a terminal', out);
-r = node([n, 'setup'], { input: '3\n\nn\n' }); out = both(r);
-code('ntfy: three Enters and it is saved', 0, r.code);
-check('the wizard generated a topic', 'topic: claude-', out);
-check('and the test message was delivered', 'delivered - check your phone', out);
-check('and the finish that was waiting went out', '1 message(s) that were waiting', out);
-check('the finish reached the sink', 'the report finished', last());
+const clip = `${tmp}/clipboard`, setupLog = `${tmp}/setup.out`, botTok = '987654321:' + body.slice(0, 36);
+const setupFd = openSync(setupLog, 'w');
+const setupProc = spawn(process.execPath, [n, 'setup'], { env: { ...process.env, NOTIFY_DRY_RUN: '', NOTIFY_TELEGRAM_API: api, NOTIFY_CLIPBOARD: clip, NOTIFY_NO_OPEN: '1' }, stdio: ['ignore', setupFd, setupFd] });
+const setupDone = new Promise<number>((res) => setupProc.on('close', (c) => res(c ?? 128)));
+if (await until(() => /^claude_[0-9a-f]{6}_bot$/.test(read(clip).trim()))) ok('setup puts a bot username on the clipboard'); else bad('setup puts a bot username on the clipboard', read(clip));
+writeFileSync(clip, botTok); // what tapping the token in BotFather copies
+await until(() => /\?start=[0-9a-f]+\)/.test(read(setupLog)));
+const startCode = /\?start=([0-9a-f]+)\)/.exec(read(setupLog))?.[1] ?? '';
+if (startCode) ok('it picks the token up and prints a Start link with a one-time code'); else bad('it prints a Start link with a code', read(setupLog));
+if (calls('getMe')[0]?.url.includes(`/bot${botTok}/`)) ok('getMe was asked with the token from the clipboard'); else bad('getMe was asked with the clipboard token', JSON.stringify(calls('getMe')));
+// A stranger's Start with the wrong code comes first; only the one with this code binds.
+writeFileSync(updatesFile, JSON.stringify([
+  { update_id: 1, message: { message_id: 1, chat: { id: 99 }, from: { id: 99 }, text: '/start 000000000000' } },
+  { update_id: 2, message: { message_id: 2, chat: { id: 42 }, from: { id: 42 }, text: `/start ${startCode}` } },
+]));
+const setupExit = await Promise.race([setupDone, new Promise<number>((res) => setTimeout(() => { setupProc.kill(); res(-1); }, 20000))]);
+closeSync(setupFd);
+code('setup ends well', 0, setupExit);
+const saved = JSON.parse(read(conf) || '{}');
+if (saved.telegram?.chat_id === '42' && saved.telegram?.token === botTok) ok('the chat that sent the code is saved, not the stranger'); else bad('the chat that sent the code is saved', read(conf));
+const sentTexts = calls('sendMessage').map((c) => `${c.body.chat_id} ${c.body.text}`).join('|');
+check('a test message went to that chat', '42 ✅ Claude Code on', sentTexts);
+check('and the finish that was waiting went out', 'the report finished', sentTexts);
 if (exists(marker)) bad('and its marker is gone'); else ok('and its marker is gone');
-check('the topic was saved as a full ntfy URL', '"ntfy": "https://ntfy.sh/claude-', read(conf));
-r = node([n, 'setup'], { input: '2\nhttps://discord.com/api/webhooks/1/x\n\ny\n9\n2\n \n3\n\nn\n' }); out = both(r);
-check('discord: the URL and the default mention', 'Saved discord', out);
-check('a wrong menu pick is asked again', 'Add another channel', out);
-check('an empty URL is refused', 'nothing entered', out);
-check('both channels are kept', '"everyone": true', read(conf));
-check('and the earlier one survives', '"ntfy"', read(conf));
-check('the closing line names them', 'done: discord, ntfy', out);
+if (read(clip).includes(botTok)) bad('the token is not left on the clipboard'); else ok('the token is not left on the clipboard');
+if (read(setupLog).includes(botTok)) bad('and never printed'); else ok('and never printed');
+
+section('ask and poll, against the same fake');
+writeFileSync(conf, confPlain);
+const asks = `${tmp}/makarasty/notify-asks`, inboxDir = `${tmp}/makarasty/inbox`, stubLog = `${tmp}/inbox.log`, stub = `${tmp}/inbox-stub.cjs`;
+writeFileSync(stub, `const fs = require("fs"); fs.appendFileSync(${JSON.stringify(stubLog)}, process.argv.slice(2).join(" ") + " | " + fs.readFileSync(0, "utf8") + "\\n"); console.log("inbox: answered " + process.argv[3]);\n`);
+const liveTg = { NOTIFY_DRY_RUN: '', NOTIFY_TELEGRAM_API: api, NOTIFY_INBOX: stub };
+// The inbox's files that poll looks at: the item, and its answer when it was answered on the computer.
+const item = (id: string, answered = false) => {
+  mkdirSync(`${inboxDir}/items`, { recursive: true }); mkdirSync(`${inboxDir}/answers`, { recursive: true });
+  writeFileSync(`${inboxDir}/items/${id}.json`, '{}'); if (answered) writeFileSync(`${inboxDir}/answers/${id}.json`, '{}');
+};
+const askMsg = (id: string) => {
+  resetLog();
+  const a = node([n, 'ask'], { input: JSON.stringify({ item: id, text: `Question ${id}?`, options: ['Yes', 'No'], reply: true }), env: liveTg });
+  return { ...a, id: /message (\d+)/.exec(a.out)?.[1] ?? '' };
+};
+const poll = (updates: object[] = []) => { resetLog(); if (updates.length) writeFileSync(updatesFile, JSON.stringify(updates)); return node([n, 'poll'], { env: liveTg }); };
+let upd = 10;
+const tap = (from: number, id: string, data: string) => ({ update_id: upd++, callback_query: { id: `cb${upd}`, from: { id: from }, data, message: { message_id: Number(id), chat: { id: 42 } } } });
+const say = (text: string, replyTo?: string) => ({ update_id: upd++, message: { message_id: 50 + upd, chat: { id: 42 }, from: { id: 42 }, text, ...(replyTo ? { reply_to_message: { message_id: Number(replyTo) } } : {}) } });
+const answered = () => (read(stubLog).match(/^answer /gm) ?? []).length;
+
+item('i1');
+const a1 = askMsg('i1');
+code('ask exits 0', 0, a1.code);
+check('and prints the message id', 'asked, message', a1.out);
+const sm = calls('sendMessage')[0]?.body ?? {};
+const kb = ((sm.reply_markup?.inline_keyboard ?? []) as { text: string; callback_data: string }[][]).map((row) => row.map((b) => `${b.text}=${b.callback_data}`).join());
+if (kb.join('|') === 'Yes=0|No=1') ok('the options go out as inline buttons, their data the index'); else bad('the options go out as inline buttons', JSON.stringify(sm));
+check('and reply:true says so in the text', 'reply', String(sm.text));
+const map1 = JSON.parse(read(`${asks}/${a1.id}.json`) || '{}');
+if (map1.item === 'i1' && String(map1.options) === 'Yes,No' && map1.reply === true) ok('the ask is saved under its message id'); else bad('the ask is saved under its message id', JSON.stringify(map1));
+if (exists(`${asks}/open`)) ok('and the open flag is set'); else bad('and the open flag is set');
+
+poll([tap(99, a1.id, '1')]);
+if (answered() === 0) ok('a tap from another user id does not reach the inbox'); else bad('a tap from another user id does not reach the inbox', read(stubLog));
+check('and is refused', 'Not your bot', JSON.stringify(calls('answerCallbackQuery').map((c) => c.body)));
+if (exists(`${asks}/${a1.id}.json`)) ok('and the question stays open'); else bad('and the question stays open');
+
+poll([tap(42, a1.id, '1')]);
+check('a tap from the bound chat answers the item with the label', 'answer i1 | No', read(stubLog));
+check('and is acknowledged', 'Sent to the chat.', JSON.stringify(calls('answerCallbackQuery').map((c) => c.body)));
+const edit = calls('editMessageText')[0]?.body ?? {};
+if (edit.message_id === Number(a1.id) && String(edit.text).includes('➡️ No')) ok('the message is edited to show the answer'); else bad('the message is edited to show the answer', JSON.stringify(edit));
+if (exists(`${asks}/${a1.id}.json`)) bad('and the ask is removed'); else ok('and the ask is removed');
+if (exists(`${asks}/open`)) bad('and so is the open flag, none being left'); else ok('and so is the open flag, none being left');
+
+item('i2');
+const a2 = askMsg('i2');
+poll([say('stray words'), say('On Friday', a2.id)]);
+check('a reply to the ask answers with its text', 'answer i2 | On Friday', read(stubLog));
+check('a message that is not a reply is told how to answer', 'To answer a question', JSON.stringify(calls('sendMessage').map((c) => c.body.text)));
+if (answered() === 2) ok('and answers nothing'); else bad('and answers nothing', read(stubLog));
+if (exists(`${asks}/${a2.id}.json`)) bad('the answered ask is removed'); else ok('the answered ask is removed');
+
+item('i3', true); item('i5');
+const a3 = askMsg('i3'), a4 = askMsg('i4'), a5 = askMsg('i5');
+poll();
+const closed = JSON.stringify(calls('editMessageText').map((c) => `${c.body.message_id} ${c.body.text}`));
+check('an ask answered on the computer is closed', 'Answered on the computer.', closed);
+check('so is one whose item is gone', 'Closed.', closed);
+if (!exists(`${asks}/${a3.id}.json`) && !exists(`${asks}/${a4.id}.json`) && exists(`${asks}/${a5.id}.json`)) ok('and an open one stays'); else bad('and an open one stays');
+if (exists(`${asks}/open`)) ok('with the open flag'); else bad('with the open flag');
+rmSync(`${inboxDir}/items/i5.json`);
+poll();
+if (exists(`${asks}/${a5.id}.json`) || exists(`${asks}/open`)) bad('the last one closes and the flag goes'); else ok('the last one closes and the flag goes');
+if (answered() === 2) ok('closing answers nothing'); else bad('closing answers nothing', read(stubLog));
+tg.srv.kill();
 
 section('unslop');
 const unslop = `${here}/unslop.mjs`;
