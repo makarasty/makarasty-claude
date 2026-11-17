@@ -1,5 +1,6 @@
 // Types of render.mjs for the TypeScript hook (tools/hooks/telegram.ts). Hand-written; keep in step with render.mjs.
 export function esc(s: string): string
+export function rich(s: string, md?: boolean): string
 export function phoneHtml(m: { question: string; meta: string; note?: string }): string
 export function phoneKeyboard(options: string[], more?: boolean, lang?: string): { inline_keyboard: { text: string; callback_data: string }[][] }
 export function collapsed(short: string, outcome: string): string

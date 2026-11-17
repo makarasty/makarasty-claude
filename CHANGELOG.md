@@ -1,5 +1,12 @@
 # Changelog
 
+## makarasty-tools 1.19.58 — 2026-11-17
+
+- **Paths and code read cleanly on the phone**: in a question, its explanation, a collapsed line, /status and a Markdown
+  answer, a `quoted` span, a path (`C:\x\y`, `a/b/c`, `~/x`, `docs/X.md`), a file name with a known extension and a
+  commit hash are set as `<code>`: monospace, copied by a tap, never turned into a link (Telegram linked
+  "COMPLAINTS.md" as a domain). "yes/no" and "да/нет" stay words. Bold and italic never reach inside code.
+
 ## makarasty-tools 1.19.57 — 2026-11-17
 
 The look of the phone channel is global, not tied to one channel or hard-coded in Russian (owner, 2026-11-17).

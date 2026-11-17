@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 import { phoneAsk, type Item } from '../skills/inbox/core.mjs'
-import { phoneKeyboard } from '../skills/notify/render.mjs'
+import { phoneKeyboard, rich } from '../skills/notify/render.mjs'
 import { STRINGS, langOf, t } from '../skills/notify/strings.mjs'
 
 // The one table of what the person reads on a phone channel, and the profile line that picks its language.
@@ -50,4 +50,14 @@ test('phoneKeyboard: the details button is in the language', () => {
   expect(phoneKeyboard(['Yes', 'No']).inline_keyboard[0]!.at(-1)!.text).toBe('❔ Details')
   expect(phoneKeyboard(['Yes', 'No'], true, 'ru').inline_keyboard[0]!.at(-1)!.text).toBe('❔ Подробнее')
   expect(phoneKeyboard(['Yes', 'No'], false, 'ru').inline_keyboard[0]).toHaveLength(2)
+})
+
+// Paths, file names, code and commit hashes read as <code>: monospace, copied by a tap, never a link (Telegram linked
+// "COMPLAINTS.md" as a domain, 2026-11-17). Plain words with a slash stay words.
+test('rich: code-like parts become <code>, "yes/no" and HTML specials stay text', () => {
+  expect(rich('записка в docs/COMPLAINTS.md, коммит 98118dc')).toBe('записка в <code>docs/COMPLAINTS.md</code>, коммит <code>98118dc</code>')
+  expect(rich(String.raw`правит ` + '`push-guard`' + String.raw` в C:\Users\x\a.ts и tools/hooks/*.ts`)).toBe(String.raw`правит <code>push-guard</code> в <code>C:\Users\x\a.ts</code> и <code>tools/hooks/*.ts</code>`)
+  expect(rich('yes/no, да/нет, a/b, 2026, decade')).toBe('yes/no, да/нет, a/b, 2026, decade')
+  expect(rich('A & <b>')).toBe('A &amp; &lt;b&gt;')
+  expect(rich('**bold** in `a*b*c`', true)).toBe('<b>bold</b> in <code>a*b*c</code>')
 })

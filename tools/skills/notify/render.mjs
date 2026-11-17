@@ -8,12 +8,40 @@ const cut = (/** @type {string} */ s, /** @type {number} */ n) => (s.length > n 
 /** Text for Telegram's HTML mode: only &, < and > are special there. Cut fields as plain text first, then escape. */
 export const esc = (/** @type {string} */ s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
+// What reads as code in a chat's words: a `quoted` span, a path (C:\x\y, a/b/c, ~/x), a file name with a known
+// extension, a commit hash. Set as <code>: monospace, copied by a tap, and never turned into a link (Telegram links
+// "COMPLAINTS.md" as a domain, 2026-11-17).
+const CODE = new RegExp([
+  '`[^`\\n]+`',
+  '[A-Za-z]:\\\\[^\\s"«»<>]+',
+  // a path, not "yes/no": it starts at ~/ ./ ../ or /, or has three parts, or ends in a file name with an extension
+  '(?<![\\w/.~])(?:~|\\.{1,2})?/[\\w.@*-]+(?:/[\\w.@*-]+)*/?',
+  '[\\w.@*-]+(?:/[\\w.@*-]+){2,}/?',
+  '[\\w.@*-]+/[\\w@*-]*\\.[A-Za-z]\\w{0,4}\\b',
+  '[\\w.-]+\\.(?:md|ts|mts|mjs|cjs|js|jsx|tsx|json|jsonl|py|html|css|vue|sh|ps1|bat|yml|yaml|toml|txt|log|lock)\\b',
+  '\\b(?=[0-9a-f]*\\d)(?=[0-9a-f]*[a-f])[0-9a-f]{7,40}\\b',
+].join('|'), 'g')
+/** A chat's plain words as Telegram HTML: escaped, code-like parts as <code>; with md, also **bold** and *italic* (never
+ *  inside code). */
+export function rich(/** @type {string} */ s, md = false) {
+  const plain = (/** @type {string} */ x) => {
+    const e = esc(x)
+    return md ? e.replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>').replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s).,!?]|$)/g, '$1<i>$2</i>') : e
+  }
+  let out = '', at = 0
+  for (const m of String(s).matchAll(CODE)) {
+    out += plain(s.slice(at, m.index)) + `<code>${esc(m[0].startsWith('`') ? m[0].slice(1, -1) : m[0])}</code>`
+    at = m.index + m[0].length
+  }
+  return out + plain(s.slice(at))
+}
+
 /**
  * The phone message of an inbox item, the owner's pick B3 (2026-11-17): the question first and bold, so a lock screen shows
  * it; "project · kind · age" small under it, and a note under that when the phone cannot answer it whole.
  */
 export function phoneHtml(/** @type {{ question: string, meta: string, note?: string }} */ m) {
-  return `<b>${esc(cut(m.question, 600))}</b>\n<i>${esc(m.meta)}${m.note ? esc(`\n${m.note}`) : ''}</i>`
+  return `<b>${rich(cut(m.question, 600))}</b>\n<i>${esc(m.meta)}${m.note ? esc(`\n${m.note}`) : ''}</i>`
 }
 
 /** The inline keyboard: options in one row when short (up to 3, 34 characters together), else one per row; "Details" last. */
@@ -27,7 +55,7 @@ export function phoneKeyboard(/** @type {string[]} */ options, more = true, lang
 }
 
 /** What an answered message becomes: one grey line, no emoji, easy to scroll past and to read back later. */
-export const collapsed = (/** @type {string} */ short, /** @type {string} */ outcome) => `<i>${esc(short)} — ${esc(cut(outcome, 200))}</i>`
+export const collapsed = (/** @type {string} */ short, /** @type {string} */ outcome) => `<i>${rich(short)} — ${esc(cut(outcome, 200))}</i>`
 
 /** One small grey line: a note, an acknowledgement, a hint. */
 export const note = (/** @type {string} */ text) => `<i>${esc(text)}</i>`
@@ -50,14 +78,14 @@ export function ideasHtml(/** @type {string | undefined} */ lang, /** @type {str
 export function statusHtml(/** @type {string | undefined} */ lang, /** @type {number} */ count, /** @type {{ question: string, where: string, age: string }[]} */ items, /** @type {boolean} */ alive) {
   return [
     `<b>${esc(t(lang, 'statusWaiting', { n: count }))}</b>`,
-    ...items.map((i) => `• ${esc(i.question)} <i>${esc(i.where)} · ${esc(i.age)}</i>`),
+    ...items.map((i) => `• ${rich(i.question)} <i>${esc(i.where)} · ${esc(i.age)}</i>`),
     note(t(lang, alive ? 'inboxUp' : 'inboxDown')),
   ].join('\n')
 }
 
 /** The explanation under a question: the model's text in a quote, and the hint; or the "no explanation" line. */
 export function explainHtml(/** @type {string | undefined} */ lang, /** @type {string} */ question, /** @type {string | undefined} */ text) {
-  return text ? `${question}\n\n<blockquote>${esc(text)}</blockquote>\n${note(t(lang, 'explainHint'))}` : `${question}\n\n${note(t(lang, 'explainNone'))}`
+  return text ? `${question}\n\n<blockquote>${rich(text, true)}</blockquote>\n${note(t(lang, 'explainHint'))}` : `${question}\n\n${note(t(lang, 'explainNone'))}`
 }
 
 /**
@@ -66,10 +94,7 @@ export function explainHtml(/** @type {string | undefined} */ lang, /** @type {s
  * Converted paragraph by paragraph, so a cut never lands inside a tag.
  */
 export function mdToTg(/** @type {string} */ md, head = 700) {
-  const inline = (/** @type {string} */ s) => esc(s)
-    .replace(/`([^`\n]+)`/g, '<code>$1</code>')
-    .replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>')
-    .replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s).,!?]|$)/g, '$1<i>$2</i>')
+  const inline = (/** @type {string} */ s) => rich(s, true)
   const para = (/** @type {string} */ p) => {
     if (/^```/.test(p)) return `<pre>${esc(p.replace(/^```[^\n]*\n?/, '').replace(/\n?```\s*$/, ''))}</pre>`
     return p.split('\n').map((l) => {
