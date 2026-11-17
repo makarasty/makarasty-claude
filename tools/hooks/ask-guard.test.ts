@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
-import { BOX, COMMAND, ELSEWHERE, MESSAGE, OTHER_CHAT, SELF, SCREEN, continueBox, continueQuestions, holdsCommand, onlyContinue, pointsAbove, sendsToChat } from './ask-guard.ts'
+import { BEHAVIOUR, BOX, COMMAND, DEFERRED, ELSEWHERE, MESSAGE, OTHER_CHAT, SELF, SCREEN, behaviour, continueBox, continueQuestions, defers, holdsCommand, onlyContinue, pointsAbove, sendsToChat, staked } from './ask-guard.ts'
 
 const q = (question: string, ...labels: string[]) => ({ question, header: 'h', multiSelect: false, options: labels.map((label) => ({ label, description: '' })) })
 
@@ -286,4 +286,32 @@ test('the screen: off by env', async ($, on) => {
   const passed = world(on, { MAKARASTY_SCREEN: 'off' })
   await ask($, PLAIN)
   expect(passed).toEqual(['AskUserQuestion'])
+})
+
+// Three questions that reached the owner on 2026-11-16..17 past the old screen [M76].
+const SCHEDULE = [{ question: 'Пункт 3, «Schedule call». Сейчас три места спорят: меню в списке кейсов прячет пункт для Draft, Aborted и Canceled; меню на странице кейса и сервер запрещают только Draft (сервер даже проверяет тестом, что для Aborted звонок можно назначить — коммит 2026-11-05). При этом Abort и Cancel кейса сами отменяют все назначенные звонки (шаг «Cancel scheduled calls» в алгоритмах, помечен как обязательный). Как сделать одинаково везде?', header: 'Schedule call', options: [{ label: 'Запретить Draft+Aborted+Canceled (Recommended)', description: 'Сервер и страница кейса начнут отказывать так же, как меню списка. Чтобы позвонить — сначала Reactivate.' }, { label: 'Запретить только Draft', description: 'Меню списка снова покажет «Schedule call» для Aborted и Canceled.' }] }]
+const TWILIO = [{ question: 'Дыра X-001: вебхуки Twilio принимают неподписанные запросы (флаг TWILIO_SIGNATURE_ENFORCE не включён, сейчас только пишется в лог). Через поддельный запрос можно звонить от имени сотрудника (телефонное мошенничество). Что делаем?', header: 'Twilio', options: [{ label: 'Включить проверку (Recommended)', description: 'Сначала я смотрю логи sandbox и prod (только чтение) — есть ли там WOULD-REJECT от настоящего Twilio.' }, { label: 'Оставить только лог', description: 'Как сейчас; дыра остаётся.' }] }]
+const SM14 = [{ question: 'SM-14. Человеку скрыта колонка (например Charged у клейма), но он может фильтровать по ней в отчётах и списках и по счётчикам угадать значение. Запрещать такой фильтр?', header: 'SM-14', options: [{ label: 'Запрещать везде (Recommended)', description: 'Часть сохранённых отчётов у узких ролей перестанет работать.' }, { label: 'Только в отчётах', description: '' }, { label: 'Не запрещать', description: '' }, { label: 'Отправить разработчику', description: 'Решает он.' }] }]
+const INVESTIGATED = { investigated: 'callers: list menu, case page, server, Pulse bookCall; history: git log -S 59d6879dcd 2025-04-01, e16ecd1491; usage: не посчитано, prod proxy not running' }
+
+test('real questions: evidence words no longer wave them past; behaviour asks need an investigation, a deferred check is refused', async ($, on) => {
+  expect([staked(SCHEDULE), staked(TWILIO), staked(SM14)]).toEqual([false, false, false])
+  expect([behaviour(SCHEDULE), behaviour(SM14)]).toEqual([true, true])
+  expect(defers(TWILIO)).toBe(true)
+  const passed = world(on, { MAKARASTY_SCREEN: 'on' })
+  expect(await ask($, SCHEDULE, { screened: 'checked docs and CLAUDE.md: a product call only he can make' })).toEqual({ deny: BEHAVIOUR })
+  expect(await ask($, SM14)).toEqual({ deny: BEHAVIOUR })
+  expect(await ask($, TWILIO, INVESTIGATED)).toEqual({ deny: DEFERRED })
+  expect(await ask($, SCHEDULE, { investigated: 'looked at the code, it is a product decision for the owner to make really' })).toEqual({ deny: BEHAVIOUR })
+  await ask($, SCHEDULE, INVESTIGATED)
+  expect(passed).toEqual(['AskUserQuestion'])
+})
+
+test('a stake is the act the ask or a label proposes, at a word start; every question in the call must carry one', () => {
+  expect(staked([q('Запушить ветку fix-login в main?', 'Да', 'Нет')])).toBe(true)
+  expect(staked([q('Что убрать в корзину (вернуть можно)?', 'Все', 'Ничего')])).toBe(true)
+  expect(staked([q('Флаг FORCE_RELOAD включён в конфиге. Что делаем?', 'Выключить', 'Оставить')])).toBe(false)
+  expect(staked([q('Сервер проверяет это тестом — коммит 2026-11-05. Как назвать вкладку?', 'Paste', 'Output')])).toBe(false)
+  expect(staked([q('Запушить?', 'Да', 'Нет'), q('Как назвать вкладку?', 'Paste', 'Output')])).toBe(false)
+  expect(defers([{ question: 'Где деплоить?', options: [{ label: 'Пока не знаю', description: 'Сначала посмотрю превью, потом решим.' }] }])).toBe(false)
 })

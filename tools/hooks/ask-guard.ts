@@ -8,6 +8,9 @@ import type { Register } from 'claude-code'
 // step only the person can do (sign in, click). The question and the labels are tested against all of it; a description,
 // header or recap only against the steps ahead (AHEAD), since a recap reports status ("fixed 12", "0 failed"). "Продолжить с миграцией схемы?" names its object and passes.
 // AskUserQuestion and the desktop app's end-of-turn box (wrap_up `ask`). MAKARASTY_ASK_GUARD=off drops it.
+// Before an AskUserQuestion reaches the person (MAKARASTY_SCREEN=off drops these three): an option that puts off a check
+// is refused, a question about how the product or code should behave needs metadata.investigated, and any other question
+// without an ask-first act needs metadata.screened.
 
 export const MESSAGE =
   'Not asked: whether to go on with work the person already asked for is answered yes, always. Carry on and report at the end. ' +
@@ -74,9 +77,49 @@ export function screened(meta: unknown): boolean {
   const m = meta && typeof meta === 'object' ? (meta as Record<string, unknown>) : {}
   return (typeof m.screened === 'string' && m.screened.trim().length >= 20) || /^inbox(:|$)/.test(str(m.source))
 }
+// The screen is skipped only when every question's own ask (its last sentence) or an option label proposes an act that
+// stays the person's, matched at a word start. Matched anywhere, evidence did it: "коммит 2026-11-05" in a description,
+// "force" inside TWILIO_SIGNATURE_ENFORCE; 139 of 205 questions that were the agent's to check skipped the screen [M76].
+const ACT = /(?<![a-zа-яё0-9_])(push|пуш|запуш|merge|мерж|смерж|влить|влей|депло|задепло|deploy|релиз|release|tag\b|delet|удал(?!ос|ас|ся)|убра|убер|сотр(?!удн)|стере(?!о)|стёр|стерл|очист|почист|корзин|wipe|eras|overwrit|перезапи|reset|сброс|revert|rollback|откат|force|оплат|pay\b|payment|купи|purchase|денег|деньг|money|\$|€|₽|prod\b|прод[еуа]?(?![а-яё])|продакшен|sign in|log in|войди|залогин|restart|перезапус|kill|pid\b|send|email|письм|отправ)/i
+// "Отправить разработчику" is a route the agent offers beside a product choice, not a send the question is about.
+const LABEL_ACT = new RegExp(ACT.source.replace('|send|email|письм|отправ', ''), 'i')
+const stakedOne = (q: Q): boolean => ACT.test(lastSentence(str(q?.question))) || (Array.isArray(q?.options) ? q.options : []).some((o) => LABEL_ACT.test(str(o?.label)))
 export function staked(questions: readonly Q[]): boolean {
+  if (!Array.isArray(questions) || !questions.length) return false
+  return questions.every(stakedOne)
+}
+
+// How the product or code should behave is not asked on a name or a grep: "сначала Reactivate" rested on a wrapper's name
+// while the rule it wrapped allowed only Disenrolled, and "запрещать везде" broke working pages [M76]. Such a question
+// carries what an investigation found; the hook message is fresh at call time, where a rule from session start is 300k tokens back.
+export const BEHAVIOUR =
+  'Not asked yet: this asks how the product or code should behave. First run one read-only investigation (an Explore agent, ' +
+  'Sonnet high): every caller of the code each option changes (menus, other apps, API, crons); `git log -S`/`-L` for each ' +
+  'side (who, when, why); real usage (a read-only count, or "не посчитано: <why>"); what each option breaks for a user. ' +
+  'Open every function a claim rests on: a name is not a check. Put what you found in the question in 3-5 plain lines, mark ' +
+  'anything unchecked "не проверено", then ask again with metadata {"investigated": "callers: ...; history: ...; usage: ..."}.'
+const BEHAVES = /(?<![a-zа-яё])(как (должн|правильно|делать|сделать|быть|забирать|тестировать|закрываем|растягивать|встаёт|встает)|должн|должен|что (делаем|делать|сделать|верно)|чем чинить|насколько|как задумано|так задумано|это дефект|запрещ|запрет|разреш|ограничива|скрыва|скрыть|оставля|хранить|should|behav|allow|refuse|block)/i
+// A stake question is the person's whatever it asks; the gate is for the rest.
+export function behaviour(questions: readonly Q[]): boolean {
   if (!Array.isArray(questions)) return false
-  return questions.some((q) => STAKE.test([str(q?.question), str(q?.header), ...(Array.isArray(q?.options) ? q.options : []).flatMap((o) => [str(o?.label), str(o?.description)])].join('\n')))
+  return questions.some((q) => !stakedOne(q) && BEHAVES.test([lastSentence(str(q?.question)), ...(Array.isArray(q?.options) ? q.options : []).map((o) => str(o?.label))].join('\n')))
+}
+export function investigated(meta: unknown): boolean {
+  const m = meta && typeof meta === 'object' ? (meta as Record<string, unknown>) : {}
+  const t = str(m.investigated)
+  return t.trim().length >= 80 && /(caller|вызыва|вызов|кто зов|callers|menu|меню)/i.test(t) && /(git|histor|истори|коммит|commit)/i.test(t) && /(usage|count|посчит|prod|прод|used|использ)/i.test(t)
+}
+
+// An option that holds the check ("Сначала я смотрю логи", "Запретить, сначала посчитать") asks the person to approve work
+// the agent could do now; the question then rests on what it has not looked at.
+export const DEFERRED =
+  'Not asked yet: an option puts off a check ("сначала посмотрю / посчитаю"). That check is part of the question: do it now, ' +
+  'then ask again with its result in the question text.'
+// The agent's own voice ("сначала я смотрю", "сначала посчитать"); an option in the person's voice ("сначала посмотрю превью") is theirs.
+const DEFERS = /сначала,?\s+(я\s+(смотр|посмотр|провер|гляну|сверю|посчита|изуч|разбер|выясн)|посчитать|проверить,? (ошибк|есть ли|сколько)|посмотреть,? (логи|есть ли|сколько))|first,?\s+i('ll| will)?\s+(check|look|verify|count)/i
+export function defers(questions: readonly Q[]): boolean {
+  if (!Array.isArray(questions)) return false
+  return questions.some((q) => (Array.isArray(q?.options) ? q.options : []).some((o) => DEFERS.test(`${str(o?.label)}\n${str(o?.description)}`)))
 }
 
 export function pointsAbove(questions: readonly Q[]): boolean {
@@ -162,7 +205,12 @@ export const register: Register = (on) => {
     if (sendsToChat(e.questions as readonly Q[])) return { deny: OTHER_CHAT }
     if (holdsCommand(e.questions as readonly Q[])) return { deny: COMMAND }
     if (asksSelf(e.questions as readonly Q[])) return { deny: SELF }
-    if ((await $.env.get('MAKARASTY_SCREEN')) !== 'off' && !staked(e.questions as readonly Q[]) && !screened((e as { metadata?: unknown }).metadata) && !continueQuestions(e.questions as readonly Q[]).length) return { deny: SCREEN }
+    const meta = (e as { metadata?: unknown }).metadata
+    if ((await $.env.get('MAKARASTY_SCREEN')) !== 'off' && !continueQuestions(e.questions as readonly Q[]).length && !/^inbox(:|$)/.test(str((meta as { source?: unknown } | undefined)?.source))) {
+      if (defers(e.questions as readonly Q[])) return { deny: DEFERRED }
+      if (behaviour(e.questions as readonly Q[]) && !investigated(meta)) return { deny: BEHAVIOUR }
+      if (!staked(e.questions as readonly Q[]) && !screened(meta) && !investigated(meta)) return { deny: SCREEN }
+    }
     const n = continueQuestions(e.questions as readonly Q[])
     if (!n.length) return next(e)
     if (n.length === e.questions.length) return { deny: MESSAGE }

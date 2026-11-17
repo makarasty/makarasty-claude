@@ -1,5 +1,27 @@
 # Changelog
 
+## makarasty-tools 1.19.53 — 2026-11-17
+
+Questions reach the person only after an investigation, findings and brief items get a destination, claims about him
+need a source. Each part was replayed or A/B tested [M76]; what did not help is not shipped.
+- **ask-guard screen**: the screen is skipped only for an act the question's own ask or an option label proposes,
+  matched at a word start ("коммит" in evidence, "force" in TWILIO_SIGNATURE_ENFORCE no longer count). Over 327 real
+  questions: 139 of 205 that were the agent's to check skipped it before, 30 now.
+- **Behaviour questions** ("Запрещать?", "Как сделать одинаково?") are refused until they carry `metadata.investigated`
+  (callers, history, usage); the refusal says how to investigate. An option that puts off a check ("Сначала я смотрю
+  логи") is refused. Schedule call, X-001, SM-14 and DT-1 all passed before and are stopped now.
+- **routes.ts** (new): a main turn or subagent report that names a finding or a skipped item with no destination
+  (fixed, asked, recorded, handed) is sent back once; a brief with 3+ items and no "Done when", or one that licenses a
+  product question with no investigation, is refused (Agent and start_session; fleet agents exempt). A/B: three tools
+  reviewed 0/3 without "Done when", 3/3 with it. `MAKARASTY_ROUTES=off` drops it.
+- **Rule texts** (gates.ts): `asking` adds the investigation pass and the metadata the guard reads; `findings` gives
+  every finding one destination and drops "ask before fixing" as the only move; `plans` sends an undone brief item
+  back in the same turn; new `claims`: sent, deleted, decided only with his words and date or a check's output.
+  Three missing spaces fixed. Fixture A/B: history in the question 3/6 vs 12/12, unchecked usage named 3/6 vs 10/12.
+- **unfinished** checks waiting items that rest on outside state (Test-Path, ls-remote) and reads the findings files;
+  fixture A/B 0/3 vs 3/3 on a deleted Desktop file.
+- Not built: a write-time hook for "sent by the owner" claims (its regex was noise over 30 days of docs history).
+
 ## makarasty-tools 1.19.52 — 2026-11-17
 
 The Telegram bot works both ways and stays quiet unless the person is needed (docs/TELEGRAM.md, 27 edge cases).

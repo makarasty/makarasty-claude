@@ -1307,6 +1307,36 @@ Corpus: every distinct Bash and PowerShell command in the operator's transcripts
 **Status:** the snapshot timing is one run each; the corpus counts are exact; skill attribution of an ask is the
 nearest Skill call within 15 tool calls, approximate.
 
+## M76 — Questions, findings, briefs and outside claims: replays and A/B (2026-11-17)
+Corpus: every AskUserQuestion since 11-13 in the operator's real projects (186 calls, 327 distinct questions), final
+replies of the last 14 days (6,549 main turns, 2,049 subagents), 5,984 Agent briefs. Labels by one Opus reader.
+- **Screen skip** (labels: 122 questions an ask-first act, 205 the agent's to check): the old `staked()` (STAKE anywhere
+  in question, header, labels, descriptions) let 139 of the 205 skip the screen, precision 0.46, recall 0.98. New: the
+  ask's last sentence and the labels, word starts, a send label not counted: 30 of 205 skip, precision 0.78, recall 0.85
+  (held-out odd ids 0.81 / 0.89). 18 of 122 real stakes now get the screen (one metadata line).
+- **Behaviour gate** (67 labelled behaviour questions): 47 of them reached the owner with no check before; now 9.
+  The gate itself: precision 0.68, recall 0.58 (odd ids 0.77 / 0.63). Schedule call, X-001, SM-14 and DT-1 all
+  passed before; all are stopped now (X-001 for its deferred check). Of the 186 calls, 18 met any gate before, 113 now.
+- **Schedule call fixture A/B** (12 files, 2 commits mirroring LifeLines; `claude -p` tools on, read-only; sonnet and
+  opus x 3; A old texts, B new texts, BH new texts plus the guard's bounce): history in the question 3/6 vs 12/12,
+  "usage not counted" 3/6 vs 10/12, the hanging call 3/6 vs 11/12. Blind Opus judge, gold `df761b98d5`: gold facts per
+  question opus 3.7 (A) / 4.5 (B) / 5.2 (BH), sonnet 2.8 / 3.2 / 2.3; pairwise A-B 2:3 (1 tie), A-BH 3:3. The bounce
+  fired once in 6 runs: at short context the new text already brought the metadata. One A run implied Reactivate as a
+  way back (the real error); none in B/BH; B/BH carried slightly more wrong details (0.5 vs 0.2 per question).
+- **Findings without a destination**: the detector flags 181 of 6,549 final main replies (2.8%) and 23 of 2,049
+  subagent reports; 22 of 32 sampled flags were a real dropped finding or skip (the rest reassurances and status lines).
+  A wider net with "не проверено" caveats flagged 12% and was cut. It catches the 1763c242, 55a185fe and 6f6a8bc0 lines.
+- **Brief "done when"** (the 7c3460d3 thirdparty brief, three tools, reading-only fixture, sonnet x 3): verdicts for all
+  three tools 0/3 without the line, 3/3 with it; one run without it repeated "I read only ponytail". Over 14 days 441
+  non-fleet briefs (7.4%) would have been refused once; fleet agents are exempt (their task files carry done criteria).
+- **unfinished waiting items** (fixture: Desktop file gone, remote branch gone, an intent written as "Sent"; sonnet x 3):
+  Desktop file checked 0/3 old vs 3/3 new; remote branch checked 2/3 vs 3/3; the intent named as an intent 3/3 new.
+- **Write-time claim hook, not built**: over 30 days of `git log -p` on docs in two repos the broad "sent/decided by the
+  owner" regex hit about 20 lines, nearly all technical "sent to"; the one false header was caught only by a pattern
+  tuned to it.
+**Status:** one labeller; 3 runs per cell; the fixture runs at short context, so the guard's main case (a question at
+300k, the rule far back) is shown only by the replay.
+
 ## Appendix: what a pull run spends
 
 Moved here from `PULL.md`, which workers read in full; none of it changes what a worker does.

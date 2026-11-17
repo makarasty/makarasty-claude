@@ -1,4 +1,5 @@
 import type { EngineInterface, Register } from 'claude-code'
+import { register as routes, stopBlock } from './routes.ts'
 
 // Two features that are usually off, asked inside the engine instead of by a shell or node started on every prompt:
 //
@@ -110,16 +111,29 @@ export const economy =
 
 // Named, not fixed: a terse-reply rule from another plugin made cheap subagents drop defects they had seen, and this line
 // brought the report back without unasked fixes [M53]. Main sessions and subagents; MAKARASTY_FINDINGS=off drops it.
+// Each finding gets one destination: "name it" alone was the one move every other rule allowed, so naming became the end and
+// items sat for days [M76]; tools/hooks/routes.ts refuses the end of a turn once over a line with none.
 export const findings =
-  'Findings: a defect you notice beyond the task goes in your reply (where, what is wrong); ask before fixing it. ' +
-  'Never drop one to keep a reply short. Why: the person trusts your report and does not re-check it.'
+  'Findings: every defect you notice or item you skip gets its destination in the same line: fixed (only what your change ' +
+  "broke or the task covers), asked (the turn's one question), recorded (docs/FINDINGS-OPEN.md, else " +
+  '~/.claude/makarasty/findings/<project>.md) or handed (which chat, card or person). A one-minute check is run, not named. ' +
+  'Never drop one to keep a reply short: the person trusts your report and does not re-check it.'
+
+// Intent written as status ("отправляем" became "Sent by the owner") and another chat's word relayed as outside fact
+// ("файлы на рабочем столе" long deleted) [M76]. Main sessions and subagents, with the findings line.
+export const claims =
+  'Claims about the person or the world outside this repo (sent, handed, deleted, pushed, ran, paid, decided) are written ' +
+  "only with their source: the person's quoted words with the date, or a check's output (git ls-remote, Test-Path, a read). " +
+  'Otherwise write "не подтверждено". A dictated "отправляем" is a plan, never a status; another chat\'s report of outside ' +
+  'state is its claim, not a fact.'
 
 // The owner, 2026-11-17: agents lost the goal and left plan items as a footnote ("not reviewed"). Main sessions with the
 // economy texts, subagents with the findings line, so a fleet worker's report walks its brief too.
 export const plans =
   'Plans: every plan opens with its goal. A brief to a subagent or another session carries that goal, the full item list ' +
   'and a "done when" that covers every item. Before the final report walk every item: each is done, with the check that ' +
-  'shows it, or named open with why and its next step (a question, a card, who has it). Never leave one as a footnote.'
+  'shows it, or named open with why and its next step (a question, a card, who has it). Never leave one as a footnote. ' +
+  'A brief item a hand-back left undone is sent back in the same turn.'
 
 const findingsOn = async ($: Dollar) => (await $.env.get('MAKARASTY_FINDINGS')) !== 'off'
 
@@ -128,7 +142,7 @@ const findingsOn = async ($: Dollar) => (await $.env.get('MAKARASTY_FINDINGS')) 
 // standing answers of people who run many chats at once. A person's own limits go in profile.md. Rides with the economy
 // text and its switch.
 export const habits =
-  "Working rules: Edit a file only after reading it.Wait for a task's completion notice; never poll." +
+  "Working rules: Edit a file only after reading it. Wait for a task's completion notice; never poll. " +
   'Call a fix done only after a check you ran shows it, and say plainly what you did not check. Report in this order: what happened, why, ' +
   'what you did, what the person must do. Told it is urgent: the core change and one check, no extra review rounds, then list what you skipped. ' +
   'Do without asking, then report: run the scoped tests, typecheck or build; start the dev server the task needs, after checking its port ' +
@@ -151,7 +165,11 @@ export const asking =
   '5.1: `;` not `&&`). A step in another chat is no dialog: end the turn with one line and its link and account. A delete-or-keep question says what the thing is, what made it, its size, what breaks without it, and your recommendation. ' +
   'Look into it before asking: a question a checked fact or plain logic settles, with no option worse for the person and none ' +
   'on the ask-first list, is not asked; take it, name it in one line of the report for review. Ask only when the options lead to really ' +
-  'different outcomes or the person\'s taste decides. Several questions go in one ask (AskUserQuestion), the recommended option first. Plain words, no jargon. Each option' +
+  'different outcomes or the person\'s taste decides. Before asking how the code or the product should behave, run the investigation ' +
+  'pass (callers, git history, real usage, what each option breaks; open every function a claim rests on): the question carries ' +
+  'what it found, the unchecked marked "не проверено", and a check you can run now goes before it, never into an option. ' +
+  'AskUserQuestion takes metadata "screened" (what you checked), or "investigated" for a behaviour question. Several questions go in one ask ' +
+  '(AskUserQuestion), the recommended option first. Plain words, no jargon. Each option ' +
   'says what happens if picked and why it beats the others here, resting on a fact you checked (a test, a number, how this project ' +
   'already does it); an unchecked one is marked a guess. A turn that ends waiting on the person ends with a ' +
   'message that stands alone: what happened, and the one thing to press or type.'
@@ -173,7 +191,7 @@ async function profile($: Dollar): Promise<string[]> {
 }
 
 const withEconomy = async ($: Dollar, out: { additionalContext?: string[] }, more: string[] = []) => {
-  const rules = [...((await $.env.get('MAKARASTY_ECONOMY')) === 'off' ? [] : [economy, habits, asking, plans]), ...((await findingsOn($)) ? [findings] : [])]
+  const rules = [...((await $.env.get('MAKARASTY_ECONOMY')) === 'off' ? [] : [economy, habits, asking, plans]), ...((await findingsOn($)) ? [findings, claims] : [])]
   const all = [...(out.additionalContext ?? []), ...more, ...rules, ...(await profile($).catch(() => []))]
   return all.length ? { ...out, additionalContext: all } : out
 }
@@ -248,9 +266,14 @@ async function remind($: Dollar, e: { prompt: string; session_id: string; transc
   return reminder(tokens, standingRelaunch(answers))
 }
 
-export const register: Register = on => {
+export const register: Register = (on, options) => {
+  // Where findings and brief items go (routes.ts): its hooks ride with these rule texts.
+  routes(on, options)
   // Fire and forget: the turn ends without waiting for the message.
   on('classic.Stop', async ($, e, next) => {
+    // A turn sent back to route its findings is not finished: no "done" message for it.
+    const block = await stopBlock($, e).catch(() => undefined)
+    if (block) return { ...(await next(e)), block }
     if (await armed($, e.session_id)) void notify($, e, 20000).catch(() => {})
     return next(e)
   })
@@ -290,7 +313,7 @@ export const register: Register = on => {
   // SessionStart does not fire in subagents, and cheap subagents are where the dropped defects showed.
   on('classic.SubagentStart', async ($, e, next) => {
     const out = await next(e)
-    return (await findingsOn($)) ? { ...out, additionalContext: [...(out.additionalContext ?? []), findings, plans] } : out
+    return (await findingsOn($)) ? { ...out, additionalContext: [...(out.additionalContext ?? []), findings, claims, plans] } : out
   })
 
   // A session id that comes back (resume) is live again: drop the ended marker, whatever the source.

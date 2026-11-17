@@ -33,6 +33,12 @@ Pick one: **closed**, **open**, **waiting on the person**, **abandoned**.
 
 - A "done" in the last reply is a claim. Check it cheaply against the repo: `git log --oneline -n 15`,
   `git status --short`, a look at the one file it names. A transcript is not evidence that the work landed.
+- A "waiting" item that rests on state outside the repo (a file on the Desktop, a remote branch, a message
+  sent, a vendor's reply, "the owner did X") is a claim too: check it (`Test-Path`, `git ls-remote origin <branch>`
+  after `git fetch --prune`) or mark it "из чата, не проверено". An intent the chat wrote as a past fact
+  ("отправляем" as "sent") is reported as an intent.
+- Open findings files are open items: the project's `docs/FINDINGS-OPEN.md` and
+  `~/.claude/makarasty/findings/<project>.md`. List their lines under open work.
 - A chat that is **live** (marked LIVE) is someone's work in progress: report it and leave its files alone,
   so two chats do not edit the same file.
 - Uncommitted files are listed per chat, but the working tree is shared, so a file may have been
@@ -63,5 +69,5 @@ Start none of them before the answer.
 
 ## Done when
 
-Every chat the script listed is classified, each "done" was checked against the repo or marked unchecked,
+Every chat the script listed is classified, each "done" and each outside-state "waiting" was checked or marked unchecked,
 and the person got the grouped report plus the one question.

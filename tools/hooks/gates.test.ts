@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
-import { PROFILE_MAX, afterCompact, asking, asksForHandoff, economy, findings, habits, levelFor, plans, register, reminder, standingRelaunch } from './gates.ts'
+import { PROFILE_MAX, afterCompact, asking, claims, asksForHandoff, economy, findings, habits, levelFor, plans, register, reminder, standingRelaunch } from './gates.ts'
 
 const entry = { kind: 'file' as const, size: 1, mtimeMs: 0, isLink: false }
 const DAY = 86400000
@@ -173,12 +173,12 @@ test("SessionStart resume hands notify.mjs's note to the chat; other sources and
   const w = world(on, { markers: ['s1.json'] })
   w.say('A phone notification is armed for this chat.\n')
   const r = await $.classic.SessionStart({ source: 'resume', session_id: 's1' })
-  expect(r.additionalContext).toEqual(['A phone notification is armed for this chat.', economy, habits, asking, plans, findings])
+  expect(r.additionalContext).toEqual(['A phone notification is armed for this chat.', economy, habits, asking, plans, findings, claims])
   const n = w.runs.length
-  expect((await $.classic.SessionStart({ source: 'startup', session_id: 's1' })).additionalContext).toEqual([economy, habits, asking, plans, findings])
+  expect((await $.classic.SessionStart({ source: 'startup', session_id: 's1' })).additionalContext).toEqual([economy, habits, asking, plans, findings, claims])
   expect(w.runs.length).toBe(n)
   w.say('')
-  expect((await $.classic.SessionStart({ source: 'resume', session_id: 's1' })).additionalContext).toEqual([economy, habits, asking, plans, findings])
+  expect((await $.classic.SessionStart({ source: 'resume', session_id: 's1' })).additionalContext).toEqual([economy, habits, asking, plans, findings, claims])
 })
 
 test('SessionEnd runs it for /clear only', async ($, on) => {
@@ -365,8 +365,8 @@ test('missing ids or transcript: silent, like context.mjs', async ($, on) => {
 
 test('SessionStart compact names the transcript; other sources do not', async ($, on) => {
   world(on, {})
-  expect((await $.classic.SessionStart({ source: 'compact', transcript_path: '/x/t.jsonl' })).additionalContext).toEqual([afterCompact('/x/t.jsonl'), economy, habits, asking, plans, findings])
-  expect((await $.classic.SessionStart({ source: 'startup', transcript_path: '/x/t.jsonl' })).additionalContext).toEqual([economy, habits, asking, plans, findings])
+  expect((await $.classic.SessionStart({ source: 'compact', transcript_path: '/x/t.jsonl' })).additionalContext).toEqual([afterCompact('/x/t.jsonl'), economy, habits, asking, plans, findings, claims])
+  expect((await $.classic.SessionStart({ source: 'startup', transcript_path: '/x/t.jsonl' })).additionalContext).toEqual([economy, habits, asking, plans, findings, claims])
 })
 
 test('token economy: once on startup, clear, resume and compact; MAKARASTY_ECONOMY=off says nothing', async ($, on) => {
@@ -396,15 +396,18 @@ test('asking: one line names each rule the person asked for, under its budget', 
     /name it in one line of the report for review/, /none on the ask-first list/, /really different outcomes or the person's taste decides/]) expect(asking).toMatch(w)
   // 11-16: the owner asked that a chat look into a question before asking, settle what logic settles (and report it), and that
   // every option say why it beats the others, with checked facts, in plain words (+~500 chars).
-  expect(asking.length).toBeLessThan(1550)
+  // 11-17: a behaviour question gets the investigation pass and the metadata the ask-guard reads (+~400 chars) [M76].
+  expect(asking).toMatch(/investigation pass/)
+  expect(asking).toMatch(/"screened"/)
+  expect(asking.length).toBeLessThan(2000)
 })
 
 test('profile.md: added after the rules when present, BOM dropped, capped', async ($, on) => {
   world(on, { profile: '﻿Language: Russian.\nMachine: 32 GB.' + 'x'.repeat(5000) })
   const ctx = (await $.classic.SessionStart({ source: 'startup' })).additionalContext ?? []
-  expect(ctx.slice(0, 5)).toEqual([economy, habits, asking, plans, findings])
-  expect(ctx[5]).toMatch(/^The person's profile \(\/cfg\/makarasty\/profile\.md.*: Language: Russian\.\nMachine: 32 GB\.x+ \[cut at 2000 characters: the rest of the file is not read\]$/)
-  expect(ctx[5]!.length).toBeLessThan(PROFILE_MAX + 200)
+  expect(ctx.slice(0, 6)).toEqual([economy, habits, asking, plans, findings, claims])
+  expect(ctx[6]).toMatch(/^The person's profile \(\/cfg\/makarasty\/profile\.md.*: Language: Russian\.\nMachine: 32 GB\.x+ \[cut at 2000 characters: the rest of the file is not read\]$/)
+  expect(ctx[6]!.length).toBeLessThan(PROFILE_MAX + 200)
 })
 
 test('profile.md alone survives MAKARASTY_ECONOMY=off and _FINDINGS=off', async ($, on) => {
@@ -415,42 +418,47 @@ test('profile.md alone survives MAKARASTY_ECONOMY=off and _FINDINGS=off', async 
 test('answers.md: its own line right after the profile, warns past 80% of its cap, cut past the cap, nothing when missing', async ($, on) => {
   world(on, { profile: 'Language: Russian.', answers: 'tests: always scoped (2026-11-12)' })
   const ctx = (await $.classic.SessionStart({ source: 'startup' })).additionalContext ?? []
-  expect(ctx[5]).toMatch(/^The person's profile/)
-  expect(ctx[6]).toMatch(/^The person's standing answers \(\/cfg\/makarasty\/answers\.md, their own words;.*never a commit, push, merge, deploy, delete, money or permission question\): tests: always scoped \(2026-11-12\)$/)
+  expect(ctx[6]).toMatch(/^The person's profile/)
+  expect(ctx[7]).toMatch(/^The person's standing answers \(\/cfg\/makarasty\/answers\.md, their own words;.*never a commit, push, merge, deploy, delete, money or permission question\): tests: always scoped \(2026-11-12\)$/)
 })
 
 test('answers.md and profile.md over 80% of their cap get a warning naming the file and size', async ($, on) => {
   world(on, { profile: 'p'.repeat(1700), answers: 'a'.repeat(3300) })
   const ctx = (await $.classic.SessionStart({ source: 'startup' })).additionalContext ?? []
-  expect(ctx[5]).toMatch(/\[warning: profile\.md is 1700 of 2000 characters: shorten it\]$/)
-  expect(ctx[6]).toMatch(/\[warning: answers\.md is 3300 of 4000 characters: shorten it\]$/)
+  expect(ctx[6]).toMatch(/\[warning: profile\.md is 1700 of 2000 characters: shorten it\]$/)
+  expect(ctx[7]).toMatch(/\[warning: answers\.md is 3300 of 4000 characters: shorten it\]$/)
 })
 
 test('answers.md over its cap is cut at 4000 characters', async ($, on) => {
   world(on, { answers: 'a'.repeat(5000) })
   const ctx = (await $.classic.SessionStart({ source: 'startup' })).additionalContext ?? []
-  expect(ctx[5]).toMatch(/a{4000} \[cut at 4000 characters: the rest of the file is not read\]$/)
+  expect(ctx[6]).toMatch(/a{4000} \[cut at 4000 characters: the rest of the file is not read\]$/)
 })
 
 test('no answers.md adds nothing, with or without a profile', async ($, on) => {
   world(on, { profile: 'Language: Russian.' })
-  expect(((await $.classic.SessionStart({ source: 'startup' })).additionalContext ?? []).length).toBe(6)
+  expect(((await $.classic.SessionStart({ source: 'startup' })).additionalContext ?? []).length).toBe(7)
 })
 
 test('an empty profile.md adds nothing', async ($, on) => {
   world(on, { profile: '  \n' })
-  expect((await $.classic.SessionStart({ source: 'startup' })).additionalContext).toEqual([economy, habits, asking, plans, findings])
+  expect((await $.classic.SessionStart({ source: 'startup' })).additionalContext).toEqual([economy, habits, asking, plans, findings, claims])
 })
 
 test('findings: every subagent gets the line', async ($, on) => {
   world(on, {})
-  expect((await $.classic.SubagentStart({ agent_id: 'a1', agent_type: 'Explore' })).additionalContext).toEqual([findings, plans])
-  expect(findings.length).toBeLessThan(300)
+  expect((await $.classic.SubagentStart({ agent_id: 'a1', agent_type: 'Explore' })).additionalContext).toEqual([findings, claims, plans])
+  // 11-17: a destination for each finding (+~150 chars) [M76].
+  for (const w of [/fixed/, /asked/, /recorded/, /handed/]) expect(findings).toMatch(w)
+  expect(findings.length).toBeLessThan(450)
+  expect(claims).toMatch(/не подтверждено/)
+  expect(claims.length).toBeLessThan(400)
 })
 
 test('plans: goal, full item list in briefs, every item walked before the report; main sessions and subagents', () => {
   for (const w of [/opens with its goal/, /full item list/, /"done when" that covers every item/, /walk every item/, /named open with why and its next step/, /footnote/]) expect(plans).toMatch(w)
-  expect(plans.length).toBeLessThan(400)
+  expect(plans).toMatch(/sent back in the same turn/)
+  expect(plans.length).toBeLessThan(450)
 })
 
 test('MAKARASTY_FINDINGS=off: no line in subagents, economy alone in a main session', async ($, on) => {
