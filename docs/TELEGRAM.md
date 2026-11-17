@@ -72,5 +72,8 @@ UX
     so one started there held the answer and "typing…" until the kill (2026-11-18). Long work goes to a started chat.
 31. A run busy with an earlier message: a new one gets a silent "in the queue" line; what is left after a run is taken
     by a new detached run at once.
+32. A chat started for a Telegram message: the run writes his messages to `inbox/said.jsonl` with `via: telegram`
+    (the inbox chat's capture does too), and `start`'s consent takes such a line with no start verb: a message to the
+    bot is the ask. One message, one start, as for typed prompts.
 28. Until 1.19.63 `inbox.mjs telegram` sat after the item-id check and exited "needs an item id": no free message was
     ever answered with the inbox chat closed. The inbox selftest now runs it.

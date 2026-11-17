@@ -299,7 +299,7 @@ export const register: Register = (on) => {
     // His message from Telegram is his word (owner, 2026-11-17: «Да, как с клавиатуры»): a start's consent and a send's.
     if (e.origin?.kind === 'plugin' && e.origin.name === 'makarasty-tools' && isTelegramPrompt(e.text)) {
       const me = await inboxSelf($).catch(() => undefined)
-      if (me) { await capture($, telegramWords(e.text)).catch(() => undefined); await hear($, me.root) }
+      if (me) { await capture($, telegramWords(e.text), 'telegram').catch(() => undefined); await hear($, me.root) }
     }
     if (typed) {
       // The person writes to the inbox chat: the finish reports waiting for their batch go with this prompt.
@@ -748,7 +748,7 @@ function hisWords(raw: string): boolean {
   const text = ownWords(raw)
   return !!text.trim() && !NOT_SAID.test(text) && !PLUGIN_FRAME.test(text)
 }
-async function capture($: D, raw: string): Promise<void> {
+async function capture($: D, raw: string, via?: 'telegram'): Promise<void> {
   const text = ownWords(raw) // app reminders and pastes are not his word, so never a start's consent
   if (!text.trim() || NOT_SAID.test(text) || PLUGIN_FRAME.test(text)) return
   const a = (await active($)) ?? (await inboxSelf($))
@@ -758,7 +758,7 @@ async function capture($: D, raw: string): Promise<void> {
   const old = String(await $.fs.read(`${a.root}/said.jsonl`).catch(() => '')).split(/\r?\n/).filter((l) => {
     try { return now - (JSON.parse(l) as { at: number }).at < SAID_KEEP_MS } catch { return false }
   })
-  old.push(JSON.stringify({ at: now, session: a.session, text: text.slice(0, 4000) }))
+  old.push(JSON.stringify({ at: now, session: a.session, text: text.slice(0, 4000), ...(via ? { via } : {}) }))
   await $.fs.write(`${a.root}/said.jsonl`, `${old.slice(-SAID_MAX).join('\n')}\n`)
 }
 

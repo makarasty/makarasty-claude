@@ -1,5 +1,12 @@
 # Changelog
 
+## makarasty-tools 1.19.65 — 2026-11-18
+
+- **The phone inbox can start a chat for what you ask**: "сделай видео про darkkitty" from Telegram was refused ("offer a
+  card"): the headless inbox never put your Telegram words in the record a start checks, and that check wanted a start
+  verb («запусти», «создай чат»). Your Telegram messages are now recorded as yours (`via: telegram`), and one of them
+  is itself the ask, no start verb needed; one message still starts one chat.
+
 ## makarasty-tools 1.19.64 — 2026-11-18
 
 - **No more endless "typing…" and no "не успел ответить" on a long ask**: asked for a video, the headless inbox started

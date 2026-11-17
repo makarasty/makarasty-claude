@@ -362,7 +362,8 @@ function consent(/** @type {string} */ said, /** @type {boolean} */ mark, name =
     let id = ''
     try {
       const e = JSON.parse(l), at = typeof e.at === 'number' ? e.at : Date.parse(e.at), t = squash(String(e.text ?? ''))
-      if (Date.now() - at < 24 * 3600e3 && t.includes(q)) { if (START_VERB.test(t) || (squash(name).length >= 5 && !q.includes(squash(name)) && t.includes(squash(name)))) id = `${e.at}|${e.session}`; else noVerb = true }
+      // A message to the bot is itself an ask to act (owner, 2026-11-17: the inbox starts chats for his plain asks).
+      if (Date.now() - at < 24 * 3600e3 && t.includes(q)) { if (e.via === 'telegram' || START_VERB.test(t) || (squash(name).length >= 5 && !q.includes(squash(name)) && t.includes(squash(name)))) id = `${e.at}|${e.session}`; else noVerb = true }
     } catch { continue }
     if (!id) continue
     const used = join(root, 'said-used', sha1(id))
@@ -554,6 +555,9 @@ async function telegramTurn() {
       if (!ms.length) break
       const now = Date.now()
       for (const m of ms) writeFileSync(join(tg, 'inbound', `${m.id}.json`), JSON.stringify({ ...m, taken: now }))
+      // His words, so a chat this turn starts for him has its consent (the poller checked they came from his Telegram id).
+      mkdirSync(root, { recursive: true })
+      for (const m of ms) appendFileSync(join(root, 'said.jsonl'), `${JSON.stringify({ at: now, session: 'telegram', via: 'telegram', text: m.text.slice(0, 4000) })}\n`)
       const sess = readJSON(join(tg, 'headless.json')) ?? {}, sid = typeof sess.sid === 'string' ? sess.sid : randomUUID()
       /** @type {string[]} */ let profs = []; try { profs = readdirSync(profilesDir()) } catch { /* no app profiles: the CLI on PATH */ }
       const prof = profs.includes('main') ? 'main' : profs[0]
