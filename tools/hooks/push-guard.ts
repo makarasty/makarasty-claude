@@ -2,6 +2,7 @@ import type { Register } from 'claude-code'
 import { gitSubs } from './git-guard.ts'
 import { PLUGIN_FRAME, ownWords } from './own-words.ts'
 import { isTelegramPrompt, telegramWords } from './telegram.ts'
+import { deliveredPairs } from './consent.ts'
 
 // A push leaves this machine: it runs only on the person's own word in this turn (2026-11-12, asked "block git push
 // without my word in the turn?": «Да, хук»; three pushes nobody asked for on 11-10; docs/COMPLAINTS.md C13). His word:
@@ -18,7 +19,7 @@ import { isTelegramPrompt, telegramWords } from './telegram.ts'
 // stops a chat's own unasked `git push`, not a determined bypass.
 
 export const MESSAGE =
-  'Blocked by makarasty-tools push-guard: this push (to main/master, forced, deleting, tags, an unusual flag, or no branch ' +
+  'Blocked by makarasty-tools push-guard: this push (to main/master, --force-with-lease, deleting, tags, an unusual flag, or no branch ' +
   'named) needs the person\'s own word in this turn, and none came (a brief, a plugin message or a standing answer does ' +
   'not count). A plain `git push <remote> <branch>` of a work branch needs no word. Ask with AskUserQuestion: the branch, the remote and the ' +
   'commits it sends, options "Да, пушь" / "Нет". His yes (or a typed «запушь») lets the push run. MAKARASTY_PUSH_GUARD=off turns this off.'
@@ -29,7 +30,7 @@ const PUSH = /(?<![a-zа-яё])(за)?пуш(ь|и|им|ить|ни|нуть|а�
 // A negation, a put-off or a condition in the same clause («пушить будем завтра», «да, но сначала diff», "push it after review"): not now.
 // («закоммить, потом запушь» is an order of steps in this turn, not a put-off.)
 const NEG = /(?<![a-zа-яё])(не|нет|без|нельзя|никогда|рано|пока не|завтра|позже|но|сначала|только|no|not|never|without|don['’]?t|do not|no need|later|tomorrow|but|first|only)(?![a-zа-яё])/i
-const YES = /^\s*(да|ага|ок|ok|okay|yes|yep|давай|конечно|го|пушь|пуш|запушь|push|sure)(?![a-zа-яё])/i
+const YES = /^\s*(да|ага|угу|ок|ok|okay|yes|yep|yeah|давай|конечно|го|пушь|пуш|пушим|запушь|push|sure|делай|сделай|подтверждаю|ладно|\+)(?![a-zа-яё])/i
 
 // Clauses: «закоммить и запушь, без лишних вопросов» keeps its push; «закоммить, пушить не надо» does not.
 const sentences = (t: string): string[] => t.split(/(?<=[.!?\n;,])\s*/)
@@ -37,18 +38,15 @@ const sentences = (t: string): string[] => t.split(/(?<=[.!?\n;,])\s*/)
 const tells = (s: string): boolean => PUSH.test(s) && !/\?\s*$/.test(s.trim()) && !NEG.test(s)
 export const asksPush = (text: string): boolean => sentences(ownWords(text)).some(tells)
 const withdraws = (text: string): boolean => sentences(ownWords(text)).some((s) => PUSH.test(s) && NEG.test(s) && !/\?\s*$/.test(s.trim()))
-const yes = (answer: string): boolean => YES.test(answer) && !NEG.test(answer)
+// A yes, or an answer that itself tells the push ("Пушим", "запушь сейчас", typed as the dialog's own answer).
+const yes = (answer: string): boolean => (YES.test(answer) && !NEG.test(answer)) || tells(answer)
 // A question that offers a push («Пушим 3 коммита?»), not one that offers to hold it («Закоммитить локально, не пушить?»).
 // Judged per clause, so «Пушим 3 коммита? Другой чат не активен.» still offers it; «Пушу 3 коммита?» is the chat speaking.
 const pushQ = (q: string): boolean => sentences(q).some((s) => (PUSH.test(s) || /(?<![a-zа-яё])(за)?пушу(?![a-zа-яё])/i.test(s)) && !NEG.test(s))
 
-// The pairs of an inbox-delivered answer (core.mjs deliveryText), read only after its fixed lead.
+// An inbox-delivered answer (his phone tap or his pick in the inbox chat), framed by the app or not: consent.ts reads it.
 export function deliveredYes(text: string): boolean {
-  const lead = /^The person answered your (question from the inbox \(makarasty-tools inbox\), in place of the dialog here: |end-of-turn question )/.exec(text)
-  if (!lead) return false
-  const body = text.slice(lead[0].length)
-  if (lead[1]!.startsWith('end-of-turn')) { const m = /^"([^"]*)" from the inbox \(makarasty-tools inbox\): "([^"]*)"/.exec(body); return !!m && pushQ(m[1]!) && yes(m[2]!) }
-  return [...body.matchAll(/"([^"]*)": "([^"]*)"/g)].some((m) => pushQ(m[1]!) && yes(m[2]!))
+  return deliveredPairs(text).some((p) => pushQ(p.question) && yes(p.answer))
 }
 
 export function pushes(cmd: string, tool: string): boolean {

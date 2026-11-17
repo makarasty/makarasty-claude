@@ -219,8 +219,11 @@ export function toResult(/** @type {Item} */ item, /** @type {Answer} */ answer)
 /** The prompt a chat gets for a choice or card answered in the inbox: the whole question and the operator's pick, never a bare "yes". */
 export function deliveryText(/** @type {Item} */ item, /** @type {Answer} */ answer) {
   const pick = answer.choice ?? Object.values(answer.answers ?? {}).join('; ')
+  // Question and answer as JSON strings: a quote inside either cannot end it early for the guards that read the pair
+  // (tools/hooks/consent.ts deliveredPairs).
+  const j = (/** @type {string} */ s) => JSON.stringify(String(s))
   if (item.kind === 'ask') { // found by `scan`: the dialog has no waiter in its chat, so the answer goes back as a prompt
-    return `The person answered your question from the inbox (makarasty-tools inbox), in place of the dialog here: ${(item.questions ?? []).map((q) => `"${q.question}": "${answer.answers?.[q.question] ?? ''}"`).join('; ')}. ` +
+    return `The person answered your question from the inbox (makarasty-tools inbox), in place of the dialog here: ${(item.questions ?? []).map((q) => `${j(q.question)}: ${j(answer.answers?.[q.question] ?? '')}`).join('; ')}. ` +
       'It is their own answer, picked in their inbox chat instead of the dialog here.'
   }
   if (item.kind === 'card') {
@@ -228,7 +231,7 @@ export function deliveryText(/** @type {Item} */ item, /** @type {Answer} */ ans
       'It is their own answer, picked in their inbox chat instead of the button here. ' +
       'The inbox starts the card they chose itself, so withdraw yours (dismiss_task) and do not offer it again.'
   }
-  return `The person answered your end-of-turn question "${item.ask}" from the inbox (makarasty-tools inbox): "${pick}". ` +
+  return `The person answered your end-of-turn question ${j(item.ask ?? '')} from the inbox (makarasty-tools inbox): ${j(pick)}. ` +
     'It is their own answer, picked in their inbox chat instead of the button here.'
 }
 

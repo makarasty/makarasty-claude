@@ -1,5 +1,18 @@
 # Changelog
 
+## makarasty-tools 1.19.56 — 2026-11-17
+
+The person's "Да, пушь" from the phone or the inbox was refused by push-guard, and the chat asked again (2026-11-17).
+- **Why**: the app shows a plugin's prompt framed ("The makarasty-tools plugin sent a message:\n…"), and the guard read
+  the delivered answer from its first word. The tests built that prompt unframed, so they passed while every real
+  phone or inbox yes was refused.
+- **Now**: `tools/hooks/consent.ts` reads a delivered answer, framed or not, for every guard; push-guard reads it there.
+  Question and answer travel as JSON strings, so a quote inside either no longer breaks the pair. `consent.test.ts`
+  feeds the guard the prompt exactly as the app framed it on 2026-11-17, and the cases that must stay refused (a no,
+  another plugin, a paste, a question quoted in the inbox wake).
+- A yes to a push question also reads «пушим», «делай», «подтверждаю», «+», and an answer that itself says the push.
+- git-guard's refusal says no answer releases it, so a chat no longer asks for a yes that would be refused again.
+
 ## makarasty-tools 1.19.55 — 2026-11-17
 
 A tap in Telegram took minutes to reach the chat (owner, 2026-11-17: «Задержка слишком большая»).

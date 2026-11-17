@@ -534,7 +534,7 @@ export function denial(command: string, off: boolean, tool = 'Bash', where: Wher
   // No command is named as a way round: a discard by another route (`git show HEAD:f > f`) loses the same work.
   return why && `Blocked by makarasty-tools git-guard: ${why}. It is refused because it cannot be undone and other chats' uncommitted work may share this tree. ` +
     'Safe ways: commit your own change or copy the file aside first; undo your own edit by changing only the lines you edited; ' +
-    'ask the user; or ask them to run it themselves with `!`. A discard, `add -A` or `commit -a` in your own `.claude/worktrees/` or C:\\wt* worktree or a temp clone is not guarded. ' +
+    'or ask them to run it themselves with `!`. No answer in the chat releases this guard, so do not ask for a yes: it would be refused again (2026-11-17). A discard, `add -A` or `commit -a` in your own `.claude/worktrees/` or C:\\wt* worktree or a temp clone is not guarded. ' +
     'MAKARASTY_GIT_GUARD=off turns this off.'
 }
 
