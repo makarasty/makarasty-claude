@@ -1,5 +1,19 @@
 # Changelog
 
+## makarasty-tools 1.19.60 — 2026-11-17
+
+- **`report`: a summary you can scan instead of a Markdown file**: the writer puts facts into a JSON of numbered
+  items, each with who holds it and when it matters, and `report.mjs` draws one self-contained page: a time route on
+  top, one number per item for the whole page (answer "5 later, 9 to Anya"), owners by colour and shape, steps, bars,
+  a copyable command, "Подробнее" for the long text, both themes, phone width, print. What changes for you: the page
+  shows what needs you first and every report looks and behaves the same. Measured [M78]: a blind judge preferred it
+  to a plain "make an HTML report" on two real tasks (7.0 vs 6.7, 7.0 vs 4.8); seven review rounds took the template
+  from 7 to 9.8.
+- **The build refuses a page that says something wrong**: a headline count that disagrees with the items, an ask taken
+  from a changelog or git log with no check of the current state (`checked`), a total that disagrees with its bars,
+  someone else's item coloured as yours, ids and paths outside code, a size given as the reason for a change. A weak
+  model (Haiku) builds a clean page in 2-3 runs.
+
 ## makarasty-tools 1.19.59 — 2026-11-17
 
 - **Every rule has a proof**: `tools/skills/forge/rules/registry.json` lists the owner's 98 cross-project rules (where each

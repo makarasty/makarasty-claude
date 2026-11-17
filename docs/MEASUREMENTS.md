@@ -1365,6 +1365,22 @@ Two passes for the first nine rules (2 then 4 runs per prompt and arm), counts b
 **Status:** one model, short context, 3-6 runs per cell; the judge sees the reply and the first 30 tool calls; field
 counts are regex hits on his own messages (raw, not hand-read).
 
+## M78 — The report skill vs a plain "make an HTML report" ask, and its polish rounds (2026-11-17)
+Two real tasks (a research summary from a notes file, a two-day git log of a product repo), one Sonnet writer per
+arm with the same brief, the skill arm told to follow `tools/skills/report/SKILL.md`. A blind Opus judge on a clean
+context scored shuffled X/Y pages 1-10 on scan speed, visuals, item numbers, polish, accuracy and slop.
+- **Skill vs plain:** 7.0 vs 6.7 and 7.0 vs 4.8. The plain git page had no item numbers, the owner's one action in
+  the last line of the second card, invented bar widths and one false claim. The skill pages carried the template's
+  bugs (fixed afterwards). Time 48-59 s vs 59-74 s; tokens equal (about 90 thousand, reading the sources).
+- **Polish:** seven rounds, each a fresh Opus judge over 4-5 pages at 1280/768/390/360, light and dark, collapsed and
+  expanded, with overflow, contrast and Ctrl+F probes: template 7, 8, 8.5, 9, 9.5, 9.6, 9.8. Text contrast at least
+  4.79:1 light and 5.9:1 dark; no horizontal scroll at any width.
+- **Weak writer:** Haiku from scratch built in 2-3 runs each time; the strict build moved it from a page that looked
+  right but coloured someone else's item as the reader's (judge 6/10) to checking the current state before asking.
+  It still inverted one number and misattributed a switch, so the skill tells the writer to re-read facts.
+  One Haiku run printed a bot token to its own log while checking a config; rule 0 (never print a secret) followed.
+**Status:** 2 tasks for the A/B, one run per arm; the polish scores come from one judge per round, not a panel.
+
 ## Appendix: what a pull run spends
 
 Moved here from `PULL.md`, which workers read in full; none of it changes what a worker does.

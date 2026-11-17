@@ -388,6 +388,7 @@ screenshot per candidate), `fleet-naive-user` (a first-time user with no code ac
 | `scrub` | Masks secrets pasted into this machine's transcripts; dry run first. Does not revoke a key |
 | `blindtest` | First-time-user agents try plain tasks on the live screen; fixes are re-run |
 | `proof` | Before and after screenshots in an HTML report, kept out of the model's context |
+| `report` | A summary as one visual HTML page: numbered items by time and owner, drawn from JSON, strict build |
 | `antislop` | A rule set against AI-looking UI, plus an audit of existing UI [M47] |
 | `forge` | How to build or check a skill, command, hook, agent or plugin, with an A/B script |
 | `craft` | Refactor, dedupe and test rules: pin behaviour first, keep tests seen failing |
