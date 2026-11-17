@@ -1,5 +1,18 @@
 # Changelog
 
+## makarasty-tools 1.19.55 — 2026-11-17
+
+A tap in Telegram took minutes to reach the chat (owner, 2026-11-17: «Задержка слишком большая»).
+- **Why**: the poll rode the inbox timer, which skips its tick while the last one runs, and one runs up to a minute (an
+  explanation from the model, a push); with few chats on the new version, nobody polled for minutes.
+- **Now**: its own 1 s timer in every chat; one chat leads with a long poll (getUpdates timeout 20), so a tap arrives
+  within about a second, and renews its lease before each poll; another chat takes over 30 s after the leader is gone.
+  Where the engine cannot hold a long request, short polls every 2 s; a request stuck past a minute is given up.
+- A tap on a question already answered in the app answers "Уже отвечено в приложении" at once and collapses; any
+  other tap "Принято, отправляю в чат". `telegram/log.json` keeps the last 100 updates: when the poll returned, how
+  the poll ran, how long handling took.
+- With no bot set up, the timer checks again only every 30 s.
+
 ## makarasty-tools 1.19.54 — 2026-11-17
 
 - **git-guard refuses `git rm` on the whole tree** (`.` or `:/`, with or without `--cached`): it unstages or removes

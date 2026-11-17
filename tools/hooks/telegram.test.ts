@@ -86,16 +86,46 @@ for (const [what, config] of [['no notify.json', null], ['a token with no chat b
   })
 }
 
-test('two ticks within 15 s make one getUpdates; the next one after the interval makes a second', async () => {
+test('the leader long-polls again at once; another chat waits while the lease is fresh and takes over once it is 30 s old', async () => {
   const w = world()
   await w.tick()
-  await w.advance(5000)
   await w.tick()
-  expect(w.sent('getUpdates').length).toBe(1)
-  await w.advance(11000)
+  expect(w.sent('getUpdates').length).toBe(2) // its own lease: the next long poll right after the last
+  expect(w.sent('getUpdates')[0]!.body).toMatchObject({ offset: 0, timeout: 20, allowed_updates: ['message', 'callback_query'] })
+  w.put(`${TG}/polled`, `${w.NOW + 1000} chatZ`) // chat Z leads now
+  await w.advance(10000)
   await w.tick()
   expect(w.sent('getUpdates').length).toBe(2)
-  expect(w.sent('getUpdates')[0]!.body).toMatchObject({ offset: 0, timeout: 0, allowed_updates: ['message', 'callback_query'] })
+  await w.advance(25000)
+  await w.tick()
+  expect(w.sent('getUpdates').length).toBe(3)
+  expect(w.disk.get(`${TG}/polled`)).toMatch(/ chatA$/)
+})
+
+test('a request with no HTTP answer (the engine cannot hold a long one): short polls, 2 s apart', async () => {
+  let n = 0
+  const w = world({ getUpdates: () => { if (++n === 1) throw new Error('socket hang up'); return [200, { ok: true, result: [] }] } })
+  await w.tick()
+  await w.advance(500)
+  await w.tick()
+  expect(w.sent('getUpdates').map((c) => c.body.timeout)).toEqual([20]) // 2 s apart
+  await w.advance(2000)
+  await w.tick()
+  await w.advance(2000)
+  await w.tick()
+  expect(w.sent('getUpdates').map((c) => c.body.timeout)).toEqual([20, 0, 0])
+})
+
+test('a tap on a question already answered in the app: "already answered" at once, collapsed, no second answer', async () => {
+  const w = world()
+  w.item('chatB~t1'); w.ask(70)
+  w.put(`${INBOX}/answers/chatB~t1.json`, { id: 'chatB~t1', at: 1, by: 'chat' })
+  w.feed([tap(1, 42, 70, 'a1')])
+  await w.tick()
+  expect(w.sent('answerCallbackQuery')[0]!.body.text).toBe('Уже отвечено в приложении')
+  expect(w.runs).toEqual([])
+  expect(w.sent('editMessageText')[0]!.body.text).toContain('отвечено в приложении')
+  expect(w.json(`${TG}/log.json`)[0]).toMatchObject({ update: 1, kind: 'tap-answered', poll: 'long' })
 })
 
 test('a claim another session overwrote right after this one wrote it: this one does not poll', async () => {
@@ -123,7 +153,7 @@ test('a second tap on an answered message does not answer again', async () => {
   w.feed([tap(7, 42, 101, 'a1'), tap(8, 42, 101, 'a0')])
   await w.tick()
   expect(w.runs.filter((r) => r.argv[0] === 'answer').length).toBe(1)
-  expect(w.sent('answerCallbackQuery').map((c) => c.body.text)).toEqual(['Принято', 'Уже закрыто'])
+  expect(w.sent('answerCallbackQuery').map((c) => c.body.text)).toEqual(['Принято, отправляю в чат', 'Уже закрыто'])
 })
 
 test('a tap of another user is refused and reaches no inbox', async () => {

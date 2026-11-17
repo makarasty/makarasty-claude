@@ -3,7 +3,7 @@ import { PUSH_AFTER_MS, clean, contextOf, continueAnswer, deliveryText, dueRepor
 import { find as secretIn } from './secret-guard.ts'
 import { notePrompt } from './push-guard.ts'
 import { PLUGIN_FRAME, ownWords } from './own-words.ts'
-import { isTelegramPrompt, inboundPrompt, takeInbound, telegramInbound, telegramTick, telegramTurnComplete, telegramTurnStart, telegramWords } from './telegram.ts'
+import { isTelegramPrompt, inboundPrompt, takeInbound, startTelegram, telegramInbound, telegramTurnComplete, telegramTurnStart, telegramWords } from './telegram.ts'
 
 // The cross-chat inbox (skill /makarasty-tools:inbox, layout in skills/inbox/core.mjs). Off unless
 // <config>/makarasty/inbox.on exists. In every chat it:
@@ -123,6 +123,7 @@ export async function startInboxTimer($: D): Promise<void> {
   if (!timer && ((await active($).catch(() => undefined)) || (await inboxSelf($).catch(() => undefined)))) startTimer($)
 }
 function startTimer($: D): void {
+  startTelegram($) // its own 1 s timer: this one can be busy for a minute, and a tap must not wait behind it
   if (timer) return
   let busy = false
   timer = $.clock.every(TICK_MS, () => {
@@ -810,7 +811,6 @@ async function telegramDeliver($: D, me: { dir: string; root: string; session: s
 // The last answer to "is a notify channel configured?" and when it was asked (tick keeps it 10 min).
 let chan = { at: -Infinity, yes: true }
 export async function tick($: D): Promise<void> {
-  void telegramTick($).catch(() => undefined) // not awaited: a slow Telegram must not hold the beat or the wake
   const me = await inboxSelf($)
   if (me) {
     await $.fs.write(`${me.root}/beat`, String(await $.clock.now())).catch(() => undefined) // the watchdog's sign the timer runs
