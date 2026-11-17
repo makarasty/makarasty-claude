@@ -114,6 +114,13 @@ export const findings =
   'Findings: a defect you notice beyond the task goes in your reply (where, what is wrong); ask before fixing it. ' +
   'Never drop one to keep a reply short. Why: the person trusts your report and does not re-check it.'
 
+// The owner, 2026-11-17: agents lost the goal and left plan items as a footnote ("not reviewed"). Main sessions with the
+// economy texts, subagents with the findings line, so a fleet worker's report walks its brief too.
+export const plans =
+  'Plans: every plan opens with its goal. A brief to a subagent or another session carries that goal, the full item list ' +
+  'and a "done when" that covers every item. Before the final report walk every item: each is done, with the check that ' +
+  'shows it, or named open with why and its next step (a question, a card, who has it). Never leave one as a footnote.'
+
 const findingsOn = async ($: Dollar) => (await $.env.get('MAKARASTY_FINDINGS')) !== 'off'
 
 // Habits that each cost hours in measured runs (Edit failures [M25] [M31], polling and waiting on questions [M52],
@@ -166,7 +173,7 @@ async function profile($: Dollar): Promise<string[]> {
 }
 
 const withEconomy = async ($: Dollar, out: { additionalContext?: string[] }, more: string[] = []) => {
-  const rules = [...((await $.env.get('MAKARASTY_ECONOMY')) === 'off' ? [] : [economy, habits, asking]), ...((await findingsOn($)) ? [findings] : [])]
+  const rules = [...((await $.env.get('MAKARASTY_ECONOMY')) === 'off' ? [] : [economy, habits, asking, plans]), ...((await findingsOn($)) ? [findings] : [])]
   const all = [...(out.additionalContext ?? []), ...more, ...rules, ...(await profile($).catch(() => []))]
   return all.length ? { ...out, additionalContext: all } : out
 }
@@ -283,7 +290,7 @@ export const register: Register = on => {
   // SessionStart does not fire in subagents, and cheap subagents are where the dropped defects showed.
   on('classic.SubagentStart', async ($, e, next) => {
     const out = await next(e)
-    return (await findingsOn($)) ? { ...out, additionalContext: [...(out.additionalContext ?? []), findings] } : out
+    return (await findingsOn($)) ? { ...out, additionalContext: [...(out.additionalContext ?? []), findings, plans] } : out
   })
 
   // A session id that comes back (resume) is live again: drop the ended marker, whatever the source.

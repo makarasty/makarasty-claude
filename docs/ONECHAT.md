@@ -241,6 +241,11 @@ ruling pass over the findings (`docs/MODELS.md`). When every slot has written `N
 `tasks/queue-open` is gone, run `/makarasty:fleet-collect`: it runs `merge`, then `landed <run> <slot
 count>`, which refuses a run with no `backlog.jsonl`. By hand: `sh "$f" merge "$r"` first.
 
+The end report opens with the mission's goal and walks every item of the operator's request and of the
+queue: each is done, with its commit or check, or named open with why and its next step (a task filed, a
+question, a card). A coder's or reviewer's brief carries that goal, its own items and a done-when that covers
+them all. An item left as a footnote ("not reviewed") is a defect of the report.
+
 
 ### A fix or root that cannot be proven
 

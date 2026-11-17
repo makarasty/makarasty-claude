@@ -1,5 +1,23 @@
 # Changelog
 
+## makarasty-tools 1.19.47 — 2026-11-17
+
+- **Plans keep their goal** (operator 11-17: agents lost focus and left plan items as a footnote, "not reviewed"): a new
+  session line, `plans`, reaches every main session and every subagent: a plan opens with its goal; a brief to a
+  subagent or session carries the goal, the full item list and a done-when covering every item; before the final
+  report each item is done with its check or named open with why and its next step. `finish` walks the task's own
+  items in its report. Test: `gates.test.ts` (present in SessionStart and SubagentStart, under 400 characters).
+
+## makarasty 1.18.13 — 2026-11-17
+
+- **Worker effort is medium or high only** (operator 11-12): `fleet.sh chips` refuses `low`, `xhigh` and `max`; a
+  `want/` file from an older run is read `max`/`xhigh` as `high`, `low` as `medium` (pause, resume). Spend for
+  speed reviews on Opus `high`. Test: `f-file-stranded-status`.
+- **Docs tell the current rules**: a run's own due commit is made without asking (ONECHAT "Commits"); pace comes from
+  the profile's `Fleet pace:` line, three questions only when it is missing (MODELS "Pace", fleet, fleet-plan, README).
+- **Fleet plans keep their goal**: the end report walks every item of the request and the queue, done or open with its
+  next step; coder and reviewer briefs carry the goal and a done-when for all their items (ONECHAT, fleet-plan).
+
 ## makarasty 1.18.12 — 2026-11-17
 
 - **fleet-analyze: one-chat runs get their time and habit pass.** A run with no `chips/<session-id>` files printed 0 workers

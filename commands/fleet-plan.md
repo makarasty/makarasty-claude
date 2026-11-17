@@ -654,7 +654,8 @@ nothing else is running.
 
 ## Done when
 
-The `pace:` line is in `STATE.md`, the whole queue is filed with its waves held by `after:` (or every brief
+The plan opens with the mission's goal and every item of the request maps to a task or is named open with
+why, the `pace:` line is in `STATE.md`, the whole queue is filed with its waves held by `after:` (or every brief
 exists on disk), every slice of the axis has exactly one owner, **the watch is armed**, and the operator has
 the wave order and each step's model. In one chat a slot is registered for every lane with work and the
 loop of `docs/ONECHAT.md` is running: you stay in it until the run lands. With separate chats a chip is

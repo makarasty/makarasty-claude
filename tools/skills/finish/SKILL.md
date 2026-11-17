@@ -37,6 +37,8 @@ is asked or reported right there; the steps after it do not run on a half-finish
 A change to UI files with a pane at hand gets a `/makarasty-tools:proof` report of before and after, linked here.
 One block, in the person's language: review rounds and what they fixed, red-team findings kept and
 fixed, the test command and its result, the commit hash and where it was pushed. Then what was not run.
+Before it, walk the task's own goal and every item of its plan, not only these steps: each is done, with
+its check, or named open with why and its next step; none is left as a footnote.
 
 ## Done when
 
