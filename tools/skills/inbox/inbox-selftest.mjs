@@ -589,6 +589,10 @@ try {
   const jobFile = () => { try { const f = readdirSync(join(root, 'jobs'))[0]; return f ? JSON.parse(readFileSync(join(root, 'jobs', f), 'utf8')) : undefined } catch { return undefined } }
   for (let i = 0; i < 60 && jobFile()?.state === 'running'; i++) await new Promise((r) => setTimeout(r, 250))
   check('job starts on his words, runs detached and its end goes to his Telegram', job.status === 0 && jobFile()?.state === 'failed' && readFileSync(sink, 'utf8').includes('<b>kitty video</b>'), job.stdout + job.stderr + JSON.stringify(jobFile()))
+  const jid = jobFile()?.id, jo = spawnSync(process.execPath, [cli, 'job-open', jid], { env: jenv, encoding: 'utf8' })
+  check('job-open of an ended job with no app window says so, exit 1', jo.status === 1 && jo.stdout.includes('no running app window'), jo.stdout + jo.stderr)
+  writeFileSync(join(root, 'jobs', `${jid}.json`), JSON.stringify({ ...jobFile(), state: 'running' }))
+  check('job-open of a running job is refused: two writers would break its session', spawnSync(process.execPath, [cli, 'job-open', jid], { env: jenv, encoding: 'utf8' }).stderr.includes('still runs'))
   check('the same message starts no second job', spawnSync(process.execPath, [cli, 'job', tmp, 'kitty video', '--said', 'короткое веселое видео про darkkitty'], { env: jenv, encoding: 'utf8' }).status === 2)
 } finally {
   rmSync(tmp, { recursive: true, force: true })

@@ -564,10 +564,21 @@ function jobRun(/** @type {string} */ id) {
   let out = '', ok = false
   try { out = execFileSync(bundledCli({ name: prof ?? '', dir: join(profilesDir(), prof ?? '') }), argv, { cwd: j.folder, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 3 * 3600e3, maxBuffer: 16 << 20, windowsHide: true }); ok = true }
   catch (e) { out = String(/** @type {{stdout?: string}} */ (e).stdout ?? '') }
-  const head = `<b>${escHtml(j.name)}</b>\n`
-  try { execFileSync(process.execPath, [notifyJs, 'send', '--html'], { input: head + (ok && out.trim() ? mdToTg(out) : note(t(lang(), 'jobFailed'))), stdio: ['pipe', 'ignore', 'ignore'], timeout: 30000 }) } catch { /* the result stays in the job's session */ }
-  writeFileSync(f, JSON.stringify({ ...j, state: ok ? 'done' : 'failed', ended: new Date().toISOString() }, null, 1))
+  const opened = prof ? openInApp(prof, j.sid) : false
+  const head = `<b>${escHtml(j.name)}</b>\n`, tail = opened ? `\n${note(t(lang(), 'jobOpened'))}` : ''
+  try { execFileSync(process.execPath, [notifyJs, 'send', '--html'], { input: head + (ok && out.trim() ? mdToTg(out) : note(t(lang(), 'jobFailed'))) + tail, stdio: ['pipe', 'ignore', 'ignore'], timeout: 30000 }) } catch { /* the result stays in the job's session */ }
+  writeFileSync(f, JSON.stringify({ ...j, state: ok ? 'done' : 'failed', ended: new Date().toISOString(), opened }, null, 1))
   return ok ? 0 : 1
+}
+// A finished job becomes a chat in the app's sidebar (owner, 2026-11-18: "Да, открывать"), only once its `-p` has ended:
+// two writers on one session would break it. The window shows it for a moment, then goes back to the chat it showed.
+function openInApp(/** @type {string} */ profName, /** @type {string} */ sid) {
+  const prof = { name: profName, dir: join(profilesDir(), profName) }
+  const back = chats().filter((c) => c.profile === profName).sort((x, y) => y.focused - x.focused)[0]
+  if (!launch(prof, `claude://resume?session=${sid}`)) return false
+  for (let i = 0; i < 60 && profileOf(`local_${sid}`)?.name !== profName; i++) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 500)
+  if (back?.focused) launch(prof, `claude://claude.ai/epitaxy/${back.host}`)
+  return profileOf(`local_${sid}`)?.name === profName
 }
 const escHtml = (/** @type {string} */ s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
@@ -889,6 +900,13 @@ async function main() {
   if (cmd === 'telegram') return telegramTurn()
   if (cmd === 'job') return jobCmd([id, ...rest].filter((x) => x !== undefined))
   if (cmd === 'job-run') return jobRun(id ?? '')
+  if (cmd === 'job-open') {
+    // A job that ended before it could open itself (an older version, the window closed): open it now.
+    const j = readJSON(join(root, 'jobs', `${id}.json`)), profs = existsSync(profilesDir()) ? readdirSync(profilesDir()) : []
+    if (!j || j.state === 'running') { console.error('inbox: no such job, or it still runs (two writers would break its session)'); return 1 }
+    const ok = openInApp(profs.includes('main') ? 'main' : profs[0] ?? '', j.sid)
+    say(ok ? `inbox: job ${id} is open in the app` : noWindow(undefined)); return ok ? 0 : 1
+  }
 
   if (cmd === 'scan') {
     // Files the questions that wait in live chats of every account and have no item (also run by the first list and by list --take).

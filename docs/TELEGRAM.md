@@ -77,6 +77,8 @@ UX
     bot is the ask. One message, one start, as for typed prompts.
 33. Long work from the phone is a job, not a started app chat (that needs the inbox chat to drain the queue and send the
     brief): `inbox.mjs job` writes `inbox/jobs/<id>.json` and runs a detached `claude -p` in the folder (3 h cap, model
-    and effort as asked); its final message goes to Telegram, a failure as one line.
+    and effort as asked); its final message goes to Telegram, a failure as one line. Once `-p` has ended (never before:
+    two writers break a session) it opens in the app as a chat of the same name (`claude://resume`, the window flips
+    back to the chat it showed); `inbox.mjs job-open <id>` does it for a job that ended without.
 28. Until 1.19.63 `inbox.mjs telegram` sat after the item-id check and exited "needs an item id": no free message was
     ever answered with the inbox chat closed. The inbox selftest now runs it.

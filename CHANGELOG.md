@@ -1,5 +1,11 @@
 # Changelog
 
+## makarasty-tools 1.19.67 — 2026-11-18
+
+- **A task from the phone shows up as a chat in the app when it ends**: the window flips to it for a moment and back,
+  and you can go on there; the Telegram result says so. Not while it runs: two writers would break its session.
+  `inbox.mjs job-open <id>` opens one that ended without it.
+
 ## makarasty-tools 1.19.66 — 2026-11-18
 
 - **Long work asked from the phone actually runs**: a chat in the app window is started and briefed by the inbox chat,
