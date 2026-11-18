@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=1080, height=1920" />
 <script src="https://cdn.jsdelivr.net/npm/gsap@3.15.0/dist/gsap.min.js"></script>
-<script src="data.js"></script><script src="strings.js"></script>
+<script src="data.js"></script><script src="strings.js"></script><script src="layout-audit.js"></script>
 <style>
 :root{
   --ground:#050608; --ink:#f4f6f8; --dim:rgba(244,246,248,.5); --faint:rgba(244,246,248,.22); --acc:#00daf6; --red:#ff4d6d; --green:#00d488;
@@ -451,6 +451,7 @@ function build() {
     });
   });
 
+  layoutAudit(tl, sc, off, ".code,.memb");
   window.__timelines = window.__timelines || {};
   window.__timelines["main"] = tl;
   tl.seek(0);

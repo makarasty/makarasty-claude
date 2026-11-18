@@ -1,5 +1,13 @@
 # Changelog
 
+## makarasty-tools 1.20.4 — 2026-11-18
+
+- **`/makarasty-tools:video` catches text spilling out of its box and defaults to English.** A box sized by hand for Russian
+  words let "другая компания" stick out of its frame and `hyperframes check` passed. New `example/layout-audit.js`
+  (`flow`, `center`, `fitText`, `layoutAudit`) throws on text outside its box, a box outside its parent, or text outside
+  the safe zone, so `check` fails and names the scene; SKILL.md says to call it and to size boxes by measured width.
+  Default language is English, Russian only when asked (the person, 2026-11-18). Built in the Stedi video chat.
+
 ## makarasty-tools 1.20.3 — 2026-11-18
 
 - **`/makarasty-tools:unfinished` remembers the person's answers** (owner 11-18: ~40 items answered skip / done / later, and no

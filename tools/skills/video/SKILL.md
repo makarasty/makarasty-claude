@@ -14,7 +14,8 @@ is missing, set it up from `${CLAUDE_SKILL_DIR}/SETUP.md` first. Each video gets
 
 ## Flow
 
-1. **Brief.** Topic, who watches, languages, where it is posted. Default 60-75 s, 1080x1920. Use the names, people
+1. **Brief.** Topic, who watches, languages, where it is posted. Default 60-75 s, 1080x1920, English only (the
+   person, 2026-11-18: a Russian take only when they ask for one). Use the names, people
    and assets the person really has (ask for avatars or a logo); a made-up name or face is the first thing they notice.
 2. **Script.** `narration.<lang>.json` in the work folder: 7-10 segments `{"id","text","beats"}`, one or two short
    sentences each, the hook in the first two seconds. `beats` maps a name to the stem of a word spoken in that
@@ -36,7 +37,7 @@ is missing, set it up from `${CLAUDE_SKILL_DIR}/SETUP.md` first. Each video gets
    with `data-start`/`data-duration` (the engine stamps `data-duration`), `voice.wav` as the audio, `window.DATA`
    from `data.js` (`lang, dur, endCard, segments[{start,end,beats,words}], chunks`), on-screen words per language in
    `strings.js`. Read the HyperFrames docs in HOME\node\node_modules\hyperframes before the first composition.
-6. **Render** each language: `powershell -File "${CLAUDE_SKILL_DIR}/engine/make.ps1" -Lang ru -Work <work folder>`
+6. **Render** each language: `powershell -File "${CLAUDE_SKILL_DIR}/engine/make.ps1" -Lang en -Work <work folder>`
    (`-Voice`, `-Seed`, `-Tempo 1.05` for a slow voice, `-SkipVoice` to reuse `<lang>-<seed>.wav`, `-PrepOnly` to stop
    before the render). Run it in the background, one language at a time: the render uses the GPU and 6 workers.
 7. **Check by eye.** `node HOME\node\node_modules\hyperframes\bin\hyperframes.mjs snapshot` at every beat, read the
@@ -63,6 +64,11 @@ Each of these reached the person once. The engine guards the sound ones; the pic
   `strings.js` are not there. Keep a hidden block with every glyph each face uses (the example has one).
 - **Safe zones.** Text and key art inside x 132-876, y 288-1248; nothing right of x 780 below y 840 (the platform
   buttons). `hyperframes check` reports overflows; zero warnings before render.
+- **Text spilling out of its box.** A node sized by hand for Russian words let "другая компания" stick out of its
+  frame, and `check` passed: it samples a few frames and does not test text against a box's padding. Call
+  `layoutAudit(tl, scenes, ends, "<box selectors>")` from `example/layout-audit.js` before registering the
+  timeline: it throws on any text outside its box, box outside its parent box, or text outside the safe zone, so
+  `check` fails and names the scene. Size boxes with `minWidth` and place rows with `flow`/`center`, not fixed lefts.
 - **Licence.** OmniVoice weights are CC-BY-NC: say so before a Ukrainian video is used commercially.
 
 ## Report
