@@ -2,25 +2,25 @@
 
 ## makarasty-tools 1.20.9 — 2026-11-18
 
-- **notify: a Telegram send whose outcome is unknown is never sent twice.** Incident (owner, 2026-11-18): \`notify.mjs file\`
+- **notify: a Telegram send whose outcome is unknown is never sent twice.** Incident (owner, 2026-11-18): `notify.mjs file`
   printed "telegram failed: Gateway Timeout" and exited 1, Telegram had delivered it, the chat retried, and he got the
-  same message twice. Now a \`send*\` call (and the multipart file upload) that ends in a 5xx, a timeout or a connection
-  that broke after the request was made is "unconfirmed": \`notify: telegram did not confirm (<reason>): it may have arrived,
-  so it is not sent again\`, exit 0. The same state ends an in-process retry (\`post()\` retried sendMessage up to twice on
-  a 5xx) and the finish re-send at the next chat start (\`flushUnsent\` removes the claim). A 429 still retries (Telegram
-  refused it), so do idempotent calls (getMe, getUpdates, edit*); a clear 4xx is still "failed".
-- **Trade-off, owner's call:** a finish whose send hung until the timeout is no longer kept for a re-send at the next
-  chat start; the old selftest case "the undelivered finish stays on disk" now says it is not kept.
-- **Never-sent is not unconfirmed.** A refused, unresolved or unroutable connection, a connect timeout and a TLS or
-  certificate error mean the request never left: they retry as before and end "failed" (the finish keeps `unsent`). A bare
-  timeout is decided by a `getMe` probe (3 s, inside the deadline): no answer means the network is out (failed, finish kept),
-  an answer means Telegram was reachable and the send may have arrived (unconfirmed). Socket errors and 5xx stay unconfirmed.
+  same message twice. Rule: a `send*` call (and the multipart file upload) that ends in a 5xx, a timeout or a socket error
+  is never repeated in the same run (`post()` used to retry sendMessage up to twice). Only a 429 (Telegram refused it) and
+  an error that proves the request never left (refused, unresolved or unroutable connection, a connect timeout, TLS or
+  certificate) retry. Idempotent calls (getMe, getUpdates, edit*) retry as before; a clear 4xx is "failed".
+- **A `getMe` probe decides what becomes of the unknown outcome** (3 s, inside the run's deadline, probed each time):
+  an answer means Telegram is reachable, so it may have arrived: `notify: telegram did not confirm (<reason>): it may have
+  arrived, so it is not sent again`, exit 0, the finish is dropped. No answer, or no time left to ask (a reopened chat's 4 s
+  budget): failed, and the finish stays on disk with `unsent` for a later run, as before.
+- **Trade-off, owner's call:** a finish kept after a failed probe may arrive twice (the first send got through while the
+  network then dropped), the second labelled late. Kept because a finish lost in a dead network is worse.
 - **An ask that is unconfirmed counts as failed (exit 1).** With no message id there is no `asks/<id>.json`, so a tap on it
   would be answered "closed" and the question could not be answered from the phone. The inbox sends it again: a repeated
-  question beats one nobody can answer. Only asks do this; a finish or a message stays "did not confirm".
-- Tests: notify-selftest runs a Telegram look-alike that logs requests (504 once on sendMessage and sendDocument: one
-  request, exit 0; 429 then 200: two requests; 400: still failed; a finish answered 504: marker gone; getMe 502 then 200:
-  retried).
+  question beats one nobody can answer.
+- Tests: notify-selftest runs a Telegram look-alike that logs requests (504 on sendMessage and sendDocument: one request,
+  exit 0; 429 then 200: two requests; a hung send and hung getMe: one request, marker kept; a hung send and answering
+  getMe: unconfirmed; a reopened chat with no time to probe: marker kept; two finishes in one flush each on its own probe;
+  an ask answered 504 exits 1; getMe 502 then 200: retried).
 
 ## makarasty-tools 1.20.8 — 2026-11-18
 

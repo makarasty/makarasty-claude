@@ -527,9 +527,9 @@ if (ms <= 7000)
 else
     bad('a resume gives up after about four seconds', `took ${took}s`);
 if (exists(marker))
-    bad('and a send that timed out is not kept for a second try', read(marker));
+    ok('and the undelivered finish stays on disk: no time was left to ask whether it arrived');
 else
-    ok('and a send that timed out is not kept for a second try');
+    bad('and the undelivered finish stays on disk: no time was left to ask whether it arrived');
 node([n, '--disarm']);
 writeFileSync(conf, confExcerpt);
 section('a send whose outcome is unknown is never sent twice');
@@ -541,7 +541,8 @@ function mock(plan) {
 require("http").createServer((q, r) => { q.resume(); q.on("end", () => {
   const m = q.url.split("/").pop(); fs.appendFileSync(${JSON.stringify(log)}, m + "\\n");
   const st = (plan[m] || []).shift() || 200;
-  if (st < 0) return; // never answers
+  if (st === -1) return; // never answers
+  if (st === -2) return q.socket.destroy(); // the connection drops
   r.writeHead(st, { "content-type": "application/json" });
   r.end(JSON.stringify(st === 200 ? { ok: true, result: m === "getMe" ? { username: "x_bot" } : m === "getUpdates" ? [] : { message_id: 7 } } : { ok: false, description: st === 429 ? "Too Many Requests" : "Gateway Timeout", parameters: { retry_after: 1 } }));
 }); }).listen(0, "127.0.0.1", function () { fs.writeFileSync(process.argv[1], String(this.address().port)); })`;
@@ -557,7 +558,7 @@ r = node([n, 'send', 'hi'], { env: mk.env });
 code('a send answered 504 exits 0', 0, r.code);
 check('and says it did not confirm', unconfirmedLine, r.err);
 check('after one request only', 'sendMessage', mk.reqs().join(','));
-if (mk.reqs().length === 1)
+if (mk.reqs().filter((x) => x.startsWith('send')).length === 1)
     ok('and not a second one (the old retry would make two)');
 else
     bad('and not a second one', mk.reqs().join(','));
@@ -566,7 +567,7 @@ mk = mock({ sendDocument: [504] });
 r = node([n, 'file', doc, '--caption', 'x'], { env: mk.env });
 code('a file answered 504 exits 0', 0, r.code);
 check('and says it did not confirm', 'notify: telegram did not confirm (Gateway Timeout): it may have arrived, so it is not sent again', r.err);
-if (mk.reqs().length === 1)
+if (mk.reqs().filter((x) => x.startsWith('send')).length === 1)
     ok('after one request only');
 else
     bad('after one request only', mk.reqs().join(','));
@@ -592,7 +593,7 @@ if (exists(marker))
     bad('and the marker is gone: no later flush sends it again', read(marker));
 else
     ok('and the marker is gone: no later flush sends it again');
-if (mk.reqs().length === 1)
+if (mk.reqs().filter((x) => x.startsWith('send')).length === 1)
     ok('after one request only');
 else
     bad('after one request only', mk.reqs().join(','));
@@ -608,6 +609,10 @@ if (r.err.includes('did not confirm'))
 else
     ok('and not unconfirmed');
 check('and the finish stays on disk to be sent later', '"unsent"', read(marker));
+if (mk.reqs().filter((x) => x === 'sendMessage').length === 1)
+    ok('after one sendMessage: an ambiguous send is not repeated');
+else
+    bad('after one sendMessage', mk.reqs().join(','));
 mk.srv.kill();
 mk = mock({ sendMessage: [-1] });
 r = node([n, 'send', 'hi'], { env: mk.env });
@@ -622,6 +627,25 @@ mk = mock({ sendMessage: [504] });
 r = node([n, 'ask'], { env: mk.env, input: '{"item":"i1","html":"Q?","short":"Q"}' });
 code('an ask answered 504 fails, so the inbox sends it again', 1, r.code);
 check('and says why', 'no message id', r.err);
+mk.srv.kill();
+// Two finishes in one flush: each is judged on its own probe. The first one's send and probe both fail (it stays), the network is
+// back for the second one (504, then getMe answers: it may have arrived, so it goes).
+mk = mock({ sendMessage: [-2, 504], getMe: [-2] });
+const mDir = `${tmp}/makarasty/notify`;
+const finish = (armed) => JSON.stringify({ armed, label: armed, done: '2026-11-18T10:00:00.000Z', text: armed, excerpt: '', unsent: [{ name: 'telegram', error: 'x' }] });
+writeFileSync(`${mDir}/other.json`, finish('other'));
+writeFileSync(marker, finish('mine'));
+hook('{"hook_event_name":"SessionStart","session_id":"s1","source":"resume"}', mk.env);
+if (exists(`${mDir}/other.json`))
+    ok('the first finish, whose probe failed, stays');
+else
+    bad('the first finish, whose probe failed, stays');
+if (exists(marker))
+    bad('the second finish, whose probe answered, is dropped', read(marker));
+else
+    ok('the second finish, whose probe answered, is dropped');
+check('with one probe each', 'sendMessage,getMe,sendMessage,getMe', mk.reqs().join(','));
+rmSync(`${mDir}/other.json`, { force: true });
 mk.srv.kill();
 mk = mock({});
 mk.srv.kill();

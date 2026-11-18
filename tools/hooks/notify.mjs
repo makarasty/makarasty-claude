@@ -225,34 +225,21 @@ let deadline = Infinity;
 const left = () => deadline - Date.now();
 // Errors raised before a request was made: no route, no connection, no trusted certificate.
 const NEVER_SENT = /^(ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ENETUNREACH|EHOSTUNREACH|UND_ERR_CONNECT_TIMEOUT|CERT_[A-Z_]+|ERR_TLS_[A-Z_]+|ERR_SSL_[A-Z_]+|UNABLE_TO_VERIFY_LEAF_SIGNATURE|DEPTH_ZERO_SELF_SIGNED_CERT)$/;
-// A bare timeout says nothing about whether the request got out (a blackholed connect looks the same as a lost answer):
-// getMe decides. Any answer means Telegram is reachable, so the timeout came after the request.
-let down = false; // a probe failed in this run: the network is out, so a later timeout needs no second probe
-async function reachable(url) {
-    if (down)
-        return false;
+const neverSent = (e) => NEVER_SENT.test(e.cause?.code ?? '');
+// After an outcome that may be a delivery (a 5xx, a timeout, a broken socket) a send is not repeated in this run; a getMe
+// probe only decides what becomes of it. An answer: Telegram is reachable, so it may have arrived (unconfirmed, dropped).
+// No answer, or no time left to ask: it failed, and the finish stays on disk for a later run.
+async function settle(e, url) {
     const ms = Math.min(3000, left());
     if (ms < 500)
-        return true; // no time to ask: the safe reading is that it may have arrived
+        return e;
     try {
         await fetch(url.replace(/[^/]+$/, 'getMe'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}', signal: AbortSignal.timeout(ms) });
-        return true;
     }
     catch {
-        down = true;
-        return false;
+        return e;
     }
-}
-// Whether a failed request may still have reached Telegram: a 5xx, or a timeout or broken connection with Telegram
-// reachable. A refused, unresolved or unroutable connection never did.
-async function maybeSent(e, url, status) {
-    if (status !== undefined)
-        return status >= 500;
-    const x = e;
-    const code = x.cause?.code ?? '';
-    if (NEVER_SENT.test(code))
-        return false;
-    return code || !/^(TimeoutError|AbortError)$/.test(x.name ?? '') ? true : reachable(url);
+    return Object.assign(e, { unconfirmed: true });
 }
 // The result of a send that failed: unconfirmed when it may have arrived, else failed.
 const lost = (e, name) => {
@@ -260,8 +247,8 @@ const lost = (e, name) => {
     return e.unconfirmed ? { sent: [], failed: [], unconfirmed: [error] } : { sent: [], failed: [{ name, error }] };
 };
 // A transient failure (network, 5xx, 429) is retried up to twice; any other 4xx is the config's fault. A send (once) is
-// never retried after an outcome that may have been delivered: a second try would be a second message (owner, 2026-11-18).
-// A 429 is a refusal, so it still retries.
+// retried only when it surely did not arrive (a 429, a connection never made): a second try after anything else would be a
+// second message (owner, 2026-11-18).
 async function post(url, body, headers, ms0 = 6000, once = false) {
     for (let i = 0;; i++) {
         const ms = Math.min(ms0, left());
@@ -283,8 +270,8 @@ async function post(url, body, headers, ms0 = 6000, once = false) {
         }
         catch (e) {
             const x = e;
-            if (!x.final && once && x.status !== 429 && await maybeSent(e, url, x.status))
-                throw Object.assign(e, { unconfirmed: true });
+            if (!x.final && once && x.status !== 429 && !neverSent(e))
+                throw Object.assign(await settle(e, url), { final: true });
             if (x.final || i >= 2 || left() < 1500)
                 throw e;
             await sleep((e.wait ?? 1) * 1000);
@@ -386,11 +373,13 @@ async function sendFile(cfg, path, as0, caption, replyTo) {
             r = await fetch(sendUrl, { method: 'POST', body: form, signal: AbortSignal.timeout(180000) });
         }
         catch (e) {
-            throw await maybeSent(e, sendUrl) ? Object.assign(e, { unconfirmed: true }) : e;
+            throw neverSent(e) ? e : await settle(e, sendUrl);
         }
         const o = await r.json().catch(() => null);
-        if (!o?.ok)
-            throw Object.assign(new Error(o?.description || `${r.status}`), r.ok || await maybeSent(null, sendUrl, r.status) ? { unconfirmed: true } : {});
+        if (!o?.ok) {
+            const err = new Error(o?.description || `${r.status}`);
+            throw r.ok || r.status >= 500 ? await settle(err, sendUrl) : err;
+        }
         return o.result.message_id;
     };
     try {
