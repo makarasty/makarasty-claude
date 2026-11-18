@@ -1,5 +1,15 @@
 # Changelog
 
+## makarasty-tools 1.19.69 — 2026-11-18
+
+- **The inbox no longer asks about finished work**: a session card closed only when its own chat started it, so cards
+  started from another window or account, or done another way, were asked again 40-110 h later. `inbox.mjs list` now
+  puts these under "## Not asked" with the reason, once: a card a session already runs (the app records the card's
+  task id on it, any account; or a session made after it under its exact title), a card he wrote in its chat after,
+  a card and its chat a day untouched; an end-of-turn box whose chat began a new turn since, and a push box whose
+  commit is already on the remote branch it names. On a copy of the real inbox all nine finished weekend cards went
+  there; the open push box (commit not on the remote) is still asked. An inbox answer to a card still goes back to its chat.
+
 ## makarasty-tools 1.19.68 — 2026-11-18
 
 - **Opening a chat in the app works again** (a finished phone task, `inbox.mjs start`, `open`): on app 5.1231.2 a

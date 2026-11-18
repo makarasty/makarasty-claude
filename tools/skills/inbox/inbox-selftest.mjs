@@ -575,6 +575,52 @@ try {
     check('9. list sweeps markers of items gone over 7 days, keeps fresh ones', !existsSync(join(root, 'announced', 'gone~old')) && !existsSync(join(root, 'skipped', 'gone~old')) && existsSync(join(root, 'announced', 'gone~new')))
     writeFileSync(join(root, 'self'), 'inboxChat')
   }
+
+  // ---- 2026-11-18: cards and boxes whose work is done are not asked (weekend cards 40-110 h old were asked again).
+  // Shaped like the real records: a card item with its taskId and host; app chats with spawnedFrom, createdAt, latestUserFrameAt.
+  {
+    const P = join(tmp, 'done-profiles'), H = (/** @type {string} */ n) => `local_${n.repeat(8)}-0000-0000-0000-000000000000`, h = 3600e3, now = Date.now()
+    const regAt = (/** @type {string} */ prof) => { const d = join(P, prof, 'claude-code-sessions', 'my-account', 'org'); mkdirSync(d, { recursive: true }); return d }
+    const reg = (/** @type {string} */ n, /** @type {Record<string, unknown>} */ o = {}, prof = 'main') => writeFileSync(join(regAt(prof), `${H(n)}.json`), JSON.stringify({ sessionId: H(n), cliSessionId: `ds${n}`, cwd: `C:/work/p${n}`, title: `Чат ${n}`, createdAt: now - 200 * h, lastActivityAt: now - 60e3, latestUserFrameAt: now - 300 * h, ...o }))
+    const card = (/** @type {string} */ n, /** @type {string} */ k, /** @type {number} */ ago, /** @type {Record<string, unknown>} */ o = {}) => put({ id: `ds${n}~${k}`, kind: 'card', at: now - ago, session: `ds${n}`, host: H(n), cwd: `C:/work/p${n}`, chat: `Чат ${n} (ds${n})`, title: `Карточка ${k}`, brief: 'x', taskId: `task_${k}`, ...o })
+    const D = (/** @type {string[]} */ a) => spawnSync(process.execPath, [cli, ...a], { env: { ...env, INBOX_PROFILES_DIR: P, CLAUDE_CODE_SESSION_ID: 'doneInbox' }, encoding: 'utf8' })
+    // A repo with an origin: one commit pushed to origin/master, one only local.
+    const repo = join(tmp, 'pushrepo'), bare = join(tmp, 'pushrepo.git'), g = (/** @type {string[]} */ a) => spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'commit.gpgsign=false', ...a], { encoding: 'utf8' }).stdout.trim()
+    g(['init', '-q', '--bare', bare]); g(['init', '-q', '-b', 'master', repo]); g(['-C', repo, 'remote', 'add', 'origin', bare])
+    g(['-C', repo, 'commit', '-q', '--allow-empty', '-m', 'a']); const pushed = g(['-C', repo, 'rev-parse', '--short', 'HEAD']); g(['-C', repo, 'push', '-q', 'origin', 'master'])
+    g(['-C', repo, 'commit', '-q', '--allow-empty', '-m', 'b']); const local = g(['-C', repo, 'rev-parse', '--short', 'HEAD']); g(['-C', repo, 'branch', 'release'])
+    const box = (/** @type {string} */ n, /** @type {string} */ k, /** @type {string} */ ask, /** @type {Record<string, unknown>} */ o = {}) => put({ id: `ds${n}~${k}`, kind: 'choice', at: now - 2 * h, session: `ds${n}`, host: H(n), cwd: repo, chat: `Чат ${n} (ds${n})`, ask, actions: ['Да', 'Нет'], ...o })
+
+    reg('1'); card('1', 'started', 110 * h) // the coordinator chat is busy now; the card's session runs on another account
+    reg('a', { title: 'Карточка started', createdAt: now - 100 * h, spawnedFrom: { sessionId: H('1'), taskId: 'task_started', title: 'Карточка started', sideSession: true } }, 'dev2')
+    card('1', 'byname', 30 * h); reg('b', { title: 'карточка  byname', createdAt: now - 20 * h }) // started another way, under its title
+    card('1', 'sametitle', 30 * h, { title: 'Чат c' }); reg('c', { title: 'Чат c', createdAt: now - 40 * h }) // a chat by that title from before the card: not its session
+    reg('2', { lastActivityAt: now - 41 * h }); card('2', 'idle', 49 * h) // card and chat untouched for days
+    reg('3', { lastActivityAt: now - 5 * h }); card('3', 'oldlive', 49 * h) // old, but its chat works on: still a proposal
+    reg('4'); card('4', 'typed', 13 * h); appendFileSync(join(root, 'said.jsonl'), `${JSON.stringify({ at: now - 12 * h, session: 'ds4', text: 'давай сначала другое' })}\n`)
+    reg('5'); card('5', 'fresh', 30 * h) // its chat active, nothing since: still asked
+    reg('6'); box('6', 'pushed', `Запушить ${pushed} в master?`); box('6', 'unpushed', `Запушить ${local} в master?`)
+    box('6', 'onother', `Запушить ${pushed} в release?`) // the branch it names does not hold it
+    reg('7', { latestUserFrameAt: now - h }); box('7', 'later', 'Создать на sandbox тестовую систему?'); box('7', 'sameturn', 'Сделать ещё?', { at: now - h - 10e3 })
+    reg('8', { lastActivityAt: now - 72 * h }); put({ id: 'ds8~dialog', kind: 'ask', at: now - 72 * h, session: 'ds8', host: H('8'), cwd: 'C:/work/p8', chat: 'Чат 8 (ds8)', questions: [{ question: 'Какую базу?', options: [{ label: 'A' }, { label: 'B' }] }] })
+    appendFileSync(join(root, 'said.jsonl'), `${JSON.stringify({ at: now - 60 * h, session: 'ds8', text: 'потом' })}\n`)
+    rmSync(join(root, 'self'), { force: true }) // this test's inbox chat takes over, not a read-only list
+
+    const l = D(['list']), closedAs = (/** @type {string} */ id) => { try { return JSON.parse(readFileSync(join(root, 'answers', `${id}.json`), 'utf8')).choice } catch { return undefined } }
+    check('done: a card whose task id a session carries (another account) is not asked, with the session named', l.stdout.includes('card "Карточка started": started already as a session (Карточка started, ' + H('a') + ' on dev2)') && !l.stdout.includes('id: ds1~started') && /started already/.test(closedAs('ds1~started') ?? ''), l.stdout)
+    check('done: a card started under its exact title after it is not asked; a same-titled chat from before is no start', l.stdout.includes('card "Карточка byname": started already') && l.stdout.includes('id: ds1~sametitle'), l.stdout)
+    check('done: a card a day old whose chat sat idle a day is not asked, with both ages', l.stdout.includes('card "Карточка idle": the card is from 49 h ago and its chat idle for 41 h') && !l.stdout.includes('id: ds2~idle'), l.stdout)
+    check('done: a card he wrote in its chat after is not asked', l.stdout.includes('card "Карточка typed": you wrote in that chat after the card') && !l.stdout.includes('id: ds4~typed'), l.stdout)
+    check('done: a push box whose commit is on the branch it names is not asked; unpushed, or on no named branch, it is', l.stdout.includes('the commit is already on origin/master') && !l.stdout.includes('id: ds6~pushed') && l.stdout.includes('id: ds6~unpushed') && l.stdout.includes('id: ds6~onother'), l.stdout)
+    check('done: a box whose chat began a new turn since is not asked; one from that same turn is', l.stdout.includes('the chat went on to a new turn since') && !l.stdout.includes('id: ds7~later') && l.stdout.includes('id: ds7~sameturn'), l.stdout)
+    check('done: still asked: a fresh card, an old card of a working chat, a live dialog of an idle chat he wrote in', ['ds5~fresh', 'ds3~oldlive', 'ds8~dialog'].every((i) => l.stdout.includes(`id: ${i}`) && !closedAs(i)), l.stdout)
+    check('done: the not-asked list is shown once', !D(['list']).stdout.includes('## Not asked'))
+    // An inbox answer to a card goes back even once its session runs (the card's chat withdraws the card on it).
+    card('1', 'answered', 30 * h, { title: 'Карточка answered' }); reg('d', { title: 'Карточка answered', createdAt: now - 60e3 })
+    const an = D(['answer', 'ds1~answered', 'Started from the inbox'])
+    check('done: an inbox answer to a started card is still sent to its chat', an.status === 0 && !an.stdout.includes('NOT SENT') && !existsSync(join(root, 'skipped', 'ds1~answered')), an.stdout)
+    writeFileSync(join(root, 'self'), 'inboxChat')
+  }
   check('off removes the switch', run(['off']).status === 0 && !existsSync(join(tmp, 'makarasty', 'inbox.on')))
 
   // `telegram` takes no item id: from 1.19.52 to 1.19.62 it was refused with "needs an item id" and no message was answered.

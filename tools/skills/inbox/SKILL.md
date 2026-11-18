@@ -51,7 +51,9 @@ one line and restart it. A watchdog missing from the task list means this chat r
    which: `list` prints one line "watching N chats: ..." when that set grows; pass it on as one line ("слежу за N
    чатами: ..."). He changes it in words: "следи за X" (`follow`), "замьють X" (`mute`).
    "## Not asked" and "## Answered but not sent" list questions their chat no longer waits for (he wrote there, it is
-   archived or muted, or over 12 h old): one line each, as printed, never asked. Each thing is shown once: a question
+   archived or muted, over 12 h old, its chat began a new turn since, a push box whose commit is on the remote) and
+   cards whose work is done (a session already runs it, he wrote in its chat after it, or card and chat sat a day
+   untouched): one line per chat, as printed, never asked. Each thing is shown once: a question
    in its dialog only (not also in the text), a report once, never re-told unless he asks.
 2. Under "## Finished" `list` prints finish reports, one block per chat (its newest report in full, earlier recaps a
    line each); they are shown once, `inbox.mjs reports` shows the last 3 days again. Give each chat four plain lines:

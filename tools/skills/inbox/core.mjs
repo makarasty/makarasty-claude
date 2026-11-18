@@ -111,16 +111,25 @@ export const namesSource = (/** @type {string} */ question, /** @type {{ cwd: st
 
 // The owner's rule (2026-11-13): an answer goes into a chat as a new message only while that chat still waits for it.
 export const STALE_MS = 12 * 3600 * 1000
+// A card older than this whose chat has been idle as long is work that went on another way (2026-11-18: weekend cards 40-110 h old were asked again).
+export const CARD_IDLE_MS = 24 * 3600 * 1000
 /**
  * Why an answer must not go into the asking chat as a message, or undefined. `typedAfter`: the person wrote in that chat after
  * the question; `archived`: the chat is archived; `muted`: the person muted it. A live dialog (an ask the chat still waits on in
- * its own window) is no message, so `prompt: false` drops the age rule for it.
+ * its own window) is no message, so `prompt: false` drops the age rule for it. `started`: a session already runs the card's
+ * work (named here); `pushed`: the remote branch that holds a push box's commit; `later`: the chat began a new turn since, so
+ * its box is gone; `idle`: ms since the chat's last activity.
  */
-export function undeliverable(/** @type {Item} */ item, /** @type {{ now?: number, typedAfter?: boolean, archived?: boolean, muted?: boolean, prompt?: boolean }} */ o = {}) {
+export function undeliverable(/** @type {Item} */ item, /** @type {{ now?: number, typedAfter?: boolean, archived?: boolean, muted?: boolean, prompt?: boolean, started?: string, pushed?: string, later?: boolean, idle?: number }} */ o = {}) {
+  const now = o.now ?? Date.now()
   if (o.muted) return 'the chat is muted'
   if (o.archived) return 'the chat is archived'
-  if (o.typedAfter) return 'you wrote in that chat after the question'
-  if (o.prompt !== false && (o.now ?? Date.now()) - item.at > STALE_MS) return `the question is ${ago((o.now ?? Date.now()) - item.at)} old`
+  if (o.started) return `started already as a session (${o.started})`
+  if (o.pushed) return `the commit is already on ${o.pushed}`
+  if (o.typedAfter) return `you wrote in that chat after the ${item.kind === 'card' ? 'card' : 'question'}`
+  if (o.later) return 'the chat went on to a new turn since'
+  if (o.prompt !== false && now - item.at > STALE_MS) return `the question is ${ago(now - item.at)} old`
+  if (item.kind === 'card' && (o.idle ?? 0) > CARD_IDLE_MS && now - item.at > CARD_IDLE_MS) return `the card is from ${ago(now - item.at)} ago and its chat idle for ${ago(o.idle ?? 0)}`
   return undefined
 }
 

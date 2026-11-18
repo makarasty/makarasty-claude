@@ -153,7 +153,7 @@ function chats() {
       for (const f of files) {
         if (!/^local_[0-9a-f-]{36}\.json$/.test(f)) continue
         const j = readJSON(join(d, f))
-        if (j) out.push({ profile: name, acc, host: f.slice(0, -5), cli: j.cliSessionId, cwd: String(j.cwd || j.originCwd || ''), last: Number(j.lastActivityAt) || 0, focused: Number(j.lastFocusedAt) || 0, archived: !!j.isArchived, parent: j.spawnedFrom?.sessionId, title: String(j.title || '') })
+        if (j) out.push({ profile: name, acc, host: f.slice(0, -5), cli: j.cliSessionId, cwd: String(j.cwd || j.originCwd || ''), last: Number(j.lastActivityAt) || 0, focused: Number(j.lastFocusedAt) || 0, archived: !!j.isArchived, parent: j.spawnedFrom?.sessionId, task: j.spawnedFrom?.taskId, created: Number(j.createdAt) || 0, frame: Number(j.latestUserFrameAt) || 0, title: String(j.title || '') })
       }
     }
   }
@@ -221,12 +221,44 @@ const shown = (/** @type {string} */ id) => existsSync(join(root, 'reports', 'se
 const isMuted = (/** @type {{ host?: string, session?: string, cli?: string }} */ x) => { const k = x.host || x.session || x.cli; return !!k && existsSync(join(root, 'muted', safe(String(k)))) }
 // He wrote in that chat after `at` (said.jsonl, the hook's record of his typing).
 const typedSince = (/** @type {string} */ session, /** @type {number} */ at) => readOr(join(root, 'said.jsonl')).split(/\r?\n/).some((l) => { try { const s = JSON.parse(l); return s.session === session && s.at > at } catch { return false } })
-// Why an answer to this item would not reach its chat, from what the disk and the app's records say now.
-// A live dialog (the chat still waits in it; its answer returns into it, no new message) and a card (a proposal: its answer
-// only withdraws it, and a card left standing could be started twice) keep only the muted and archived rules.
-function stale(/** @type {any} */ it, /** @type {Map<string, any>} */ byHost) {
-  const live = it.kind === 'card' || (it.kind === 'ask' && it.found !== 'scan')
-  return undeliverable(it, { muted: isMuted(it), archived: !!(it.host && byHost.get(it.host)?.archived), typedAfter: !live && typedSince(it.session, it.at), prompt: !live })
+// Why an answer to this item would not reach its chat, or why its work is done already, from what the disk and the app's records
+// say now. A live dialog (the chat still waits in it; its answer returns into it, no new message) keeps only the muted and archived
+// rules. A card has no age rule of its own: it leaves once a session runs it, he wrote in its chat after it, or it and its chat
+// sat a day untouched (2026-11-18: cards started from another place, or done another way, were asked again 40-110 h later).
+// `answering`: the card rules are off, so an inbox answer to a card still goes back and its chat withdraws the card.
+function stale(/** @type {any} */ it, /** @type {Map<string, any>} */ byHost, answering = false) {
+  const card = it.kind === 'card' && !answering, live = it.kind === 'card' || (it.kind === 'ask' && it.found !== 'scan'), c = it.host ? byHost.get(it.host) : undefined
+  const run = card ? startedAs(it, byHost) : undefined
+  return undeliverable(it, {
+    muted: isMuted(it), archived: !!c?.archived, prompt: !live,
+    started: run && `${run.title || '(no title)'}, ${run.host} on ${run.profile}`,
+    pushed: it.kind === 'choice' ? onRemote(it) : undefined,
+    typedAfter: (!live || card) && typedSince(it.session, it.at),
+    later: !live && !!c && c.frame > it.at + 30e3, // its own turn's frames come before the box; 30 s of slack for the clocks
+    idle: card && c ? Date.now() - c.last : undefined,
+  })
+}
+// The session that runs a card's work: the app records the card's task id on a chat started from it (any account); or one made
+// after the card under its exact title (started another way, by name).
+const startedAs = (/** @type {any} */ it, /** @type {Map<string, any>} */ byHost) => [...byHost.values()].find((c) => c.host !== it.host &&
+  ((it.taskId && c.task === it.taskId) || (it.title && c.created > it.at && squash(c.title) === squash(it.title))))
+// The remote branch that already holds every commit a push box names, from the local remote-tracking refs (no fetch: a push from
+// this machine updates them, and a stale ref only keeps the box). A branch the question names (local or remote) must hold it;
+// one it names that the remote lacks keeps the box. Naming none, any remote branch counts.
+function onRemote(/** @type {any} */ it) {
+  const ask = String(it.ask ?? ''), shas = ask.match(/\b[0-9a-f]{7,40}\b/g)
+  if (!/push|пуш/i.test(ask) || !shas || !it.cwd || !existsSync(it.cwd)) return undefined
+  const git = (/** @type {string[]} */ a) => { try { return execFileSync('git', ['-C', it.cwd, ...a], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 10e3 }).split(/\r?\n/).filter((b) => b && !b.endsWith('/HEAD')) } catch { return undefined } }
+  const remote = git(['branch', '-r', '--format=%(refname:short)']) ?? [], words = ask.split(/[\s«»"'`(),?:;]+/)
+  const short = (/** @type {string} */ b) => b.slice(b.indexOf('/') + 1)
+  const names = new Set([...(git(['branch', '--format=%(refname:short)']) ?? []), ...remote.map(short)].filter((n) => words.includes(n)))
+  const want = names.size ? remote.filter((b) => names.has(short(b))) : remote
+  let hit
+  for (const sha of shas) {
+    hit = (git(['branch', '-r', '--contains', sha, '--format=%(refname:short)']) ?? []).find((b) => want.includes(b))
+    if (!hit) return undefined
+  }
+  return hit
 }
 const hosts = () => new Map(chats().map((c) => [c.host, c]))
 // The chat's name as the app's sidebar shows it, not its first prompt: a chat started from another session opens with that
@@ -928,9 +960,8 @@ async function main() {
     }
     if (!readOnly) autoFollow([self || '', was])
     if (!readOnly && (was !== self || rest.includes('--take') || id === '--take')) say(`inbox: ${pushLine()}`) // once, when this chat becomes the inbox
-    // A question its chat no longer waits for is not asked: closed here, one line each, once (owner, 2026-11-13). A card stays
-    // a proposal at any age; a muted chat's item leaves without a line (he asked for silence).
-    // One line per chat, never per question; a muted chat gets no line at all (he asked for silence).
+    // A question its chat no longer waits for, or a card or box whose work is done, is not asked: closed here, once, one line per
+    // chat (owner, 2026-11-13; stale(): the rules). A muted chat's item leaves without a line (he asked for silence).
     const perChat = (/** @type {Map<string, Set<string>>} */ m, /** @type {any} */ it, /** @type {string} */ why) => { if (!isMuted(it)) m.set(sourceTag(it), (m.get(sourceTag(it)) ?? new Set()).add(why)) }
     const lines = (/** @type {Map<string, Set<string>>} */ m) => [...m].map(([tag, whys]) => `- ${tag}: ${[...whys].join('; ')}`).join('\n')
     const byHost = hosts(), closed = new Map()
@@ -942,7 +973,7 @@ async function main() {
       if (readOnly) return !why // the real inbox closes those; here they are only left out
       if (!why) return true
       create(join(dir('answers'), `${i.id}.json`), JSON.stringify({ id: i.id, at: Date.now(), by: 'chat', choice: `[not asked: ${why}]` }))
-      perChat(closed, i, why.replace(/\d+ (h|min) old/, 'over 12 h old'))
+      perChat(closed, i, `${i.kind === 'card' ? `card "${i.title}": ` : ''}${why.replace(/\d+ (h|min) old/, 'over 12 h old')}`)
       return false
     })
     const done = reports().filter((r) => !shown(r.id) && r.session !== self && !isMuted(r)).map((r) => named(r, byHost))
@@ -956,7 +987,7 @@ async function main() {
       if (!readOnly) writeFileSync(join(dir('skipped-seen'), f), '')
     }
     if (!open.length && !done.length && !auto.length && !closed.size && !unsent.size) { say('inbox: nothing pending'); return 0 }
-    if (closed.size) say(`## Not asked: the chat no longer waits\n${lines(closed)}\n`)
+    if (closed.size) say(`## Not asked: the chat no longer waits, or the work is done\n${lines(closed)}\n`)
     if (unsent.size) say(`## Answered but not sent to the chat\n${lines(unsent)}\n`)
     if (open.length) say(`inbox: ${open.length} pending\n`)
     for (const it of open) say(`${render(it, Date.now(), process.env.CLAUDE_CODE_ACCOUNT_UUID)}\n`)
@@ -996,7 +1027,7 @@ async function main() {
     const ans = { id: item.id, at: Date.now(), by: 'inbox', ...norm }
     // Kept, so the item closes, but not sent into a chat that no longer waits for it (owner, 2026-11-13). skipped/ goes first:
     // a live dialog's waiter returns the answer the moment its file appears, and reads skipped/ to hold it back.
-    const why = stale(item, hosts())
+    const why = stale(item, hosts(), true)
     if (why) { writeFileSync(join(dir('skipped'), item.id), why); writeFileSync(join(dir('skipped-seen'), item.id), '') }
     if (!create(join(dir('answers'), `${item.id}.json`), JSON.stringify(ans))) {
       if (why) for (const d of ['skipped', 'skipped-seen']) rmSync(join(root, d, item.id), { force: true })

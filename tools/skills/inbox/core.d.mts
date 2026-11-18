@@ -38,7 +38,8 @@ export function continueAnswer(item: Item): Record<string, string> | undefined
 export function sourceTag(item: { cwd: string; chat: string }): string
 export function namesSource(question: string, item: { cwd: string; chat: string }): boolean
 export const STALE_MS: number
-export function undeliverable(item: Item, o?: { now?: number; typedAfter?: boolean; archived?: boolean; muted?: boolean; prompt?: boolean }): string | undefined
+export const CARD_IDLE_MS: number
+export function undeliverable(item: Item, o?: { now?: number; typedAfter?: boolean; archived?: boolean; muted?: boolean; prompt?: boolean; started?: string; pushed?: string; later?: boolean; idle?: number }): string | undefined
 export function overlaps(a: string, b: string, min?: number): boolean
 export const TG_PROMPT: string
 export function inboundPrompt(ms: { text: string; about?: { item: string; short: string } }[], root?: string): string
