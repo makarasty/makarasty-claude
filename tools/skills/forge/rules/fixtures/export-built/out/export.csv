@@ -1,0 +1,82 @@
+KPI: 75 patients | 36 new | 39 rechecked 2026-11-13 | error 72: 67
+
+List 1: new (36)
+id,First name,Last name,Gender,Address,DOB,Old Medicare number,Insurance,Practice and company
+P001,Bob,Reed,F,101 Elm St Austin TX,1941-02-11,1EG4TE5MK01,Medicare Part B,Practice 2 / Company 2
+P002,Cara,Hale,M,102 Elm St Austin TX,1942-03-12,1EG4TE5MK02,Medicare Part B,Practice 3 / Company 1
+P003,Dan,Moss,F,103 Elm St Austin TX,1943-04-13,1EG4TE5MK03,Medicare Advantage,Practice 4 / Company 2
+P004,Eve,Cole,M,104 Elm St Austin TX,1944-05-14,1EG4TE5MK04,Medicare Part B,Practice 1 / Company 1
+P005,Finn,Park,F,105 Elm St Austin TX,1945-06-15,1EG4TE5MK05,Medicare Part B,Practice 2 / Company 2
+P006,Gail,Lane,M,106 Elm St Austin TX,1946-07-16,1EG4TE5MK06,Medicare Advantage,Practice 3 / Company 1
+P007,Hugo,West,F,107 Elm St Austin TX,1947-08-17,1EG4TE5MK07,Medicare Part B,Practice 4 / Company 2
+P008,Iris,Hart,M,108 Elm St Austin TX,1948-09-18,1EG4TE5MK08,Medicare Part B,Practice 1 / Company 1
+P009,Jack,Fox,F,109 Elm St Austin TX,1949-01-10,1EG4TE5MK09,Medicare Advantage,Practice 2 / Company 2
+P010,Kira,Stone,M,110 Elm St Austin TX,1950-02-11,1EG4TE5MK10,Medicare Part B,Practice 3 / Company 1
+P011,Leo,Reed,F,111 Elm St Austin TX,1951-03-12,1EG4TE5MK11,Medicare Part B,Practice 4 / Company 2
+P012,Mia,Hale,M,112 Elm St Austin TX,1952-04-13,1EG4TE5MK12,Medicare Advantage,Practice 1 / Company 1
+P013,Ned,Moss,F,113 Elm St Austin TX,1953-05-14,1EG4TE5MK13,Medicare Part B,Practice 2 / Company 2
+P014,Ola,Cole,M,114 Elm St Austin TX,1954-06-15,1EG4TE5MK14,Medicare Part B,Practice 3 / Company 1
+P015,Ann,Park,F,115 Elm St Austin TX,1955-07-16,1EG4TE5MK15,Medicare Advantage,Practice 4 / Company 2
+P016,Bob,Lane,M,116 Elm St Austin TX,1956-08-17,1EG4TE5MK16,Medicare Part B,Practice 1 / Company 1
+P017,Cara,West,F,117 Elm St Austin TX,1957-09-18,1EG4TE5MK17,Medicare Part B,Practice 2 / Company 2
+P018,Dan,Hart,M,118 Elm St Austin TX,1958-01-10,1EG4TE5MK18,Medicare Advantage,Practice 3 / Company 1
+P019,Eve,Fox,F,119 Elm St Austin TX,1959-02-11,1EG4TE5MK19,Medicare Part B,Practice 4 / Company 2
+P020,Finn,Stone,M,120 Elm St Austin TX,1960-03-12,1EG4TE5MK20,Medicare Part B,Practice 1 / Company 1
+P021,Gail,Reed,F,121 Elm St Austin TX,1961-04-13,1EG4TE5MK21,Medicare Advantage,Practice 2 / Company 2
+P022,Hugo,Hale,M,122 Elm St Austin TX,1962-05-14,1EG4TE5MK22,Medicare Part B,Practice 3 / Company 1
+P023,Iris,Moss,F,123 Elm St Austin TX,1963-06-15,1EG4TE5MK23,Medicare Part B,Practice 4 / Company 2
+P024,Jack,Cole,M,124 Elm St Austin TX,1964-07-16,1EG4TE5MK24,Medicare Advantage,Practice 1 / Company 1
+P025,Kira,Park,F,125 Elm St Austin TX,1965-08-17,1EG4TE5MK25,Medicare Part B,Practice 2 / Company 2
+P026,Leo,Lane,M,126 Elm St Austin TX,1966-09-18,1EG4TE5MK26,Medicare Part B,Practice 3 / Company 1
+P027,Mia,West,F,127 Elm St Austin TX,1967-01-10,1EG4TE5MK27,Medicare Advantage,Practice 4 / Company 2
+P028,Ned,Hart,M,128 Elm St Austin TX,1968-02-11,1EG4TE5MK28,Medicare Part B,Practice 1 / Company 1
+P029,Ola,Fox,F,129 Elm St Austin TX,1969-03-12,1EG4TE5MK29,Medicare Part B,Practice 2 / Company 2
+P030,Ann,Stone,M,130 Elm St Austin TX,1970-04-13,1EG4TE5MK30,Medicare Advantage,Practice 3 / Company 1
+P031,Bob,Reed,F,131 Elm St Austin TX,1971-05-14,1EG4TE5MK31,Medicare Part B,Practice 4 / Company 2
+P032,Cara,Hale,M,132 Elm St Austin TX,1972-06-15,1EG4TE5MK32,Medicare Part B,Practice 1 / Company 1
+P033,Dan,Moss,F,133 Elm St Austin TX,1973-07-16,1EG4TE5MK33,Medicare Advantage,Practice 2 / Company 2
+P034,Eve,Cole,M,134 Elm St Austin TX,1974-08-17,1EG4TE5MK34,Medicare Part B,Practice 3 / Company 1
+P035,Finn,Park,F,135 Elm St Austin TX,1975-09-18,1EG4TE5MK35,Medicare Part B,Practice 4 / Company 2
+P036,Gail,Lane,M,136 Elm St Austin TX,1976-01-10,1EG4TE5MK36,Medicare Advantage,Practice 1 / Company 1
+
+List 2: already rechecked 2026-11-13 (39)
+id,First name,Last name,Gender,Address,DOB,Old Medicare number,Insurance,Practice and company
+P037,Hugo,West,F,137 Elm St Austin TX,1977-02-11,1EG4TE5MK37,Medicare Part B,Practice 2 / Company 2
+P038,Iris,Hart,M,138 Elm St Austin TX,1978-03-12,1EG4TE5MK38,Medicare Part B,Practice 3 / Company 1
+P039,Jack,Fox,F,139 Elm St Austin TX,1979-04-13,1EG4TE5MK39,Medicare Advantage,Practice 4 / Company 2
+P040,Kira,Stone,M,140 Elm St Austin TX,1940-05-14,1EG4TE5MK40,Medicare Part B,Practice 1 / Company 1
+P041,Leo,Reed,F,141 Elm St Austin TX,1941-06-15,1EG4TE5MK41,Medicare Part B,Practice 2 / Company 2
+P042,Mia,Hale,M,142 Elm St Austin TX,1942-07-16,1EG4TE5MK42,Medicare Advantage,Practice 3 / Company 1
+P043,Ned,Moss,F,143 Elm St Austin TX,1943-08-17,1EG4TE5MK43,Medicare Part B,Practice 4 / Company 2
+P044,Ola,Cole,M,144 Elm St Austin TX,1944-09-18,1EG4TE5MK44,Medicare Part B,Practice 1 / Company 1
+P045,Ann,Park,F,145 Elm St Austin TX,1945-01-10,1EG4TE5MK45,Medicare Advantage,Practice 2 / Company 2
+P046,Bob,Lane,M,146 Elm St Austin TX,1946-02-11,1EG4TE5MK46,Medicare Part B,Practice 3 / Company 1
+P047,Cara,West,F,147 Elm St Austin TX,1947-03-12,1EG4TE5MK47,Medicare Part B,Practice 4 / Company 2
+P048,Dan,Hart,M,148 Elm St Austin TX,1948-04-13,1EG4TE5MK48,Medicare Advantage,Practice 1 / Company 1
+P049,Eve,Fox,F,149 Elm St Austin TX,1949-05-14,1EG4TE5MK49,Medicare Part B,Practice 2 / Company 2
+P050,Finn,Stone,M,150 Elm St Austin TX,1950-06-15,1EG4TE5MK50,Medicare Part B,Practice 3 / Company 1
+P051,Gail,Reed,F,151 Elm St Austin TX,1951-07-16,1EG4TE5MK51,Medicare Advantage,Practice 4 / Company 2
+P052,Hugo,Hale,M,152 Elm St Austin TX,1952-08-17,1EG4TE5MK52,Medicare Part B,Practice 1 / Company 1
+P053,Iris,Moss,F,153 Elm St Austin TX,1953-09-18,1EG4TE5MK53,Medicare Part B,Practice 2 / Company 2
+P054,Jack,Cole,M,154 Elm St Austin TX,1954-01-10,1EG4TE5MK54,Medicare Advantage,Practice 3 / Company 1
+P055,Kira,Park,F,155 Elm St Austin TX,1955-02-11,1EG4TE5MK55,Medicare Part B,Practice 4 / Company 2
+P056,Leo,Lane,M,156 Elm St Austin TX,1956-03-12,1EG4TE5MK56,Medicare Part B,Practice 1 / Company 1
+P057,Mia,West,F,157 Elm St Austin TX,1957-04-13,1EG4TE5MK57,Medicare Advantage,Practice 2 / Company 2
+P058,Ned,Hart,M,158 Elm St Austin TX,1958-05-14,1EG4TE5MK58,Medicare Part B,Practice 3 / Company 1
+P059,Ola,Fox,F,159 Elm St Austin TX,1959-06-15,1EG4TE5MK59,Medicare Part B,Practice 4 / Company 2
+P060,Ann,Stone,M,160 Elm St Austin TX,1960-07-16,1EG4TE5MK60,Medicare Advantage,Practice 1 / Company 1
+P061,Bob,Reed,F,161 Elm St Austin TX,1961-08-17,1EG4TE5MK61,Medicare Part B,Practice 2 / Company 2
+P062,Cara,Hale,M,162 Elm St Austin TX,1962-09-18,1EG4TE5MK62,Medicare Part B,Practice 3 / Company 1
+P063,Dan,Moss,F,163 Elm St Austin TX,1963-01-10,1EG4TE5MK63,Medicare Advantage,Practice 4 / Company 2
+P064,Eve,Cole,M,164 Elm St Austin TX,1964-02-11,1EG4TE5MK64,Medicare Part B,Practice 1 / Company 1
+P065,Finn,Park,F,165 Elm St Austin TX,1965-03-12,1EG4TE5MK65,Medicare Part B,Practice 2 / Company 2
+P066,Gail,Lane,M,166 Elm St Austin TX,1966-04-13,1EG4TE5MK66,Medicare Advantage,Practice 3 / Company 1
+P067,Hugo,West,F,167 Elm St Austin TX,1967-05-14,1EG4TE5MK67,Medicare Part B,Practice 4 / Company 2
+P068,Iris,Hart,M,168 Elm St Austin TX,1968-06-15,1EG4TE5MK68,Medicare Part B,Practice 1 / Company 1
+P069,Jack,Fox,F,169 Elm St Austin TX,1969-07-16,1EG4TE5MK69,Medicare Advantage,Practice 2 / Company 2
+P070,Kira,Stone,M,170 Elm St Austin TX,1970-08-17,1EG4TE5MK70,Medicare Part B,Practice 3 / Company 1
+P071,Leo,Reed,F,171 Elm St Austin TX,1971-09-18,1EG4TE5MK71,Medicare Part B,Practice 4 / Company 2
+P072,Mia,Hale,M,172 Elm St Austin TX,1972-01-10,1EG4TE5MK72,Medicare Advantage,Practice 1 / Company 1
+P073,Ned,Moss,F,173 Elm St Austin TX,1973-02-11,1EG4TE5MK73,Medicare Part B,Practice 2 / Company 2
+P074,Ola,Cole,M,174 Elm St Austin TX,1974-03-12,1EG4TE5MK74,Medicare Part B,Practice 3 / Company 1
+P075,Ann,Park,F,175 Elm St Austin TX,1975-04-13,1EG4TE5MK75,Medicare Advantage,Practice 4 / Company 2

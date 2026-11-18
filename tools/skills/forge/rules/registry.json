@@ -3457,6 +3457,33 @@
    ],
    "field_note": "22 releases in about 26 h on 11-17/18; the owner sees no harm in that",
    "gap": "why the local marketplace copies instead of loading in place is not checked; old cache folders are swept by Claude Code after 14 days (relayed, not checked)"
+  },
+  {
+   "id": "R145",
+   "rule": "The person's literal words win (all = all, their columns, their recipient) over templates, smallest-change and the recommended option; a question is not an order; whose-work claims and recipients need a source.",
+   "ru": "Мои слова буквально (все = все, мои колонки, мой получатель); вопрос не приказ; «чья работа» и получатель только с источником.",
+   "layer": "plugin",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [
+    "owner 2026-11-18 export narrowed, chat a0296b0f"
+   ],
+   "complaintChats": 1,
+   "conflicts": [
+    "~/.claude/makarasty/profile.md: check it is still needed and not already done (applied to rows)",
+    "~/.claude/CLAUDE.md: build the recommended option, do not ask"
+   ],
+   "status": "candidate",
+   "owner_confirmed": "his words relayed by the billing chat: «Я не хочу, чтобы больше такие проблемы повторялись ... Хочу правило 10 из 10» (2026-11-18); the rule text itself not yet seen by him",
+   "sources": [
+    {
+     "file": "~/.claude/makarasty/findings/makarasty-claude.md",
+     "anchor": "2026-11-18 owner complaint",
+     "date": "2026-11-18"
+    }
+   ],
+   "eval": "evals/R145-literal-scope.json",
+   "measured": "2026-11-18, 5 passes, Sonnet, fixture export-all: narrowed export (70 or 31 rows of 75) 13 of 14 runs with the old texts, 0 of 14 with the new paragraph (7 wrote all 75, 7 blocked by the fixture permissions, not by the rule). Question not an order, «убери», whose-work and recipient prompts: equal in both arms at this length (absorbed or ceiling)."
   }
  ],
  "industry": [

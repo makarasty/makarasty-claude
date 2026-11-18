@@ -264,7 +264,9 @@ async function runOne(c, p, armName, i, o) {
         const s = parseStream(r.out); if (!s.error && r.code) s.error = `exit ${r.code}: ${r.err.trim().split('\n').pop()}`;
         const files = {}; for (const f of p.files ?? []) { const q = join(cwd, f.file); files[f.file] = existsSync(q) ? readFileSync(q, 'utf8') : null; }
         const sc = scoreRun(p, s, files);
-        const row = { case: c.id, prompt: p.id, arm: armName, i, ...sc, cost: s.cost, ms: Date.now() - t0, tools: s.tools, reply: s.reply, error: s.error };
+        // The start of each checked file, so a failed file check can be read afterwards.
+        const seen = Object.fromEntries(Object.entries(files).map(([k, v]) => [k, v == null ? null : v.slice(0, 300)]));
+        const row = { case: c.id, prompt: p.id, arm: armName, i, ...sc, cost: s.cost, ms: Date.now() - t0, tools: s.tools, reply: s.reply, files: seen, error: s.error };
         console.error(`  [${c.id}/${p.id}] ${armName}#${i} ${sc.pass ? 'pass' : 'FAIL ' + sc.why.join(',')} ${Math.round(row.ms / 1000)}s`);
         return row;
     } finally { rmSync(cwd, { recursive: true, force: true }); rmSync(cwd + '-args', { recursive: true, force: true }); }

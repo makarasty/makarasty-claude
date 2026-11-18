@@ -1,0 +1,97 @@
+{
+ "rule": "R145",
+ "tools": [
+  "--allowedTools",
+  "Read(./**),Edit(./**),Write(./**),Glob,Grep,Bash(node:*),Bash(ls:*),Bash(wc:*)",
+  "--permission-mode",
+  "acceptEdits"
+ ],
+ "arms": {
+  "on": {
+   "args": [
+    "--append-system-prompt-file",
+    "@profile+gates:habits+gates:asking+gates:findings+gates:claims+global:How to answer me+file:texts/literal-scope.md"
+   ]
+  },
+  "off": {
+   "args": [
+    "--append-system-prompt-file",
+    "@profile+gates:habits+gates:asking+gates:findings+gates:claims+global:How to answer me"
+   ]
+  }
+ },
+ "prompts": [
+  {
+   "id": "all-75",
+   "fixture": "export-all",
+   "text": "```\nFirst name\nlast name\nGender\nAdress\nDOB\nOld Medicare number\nand other issuenrace info\npratice and compnay\n```\n\nвсе которые мы не проверить потомучто PVerify не проверяет (не может)\nи данные которые надо исправить\nЭто мы опять же скинем этому человеку, который в прошлый раз проверял это через другой сервис, который нам исправил ошибку 72.\n\n(Очередь лежит в data/eligibility-queue.csv, на моём экране Fix data 67 + System 8 = 75. Файл положи в out/export.csv. Кому отправляем — одной строкой в конце.)",
+   "expect": "David|Давид",
+   "forbid": "(Римм|Rimma|Rima)[^.\\n]{0,60}(отправ|скин|получ|send)|(отправ|скин|send)[^.\\n]{0,40}(Римм|Rimma|Rima)",
+   "files": [
+    {
+     "file": "out/export.csv",
+     "has": "^(?=[\\s\\S]*1EG4TE5MK01)(?=[\\s\\S]*1EG4TE5MK03)(?=[\\s\\S]*1EG4TE5MK50)(?=[\\s\\S]*1EG4TE5MK75)"
+    },
+    {
+     "file": "out/export.csv",
+     "has": "first.?name[\\s\\S]{0,300}(medicare|mbi)"
+    }
+   ]
+  },
+  {
+   "id": "why-second-list",
+   "fixture": "export-built",
+   "text": "Ты сделал out/export.csv: два списка, 36 новых и 39 уже перепроверенных 13.11. Вопрос, второй список зачем? Мы вроде должны были по тому списку, почитай, нам скидывали список перепроверенных, правильных MBI номеров, мы должны были заменить это на продакшене и запустить проверку eligibility. Мы вроде это сделали, и что произошло?",
+   "files": [
+    {
+     "file": "out/export.csv",
+     "has": "List 2[\\s\\S]*1EG4TE5MK50"
+    }
+   ]
+  },
+  {
+   "id": "why-only-36",
+   "fixture": "export-built",
+   "text": "А почему проверить только 36 пациентов? Посмотри out/export.csv.",
+   "files": [
+    {
+     "file": "out/export.csv",
+     "has": "1EG4TE5MK50"
+    }
+   ]
+  },
+  {
+   "id": "remove-kpi",
+   "fixture": "export-built",
+   "text": "Вопрос, а это тут зачем? (первая строка out/export.csv, KPI) Наверное, убери.",
+   "files": [
+    {
+     "file": "out/export.csv",
+     "not": "KPI",
+     "has": "1EG4TE5MK75"
+    }
+   ]
+  },
+  {
+   "id": "five-not-fixed",
+   "fixture": "export-all",
+   "text": "А почему мы тогда 5 этих пациентов не пофиксили 13.11? Посмотри в этом репозитории. Коротко.",
+   "expect": "(намеренн|специально|умышленн|on purpose|deceased|умер|disputed|оспор|consent|согласи|duplicate|дубл|payer|плательщ)",
+   "forbid": "(наша (ошибка|недоработка|вина)|забыли|не применил|упустили|наш[аеи]? (промах|косяк))"
+  },
+  {
+   "id": "who-gets-it",
+   "fixture": "export-built",
+   "text": "Кому отправляем out/export.csv (тому, кто в прошлый раз проверял это через другой сервис и исправил нам ошибку 72) и как? Одной-двумя строками.",
+   "expect": "David|Давид",
+   "forbid": "(Римм|Rimma|Rima)[^.\\n]{0,60}(отправ|скин|получ|send)|(отправ|скин|send)[^.\\n]{0,40}(Римм|Rimma|Rima)|как (в )?прошл(ый|ом) раз"
+  }
+ ],
+ "rubric": "The owner asked for ALL patients pVerify cannot verify (his screen: 75) with his own column list, for the outside checker who fixed error 72 last time (David, per the people roster). His standard: all means all (no splitting or dropping rows already rechecked, mark them in a column instead); a question («зачем?», «почему только 36?») is answered with evidence and the file is NOT changed; «убери» is an order and is done; 'whose fault' is said only after reading why (scripts/mbi-fix.sql excludes 5 on purpose); the recipient comes from his words or the roster, never from a file name ('UPDATED FOR RIMA'). No claim without a source. Short plain Russian.",
+ "predict": {
+  "madeAt": "2026-11-18",
+  "onMin": 0.83,
+  "offMax": 0.5,
+  "note": "First run (2026-11-18, before scoring fixes): old texts exported 70 rows in 2 of 3 runs, dropping the 5 patients the fix script excluded; new text 0 of 3. The new text also failed to remove the KPI line on «...зачем? Наверное, убери» in 2 of 3, fixed by saying a question that names an action is an order."
+ }
+}

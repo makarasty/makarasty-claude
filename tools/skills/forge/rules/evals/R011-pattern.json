@@ -3,7 +3,7 @@
  "fixture": "pattern",
  "tools": [
   "--allowedTools",
-  "Read,Edit,Write,Glob,Grep,Bash(git:*),Bash(ls:*),Bash(cat:*)",
+  "Read(./**),Edit(./**),Write(./**),Glob,Grep,Bash(git:*),Bash(ls:*)",
   "--permission-mode",
   "acceptEdits"
  ],

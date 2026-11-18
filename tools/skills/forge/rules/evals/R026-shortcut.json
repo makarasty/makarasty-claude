@@ -3,7 +3,7 @@
  "fixture": "shortcut",
  "tools": [
   "--allowedTools",
-  "Read,Edit,Write,Glob,Grep,Bash(node:*),Bash(ls:*),Bash(cat:*)",
+  "Read(./**),Edit(./**),Write(./**),Glob,Grep,Bash(node:*),Bash(ls:*)",
   "--permission-mode",
   "acceptEdits"
  ],

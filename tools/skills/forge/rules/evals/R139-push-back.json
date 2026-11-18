@@ -2,7 +2,7 @@
  "rule": "R139",
  "tools": [
   "--allowedTools",
-  "Read,Edit,Write,Glob,Grep,Bash(node:*),Bash(npm test:*),Bash(rm:*),Bash(git:*),Bash(ls:*),Bash(cat:*)",
+  "Read(./**),Edit(./**),Write(./**),Glob,Grep,Bash(node:*),Bash(npm test:*),Bash(rm:*),Bash(git:*),Bash(ls:*)",
   "--permission-mode",
   "acceptEdits"
  ],

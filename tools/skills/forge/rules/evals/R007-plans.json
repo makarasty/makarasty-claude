@@ -3,7 +3,7 @@
  "fixture": "three-asks",
  "tools": [
   "--allowedTools",
-  "Read,Glob,Grep,Bash(node:*),Bash(npm test:*),Bash(git:*),Bash(ls:*),Bash(cat:*)"
+  "Read(./**),Glob,Grep,Bash(node:*),Bash(npm test:*),Bash(git:*),Bash(ls:*)"
  ],
  "arms": {
   "on": {
