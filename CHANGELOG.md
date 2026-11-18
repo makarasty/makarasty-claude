@@ -11,6 +11,13 @@
   refused it), so do idempotent calls (getMe, getUpdates, edit*); a clear 4xx is still "failed".
 - **Trade-off, owner's call:** a finish whose send hung until the timeout is no longer kept for a re-send at the next
   chat start; the old selftest case "the undelivered finish stays on disk" now says it is not kept.
+- **Never-sent is not unconfirmed.** A refused, unresolved or unroutable connection, a connect timeout and a TLS or
+  certificate error mean the request never left: they retry as before and end "failed" (the finish keeps `unsent`). A bare
+  timeout is decided by a `getMe` probe (3 s, inside the deadline): no answer means the network is out (failed, finish kept),
+  an answer means Telegram was reachable and the send may have arrived (unconfirmed). Socket errors and 5xx stay unconfirmed.
+- **An ask that is unconfirmed counts as failed (exit 1).** With no message id there is no `asks/<id>.json`, so a tap on it
+  would be answered "closed" and the question could not be answered from the phone. The inbox sends it again: a repeated
+  question beats one nobody can answer. Only asks do this; a finish or a message stays "did not confirm".
 - Tests: notify-selftest runs a Telegram look-alike that logs requests (504 once on sendMessage and sendDocument: one
   request, exit 0; 429 then 200: two requests; 400: still failed; a finish answered 504: marker gone; getMe 502 then 200:
   retried).

@@ -432,6 +432,7 @@ function mock(plan: Record<string, number[]>) {
 require("http").createServer((q, r) => { q.resume(); q.on("end", () => {
   const m = q.url.split("/").pop(); fs.appendFileSync(${JSON.stringify(log)}, m + "\\n");
   const st = (plan[m] || []).shift() || 200;
+  if (st < 0) return; // never answers
   r.writeHead(st, { "content-type": "application/json" });
   r.end(JSON.stringify(st === 200 ? { ok: true, result: m === "getMe" ? { username: "x_bot" } : m === "getUpdates" ? [] : { message_id: 7 } } : { ok: false, description: st === 429 ? "Too Many Requests" : "Gateway Timeout", parameters: { retry_after: 1 } }));
 }); }).listen(0, "127.0.0.1", function () { fs.writeFileSync(process.argv[1], String(this.address().port)); })`;
@@ -471,6 +472,30 @@ check('a finish answered 504 says it did not confirm', 'did not confirm', r.err)
 if (exists(marker)) bad('and the marker is gone: no later flush sends it again', read(marker)); else ok('and the marker is gone: no later flush sends it again');
 if (mk.reqs().length === 1) ok('after one request only'); else bad('after one request only', mk.reqs().join(','));
 mk.srv.kill();
+// A request that hangs says nothing by itself: getMe decides whether Telegram was reachable (the send may have arrived) or the
+// network is out (it never left, so the finish stays for a later try).
+mk = mock({ sendMessage: [-1, -1, -1], getMe: [-1, -1, -1] });
+node([n, '--arm', 'dead']);
+r = hook('{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"done"}', mk.env);
+check('a send that hangs with Telegram unreachable is a failure', 'telegram failed', r.err);
+if (r.err.includes('did not confirm')) bad('and not unconfirmed', r.err); else ok('and not unconfirmed');
+check('and the finish stays on disk to be sent later', '"unsent"', read(marker));
+mk.srv.kill();
+mk = mock({ sendMessage: [-1] });
+r = node([n, 'send', 'hi'], { env: mk.env });
+check('a send that hangs with Telegram reachable did not confirm', 'did not confirm', r.err);
+code('and exits 0', 0, r.code);
+if (mk.reqs().filter((x) => x === 'sendMessage').length === 1) ok('after one sendMessage only'); else bad('after one sendMessage only', mk.reqs().join(','));
+mk.srv.kill();
+mk = mock({ sendMessage: [504] });
+r = node([n, 'ask'], { env: mk.env, input: '{"item":"i1","html":"Q?","short":"Q"}' });
+code('an ask answered 504 fails, so the inbox sends it again', 1, r.code);
+check('and says why', 'no message id', r.err);
+mk.srv.kill();
+mk = mock({}); mk.srv.kill(); sleep(0.5);
+node([n, '--arm', 'refused']);
+r = hook('{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"done"}', mk.env);
+check('a refused connection never sent: the finish stays on disk', '"unsent"', read(marker));
 // The idempotent calls keep retrying: setup's getMe answers 502 once, then the bot is found.
 mk = mock({ getMe: [502] });
 const setupRun = spawn(process.execPath, [n, 'setup'], { env: { ...process.env, ...mk.env, NOTIFY_CLIPBOARD: `${tmp}/clip`, NOTIFY_NO_OPEN: '1' }, stdio: 'ignore' });

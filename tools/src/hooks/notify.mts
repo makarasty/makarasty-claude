@@ -262,10 +262,27 @@ const tgDir = join(dir, 'telegram');
 let deadline = Infinity;
 const left = () => deadline - Date.now();
 
-// Whether a failed request may still have reached Telegram: a 5xx, a timeout or a connection that broke after it was
-// made. A refused or unresolved connection never did.
-const maybeSent = (e: unknown, status?: number) => status !== undefined ? status >= 500
-  : !/^(ECONNREFUSED|ENOTFOUND|EAI_AGAIN)$/.test((e as { cause?: { code?: string } }).cause?.code ?? '');
+// Errors raised before a request was made: no route, no connection, no trusted certificate.
+const NEVER_SENT = /^(ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ENETUNREACH|EHOSTUNREACH|UND_ERR_CONNECT_TIMEOUT|CERT_[A-Z_]+|ERR_TLS_[A-Z_]+|ERR_SSL_[A-Z_]+|UNABLE_TO_VERIFY_LEAF_SIGNATURE|DEPTH_ZERO_SELF_SIGNED_CERT)$/;
+// A bare timeout says nothing about whether the request got out (a blackholed connect looks the same as a lost answer):
+// getMe decides. Any answer means Telegram is reachable, so the timeout came after the request.
+let down = false; // a probe failed in this run: the network is out, so a later timeout needs no second probe
+async function reachable(url: string): Promise<boolean> {
+  if (down) return false;
+  const ms = Math.min(3000, left());
+  if (ms < 500) return true; // no time to ask: the safe reading is that it may have arrived
+  try { await fetch(url.replace(/[^/]+$/, 'getMe'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}', signal: AbortSignal.timeout(ms) }); return true; }
+  catch { down = true; return false; }
+}
+// Whether a failed request may still have reached Telegram: a 5xx, or a timeout or broken connection with Telegram
+// reachable. A refused, unresolved or unroutable connection never did.
+async function maybeSent(e: unknown, url: string, status?: number): Promise<boolean> {
+  if (status !== undefined) return status >= 500;
+  const x = e as { name?: string; cause?: { code?: string } };
+  const code = x.cause?.code ?? '';
+  if (NEVER_SENT.test(code)) return false;
+  return code || !/^(TimeoutError|AbortError)$/.test(x.name ?? '') ? true : reachable(url);
+}
 // The result of a send that failed: unconfirmed when it may have arrived, else failed.
 const lost = (e: unknown, name: string): Result => {
   const error = redact((e as Error)?.message || e);
@@ -287,7 +304,7 @@ async function post(url: string, body: string, headers: Record<string, string>, 
       throw Object.assign(new Error(`${r.status} ${why}`), { final: r.status < 500 && r.status !== 429, wait, status: r.status });
     } catch (e) {
       const x = e as { final?: boolean; status?: number };
-      if (!x.final && once && x.status !== 429 && maybeSent(e, x.status)) throw Object.assign(e as Error, { unconfirmed: true });
+      if (!x.final && once && x.status !== 429 && await maybeSent(e, url, x.status)) throw Object.assign(e as Error, { unconfirmed: true });
       if (x.final || i >= 2 || left() < 1500) throw e;
       await sleep(((e as { wait?: number }).wait ?? 1) * 1000);
     }
@@ -359,11 +376,12 @@ async function sendFile(cfg: Config, path: string, as0: string | null, caption: 
     form.set(kind, new Blob([readFileSync(path)]), basename(path));
     if (capt) form.set('caption', capt);
     if (replyTo) form.set('reply_parameters', JSON.stringify({ message_id: replyTo, allow_sending_without_reply: true }));
+    const sendUrl = `${API()}/bot${cfg.telegram!.token}/${METHOD[kind]}`;
     let r: Response;
-    try { r = await fetch(`${API()}/bot${cfg.telegram!.token}/${METHOD[kind]}`, { method: 'POST', body: form, signal: AbortSignal.timeout(180000) }); }
-    catch (e) { throw maybeSent(e) ? Object.assign(e as Error, { unconfirmed: true }) : e; }
+    try { r = await fetch(sendUrl, { method: 'POST', body: form, signal: AbortSignal.timeout(180000) }); }
+    catch (e) { throw await maybeSent(e, sendUrl) ? Object.assign(e as Error, { unconfirmed: true }) : e; }
     const o = await r.json().catch(() => null) as { ok: boolean; description?: string; result?: { message_id: number } } | null;
-    if (!o?.ok) throw Object.assign(new Error(o?.description || `${r.status}`), maybeSent(null, r.status) || r.ok ? { unconfirmed: true } : {});
+    if (!o?.ok) throw Object.assign(new Error(o?.description || `${r.status}`), r.ok || await maybeSent(null, sendUrl, r.status) ? { unconfirmed: true } : {});
     return o.result!.message_id;
   };
   try {
@@ -608,12 +626,14 @@ async function ask() {
   const clean = (s: string) => redactExcerpt(s).replace(/<(redacted|url|token)>/g, tr('hidden'));
   const html = clean(a.html), short = clean(a.short);
   const keyboard = a.keyboard ? JSON.parse(JSON.stringify(a.keyboard), (k, v) => (k === 'text' && typeof v === 'string' ? clean(v) : v)) : undefined;
-  const r = await sendWith(config(), html, '', undefined, keyboard ? { reply_markup: keyboard } : {});
-  if (!r.sent.length && !r.unconfirmed) return report(r);
-  if (r.unconfirmed) report(r, true); // no message id, so no ask record: a tap on it cannot be matched
+  let r = await sendWith(config(), html, '', undefined, keyboard ? { reply_markup: keyboard } : {});
+  // An unconfirmed ask is a failed one: with no message id there is no ask record, and a tap on a question with no record
+  // is answered "closed". The inbox pushes it again; a repeated question beats one that cannot be answered.
+  if (r.unconfirmed) r = { sent: [], failed: [{ name: 'telegram', error: `${r.unconfirmed.join('; ')} (no message id, so the ask is sent again)` }] };
+  if (!r.sent.length) return report(r);
   if (r.message_id) writeJSON(join(tgDir, 'asks', `${r.message_id}.json`), { item: a.item, html, short, options: (a.options ?? []).map(String), reply: !!a.reply, at: Date.now(), ...(typeof a.q === 'string' && Number(a.of) > 1 ? { q: a.q, of: Number(a.of) } : {}) });
   prunePhone();
-  console.log(`notify: asked, message ${r.message_id ?? 'unconfirmed'}`);
+  console.log(`notify: asked, message ${r.message_id}`);
   return 0;
 }
 function prunePhone() {
