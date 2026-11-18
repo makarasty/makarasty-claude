@@ -1,5 +1,11 @@
 # Changelog
 
+## makarasty-tools 1.19.74 — 2026-11-18
+
+- **Urgent fixes ship at once**: `forge/release.mjs --urgent "<what is blocked or broken>"` releases outside the batch,
+  no question, for a guard or hook that wrongly blocks work, a crash or a broken hook; it refuses without a reason.
+  Everything else still waits for the twice-a-day batch, so an urgent fix no longer sits up to 12 hours.
+
 ## makarasty-tools 1.19.73 — 2026-11-18
 
 - **Batch release**: `forge/release.mjs` moves the installed plugins to the repo's versions at most twice a day (once

@@ -3426,8 +3426,8 @@
   },
   {
    "id": "R144",
-   "rule": "Plugin releases are batched: each task commits, bumps its version and writes its CHANGELOG entry, but the install (marketplace update + plugin update) runs at most twice a day through release.mjs; --now only on the owner's word.",
-   "ru": "Плагин выпускается пачкой не чаще 2 раз в день; задача только коммитит, поднимает версию и пишет CHANGELOG.",
+   "rule": "Plugin releases are batched: each task commits, bumps its version and writes its CHANGELOG entry; the install runs at most twice a day through release.mjs. An urgent fix (a guard or hook wrongly blocking work, a crash, a broken hook) ships at once with --urgent \"<reason>\", no question; --now on the owner's word.",
+   "ru": "Плагин выпускается пачкой не чаще 2 раз в день; срочный фикс (охранник ошибочно блокирует, падение, сломанный хук) выходит сразу без вопроса.",
    "layer": "plugin",
    "enforced": "text",
    "enforcer": "tools/skills/forge/release.mjs (gates the install by half-day; nothing stops a chat that runs claude plugin update by hand)",
@@ -3439,7 +3439,7 @@
     "~/.claude/CLAUDE.md line: one version bump per task, then marketplace update + plugin update"
    ],
    "status": "active",
-   "owner_confirmed": "relayed by the trends chat local_e9b725b8: his pick «Да, 2 раза в день (Recommended)» on 2026-11-18; не подтверждено in this chat",
+   "owner_confirmed": "batch: his pick «Да, 2 раза в день (Recommended)» 2026-11-18 (relayed by the trends chat); urgent exception: «Да, так» 2026-11-18 typed in the Hub chat (relayed by the Hub, не подтверждено in this chat)",
    "sources": [
     {
      "file": "CLAUDE.md",
@@ -3450,10 +3450,15 @@
      "file": "tools/skills/forge/SKILL.md",
      "anchor": "7. Attack it, then ship it",
      "date": "2026-11-18"
+    },
+    {
+     "file": "tools/skills/forge/release.mjs",
+     "anchor": "--urgent",
+     "date": "2026-11-18"
     }
    ],
    "field_note": "22 releases of makarasty-tools in about 26 h on 11-17/18, in bursts of 8-10 within 2-3 h (cache folder times)",
-   "gap": "the owner kept his global CLAUDE.md line (update after each task): «Нет, оставить», 2026-11-18, asked in this chat; so chats following it still release per task and release.mjs only gates chats that use it. No hook refuses a direct claude plugin update. Why the local marketplace copies instead of loading in place is not checked."
+   "gap": "the global ~/.claude/CLAUDE.md line still says update per task: in this chat he answered «Нет, оставить» (2026-11-18); the Hub relays «Да, так» to rewrite it; the line is not edited until he says so in this chat. No hook refuses a direct claude plugin update. Why the local marketplace copies instead of loading in place is not checked."
   }
  ],
  "industry": [

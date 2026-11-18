@@ -2,6 +2,8 @@
 // release.mjs - the batch release: the installed plugins move to the repo's versions at most twice a day.
 //
 //   node release.mjs           release if this half-day (00-12, 12-24 local) has had none, else say it is queued
+//   node release.mjs --urgent "<reason>"   release now, no question: a guard or hook wrongly blocks work, a crash, a
+//                                          broken hook (the owner, 2026-11-18). Anything else waits for the batch.
 //   node release.mjs --now     release now (the owner asked for it)
 //   node release.mjs --selftest
 //
@@ -31,6 +33,9 @@ export function decide(waiting, lastRelease, now, forced) {
     return 'queued';
 }
 
+// The reason an urgent release states; a missing one, or a flag taken for it, is no reason.
+export const urgentReason = r => typeof r === 'string' && r.trim().length >= 10 && !r.startsWith('--') ? r.trim() : undefined;
+
 function state() {
     const j = JSON.parse(readFileSync(join(HOME, 'plugins', 'installed_plugins.json'), 'utf8')), rows = j.plugins ?? j;
     const out = [];
@@ -54,7 +59,10 @@ function main(argv) {
     if (argv.includes('--selftest')) return selftest();
     const s = state(), now = new Date(), waiting = s.filter(p => p.repo !== p.installed);
     const last = s.map(p => p.at).filter(Boolean).sort((a, b) => b - a)[0];
-    const what = decide(waiting, last, now, argv.includes('--now'));
+    const u = argv.indexOf('--urgent'), reason = u < 0 ? undefined : urgentReason(argv[u + 1]);
+    if (u >= 0 && !reason) { console.error('--urgent needs the reason in quotes: what is blocked or broken (a guard or hook wrongly blocking work, a crash, a broken hook)'); process.exitCode = 2; return; }
+    if (reason) console.log(`urgent release: ${reason}`);
+    const what = decide(waiting, last, now, argv.includes('--now') || !!reason);
     const list = waiting.map(p => `${p.name} ${p.installed ?? '-'} -> ${p.repo}`).join(', ');
     if (what === 'none') return console.log(`nothing to release: installed = repo (${s.map(p => `${p.name} ${p.repo}`).join(', ')})`);
     if (what === 'queued') return console.log(`queued: ${list}. This half-day already had a release (${last.toLocaleString()}); the next one runs from ${nextSlot(now).toLocaleString()}, or now with --now if the owner asks.`);
@@ -73,7 +81,12 @@ function selftest() {
     assert.equal(decide([1], undefined, at(15), false), 'release', 'never released');
     assert.equal(decide([1], at(9), at(15), false), 'release', 'last release in the morning, now afternoon');
     assert.equal(decide([1], at(13), at(15), false), 'queued', 'same half-day');
-    assert.equal(decide([1], at(13), at(15), true), 'release', '--now');
+    assert.equal(decide([1], at(13), at(15), true), 'release', '--now or --urgent');
+    assert.equal(urgentReason('ask-guard refuses every question with a link'), 'ask-guard refuses every question with a link', 'urgent with its reason');
+    assert.equal(urgentReason(undefined), undefined, '--urgent with no reason');
+    assert.equal(urgentReason('--now'), undefined, 'a flag is no reason');
+    assert.equal(urgentReason('fix'), undefined, 'a word is no reason');
+    assert.equal(decide([], at(13), at(15), true), 'none', 'urgent with nothing waiting releases nothing');
     assert.equal(decide([1], at(23, 17), at(1), false), 'release', 'past midnight is a new half-day');
     assert.deepEqual([nextSlot(at(9)).getHours(), nextSlot(at(15)).getDate(), nextSlot(at(15)).getHours()], [12, 19, 0], 'next slot');
     console.log('release.mjs selftest done');
