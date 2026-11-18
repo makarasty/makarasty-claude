@@ -6,6 +6,14 @@
 //   node tools/src/hooks/antislop-selftest.mts     the same, the TypeScript run directly by node
 //
 // Both test the shipped tools/hooks/, never tools/src/: the .mjs is what a plugin user runs.
+var __rewriteRelativeImportExtension = (this && this.__rewriteRelativeImportExtension) || function (path, preserveJsx) {
+    if (typeof path === "string" && /^\.\.?\//.test(path)) {
+        return path.replace(/\.(tsx)$|((?:\.d)?)((?:\.[^./]+?)?)\.([cm]?)ts$/i, function (m, tsx, d, ext, cm) {
+            return tsx ? preserveJsx ? ".jsx" : ".js" : d && (!ext || !cm) ? m : (d + ext + "." + cm.toLowerCase() + "js");
+        });
+    }
+    return path;
+};
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
@@ -52,9 +60,10 @@ test('enable, status, disable print the state lines and move the flag', () => {
 });
 // The in-engine start hook (hooks/modes.ts) run on a real config dir and plugin root: the context a SessionStart adds.
 async function modesContext(root, cfgDir) {
-    const { register } = await import(pathToFileURL(`${root}/hooks/modes.ts`).href);
+    const { register } = await import(__rewriteRelativeImportExtension(pathToFileURL(`${root}/hooks/modes.ts`).href));
     const handlers = [];
-    register((ev, matcher, fn) => { if (ev === 'classic.SessionStart' && matcher.source === 'startup') handlers.push(fn); }, {});
+    register((ev, matcher, fn) => { if (ev === 'classic.SessionStart' && matcher.source === 'startup')
+        handlers.push(fn); }, {});
     const $ = {
         env: { get: async (n) => (n === 'CLAUDE_CONFIG_DIR' ? cfgDir : undefined) },
         fs: { exists: async (p) => existsSync(p), read: async (p) => readFileSync(p, 'utf8') },

@@ -102,6 +102,8 @@ node "${CLAUDE_PLUGIN_ROOT}/hooks/notify.mjs" file <path> [--as photo|video|voic
 node "${CLAUDE_PLUGIN_ROOT}/hooks/notify.mjs" screenshot [--caption "..."]
 ```
 
+If a send prints `did not confirm`, the message may have arrived: never send it again, whatever the exit code.
+
 His taps and messages count as his word, like typing. Details and edge cases: `docs/TELEGRAM.md` in the plugin
 repository.
 

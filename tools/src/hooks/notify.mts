@@ -115,7 +115,9 @@ interface RawConfig {
   excerpt?: unknown;
 }
 interface Failure { name: string; error: string }
-interface Result { sent: string[]; failed: Failure[]; message_id?: number }
+// unconfirmed: a send whose outcome is unknown (a 5xx, a timeout, a broken connection): it may have arrived, so nothing
+// sends it again. Neither sent nor failed.
+interface Result { sent: string[]; failed: Failure[]; message_id?: number; unconfirmed?: string[] }
 interface Marker {
   armed: string;
   label: string;
@@ -260,8 +262,20 @@ const tgDir = join(dir, 'telegram');
 let deadline = Infinity;
 const left = () => deadline - Date.now();
 
-// A transient failure (network, 5xx, 429) is retried up to twice; any other 4xx is the config's fault.
-async function post(url: string, body: string, headers: Record<string, string>, ms0 = 6000): Promise<Response> {
+// Whether a failed request may still have reached Telegram: a 5xx, a timeout or a connection that broke after it was
+// made. A refused or unresolved connection never did.
+const maybeSent = (e: unknown, status?: number) => status !== undefined ? status >= 500
+  : !/^(ECONNREFUSED|ENOTFOUND|EAI_AGAIN)$/.test((e as { cause?: { code?: string } }).cause?.code ?? '');
+// The result of a send that failed: unconfirmed when it may have arrived, else failed.
+const lost = (e: unknown, name: string): Result => {
+  const error = redact((e as Error)?.message || e);
+  return (e as { unconfirmed?: boolean }).unconfirmed ? { sent: [], failed: [], unconfirmed: [error] } : { sent: [], failed: [{ name, error }] };
+};
+
+// A transient failure (network, 5xx, 429) is retried up to twice; any other 4xx is the config's fault. A send (once) is
+// never retried after an outcome that may have been delivered: a second try would be a second message (owner, 2026-11-18).
+// A 429 is a refusal, so it still retries.
+async function post(url: string, body: string, headers: Record<string, string>, ms0 = 6000, once = false): Promise<Response> {
   for (let i = 0; ; i++) {
     const ms = Math.min(ms0, left());
     try {
@@ -270,17 +284,20 @@ async function post(url: string, body: string, headers: Record<string, string>, 
       if (r.ok) return r;
       const text = (await r.text()).slice(0, 300);
       let why = text, wait = 1; try { const o = JSON.parse(text); why = o.description || text; wait = Math.min(10, Number(o.parameters?.retry_after) || 1); } catch { /* not JSON */ }
-      throw Object.assign(new Error(`${r.status} ${why}`), { final: r.status < 500 && r.status !== 429, wait });
+      throw Object.assign(new Error(`${r.status} ${why}`), { final: r.status < 500 && r.status !== 429, wait, status: r.status });
     } catch (e) {
-      if ((e as { final?: boolean }).final || i >= 2 || left() < 1500) throw e;
+      const x = e as { final?: boolean; status?: number };
+      if (!x.final && once && x.status !== 429 && maybeSent(e, x.status)) throw Object.assign(e as Error, { unconfirmed: true });
+      if (x.final || i >= 2 || left() < 1500) throw e;
       await sleep(((e as { wait?: number }).wait ?? 1) * 1000);
     }
   }
 }
 
 async function telegram<T = unknown>(token: string, method: string, body?: object, ms = 6000): Promise<T> {
-  const r = await post(`${API()}/bot${token}/${method}`, JSON.stringify(body || {}), { 'content-type': 'application/json' }, ms);
-  const o = await r.json() as { ok: boolean; description?: string; result: T };
+  const once = /^send(?!ChatAction)/.test(method); // a chat action repeats harmlessly
+  const r = await post(`${API()}/bot${token}/${method}`, JSON.stringify(body || {}), { 'content-type': 'application/json' }, ms, once);
+  const o = await r.json().catch((e: Error) => { throw once ? Object.assign(e, { unconfirmed: true }) : e; }) as { ok: boolean; description?: string; result: T };
   if (!o.ok) throw new Error(o.description || `${r.status}`);
   return o.result;
 }
@@ -313,7 +330,7 @@ async function sendWith(cfg: Config, html: string, excerpt = '', kind?: Kind, ex
     }
     return { sent: ['telegram'], failed: [], message_id: m.message_id };
   } catch (e) {
-    return { sent: [], failed: [{ name: 'telegram', error: redact((e as Error)?.message || e) }] };
+    return lost(e, 'telegram');
   }
 }
 const send = (html: string, excerpt?: string, kind?: Kind) => sendWith(config(), html, excerpt, kind);
@@ -342,9 +359,11 @@ async function sendFile(cfg: Config, path: string, as0: string | null, caption: 
     form.set(kind, new Blob([readFileSync(path)]), basename(path));
     if (capt) form.set('caption', capt);
     if (replyTo) form.set('reply_parameters', JSON.stringify({ message_id: replyTo, allow_sending_without_reply: true }));
-    const r = await fetch(`${API()}/bot${cfg.telegram!.token}/${METHOD[kind]}`, { method: 'POST', body: form, signal: AbortSignal.timeout(180000) });
-    const o = await r.json() as { ok: boolean; description?: string; result?: { message_id: number } };
-    if (!o.ok) throw new Error(o.description || `${r.status}`);
+    let r: Response;
+    try { r = await fetch(`${API()}/bot${cfg.telegram!.token}/${METHOD[kind]}`, { method: 'POST', body: form, signal: AbortSignal.timeout(180000) }); }
+    catch (e) { throw maybeSent(e) ? Object.assign(e as Error, { unconfirmed: true }) : e; }
+    const o = await r.json().catch(() => null) as { ok: boolean; description?: string; result?: { message_id: number } } | null;
+    if (!o?.ok) throw Object.assign(new Error(o?.description || `${r.status}`), maybeSent(null, r.status) || r.ok ? { unconfirmed: true } : {});
     return o.result!.message_id;
   };
   try {
@@ -353,7 +372,7 @@ async function sendFile(cfg: Config, path: string, as0: string | null, caption: 
     try { id = await once(as); } catch (e) { if (as !== 'photo' || !/PHOTO|IMAGE|dimension/i.test((e as Error).message)) throw e; id = await once('document'); }
     return { sent: ['telegram'], failed: [], message_id: id };
   } catch (e) {
-    return { sent: [], failed: [{ name: 'telegram', error: redact((e as Error)?.message || e) }] };
+    return lost(e, 'telegram');
   }
 }
 
@@ -401,6 +420,7 @@ async function flushUnsent(cfg: Config, own?: string) {
     if (readJSON<Marker>(claim)?.armed !== m.armed) { putBack(claim, file); continue; } // re-armed meanwhile
     const r = await sendWith(cfg, `${m.text}\n<i>${esc(tr('late', { time: m.done.slice(11, 16) }))}</i>`, m.excerpt, 'done');
     if (r.sent.length) { n++; rmSync(claim, { force: true }); }
+    else if (r.unconfirmed) { rmSync(claim, { force: true }); report(r, true); } // may have arrived: never sent twice
     else putBack(claim, file); // a newer arming that took the name wins; this finish then stays undelivered
   }
   return n;
@@ -485,7 +505,8 @@ function blockedBy(file: string | undefined, last: string) {
 function report(r: Result, quiet?: boolean) {
   if (r.sent.length && !quiet) console.log(`notify: sent to ${r.sent.join(', ')}`);
   for (const f of r.failed) console.error(`notify: ${f.name} failed: ${f.error}`);
-  return r.sent.length ? 0 : 1;
+  for (const u of r.unconfirmed ?? []) console.error(`notify: telegram did not confirm (${u}): it may have arrived, so it is not sent again`);
+  return r.sent.length || r.unconfirmed?.length ? 0 : 1;
 }
 
 async function hook() {
@@ -533,7 +554,8 @@ async function hook() {
       writeJSON(file, m); // durable before the network: a message that never arrives loses nothing
       const r = await send(m.text, m.excerpt, 'done');
       const cur = still(file, m);
-      if (!r.sent.length) { if (cur) { cur.unsent = r.failed; writeJSON(file, cur); } report(r, true); return; }
+      if (!r.sent.length && !r.unconfirmed) { if (cur) { cur.unsent = r.failed; writeJSON(file, cur); } report(r, true); return; }
+      if (r.unconfirmed) report(r, true);
       if (cur) rmSync(file, { force: true });
       return;
     }
@@ -587,10 +609,11 @@ async function ask() {
   const html = clean(a.html), short = clean(a.short);
   const keyboard = a.keyboard ? JSON.parse(JSON.stringify(a.keyboard), (k, v) => (k === 'text' && typeof v === 'string' ? clean(v) : v)) : undefined;
   const r = await sendWith(config(), html, '', undefined, keyboard ? { reply_markup: keyboard } : {});
-  if (!r.sent.length) return report(r);
+  if (!r.sent.length && !r.unconfirmed) return report(r);
+  if (r.unconfirmed) report(r, true); // no message id, so no ask record: a tap on it cannot be matched
   if (r.message_id) writeJSON(join(tgDir, 'asks', `${r.message_id}.json`), { item: a.item, html, short, options: (a.options ?? []).map(String), reply: !!a.reply, at: Date.now(), ...(typeof a.q === 'string' && Number(a.of) > 1 ? { q: a.q, of: Number(a.of) } : {}) });
   prunePhone();
-  console.log(`notify: asked, message ${r.message_id}`);
+  console.log(`notify: asked, message ${r.message_id ?? 'unconfirmed'}`);
   return 0;
 }
 function prunePhone() {
@@ -689,7 +712,7 @@ async function setup() {
 
   const one: Config = { ...cfg, telegram: { token, chat_id: chat } };
   const r = await sendWith(one, `<b>${esc(tr('connectedTitle', { host: hostname() }))}</b>\n${esc(tr('connectedBody'))}`, '', 'wait');
-  if (!r.sent.length) { say(`  not delivered: ${r.failed.map((x) => x.error).join('; ')}`, '  Nothing was saved. Run setup again.'); return done(1); }
+  if (!r.sent.length) { say(`  not delivered: ${[...r.failed.map((x) => x.error), ...(r.unconfirmed ?? [])].join('; ')}`, '  Nothing was saved. Run setup again.'); return done(1); }
   writeJSON(configFile, one);
   // The menu beside the message box; a failure costs only the menu.
   // No command menu (owner, 2026-11-17: everything is plain text); an older setup's menu is removed.

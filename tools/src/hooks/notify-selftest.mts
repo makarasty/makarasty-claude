@@ -419,9 +419,67 @@ const ms = Date.now() - start, took = Math.round(ms / 1000);
 s1.srv.kill();
 // The limit on the exact time, not the rounded one, so 7.4 s cannot round down into a pass.
 if (ms <= 7000) ok(`a resume gives up after about four seconds (took ${took}s, hook timeout 10)`); else bad('a resume gives up after about four seconds', `took ${took}s`);
-if (exists(marker)) ok('and the undelivered finish stays on disk'); else bad('and the undelivered finish stays on disk');
+if (exists(marker)) bad('and a send that timed out is not kept for a second try', read(marker)); else ok('and a send that timed out is not kept for a second try');
 node([n, '--disarm']);
 writeFileSync(conf, confExcerpt);
+
+section('a send whose outcome is unknown is never sent twice');
+// A Telegram look-alike: answers each method from its plan (a status per request, then 200) and logs every request.
+let mocks = 0;
+function mock(plan: Record<string, number[]>) {
+  const log = `${tmp}/reqs-${++mocks}`;
+  const script = `const fs = require("fs"), plan = ${JSON.stringify(plan)};
+require("http").createServer((q, r) => { q.resume(); q.on("end", () => {
+  const m = q.url.split("/").pop(); fs.appendFileSync(${JSON.stringify(log)}, m + "\\n");
+  const st = (plan[m] || []).shift() || 200;
+  r.writeHead(st, { "content-type": "application/json" });
+  r.end(JSON.stringify(st === 200 ? { ok: true, result: m === "getMe" ? { username: "x_bot" } : m === "getUpdates" ? [] : { message_id: 7 } } : { ok: false, description: st === 429 ? "Too Many Requests" : "Gateway Timeout", parameters: { retry_after: 1 } }));
+}); }).listen(0, "127.0.0.1", function () { fs.writeFileSync(process.argv[1], String(this.address().port)); })`;
+  const s = server(script, `${tmp}/mock-port-${mocks}`);
+  return { ...s, env: { NOTIFY_DRY_RUN: '', NOTIFY_TELEGRAM_API: `http://127.0.0.1:${s.port}` }, reqs: () => read(log).split('\n').filter(Boolean) };
+}
+writeFileSync(conf, confPlain);
+const doc = `${tmp}/report.txt`; writeFileSync(doc, 'hello');
+const unconfirmedLine = 'notify: telegram did not confirm (504 Gateway Timeout): it may have arrived, so it is not sent again';
+let mk = mock({ sendMessage: [504] });
+r = node([n, 'send', 'hi'], { env: mk.env });
+code('a send answered 504 exits 0', 0, r.code);
+check('and says it did not confirm', unconfirmedLine, r.err);
+check('after one request only', 'sendMessage', mk.reqs().join(','));
+if (mk.reqs().length === 1) ok('and not a second one (the old retry would make two)'); else bad('and not a second one', mk.reqs().join(','));
+mk.srv.kill();
+mk = mock({ sendDocument: [504] });
+r = node([n, 'file', doc, '--caption', 'x'], { env: mk.env });
+code('a file answered 504 exits 0', 0, r.code);
+check('and says it did not confirm', 'notify: telegram did not confirm (Gateway Timeout): it may have arrived, so it is not sent again', r.err);
+if (mk.reqs().length === 1) ok('after one request only'); else bad('after one request only', mk.reqs().join(','));
+mk.srv.kill();
+mk = mock({ sendMessage: [400] });
+r = node([n, 'send', 'hi'], { env: mk.env });
+code('a clear 4xx is still a failure', 1, r.code);
+check('and says failed', 'telegram failed: 400', r.err);
+mk.srv.kill();
+mk = mock({ sendMessage: [429] });
+r = node([n, 'send', 'hi'], { env: mk.env });
+code('a 429 is retried and the send lands', 0, r.code);
+if (mk.reqs().length === 2 && !r.err) ok('with two requests and no complaint'); else bad('with two requests and no complaint', `${mk.reqs().join(',')} ${r.err}`);
+mk.srv.kill();
+mk = mock({ sendMessage: [504] });
+node([n, '--arm', 'unsure']);
+r = hook('{"hook_event_name":"Stop","session_id":"s1","last_assistant_message":"done"}', mk.env);
+check('a finish answered 504 says it did not confirm', 'did not confirm', r.err);
+if (exists(marker)) bad('and the marker is gone: no later flush sends it again', read(marker)); else ok('and the marker is gone: no later flush sends it again');
+if (mk.reqs().length === 1) ok('after one request only'); else bad('after one request only', mk.reqs().join(','));
+mk.srv.kill();
+// The idempotent calls keep retrying: setup's getMe answers 502 once, then the bot is found.
+mk = mock({ getMe: [502] });
+const setupRun = spawn(process.execPath, [n, 'setup'], { env: { ...process.env, ...mk.env, NOTIFY_CLIPBOARD: `${tmp}/clip`, NOTIFY_NO_OPEN: '1' }, stdio: 'ignore' });
+for (let i = 0; i < 20 && !read(`${tmp}/clip`).includes('_bot'); i++) sleep(0.5); // setup puts a bot name on the clipboard, then waits for the token
+writeFileSync(`${tmp}/clip`, `${tok}Qw7Er5Ty3Ui`); // setup wants 30+ characters after the colon
+for (let i = 0; i < 30 && mk.reqs().filter((x) => x === 'getMe').length < 2; i++) sleep(0.5);
+setupRun.kill(); mk.srv.kill();
+if (mk.reqs().filter((x) => x === 'getMe').length === 2) ok('a getMe answered 502 is retried'); else bad('a getMe answered 502 is retried', mk.reqs().join(','));
+node([n, '--disarm']);
 
 // Whether node starts at all is the arming test in gates.ts (tests in gates.test.ts: no marker, a marker, another config
 // dir, ~/.claude when CLAUDE_CONFIG_DIR is unset). What is left here is what notify.mjs itself does.

@@ -1,5 +1,20 @@
 # Changelog
 
+## makarasty-tools 1.20.9 — 2026-11-18
+
+- **notify: a Telegram send whose outcome is unknown is never sent twice.** Incident (owner, 2026-11-18): \`notify.mjs file\`
+  printed "telegram failed: Gateway Timeout" and exited 1, Telegram had delivered it, the chat retried, and he got the
+  same message twice. Now a \`send*\` call (and the multipart file upload) that ends in a 5xx, a timeout or a connection
+  that broke after the request was made is "unconfirmed": \`notify: telegram did not confirm (<reason>): it may have arrived,
+  so it is not sent again\`, exit 0. The same state ends an in-process retry (\`post()\` retried sendMessage up to twice on
+  a 5xx) and the finish re-send at the next chat start (\`flushUnsent\` removes the claim). A 429 still retries (Telegram
+  refused it), so do idempotent calls (getMe, getUpdates, edit*); a clear 4xx is still "failed".
+- **Trade-off, owner's call:** a finish whose send hung until the timeout is no longer kept for a re-send at the next
+  chat start; the old selftest case "the undelivered finish stays on disk" now says it is not kept.
+- Tests: notify-selftest runs a Telegram look-alike that logs requests (504 once on sendMessage and sendDocument: one
+  request, exit 0; 429 then 200: two requests; 400: still failed; a finish answered 504: marker gone; getMe 502 then 200:
+  retried).
+
 ## makarasty-tools 1.20.8 — 2026-11-18
 
 - **inbox: phone jobs run as built-in background sessions.** `inbox.mjs job` starts `claude --bg` in the project folder
