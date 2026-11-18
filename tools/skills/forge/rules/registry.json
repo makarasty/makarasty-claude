@@ -3469,21 +3469,38 @@
     "owner 2026-11-18 export narrowed, chat a0296b0f"
    ],
    "complaintChats": 1,
-   "conflicts": [
-    "~/.claude/makarasty/profile.md: check it is still needed and not already done (applied to rows)",
-    "~/.claude/CLAUDE.md: build the recommended option, do not ask"
-   ],
-   "status": "candidate",
-   "owner_confirmed": "his words relayed by the billing chat: «Я не хочу, чтобы больше такие проблемы повторялись ... Хочу правило 10 из 10» (2026-11-18); the rule text itself not yet seen by him",
+   "conflicts": [],
+   "status": "active",
+   "owner_confirmed": "«Все 1–5 (Recommended)», 2026-11-18, asked in this chat after the text and the 13/14 vs 0/14 result",
    "sources": [
     {
      "file": "~/.claude/makarasty/findings/makarasty-claude.md",
      "anchor": "2026-11-18 owner complaint",
      "date": "2026-11-18"
+    },
+    {
+     "file": "tools/hooks/gates.ts",
+     "anchor": "literal",
+     "date": "2026-11-18"
+    },
+    {
+     "file": "~/.claude/makarasty/profile.md",
+     "anchor": "line 6",
+     "date": "2026-11-18"
     }
    ],
    "eval": "evals/R145-literal-scope.json",
-   "measured": "2026-11-18, 5 passes, Sonnet, fixture export-all: narrowed export (70 or 31 rows of 75) 13 of 14 runs with the old texts, 0 of 14 with the new paragraph (7 wrote all 75, 7 blocked by the fixture permissions, not by the rule). Question not an order, «убери», whose-work and recipient prompts: equal in both arms at this length (absorbed or ceiling)."
+   "measured": "2026-11-18, 5 passes, Sonnet, fixture export-all: narrowed export (70 or 31 rows of 75) 13 of 14 runs with the old texts, 0 of 14 with the new paragraph (7 wrote all 75, 7 blocked by the fixture permissions, not by the rule). Question not an order, «убери», whose-work and recipient prompts: equal in both arms at this length (absorbed or ceiling).",
+   "inForce": [
+    {
+     "text": "gates:literal",
+     "has": "\"all\" means all"
+    },
+    {
+     "text": "profile",
+     "has": "never about the rows of a list or export"
+    }
+   ]
   }
  ],
  "industry": [

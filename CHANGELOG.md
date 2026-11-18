@@ -1,5 +1,13 @@
 # Changelog
 
+## makarasty-tools 1.20.2 — 2026-11-18
+
+- **"All" means all**: every main chat gets one more paragraph: the person's literal words (all rows, their columns,
+  their recipient) beat a skill's template and the recommended option; a question is answered, not obeyed, unless it
+  names an action; "whose work it is" needs the reason read first; a recipient never comes from a file name. In a
+  replay of an export asked for "all 75" the old texts narrowed it in 13 of 14 runs, the new ones in 0 of 14 [M77].
+  The rules registry has the case as `R145` with its fixture; eval runs now read only inside their fixture.
+
 ## makarasty-tools 1.20.1 — 2026-11-18
 
 - **Started sessions go to the top level** (owner 11-18: «пусть она создает сразу у чата на топ-уровне»). A started

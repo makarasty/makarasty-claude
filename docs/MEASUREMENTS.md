@@ -1366,6 +1366,12 @@ Two passes for the first nine rules (2 then 4 runs per prompt and arm), counts b
   "area: task" title 12/12 vs 0/12 (judge 12:0) and "Hub:" for the coordinating chat 3/3 vs 0/3. A first wording
   with a full example title was copied verbatim, so the shipped line has none. Whether a model calls the app's title
   tool is not tested (`claude -p` has none).
+- **Export narrowed against the owner's "all" (2026-11-18):** a replay of his case (75 queue rows, 39 marked rechecked,
+  5 excluded by a fix script, a file named for the wrong person; his own six prompts). With the texts then shipped the
+  export dropped rows in 13 of 14 runs (70 rows 12 times, 31 once); with the `literal` paragraph and the scoped profile
+  line 0 of 14 (7 wrote all 75, 7 could not run their script in the fixture). The question, «убери», whose-work and
+  recipient prompts came out equal in both arms at this length. A first pass let runs read files outside the fixture;
+  reads are now scoped to it.
 **Status:** one model, short context, 3-6 runs per cell; the judge sees the reply and the first 30 tool calls; field
 counts are regex hits on his own messages (raw, not hand-read).
 

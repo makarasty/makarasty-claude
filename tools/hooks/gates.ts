@@ -129,6 +129,16 @@ export const claims =
   'Otherwise write "не подтверждено". A dictated "отправляем" is a plan, never a status; another chat\'s report of outside ' +
   'state is its claim, not a fact.'
 
+// The owner asked for all 75 rows of an export and got 36, then a file changed on his «зачем?» (2026-11-18). In a replay
+// the old texts narrowed the export in 13 of 14 runs, these lines in 0 of 14 [M77]. Main sessions, with the findings line.
+export const literal =
+  'The person\'s literal words win: "all" means all, their column list is the column list, their recipient is the recipient. ' +
+  'They beat a skill\'s template, a "smallest change" or "skip", and the recommended option; a deviation you think is better ' +
+  'is proposed in one line, never built. A question from them («зачем?», «почему?») is not an order: answer it with evidence ' +
+  'and change nothing until they say so; a question that names an action («...зачем? убери») is an order. "Whose work it ' +
+  'is" or "not applied" is a claim: read why the item exists (the script, note or commit) first, else write не проверено. ' +
+  "A person's role or a file's recipient comes from their words or the people roster, never from a file name; unknown: ask once."
+
 // The owner, 2026-11-17: agents lost the goal and left plan items as a footnote ("not reviewed"). Main sessions with the
 // economy texts, subagents with the findings line, so a fleet worker's report walks its brief too.
 export const plans =
@@ -196,7 +206,7 @@ async function profile($: Dollar): Promise<string[]> {
 }
 
 const withEconomy = async ($: Dollar, out: { additionalContext?: string[] }, more: string[] = []) => {
-  const rules = [...((await $.env.get('MAKARASTY_ECONOMY')) === 'off' ? [] : [economy, habits, asking, plans]), ...((await findingsOn($)) ? [findings, claims] : [])]
+  const rules = [...((await $.env.get('MAKARASTY_ECONOMY')) === 'off' ? [] : [economy, habits, asking, plans]), ...((await findingsOn($)) ? [findings, claims, literal] : [])]
   const all = [...(out.additionalContext ?? []), ...more, ...rules, ...(await profile($).catch(() => []))]
   return all.length ? { ...out, additionalContext: all } : out
 }
