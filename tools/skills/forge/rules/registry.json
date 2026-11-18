@@ -3453,7 +3453,7 @@
     }
    ],
    "field_note": "22 releases of makarasty-tools in about 26 h on 11-17/18, in bursts of 8-10 within 2-3 h (cache folder times)",
-   "gap": "the owner's global CLAUDE.md still says update per task; no hook refuses a direct claude plugin update; why the local marketplace copies instead of loading in place is not checked"
+   "gap": "the owner kept his global CLAUDE.md line (update after each task): «Нет, оставить», 2026-11-18, asked in this chat; so chats following it still release per task and release.mjs only gates chats that use it. No hook refuses a direct claude plugin update. Why the local marketplace copies instead of loading in place is not checked."
   }
  ],
  "industry": [
