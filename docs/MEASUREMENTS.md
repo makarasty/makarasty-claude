@@ -1385,6 +1385,20 @@ context scored shuffled X/Y pages 1-10 on scan speed, visuals, item numbers, pol
   One Haiku run printed a bot token to its own log while checking a config; rule 0 (never print a secret) followed.
 **Status:** 2 tasks for the A/B, one run per arm; the polish scores come from one judge per round, not a panel.
 
+## M79 — Research replies with no source check: verify-guard's second case (2026-11-18)
+Replay of the last 14 days of main-thread transcripts (1,932 files, 20,522 turn ends: each a run of assistant texts up
+to the next prompt, hand-back or notification), tool calls fed to the gate in order.
+- **Must-catch**: c46c3894 (LifeLines, 11-17), the first trends report, nine claims wrong. It fires on that turn and on
+  its wrong lines ("120+ чатах ... Такого хука нет", "105 из 195 коммитов", "0 из 511 ... 216 из 727", "51% за 31%").
+  The chat had run 10 reads, greps and counts of its own after the last of 7 hand-backs, on other facts: any own read
+  as the check would not have caught it, hence 3+ hand-backs need a red team, a review or a verifier subagent.
+- **Fire rate**: 55 of 20,522 turn ends (0.27%), in 52 of 1,932 chats. Read by hand: about 43 are analysis or report
+  replies built on subagents' numbers (cost splits, timing tables, coverage and comment shares, measurements), about
+  12 debatable (the chat names its own check in words, fleet progress, a vote count).
+- **Tuning on the same set**, fires: version lines and "подтверждено" counted 115; without the prompt text deciding
+  what is a verifier, the must-catch case was missed (its consult briefs said "review"); final 55.
+**Status:** one replay, the hand reading by one reader; a refused reply costs one more model round.
+
 ## Appendix: what a pull run spends
 
 Moved here from `PULL.md`, which workers read in full; none of it changes what a worker does.

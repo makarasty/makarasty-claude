@@ -1,5 +1,16 @@
 # Changelog
 
+## makarasty-tools 1.19.72 — 2026-11-18
+
+- **verify-guard reads research replies too** (owner 11-18, «Да, расширить»): a turn whose text states numbers or verdicts
+  (%, $, "N из M", "120+", "такого нет", "по данным") that subagents handed back, with no source check after them, is
+  sent back once at Stop: check the sources, run a red team, or write «не проверено» on those lines. One or two
+  hand-backs are covered by any own Read, Grep, fetch or shell count after them; three or more need a red team, a review
+  or a subagent sent to verify. A line with a source or a caveat, a test result, run progress or a version is not a
+  claim; a reply with no subagent behind it is never read. Same Stop chain (gates.ts after routes.ts), same
+  once-only rule, `MAKARASTY_VERIFY_GUARD=off`. Catches the c46c3894 report (nine wrong claims, no hook fired);
+  fires on 0.27% of turn ends over 14 days [M79].
+
 ## makarasty-tools 1.19.71 — 2026-11-18
 
 - **The inbox leaves your own chats alone**: it watches only the chats it started and the ones you named ("следи за

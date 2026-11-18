@@ -1,5 +1,6 @@
 import type { EngineInterface, Register } from 'claude-code'
 import { register as routes, stopBlock } from './routes.ts'
+import { researchStop } from './verify-guard.ts'
 
 // Two features that are usually off, asked inside the engine instead of by a shell or node started on every prompt:
 //
@@ -275,7 +276,7 @@ export const register: Register = (on, options) => {
   // Fire and forget: the turn ends without waiting for the message.
   on('classic.Stop', async ($, e, next) => {
     // A turn sent back to route its findings is not finished: no "done" message for it.
-    const block = await stopBlock($, e).catch(() => undefined)
+    const block = (await stopBlock($, e).catch(() => undefined)) ?? (await researchStop($, e).catch(() => undefined))
     if (block) return { ...(await next(e)), block }
     if (await armed($, e.session_id)) void notify($, e, 20000).catch(() => {})
     return next(e)
