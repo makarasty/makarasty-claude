@@ -16,8 +16,8 @@
 //   node inbox.mjs telegram                 answer the person's waiting Telegram messages with one headless inbox turn (the hook runs it
 //                                           when no inbox chat is running)
 //   node inbox.mjs job <folder> <name> --said "<his words>" [--model m] [--effort e]
-//                                           long work he asked for from Telegram: a detached `claude -p` in that folder whose final
-//                                           message goes to his Telegram (jobs/<id>.json); consent as for start
+//                                           long work he asked for from Telegram: a background session (`claude --bg`) in that folder
+//                                           whose final message goes to his Telegram (jobs/<id>.json); consent as for start
 //   node inbox.mjs channels                 `channels: yes` or `channels: none` (notify.mjs --status; a dry-run sink counts as yes)
 //   node inbox.mjs open <id>|local_<id>     bring that chat up in the app window of its own account (profile)
 //   node inbox.mjs start <profile> <folder> <name> --said "<his words>" [--model m] [--effort e] [--mode default|plan|auto]
@@ -42,7 +42,7 @@
 //
 // Exit 0 ok, 1 refused (already answered, unknown id, bad answer), 2 bad arguments, 3 wait timed out.
 
-import { execFileSync, spawn } from 'node:child_process'
+import { execFileSync, spawn, spawnSync } from 'node:child_process'
 import { appendFileSync, closeSync, existsSync, fstatSync, mkdirSync, openSync, readFileSync, readdirSync, readSync, renameSync, rmSync, statSync, writeFileSync, writeSync } from 'node:fs'
 import { createHash, randomUUID } from 'node:crypto'
 import { freemem, homedir } from 'node:os'
@@ -101,6 +101,7 @@ const norm = (/** @type {string} */ id) => id.split('~').map(safe).join('~')
 // The desktop profile that holds a chat: <profiles>/<name>/claude-code-sessions/<account>/<org>/local_<id>.json. Several
 // accounts run side by side as separate app windows, one profile folder each (launched with --user-data-dir).
 const profilesDir = () => process.env.INBOX_PROFILES_DIR || join(process.env.LOCALAPPDATA || '', 'Claude-Profiles')
+// Kept: `claude agents --json` names no profile, and the app window that opens a chat is chosen by its profile.
 function profileOf(/** @type {string} */ host) {
   const top = profilesDir()
   if (!existsSync(top)) return undefined
@@ -140,6 +141,7 @@ function launch(/** @type {{name: string, dir: string} | undefined} */ prof, /**
 const noWindow = (/** @type {{name: string} | undefined} */ prof) => `inbox: no running app window for ${prof ? `profile ${prof.name}` : 'that chat (it is in no profile)'}; open that account from its own shortcut first`
 
 // Every chat of every profile, from the app's own records: profile, app id, CLI id, folder, last activity, archived.
+// Kept beside `claude agents --json`: that list has no app id, profile, archived flag, task id or frames, and misses a chat whose process exited.
 function chats() {
   const top = profilesDir(), out = []
   if (!existsSync(top)) return out
@@ -363,6 +365,9 @@ const bundledCli = (/** @type {{name: string, dir: string}} */ prof) => {
   } catch { /* no bundled CLI */ }
   return 'claude'
 }
+// The profile whose CLI runs the inbox's own sessions: main, else the first one (undefined: no app profiles, the CLI on PATH).
+const mainProf = () => { /** @type {string[]} */ let p = []; try { p = readdirSync(profilesDir()) } catch { /* no app profiles */ } return p.includes('main') ? 'main' : p[0] }
+const mainCli = () => bundledCli({ name: mainProf() ?? '', dir: join(profilesDir(), mainProf() ?? '') })
 // The standing answer: {id, line} when `standing` is in a line of answers.md that is about a relaunch at 700K, and `old` is a live
 // chat of this profile and folder that has not been relaunched yet (<root>/standing-used/<its app id>, one per old chat). Else {why}.
 function standingConsent(/** @type {string} */ standing, /** @type {string} */ old, /** @type {string} */ profile, /** @type {string} */ folder, /** @type {boolean} */ mark) {
@@ -477,6 +482,7 @@ async function startOne(/** @type {{profile: string, folder: string, name: strin
     if (!dry) saveJournal(j)
   }
   const urlOf = () => `claude://resume?session=${j.sid}`
+  // `-p`, not `--bg`: the start is a chat in that account's app window, made from a one-word turn that has ended; `--bg` picks its own id and keeps a process the app would write beside.
   const cliArgv = () => [bundledCli(prof), '-p', 'Reply with the single word READY.', '--session-id', j.sid, '-n', name, ...(j.model ? ['--model', j.model] : []), ...(j.effort ? ['--effort', j.effort] : []), ...(j.mode ? ['--permission-mode', j.mode] : [])]
   // The chat that window shows (the app stamps lastFocusedAt): opened again after the import, so the window flips to the new
   // chat and straight back. Read after the CLI turn (up to 180 s): the person may have switched chats meanwhile.
@@ -565,8 +571,8 @@ async function startCmd(/** @type {string | undefined} */ id, /** @type {string[
 
 // ---- job: long work he asked for from the phone ----
 // The phone's inbox turn must answer within a minute or two, and a chat in the app window needs the inbox chat to start it
-// and send it the brief. So a task from Telegram (a video, code, research) runs as its own `claude -p` in the project
-// folder, detached: it outlives the turn, and its final message goes to his Telegram. Consent as for `start`.
+// and send it the brief. So a task from Telegram (a video, code, research) runs as a built-in background session
+// (`claude --bg`) in the project folder: it outlives the turn, and its final message goes to his Telegram. Consent as for `start`.
 function jobCmd(/** @type {string[]} */ argv) {
   const o = /** @type {Record<string, string>} */ ({}), words = []
   for (let i = 0; i < argv.length; i++) { if (['--said', '--model', '--effort'].includes(argv[i]) && argv[i + 1] !== undefined) o[argv[i].slice(2)] = argv[++i]; else words.push(argv[i]) }
@@ -575,31 +581,45 @@ function jobCmd(/** @type {string[]} */ argv) {
   if (dispatchOff()) { console.error('inbox: dispatch is off'); return 2 }
   const c = consent(o.said, true, name)
   if (!c.id) { console.error(`inbox: ${c.why}`); return 2 }
-  const id = `${Date.now()}-${randomUUID().slice(0, 8)}`, sid = randomUUID()
-  writeFileSync(join(dir('jobs'), `${id}.json`), JSON.stringify({ id, sid, folder, name, said: o.said, model: o.model || 'sonnet', effort: o.effort, state: 'running', at: new Date().toISOString() }, null, 1))
+  const id = `${Date.now()}-${randomUUID().slice(0, 8)}`
+  writeFileSync(join(dir('jobs'), `${id}.json`), JSON.stringify({ id, folder, name, said: o.said, model: o.model || 'sonnet', effort: o.effort, state: 'running', at: new Date().toISOString() }, null, 1))
   spawn(process.execPath, [fileURLToPath(import.meta.url), 'job-run', id], { detached: true, stdio: 'ignore', windowsHide: true }).unref()
-  say(`inbox: job ${id} started in ${folder}, session ${sid}; its result goes to his Telegram by itself`)
+  say(`inbox: job ${id} started in ${folder} as a background session (\`claude agents\` lists it); its result goes to his Telegram by itself`)
   return 0
 }
 function jobRun(/** @type {string} */ id) {
   const f = join(root, 'jobs', `${id}.json`), j = readJSON(f)
   if (!j || j.state !== 'running') return 1
-  /** @type {string[]} */ let profs = []; try { profs = readdirSync(profilesDir()) } catch { /* no app profiles: the CLI on PATH */ }
-  const prof = profs.includes('main') ? 'main' : profs[0]
+  const prof = mainProf()
   const prompt = `${j.said}\n\n(These are the person's own words, sent from Telegram; he is on the phone, not at this screen. Do it here. ` +
     `Ask no AskUserQuestion. Files, pictures, video, voice: \`node "${notifyJs}" file <path> [--caption "..."]\`. Your final message ` +
     'goes to his Telegram as is: his language, short, what was made and where.)'
-  const argv = ['-p', prompt, '--session-id', j.sid, '-n', j.name, '--model', j.model, ...(j.effort ? ['--effort', j.effort] : []), '--permission-mode', 'auto']
-  let out = '', ok = false
-  try { out = execFileSync(bundledCli({ name: prof ?? '', dir: join(profilesDir(), prof ?? '') }), argv, { cwd: j.folder, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 3 * 3600e3, maxBuffer: 16 << 20, windowsHide: true }); ok = true }
-  catch (e) { out = String(/** @type {{stdout?: string}} */ (e).stdout ?? '') }
-  const opened = prof ? openInApp(prof, j.sid) === true : false
+  // A built-in background session (owner, 2026-11-18: «на встроенное»): `claude agents` lists it, `claude attach <id>` opens it in
+  // a terminal. `--bg` picks its own session id (it ignores --session-id), so the id is read from its `backgrounded · <id>` line.
+  const exe = mainCli(), [bin, ...pre] = exe.endsWith('.mjs') ? [process.execPath, exe] : [exe] // a .mjs: the selftest's fake CLI
+  const cli = (/** @type {string[]} */ a) => spawnSync(bin, [...pre, ...a], { cwd: j.folder, encoding: 'utf8', timeout: 60e3, windowsHide: true })
+  const bg = /backgrounded\W+([0-9a-f]{8})\b/.exec(String(cli(['--bg', '--name', j.name, '--model', j.model, ...(j.effort ? ['--effort', j.effort] : []), '--permission-mode', 'auto', prompt]).stdout))?.[1]
+  /** @type {any} */ let row
+  // The 3 h cap as before: its state from the built-in list until the turn is done, then `claude stop` ends the idle process.
+  for (const end = Date.now() + 3 * 3600e3; bg && Date.now() < end;) {
+    try { row = JSON.parse(String(cli(['agents', '--json', '--all']).stdout)).find((/** @type {any} */ r) => r.id === bg) ?? row } catch { /* one failed read: the next */ }
+    if ((row?.state && row.state !== 'working') || row?.status === 'waiting') break // waiting: it asks despite the brief; he answers in the app
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Number(process.env.INBOX_JOB_POLL_MS) || 30e3)
+  }
+  if (bg) cli(['stop', bg])
+  if (row?.sessionId) j.sid = row.sessionId
+  // Its final message: the last assistant text of its transcript (`claude logs` is the terminal screen, escape codes and all).
+  const projects = join(dirname(base), 'projects')
+  let out = ''
+  try { for (const d of readdirSync(projects)) { const p = join(projects, d, `${j.sid}.jsonl`); if (existsSync(p)) for (const l of tailLines(p)) { try { const e = JSON.parse(l), x = e.type === 'assistant' && !e.isSidechain ? textOf(e.message?.content) : ''; if (x) out = x } catch { /* torn line */ } } } } catch { /* no transcript tree */ }
+  const ok = !!row && (row.state !== 'working' || row.status === 'waiting') && !!out.trim()
+  const opened = prof && bg ? openInApp(prof, j.sid) === true : false
   const head = `<b>${escHtml(j.name)}</b>\n`, tail = opened ? `\n${note(t(lang(), 'jobOpened'))}` : ''
-  try { execFileSync(process.execPath, [notifyJs, 'send', '--html'], { input: head + (ok && out.trim() ? mdToTg(out) : note(t(lang(), 'jobFailed'))) + tail, stdio: ['pipe', 'ignore', 'ignore'], timeout: 30000 }) } catch { /* the result stays in the job's session */ }
-  writeFileSync(f, JSON.stringify({ ...j, state: ok ? 'done' : 'failed', ended: new Date().toISOString(), opened }, null, 1))
+  try { execFileSync(process.execPath, [notifyJs, 'send', '--html'], { input: head + (ok ? mdToTg(out) : note(t(lang(), 'jobFailed'))) + tail, stdio: ['pipe', 'ignore', 'ignore'], timeout: 30000 }) } catch { /* the result stays in the job's session */ }
+  writeFileSync(f, JSON.stringify({ ...j, bg, state: ok ? 'done' : 'failed', ended: new Date().toISOString(), opened }, null, 1))
   return ok ? 0 : 1
 }
-// A finished job becomes a chat in the app's sidebar (owner, 2026-11-18: "Да, открывать"), only once its `-p` has ended:
+// A finished job becomes a chat in the app's sidebar (owner, 2026-11-18: "Да, открывать"), only once its session is stopped:
 // two writers on one session would break it. The window shows it for a moment, then goes back to the chat it showed.
 function openInApp(/** @type {string} */ profName, /** @type {string} */ sid) {
   const prof = { name: profName, dir: join(profilesDir(), profName) }
@@ -641,9 +661,7 @@ async function telegramTurn() {
       // A new session each day: every message resumes it, so its context would grow and each answer cost more.
       const kept = readJSON(join(tg, 'headless.json')) ?? {}, sess = now - (Number(kept.at) || 0) < 24 * 3600e3 ? kept : {}
       const sid = typeof sess.sid === 'string' ? sess.sid : randomUUID()
-      /** @type {string[]} */ let profs = []; try { profs = readdirSync(profilesDir()) } catch { /* no app profiles: the CLI on PATH */ }
-      const prof = profs.includes('main') ? 'main' : profs[0]
-      const cli = bundledCli({ name: prof ?? '', dir: join(profilesDir(), prof ?? '') })
+      const cli = mainCli()
       // A mid model (owner, 2026-11-17: a cheap inbox for his everyday asks); the long work goes to a chat it starts.
       const argv = ['-p', inboundPrompt(ms, join(here, '..', '..')), ...(sess.sid ? ['--resume', sid] : ['--session-id', sid, '-n', 'Telegram inbox']), '--model', process.env.INBOX_TG_MODEL || 'sonnet', '--permission-mode', 'auto']
       // "typing..." on his phone the whole time, so he sees it is being worked on (it lasts about 5 s per call).
@@ -708,8 +726,15 @@ function undelivered(/** @type {string} */ cli) {
     })
   } catch { return false }
 }
+// Live sessions of every account (all share one config dir) from the built-in list: session id -> busy | idle | waiting. Empty
+// when it cannot be read. INBOX_AGENTS (its JSON) stands in for it in tests.
+function liveStatus() {
+  const out = process.env.INBOX_AGENTS ?? String(spawnSync(mainCli(), ['agents', '--json'], { encoding: 'utf8', timeout: 20e3, windowsHide: true }).stdout)
+  try { return new Map(JSON.parse(out).filter((/** @type {any} */ r) => r?.sessionId && r.status).map((/** @type {any} */ r) => [r.sessionId, r.status])) } catch { return new Map() }
+}
 function scan(/** @type {string[]} */ selves) {
   const projects = join(dirname(base), 'projects'), where = new Map(), filed = []
+  /** @type {Map<string, string> | undefined} */ let live // read once, only when an open dialog is found (the call costs ~0.2 s)
   try { for (const d of readdirSync(projects)) { try { for (const f of readdirSync(join(projects, d))) if (f.endsWith('.jsonl')) where.set(f.slice(0, -6), join(projects, d, f)) } catch { /* not a folder */ } } } catch { return filed }
   for (const c of chats()) {
     if (c.archived || !c.cli || selves.includes(c.cli) || Date.now() - c.last > 24 * 3600e3) continue
@@ -738,6 +763,8 @@ function scan(/** @type {string[]} */ selves) {
     if (Date.now() - wait.at > 24 * 3600e3) continue // a day-old question in a chat touched today: it would be swept as expired and filed again
     const t = wait.tool, id = itemId(c.cli, t.id)
     if (existsSync(join(root, 'items', `${id}.json`)) || existsSync(join(root, 'answers', `${id}.json`))) continue
+    // Its process runs and the built-in list says it waits for nothing: that dialog is gone (the chat was restarted or moved on).
+    if (t.name === 'AskUserQuestion' && (live ??= liveStatus()).has(c.cli) && live.get(c.cli) !== 'waiting') continue
     // As the hook's re-ask rule: a box of this chat that the inbox answered and the chat has not taken yet means the chat is about to get
     // that answer as a prompt; its newer wrap_up is not a new question.
     if (t.name !== 'AskUserQuestion' && undelivered(c.cli)) continue
@@ -932,9 +959,10 @@ async function main() {
   if (cmd === 'job-run') return jobRun(id ?? '')
   if (cmd === 'job-open') {
     // A job that ended before it could open itself (an older version, the window closed): open it now.
-    const j = readJSON(join(root, 'jobs', `${id}.json`)), profs = existsSync(profilesDir()) ? readdirSync(profilesDir()) : []
+    const j = readJSON(join(root, 'jobs', `${id}.json`))
     if (!j || j.state === 'running') { console.error('inbox: no such job, or it still runs (two writers would break its session)'); return 1 }
-    const r = openInApp(profs.includes('main') ? 'main' : profs[0] ?? '', j.sid)
+    if (!j.sid) { console.error('inbox: that job never started a session: nothing to open'); return 1 }
+    const r = openInApp(mainProf() ?? '', j.sid)
     say(r === true ? `inbox: job ${id} is open in the app` : r === 'no window' ? noWindow(undefined) : `inbox: the window took the link but did not import session ${j.sid} in 30 s`); return r === true ? 0 : 1
   }
 

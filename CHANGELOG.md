@@ -1,5 +1,22 @@
 # Changelog
 
+## makarasty-tools 1.20.8 — 2026-11-18
+
+- **inbox: phone jobs run as built-in background sessions.** `inbox.mjs job` starts `claude --bg` in the project folder
+  instead of a detached `claude -p`: `claude agents` lists it and `claude attach <id>` opens it in a terminal. The job
+  reads its state from `claude agents --json --all` every 30 s (3 h cap as before), then `claude stop`s the idle process,
+  sends the last main-thread text of its transcript to Telegram and opens the session in the app (`job-open` too).
+  `--bg` ignores `--session-id`, so the id comes from its `backgrounded · <id>` line. Consent (`--said`) unchanged.
+- **inbox scan uses the built-in session list for the waiting state.** An open AskUserQuestion with no item is filed
+  only when `claude agents --json` shows that chat waiting, or does not list it; a live chat it shows busy or idle is
+  skipped (that dialog is gone). The list is read once per scan and only when such a dialog is found (about 0.2 s).
+- **Kept, with a comment saying why:** the app records (`chats()`, `profileOf()`): the list has no app id, profile,
+  archived flag, task id or frames, and missed 1 of 9 chats active in the last hour (its process had exited).
+  `start` keeps its one-word `-p` turn: it makes a chat in another account's app window, and `--bg` keeps a process.
+- Inbox code (tools/skills/inbox/* and tools/hooks/inbox.ts, tests apart) 208,182 -> 211,219 bytes: the switch added
+  polling the `-p` call did not need. Follow-up metric: inbox fixes in this file from 2026-11-18 to 2026-12-02;
+  baseline 45 of the 90 entries dated 2026-11-04..11-17 mention the inbox.
+
 ## makarasty-tools 1.20.7 — 2026-11-18
 
 - **Releases stop making unused cache copies.** Installed from this checkout's marketplace, both plugins load in place

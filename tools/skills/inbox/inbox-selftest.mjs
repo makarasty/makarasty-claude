@@ -16,7 +16,7 @@ const cli = join(dirname(fileURLToPath(import.meta.url)), 'inbox.mjs')
 const tmp = join(tmpdir(), `inbox-selftest-${process.pid}`)
 const root = join(tmp, 'makarasty', 'inbox')
 const sink = join(tmp, 'sent')
-const env = { ...process.env, CLAUDE_CONFIG_DIR: tmp, NOTIFY_DRY_RUN: sink, CLAUDE_CODE_SESSION_ID: 'inboxChat', CLAUDE_CODE_ACCOUNT_UUID: 'my-account', INBOX_PROFILES_DIR: join(tmp, 'no-profiles'), CLAUDE_CODE_HOST_SESSION_ID: '' } // never the machine's real chats
+const env = { ...process.env, CLAUDE_CONFIG_DIR: tmp, NOTIFY_DRY_RUN: sink, CLAUDE_CODE_SESSION_ID: 'inboxChat', CLAUDE_CODE_ACCOUNT_UUID: 'my-account', INBOX_PROFILES_DIR: join(tmp, 'no-profiles'), INBOX_AGENTS: '[]', CLAUDE_CODE_HOST_SESSION_ID: '' } // never the machine's real chats
 let pass = 0, fail = 0
 const check = (/** @type {string} */ name, /** @type {boolean} */ ok, detail = '') => { ok ? pass++ : fail++; console.log(`${ok ? 'ok  ' : 'FAIL'} ${name}${ok ? '' : `  ${detail}`}`) }
 const run = (/** @type {string[]} */ args, input = '') => spawnSync(process.execPath, [cli, ...args], { env, input, encoding: 'utf8' })
@@ -504,6 +504,11 @@ try {
   const sc2 = spawnSync(process.execPath, [cli, 'scan'], { env: meEnv, encoding: 'utf8' })
   check('a second scan files nothing again', sc2.stdout.includes('scan found no waiting question') && !sc2.stdout.includes('found a waiting'), sc2.stdout)
   check('an answered item is not filed again by a scan', (writeFileSync(join(root, 'answers', `${idOf(open1, 'toolu_A1')}.json`), '{}'), rmSync(join(root, 'items', `${idOf(open1, 'toolu_A1')}.json`)), !spawnSync(process.execPath, [cli, 'scan'], { env: meEnv, encoding: 'utf8' }).stdout.includes('toolu_A1')))
+  // The built-in list (`claude agents --json`): a dialog of a live chat that it shows idle is gone; one it shows waiting is filed.
+  const liveIdle = chat('live-idle', [u('x'), line('assistant', [askTool('toolu_L3')])]), liveWait = chat('live-waiting', [u('x'), line('assistant', [askTool('toolu_L4')])])
+  const agents = JSON.stringify([{ sessionId: liveIdle.cli, kind: 'interactive', status: 'idle' }, { sessionId: liveWait.cli, kind: 'interactive', status: 'waiting', waitingFor: 'input needed' }])
+  const sc3 = spawnSync(process.execPath, [cli, 'scan'], { env: { ...meEnv, INBOX_AGENTS: agents }, encoding: 'utf8' })
+  check('scan skips an open AskUserQuestion of a chat the built-in list shows live and not waiting; files one it shows waiting', !itemOf(liveIdle, 'toolu_L3') && !!itemOf(liveWait, 'toolu_L4'), sc3.stdout + sc3.stderr)
   // list: becoming the inbox (first mark, or --take) scans; an ordinary list of the inbox chat does not
   const lateChat = chat('late-ask', [u('x'), line('assistant', [askTool('toolu_L1')])])
   writeFileSync(join(root, 'self'), 'otherChat'); writeFileSync(join(root, 'beat'), String(Date.now() - 10e3))
@@ -645,17 +650,39 @@ try {
   const tgRun = spawnSync(process.execPath, [cli, 'telegram'], { env: { ...env, INBOX_CLAUDE: process.execPath }, encoding: 'utf8', timeout: 60000 })
   const tgMsg = JSON.parse(readFileSync(join(inb, '7001.json'), 'utf8'))
   check('telegram runs with no item id, answers the waiting message and marks it done', tgRun.status === 0 && !tgRun.stderr.includes('needs an item id') && tgMsg.done > 0, tgRun.stderr)
-  // A job: his words, then a detached `claude -p` (here node, which fails on the prompt) whose end goes to his Telegram.
+  // A job: his words, then a background session (here node, which fails on `--bg`): the failure still goes to his Telegram.
   const jenv = { ...env, INBOX_CLAUDE: process.execPath }
   const job = spawnSync(process.execPath, [cli, 'job', tmp, 'kitty video', '--said', 'короткое веселое видео про darkkitty'], { env: jenv, encoding: 'utf8' })
   const jobFile = () => { try { const f = readdirSync(join(root, 'jobs'))[0]; return f ? JSON.parse(readFileSync(join(root, 'jobs', f), 'utf8')) : undefined } catch { return undefined } }
   for (let i = 0; i < 60 && jobFile()?.state === 'running'; i++) await new Promise((r) => setTimeout(r, 250))
   check('job starts on his words, runs detached and its end goes to his Telegram', job.status === 0 && jobFile()?.state === 'failed' && readFileSync(sink, 'utf8').includes('<b>kitty video</b>'), job.stdout + job.stderr + JSON.stringify(jobFile()))
   const jid = jobFile()?.id, jo = spawnSync(process.execPath, [cli, 'job-open', jid], { env: jenv, encoding: 'utf8' })
-  check('job-open of an ended job with no app window says so, exit 1', jo.status === 1 && jo.stdout.includes('no running app window'), jo.stdout + jo.stderr)
+  check('job-open of a job that never started a session says so, exit 1', jo.status === 1 && jo.stderr.includes('never started a session'), jo.stdout + jo.stderr)
   writeFileSync(join(root, 'jobs', `${jid}.json`), JSON.stringify({ ...jobFile(), state: 'running' }))
   check('job-open of a running job is refused: two writers would break its session', spawnSync(process.execPath, [cli, 'job-open', jid], { env: jenv, encoding: 'utf8' }).stderr.includes('still runs'))
   check('the same message starts no second job', spawnSync(process.execPath, [cli, 'job', tmp, 'kitty video', '--said', 'короткое веселое видео про darkkitty'], { env: jenv, encoding: 'utf8' }).status === 2)
+  // A job as a built-in background session: a fake CLI answers `--bg` (prints its id, writes the transcript), `agents --json --all`
+  // (working once, then done) and `stop`; the job reads its final message from the transcript and stops the idle session.
+  const fake = join(tmp, 'fake-claude.mjs'), fakeLog = join(tmp, 'fake-claude.log'), bgSid = 'abcd1234-0000-4000-8000-000000000001'
+  writeFileSync(fake, `import { appendFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
+const a = process.argv.slice(2), log = ${JSON.stringify(fakeLog)}, polls = ${JSON.stringify(join(tmp, 'fake-polls'))}
+appendFileSync(log, JSON.stringify(a) + '\\n')
+if (a[0] === '--bg') { const d = ${JSON.stringify(join(tmp, 'projects', 'C--fake'))}; mkdirSync(d, { recursive: true })
+  writeFileSync(d + '/${bgSid}.jsonl', [{ type: 'assistant', message: { content: [{ type: 'text', text: 'Working on it' }] } }, { type: 'assistant', isSidechain: true, message: { content: [{ type: 'text', text: 'a subagent' }] } }, { type: 'assistant', message: { content: [{ type: 'text', text: 'Video ready: C:/out/kitty.mp4' }] } }].map((e) => JSON.stringify(e)).join('\\n') + '\\n')
+  console.error('Starting background service…'); console.log('backgrounded · abcd1234 · ' + a[a.indexOf('--name') + 1]) }
+else if (a[0] === 'agents') { const first = !existsSync(polls); writeFileSync(polls, 'x'); console.log(JSON.stringify([{ id: 'abcd1234', sessionId: '${bgSid}', kind: 'background', state: first ? 'working' : 'done', status: first ? 'busy' : 'idle' }])) }
+`)
+  appendFileSync(join(root, 'said.jsonl'), `${JSON.stringify({ at: Date.now(), session: 'telegram', via: 'telegram', text: 'сделай ролик про рыжего кота для шортс' })}\n`)
+  rmSync(join(root, 'jobs'), { recursive: true, force: true })
+  const benv = { ...env, INBOX_CLAUDE: fake, INBOX_JOB_POLL_MS: '50' }, bjob = spawnSync(process.execPath, [cli, 'job', tmp, 'cat short', '--said', 'ролик про рыжего кота для шортс', '--effort', 'high'], { env: benv, encoding: 'utf8' })
+  for (let i = 0; i < 80 && jobFile()?.state === 'running'; i++) await new Promise((r) => setTimeout(r, 250))
+  const calls = existsSync(fakeLog) ? readFileSync(fakeLog, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []
+  const bgCall = calls.find((c) => c[0] === '--bg') ?? []
+  check('a job starts a built-in background session with its name, model, effort and auto mode, his words in the prompt', bjob.status === 0 && bgCall[bgCall.indexOf('--name') + 1] === 'cat short' && bgCall[bgCall.indexOf('--model') + 1] === 'sonnet' && bgCall[bgCall.indexOf('--effort') + 1] === 'high' && bgCall[bgCall.indexOf('--permission-mode') + 1] === 'auto' && String(bgCall.at(-1)).startsWith('ролик про рыжего кота'), bjob.stdout + bjob.stderr + JSON.stringify(calls))
+  check('it polls the built-in list until done, then stops the idle session', calls.filter((c) => c[0] === 'agents').length >= 2 && calls.some((c) => c[0] === 'stop' && c[1] === 'abcd1234'), JSON.stringify(calls))
+  check('its final message (the last main-thread text of its transcript) goes to his Telegram; the job keeps the session id', jobFile()?.state === 'done' && jobFile()?.sid === bgSid && jobFile()?.bg === 'abcd1234' && readFileSync(sink, 'utf8').includes('<b>cat short</b> | Video ready:') && readFileSync(sink, 'utf8').includes('kitty.mp4') && !readFileSync(sink, 'utf8').includes('a subagent'), JSON.stringify(jobFile()) + readFileSync(sink, 'utf8').slice(-300))
+  const bo = spawnSync(process.execPath, [cli, 'job-open', jobFile()?.id], { env: benv, encoding: 'utf8' })
+  check('job-open of a finished background job opens its session id (here: no app window, exit 1)', bo.status === 1 && bo.stdout.includes('no running app window'), bo.stdout + bo.stderr)
 } finally {
   rmSync(tmp, { recursive: true, force: true })
 }
