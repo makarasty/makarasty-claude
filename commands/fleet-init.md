@@ -1,5 +1,5 @@
 ---
-description: Prepare a project to run fleets: app origin, services, an agent login path, FLEET.md, and the machine's two lane widths. Use before a first run, or when FLEET.md is missing.
+description: "Prepares a project for fleet runs: app address, services, agent login path, FLEET.md, lane widths. Before a first run. fleet init, set up fleet / подготовь проект к флиту, настрой флит. Not starting a run (fleet-plan)."
 ---
 
 The `docs/*` and `scripts/*` files named below live in this plugin's own directory,

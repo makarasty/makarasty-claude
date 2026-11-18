@@ -1,5 +1,5 @@
 ---
-description: Work one fleet brief, or a run's task queue, in this session and report by writing files. Use when this session was started on a brief under .fleet/.
+description: "Works one fleet brief or a run's task queue in this session and reports by writing files. Only when this session was started on a brief under .fleet. run the brief / работай по брифу. Not for launching a fleet (fleet-plan)."
 argument-hint: <path to brief file>
 ---
 

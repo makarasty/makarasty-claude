@@ -1,5 +1,5 @@
 ---
-description: Pause a fleet run so every worker really stops, or lift the pause. Use on "поставь флит на паузу", "останови флит", "заморозь воркеров", "сними с паузы", "продолжи флит после паузы", "pause the fleet", "stop the workers", "unpause the fleet".
+description: "Pauses a fleet run so every worker really stops, or lifts the pause. pause the fleet, stop the workers, unpause / поставь флит на паузу, останови воркеров, сними с паузы. Not all chats at night (inbox)."
 argument-hint: <run-id> [off] [reason]
 allowed-tools: Bash, Read, Glob, Grep, TaskStop, mcp__ccd_session_mgmt__list_sessions, mcp__ccd_session_mgmt__send_message
 ---

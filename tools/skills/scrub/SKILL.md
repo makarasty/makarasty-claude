@@ -1,5 +1,5 @@
 ---
-description: Censors API keys, tokens, passwords and private keys pasted into this machine's chat transcripts, in place; dry run first, no value printed. Use on "зацензурь ключи в переписках", "убери секреты из чатов", "почисти токены в истории", "scrub secrets from transcripts".
+description: "Masks API keys, tokens, passwords and private keys pasted into this machine's chat transcripts, in place, dry run first, no value printed. scrub secrets, hide keys in chats / убери секреты и токены из чатов, зацензурь ключи в переписках."
 argument-hint: "[--apply] [--min-age 10m]"
 allowed-tools: Bash(node:*), Read
 ---

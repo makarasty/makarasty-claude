@@ -1,5 +1,23 @@
 # Changelog
 
+## makarasty-tools 1.20.0, makarasty 1.18.16 — 2026-11-18
+
+- **Skills trigger from plain words, for anyone** (owner 11-18, as relayed: "make it universal and
+  professional", then «Запускай»). Six ways were measured on one case set, 74 skills listed as in his chats, Sonnet [M80]: today's
+  descriptions called the right skill on 64% of plain EN/RU requests; shorter ones 57%, names only 32%; a local
+  keyword matcher was right 16-26% with up to 38% false triggers; Haiku asked before each prompt added 1.2-3.6 s.
+- **Skill router** (`tools/hooks/skill-router.ts`): the small model reads each typed prompt against both plugins'
+  skill descriptions in parallel with the main model, so nothing waits. When it names a skill and the chat has not
+  called one, the first tool call (or the end of a text-only reply) comes back once with the skill as a hint the chat
+  may ignore; only a read, search or shell call is sent back, never a Write or Edit, and nothing while a hold collects.
+  Sonnet 89.2% right against 74.8% without it (real messages 74.4 against 65.1), Opus 63.3 against 50.0 on real
+  messages, 1 false trigger in 40, no measurable wait. `MAKARASTY_SKILL_ROUTER=off`.
+- **34 descriptions rewritten universal**: about 220 chars, what and when, the words many people use in English and
+  Russian, a `Not for` boundary with the neighbour; no one person's phrases. Our listing 12,119 -> 7,427 chars in
+  every chat. forge section 3 now says this; `forge/route.mjs` with `route-cases.json` (264 phrases, 60 negatives)
+  measures which skill a request calls first. Its runs have only Skill, Read, Grep and Glob and no MCP: during the
+  measurement a run with the deny-list had ListAgents and SendMessage and told two live chats to stop their agents.
+
 ## makarasty-tools 1.19.75 — 2026-11-18
 
 - **Delivery never waits**: the twice-a-day batch is gone, on the owner's word («доставка должна быть независима от

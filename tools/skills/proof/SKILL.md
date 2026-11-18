@@ -1,5 +1,5 @@
 ---
-description: Builds an HTML report of UI work with numbered before/after screenshot blocks, saved to files so the images never enter the context. Use on "покажи скриншотами", "как было как стало", "перепроверь визуально скриншотами", "отчёт со скриншотами", "html отчёт по UI", "before and after screenshots", and on the follow-up "блок N переделай".
+description: "Builds an HTML report of UI work with numbered before and after screenshot blocks. before and after screenshots / покажи скриншотами, как было как стало, отчёт со скриншотами. Not text summaries (report)."
 argument-hint: [what UI change to document]
 ---
 

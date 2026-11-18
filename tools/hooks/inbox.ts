@@ -5,6 +5,7 @@ import { deliveredYes, heardYes, notePrompt, noteTurnStart } from './push-guard.
 import { configDir as claudeDir, deliveredPairs, readHeard, writeHeard, type Pair } from './consent.ts'
 import { PLUGIN_FRAME, ownWords } from './own-words.ts'
 import { isTelegramPrompt, startTelegram, telegramWords } from './telegram.ts'
+import { noteSkillPrompt } from './skill-router.ts'
 
 // The cross-chat inbox (skill /makarasty-tools:inbox, layout in skills/inbox/core.mjs). Off unless
 // <config>/makarasty/inbox.on exists. In every watched chat (one the inbox started or he named: `marked`) it:
@@ -289,6 +290,7 @@ export const register: Register = (on) => {
   // The person answered here, or a card was started by a click: close those items so the inbox stops showing them.
   on('prompt.submit', async ($, e, next) => {
     notePrompt(e) // push-guard's turn word: the engine takes one prompt.submit hook per module, and this is it
+    await noteSkillPrompt($, e).catch(() => undefined) // starts the skill router's small model; never waits for it
     if (!timer && ((await active($).catch(() => undefined)) || (await inboxSelf($).catch(() => undefined)))) startTimer($)
     if (!e.turnId) turnOrigin = e.origin?.kind // a prompt that starts a turn (one delivered into a running turn does not)
     const started = /started your suggested background task (task_\w+)/.exec(e.text)?.[1]

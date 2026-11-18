@@ -314,7 +314,7 @@ and a bare `powershell <command>`. Text in single quotes, a heredoc or a PowerSh
 commit message that quotes `pkill node` runs. They stop accidents, not someone set on getting round them:
 a backslash inside a word, brace expansion or `Start-Process` gets through.
 
-Three more hooks change behaviour without refusing:
+More hooks change behaviour without refusing:
 
 - **Context.** Past 700k tokens, and every 150k above, the chat is told to state its context size and save
   its notes. A handoff is offered only if you asked. `MAKARASTY_HANDOFF_AT`, `MAKARASTY_HANDOFF_STEP`;
@@ -323,6 +323,12 @@ Three more hooks change behaviour without refusing:
   description starts with `[exec]` and on Haiku with `[mech]`. Untagged work and a named model are never
   changed; `Explore` and `fleet-reviewer` are never moved. `/router` shows what it changed;
   `MAKARASTY_ROUTER=off`.
+- **Skill router.** Each prompt you type is also read by the small model (Haiku) against the descriptions of this
+  plugin's and the fleet's skills, in parallel, so no prompt waits for it. When it names a skill and the chat has not
+  called one, the chat's first tool call (or the end of a text-only reply) comes back once with that skill as a hint
+  it may ignore. With 74 skills listed, Sonnet called the right skill on 89% of plain English and Russian requests
+  against 75% without it (on one person's real messages 74% against 65%), Opus 63% against 50% on real messages,
+  with 1 false trigger in 40 and no measurable wait [M80]. `MAKARASTY_SKILL_ROUTER=off`.
 - **Reads through tools.** One system-prompt line sends file reads to Read, Grep and Glob instead of `cat`
   or `grep` in the shell [M40]. `MAKARASTY_READS=off`.
 - **How questions are asked.** At session start, one line: a question stands alone, a list you answer point by

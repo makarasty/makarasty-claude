@@ -1,5 +1,5 @@
 ---
-description: First-time-user usability check: agents with no code access try plain tasks on the live screen, or on PNG/JPG mockups when there is no live pane; fixes are re-run to prove it got easier. Use on "проверь тупым агентом", "слепой агент", "слепое тестирование мокапов", "как тупой пользователь", "blind test the UI", "is this screen understandable".
+description: "Agents with no code access try plain tasks on the live screen or mockups like a first-time user; re-run after fixes. blind test the UI, is it clear / слепой тест, глазами новичка, понятен ли экран. Not for screenshots (proof)."
 argument-hint: [screen or route] [tasks in plain words] [--fix]
 ---
 

@@ -1,5 +1,5 @@
 ---
-description: Makes a short vertical explainer video (TikTok, Shorts, Reels) on this machine - script, local voice in Russian, English or Ukrainian, an animated composition in a new look each time, burned-in captions, MP4 and SRT on the Desktop. Use on "сделай видео", "сделай ролик", "видос про", "короткое видео как в тикток", "озвучь и смонтируй", "make a short video". Not for screenshot reports (proof).
+description: "Makes a short vertical explainer video for TikTok, Shorts or Reels: script, voice, animation, captions, MP4 on the Desktop. make a video / сделай видео, сделай ролик, видос про, озвучь и смонтируй. Not screenshot reports (proof)."
 argument-hint: [what the video is about, languages]
 ---
 

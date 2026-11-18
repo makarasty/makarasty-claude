@@ -1,5 +1,5 @@
 ---
-description: Interviews the person about a plan, design or idea in rounds of questions until nothing is left assumed, before any code. Use on "грил", "гриль", "проведи грилинг", "давай погрилимся", "задай мне вопросы", "проведём интервью", "grill me", "stress-test my plan". Not for attacking finished work (redteam) or a diff (review).
+description: "Asks you rounds of questions about a plan, design or idea until nothing is assumed, before any code. grill me, stress-test my plan / грилинг, задай вопросы, проведи интервью. Not attacking finished work (redteam) or a diff (review)."
 argument-hint: [the plan or idea, "короткий" for one or two rounds]
 ---
 

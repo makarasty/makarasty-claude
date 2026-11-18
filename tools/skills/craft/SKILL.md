@@ -1,5 +1,5 @@
 ---
-description: Refactor, dedupe and test existing code: pin behaviour first, see a new test fail, no premature abstraction. Use on "отрефактори", "сделай dry", "покрой тестами", "закрой тестом", refactor, add unit tests. A new feature built red-green is tdd.
+description: "Refactors, removes duplication and adds tests to existing code, pinning behaviour first. refactor, add unit tests / отрефактори, покрой тестами, сделай DRY, закрой тестом. Not a bug hunt (review) or a new feature."
 ---
 
 These are the points where a capable model still slips on this kind of work. Everything else, use your

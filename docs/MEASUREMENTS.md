@@ -1399,6 +1399,51 @@ to the next prompt, hand-back or notification), tool calls fed to the gate in or
   what is a verifier, the must-catch case was missed (its consult briefs said "review"); final 55.
 **Status:** one replay, the hand reading by one reader; a refused reply costs one more model round.
 
+## M80 — Skill triggering from plain words: six ways on one case set (2026-11-18)
+Cases: 264 written from each skill's purpose alone (204 phrases for the 34 model-invocable skills of both plugins,
+3 EN + 3 RU each: terse, polite, voice-dictated, goal-phrased, no keyword; 60 near-miss negatives such as "what does
+git commit --amend do?", "review this lease contract"); 413 of the owner's real messages before a Skill call or with
+none, labelled by a Sonnet judge (216 ask one of these skills, 197 none, 50 dropped as unreadable alone). Live arms:
+headless `claude -p`, one run per case, 151 cases (68 universal: the third phrase of each skill and language; 43 real
+positives, at most 2 per skill, 10 skills have none; 40 negatives), the owner's listing rebuilt (74 skills: 40 no-op
+copies of the others' names and descriptions plus both plugins). About $120 at API prices in all.
+- **First round, Sonnet, every tool but Bash, PowerShell, Write, Edit, web and Agent; right skill called first / false
+  triggers on 40 / our listing chars:** A today's descriptions 64.0% / 0 / 12,119 (universal 72.1, real 51.2). B ~220
+  chars, intent words EN+RU, a `Not for` boundary: 61.3% / 0 / 7,427 (universal 73.5, real 41.9; against A 5 won, 8
+  lost). F ~110 chars: 56.8% / 0 / 3,637 (5 won, 13 lost). N names only: 31.5% / 0 (5 won, 41 lost). Of A's 40 misses
+  37 called no skill and 3 a wrong one; the first move was another tool in 31 (Glob 28) and a text-only reply in 7.
+- **C, a local matcher with no model** (fuzzy 4-gram match on the descriptions' quoted phrases and the name), all
+  677 cases offline: right 16-22% universal, 22-26% real; false triggers 38% of universal negatives, 11-15% of real
+  ones ("what is a red team", "write a review of Dune"). It cannot tell asking from mentioning; not built.
+- **D, the small model (Haiku) as a router before the prompt**, offline over `claude -p`, all 677: 44.0% right, 11 of
+  257 negatives false, API time p50 1.2 s, p95 3.6 s. On a 38-case subset (every fourth live case) the B descriptions
+  gave 29 right against 19 with today's. Waiting on it before every prompt is out (the bar was p95 under 0.4 s).
+- **The router run in parallel** (`tools/hooks/skill-router.ts`: the small model starts at prompt submit, the main
+  model's first look-around call or the end of a turn with no call is sent back once with the hint as a fact). First
+  round, a debug copy: BR (B plus router) 88.3% / 1 of 40 (universal 100, real 69.8; against A 30 won, 4 lost, one of
+  them a negative); FR (F plus router) 80.2% / 1 of 40 (against BR 3 won, 12 lost). The router's own pick in BR: 99 of
+  111 positives right, 4 wrong, 8 none; 3 of 38 negatives named a skill, the main model dropped 2.
+- **Second round, the shipped hook after the red team, `route.mjs` (only Skill, Read, Grep, Glob):** Sonnet B0 (B,
+  router off) 74.8% / 0 (universal 80.9, real 65.1); BR2 (B, router on) 89.2% / 1 (universal 98.5, real 74.4; against
+  B0 16 won, 1 lost); AR (today's descriptions, router on) 83.8% / 1 (real 72.1; against BR2 3 won, 9 lost). Opus, 30
+  real positives and 10 real negatives: B0 50.0% / 0, BR2 63.3% / 0 (4 won, 0 lost). The hint reached the model in
+  23 of 151 Sonnet runs and 8 of 40 Opus runs. Wall time p50: Sonnet 6.4 s on against 7.7 s off, Opus 11.6 s against
+  13.0 s; the parallel call adds no measurable wait.
+- **E, a router meta-skill or an MCP search tool**: not run; it rests on the model deciding to search, the step that
+  failed in 37 of A's 40 misses.
+- **Consulted** on the identical prompt before the live runs: Fable and Opus both chose short listing lines with no
+  per-prompt model call, the hint as a fact and never a command, and D only gated. The parallel run met their bar
+  without the latency they rejected D for.
+**Rule:** both plugins' descriptions are B-shaped (forge section 3); the router is on by default,
+`MAKARASTY_SKILL_ROUTER=off` drops it.
+**Status:** one run per case and arm; the universal phrases and the B descriptions were both written from the skills'
+purpose text, so the universal scores favour B (the real set does not: B alone 41.9 against A's 51.2 in round one);
+the real set's labels are one judge's; the Opus check is 40 cases, Fable not run; nine descriptions got a boundary back
+after the red team and the 7 regression cases in `route-cases.json` were not run live. A fired hint costs about 450
+chars of main context and one more model step. Round one ran with ListAgents and SendMessage on: 17 runs opened with
+ListAgents and one (F, "I need all the agents to stop") sent two live chats a stop message; `route.mjs` allows four
+tools only since.
+
 ## Appendix: what a pull run spends
 
 Moved here from `PULL.md`, which workers read in full; none of it changes what a worker does.

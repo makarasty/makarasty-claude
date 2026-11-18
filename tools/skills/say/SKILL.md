@@ -1,5 +1,5 @@
 ---
-description: Turns what you mean into simple English to say on a call with, or send to, a vendor, partner, support or a colleague: call script, meeting questions, a live reply, a ticket, email or short message. Use on "подготовь вопросы для звонка", "что ответить вендору", "напиши в саппорт", "напиши коротко на английском, я скину это <человеку>", "на английском, скину вендору". Not for prose rewriting (unslop).
+description: "Turns what you mean into simple English to say or send to a vendor, partner, support or colleague: call script, questions, reply, ticket, email. say in English / напиши на английском, вопросы для звонка, ответ вендору. Not rewriting (unslop)."
 argument-hint: <what you want to say, in any language, what the vendor just said, or a file with the points>
 ---
 

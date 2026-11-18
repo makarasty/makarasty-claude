@@ -1,5 +1,5 @@
 ---
-description: Finds what this computer holds for nobody (ended chats' processes and scratch, stale worktrees, caches, old app versions, unused games, big files) and removes what the person picks. Use on "почисти за собой", "убери за собой", "почисти комп", "найди мусор", "что жрёт диск", "мало места на диске", "освободи место", "что жрёт память", "найди утечки", "убери хвосты", "почему тормозит комп", "free up disk space". Not for secrets in chats (scrub) or app updates (update).
+description: "Finds what the computer holds for nobody (leftover processes, caches, old apps, big files) and removes what you pick. clean up after yourself, free disk / почисти комп, убери за собой, мало места, что жрёт диск и память. Not git branches (prune) or secrets (scrub)."
 argument-hint: "[processes | disk | all | deep]"
 allowed-tools: Bash, PowerShell, Read, Grep, Glob, Agent, Skill, ToolSearch, SendMessage, TaskStop, mcp__Claude_Browser__preview_stop, mcp__Claude_Browser__tabs_close
 ---

@@ -1,6 +1,7 @@
 import type { EngineInterface, Register } from 'claude-code'
 import { register as routes, stopBlock } from './routes.ts'
 import { researchStop } from './verify-guard.ts'
+import { holding, skillStop } from './skill-router.ts'
 
 // Two features that are usually off, asked inside the engine instead of by a shell or node started on every prompt:
 //
@@ -227,19 +228,6 @@ async function fleetLive($: Dollar, dir: string, sid: string): Promise<boolean> 
   } catch { return false }
 }
 
-// The hold command is collecting (its list file, makarasty/hold/<session>.md, starts with `collecting`): the person is
-// dictating one item per message and the reminder waits for the codeword. A list untouched for a day no longer counts.
-async function holding($: Dollar, dir: string, sid: string): Promise<boolean> {
-  // The list is hold/<session>/index.md (skills/hold/hold.mjs) or the older single file hold/<session>.md.
-  for (const f of [`${dir}/hold/${sid}/index.md`, `${dir}/hold/${sid}.md`]) {
-    try {
-      // PowerShell 5.1 writes a BOM
-      if ((await $.fs.read(f)).replace(/^\uFEFF/, '').startsWith('collecting') && (await $.clock.now()) - (await $.fs.stat(f)).mtimeMs < 86400000) return true
-    } catch { /* no such list */ }
-  }
-  return false
-}
-
 async function remind($: Dollar, e: { prompt: string; session_id: string; transcript_path: string }): Promise<string | undefined> {
   const at = Number((await $.env.get('MAKARASTY_HANDOFF_AT')) ?? 700000)
   const step = Number((await $.env.get('MAKARASTY_HANDOFF_STEP')) ?? 150000) || 150000
@@ -276,7 +264,9 @@ export const register: Register = (on, options) => {
   // Fire and forget: the turn ends without waiting for the message.
   on('classic.Stop', async ($, e, next) => {
     // A turn sent back to route its findings is not finished: no "done" message for it.
-    const block = (await stopBlock($, e).catch(() => undefined)) ?? (await researchStop($, e).catch(() => undefined))
+    // The skill router's turn ends on every Stop, so it runs first.
+    const skill = await skillStop($, e).catch(() => undefined)
+    const block = (await stopBlock($, e).catch(() => undefined)) ?? (await researchStop($, e).catch(() => undefined)) ?? skill
     if (block) return { ...(await next(e)), block }
     if (await armed($, e.session_id)) void notify($, e, 20000).catch(() => {})
     return next(e)

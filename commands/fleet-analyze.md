@@ -1,5 +1,5 @@
 ---
-description: Analyze how a fleet run worked - where task time went, how fast the workers were, where the tokens and money went - from the session transcripts, without spending model turns on parsing. Use on "проанализируй флит", "проанализируй скорость флита", "почему флит медленный", "куда ушли токены", "сколько стоил флит", "analyze the fleet run", "analyze the speed", "where did the tokens go".
+description: "Analyzes a finished fleet run from transcripts: where task time went, worker speed, tokens and cost. analyze the fleet, why so slow / проанализируй флит, почему флит медленный, сколько стоил. Not my own chats (selfreview)."
 argument-hint: <run-id>
 allowed-tools: Bash, Read
 ---

@@ -1,5 +1,5 @@
 ---
-description: One inbox and coordinator for every chat on this machine, on every account - questions, yes/no boxes and session cards explained and answered in one place; work handed to other projects and followed; every chat paused for the night and woken in the morning. Use on "инбокс", "inbox", "что меня спрашивают чаты", "ответь на вопросы всех чатов", "включи инбокс", "запусти в проекте X", "подготовь X к деплою", "что с задачами в других проектах", "поставь всё на паузу", "иду спать", "возобнови всё", "открой чат X", "что сделали чаты", "отчёты чатов", "включи отчёт для этого чата", "следи за чатом X", "там запущен чат, хочу от него уведомления", "замьють чат X", "за какими чатами следишь". Not for what chats left unfinished (unfinished), nor one fleet's own pause (fleet-pause).
+description: "Coordinator for every chat on this machine: answers their questions, sends work to other projects, pauses all chats for the night. inbox / инбокс, что спрашивают чаты, поставь всё на паузу, иду спать. Not leftovers (unfinished) or one fleet (fleet-pause)."
 argument-hint: [on | off | status | test | report [off] | follow or mute <chat> | what to hand out | спать | проснулся]
 ---
 

@@ -1,5 +1,5 @@
 ---
-description: Tunes this computer for one game. Use on "оптимизируй под игру", "оптимизируй майнкрафт", "game Minecraft", "ускорь игру", "лагает игра", "мало фпс", "долго грузит карту", "настрой комп под <игру>", "tune my PC for <game>", "boost fps".
+description: "Tunes this computer for one named game: fps, stutter, slow loading, RAM. boost fps, optimize for a game / ускорь игру, лагает, мало фпс, долго грузит, настрой комп под игру. Not general junk cleanup (cleanup)."
 argument-hint: "<game name> [fps | loading | stutter | RAM]"
 allowed-tools: Bash, PowerShell, Read, Grep, Glob, Agent, ToolSearch, WebSearch, WebFetch, SendMessage, Write
 ---

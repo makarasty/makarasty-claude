@@ -1,5 +1,5 @@
 ---
-description: Builds a report, summary or overview for the person as one visual HTML file on their Desktop - numbered items triaged by time and owner, a route map on top, details on demand. Use on "сделай отчёт", "сводка", "отчёт в html", "покажи визуально", "summary for me", or whenever a file is handed to the person to read.
+description: "Builds a summary or overview as one visual HTML file on the Desktop, items numbered and triaged. make a report, summary for me / сделай отчёт, сводка, отчёт в html, покажи визуально. Not before/after screenshots (proof)."
 ---
 
 The reader scans in seconds and wants pictures before prose; the page labels are Russian. You write DATA (a JSON file);

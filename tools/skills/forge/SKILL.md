@@ -1,5 +1,5 @@
 ---
-description: How to build or change a Claude Code tool - a skill, slash command, hook, subagent or plugin - so it triggers on the right words, costs few tokens and is shown to change behaviour. Use when writing or editing a SKILL.md, a command, an agent file, a hook or a plugin manifest, or on "сделай тул", "сделай скилл", "перепиши скиллы", "скилл не срабатывает", "напиши плагин", "проверь скилл", "лучшие практики для скиллов", "build a skill", "audit this skill".
+description: "How to write or change a Claude Code skill, slash command, hook, subagent or plugin so it triggers right and stays cheap. build a skill, skill won't trigger / сделай скилл, напиши плагин, перепиши скиллы, проверь скилл."
 argument-hint: [what to build or which tool to check]
 ---
 
@@ -38,13 +38,13 @@ session text (`asking` in `tools/hooks/gates.ts`), not a copy of it.
 
 ## 3. Write the description as the trigger
 
-It decides whether the tool is ever loaded. First sentence: what it does and when, in third person.
-Then one phrase per distinct case and per language the person types, taken from the transcripts; a
-synonym of a phrase already listed adds cost, not triggers, and a voice-typo form earns a place only when
-a test shows the plain form misses it.
-Add a `Not for ...` clause when a neighbour skill could take the same words. Every description of every
-installed skill is paid on every turn, so keep it under about 400 characters unless the trigger set needs
-more, and check it against the other installed descriptions for collisions.
+It decides whether the tool is ever loaded, and it is paid in every chat. About 200-250 characters: one plain
+sentence of what it does and when, then the words many people use for it, English then Russian (`commit this,
+commit as me / закоммить, сделай коммит`), then `Not for ...` naming the neighbour that could take the same words.
+Words anyone would say, not one person's phrases or typos: those raised the real-phrase score and lowered the
+small-model router's, and a skill shipped to others must trigger for them. Shorter (about 110) lost 7 points,
+names only lost 32 [M80]. In this repo the makarasty-tools skill router reads the descriptions for every prompt,
+so a description is also its index. Check new text with `node "${CLAUDE_SKILL_DIR}/route.mjs"` (section 6).
 
 ## 4. Write the body
 
@@ -82,6 +82,9 @@ PowerShell 5.1, LF line endings pinned, paths with spaces quoted, `node` over `s
   the reply with regexes. Usage is in the script's header. 2-3 runs per prompt on the model that will use
   the tool; a line whose removal changes nothing is a line to delete. Include prompts that must not
   trigger it.
+- **Triggering**: `node "${CLAUDE_SKILL_DIR}/route.mjs" <arms.json> <cases.json>` runs each request headless and
+  reads which skill the model called first; `route-cases.json` beside it holds 271 phrases, near-miss negatives and
+  regression cases for this repo's skills. Usage is in the script's header; about $0.07 a run on Sonnet.
 - `claude plugin eval` for graded cases with tool-call checks. On native Windows only cases that grant no
   Bash or PowerShell run, and it needs `ANTHROPIC_API_KEY` set; suites that grant a shell need WSL2.
 - `/skill-doctor` for the listing cost of every skill and the ones never used; `/doctor` for the rest.

@@ -1,5 +1,5 @@
 ---
-description: Moves local branches and worktrees left over after merges into an undoable local trash, and never touches GitHub or any remote. Use on "удали лишние ветки и worktree", "почисти ветки", "убери бесполезные деревья", "удали ветки после мержа", "prune merged branches". Not for machine-wide leftovers (processes, caches, scratch folders): that is /makarasty-tools:cleanup.
+description: "Moves leftover local branches and worktrees after merges into an undoable trash, never touches remotes. prune merged branches / почисти ветки, удали лишние ветки и worktree. Not machine junk (cleanup)."
 argument-hint: "[scan | list | restore <id> | empty <id> | --older 30d | --all]"
 allowed-tools: Bash(node:*), Bash(git:*), Read
 ---

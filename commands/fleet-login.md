@@ -1,5 +1,5 @@
 ---
-description: Open and authenticate this project's app in this session's browser pane. Use before any visual check, when a pane shows a login screen or reads empty, or on "залогинься", "зайди в приложение", "открой localhost", log in as AI.
+description: "Opens and logs into this project's app in the session's browser pane, before visual checks or when the pane shows a login or is empty. log in to the app / залогинься, зайди в приложение, открой localhost."
 argument-hint: [origin]
 allowed-tools: Bash, Read, Glob, Grep, AskUserQuestion, mcp__Claude_Browser__preview_start, mcp__Claude_Browser__preview_logs, mcp__Claude_Browser__javascript_tool, mcp__Claude_Browser__navigate, mcp__Claude_Browser__read_network_requests
 ---

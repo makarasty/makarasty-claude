@@ -1,5 +1,5 @@
 ---
-description: Hands this chat's unfinished work to a fresh chat as a chip, or with `from "<chat title>"` or `from <session id>` takes over another chat's work. Use on "сделай хенд-офф", "передай другому чату", "предложи чипом", "продолжи в новом чате", "почитай историю того чата и продолжи" (not when other chats are read only to know what to commit: that is commit or ship; all recent chats at once: /makarasty-tools:unfinished), handoff, hand off.
+description: "Hands this chat's unfinished work to a fresh chat, or takes over a named other chat's work. hand off, continue in a new chat / хенд-офф, передай другому чату, продолжи в новом чате. All chats at once: unfinished. Chats read only to commit: commit."
 argument-hint: [what the next chat should focus on] | from "<chat title>" | from <session id> [what to do there]
 ---
 

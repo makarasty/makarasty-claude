@@ -1,5 +1,5 @@
 ---
-description: Telegram messages from Claude Code - one when this chat, another chat or a fleet run finishes, and the inbox's questions with buttons that answer them from the phone. Use when asked to notify, ping, message or write when something is done, in any language ("напиши когда закончишь", "уведоми в телеграм", "скинь в телеграм когда закончишь", "пингани"), to connect Telegram ("настрой уведомления", "подключи телеграм"), to test it, to ask whether a notification is armed, or to switch it off ("выключи уведомления").
+description: "Sends a Telegram message when this chat, another chat or a fleet run finishes; set up, test or turn off. notify me when done, ping me / напиши когда закончишь, подключи телеграм, пингани, выключи уведомления."
 argument-hint: [what the person is waiting for] | setup | test | status | off | --session <id>
 ---
 

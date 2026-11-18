@@ -1,5 +1,5 @@
 ---
-description: Wait for a run's workers to finish without spending model turns, then collect. Use while workers are running, or to ask whether a run has finished.
+description: "Waits for a run's workers to finish without spending model turns, then collects. wait for the fleet, is it done / дождись флита, закончили ли воркеры, жди воркеров, готов ли флит. Not for pausing (fleet-pause)."
 argument-hint: <run-id> [expected worker count]
 allowed-tools: Bash, Read, Write, Glob, Grep, Monitor, Agent, TaskStop, PushNotification, ToolSearch, mcp__ccd_session_mgmt__list_sessions, mcp__ccd_session_mgmt__send_message, mcp__ccd_session_mgmt__set_session_model, mcp__ccd_session_mgmt__set_session_effort, mcp__ccd_session__start_session, mcp__ccd_session__dismiss_task, mcp__ccd_session_mgmt__detach_session, mcp__ccd_session_mgmt__clear_session
 ---

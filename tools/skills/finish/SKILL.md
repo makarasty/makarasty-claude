@@ -1,5 +1,5 @@
 ---
-description: The end of a task in one command - review this chat's change until a round finds nothing (max three rounds), red team it, fix what holds, run the narrow tests, then commit under the person's own name and push. Use on "проведи ревью, красную команду, по кругу, закоммить от меня и запушь", "доведи до идеала и запушь", "финализируй", "finish this". A review alone is /makarasty-tools:review; a commit alone is /makarasty-tools:commit; a bare push, or "fix the tests and push" with no review asked, is /makarasty-tools:ship.
+description: "Whole end of a task in one: review the change in rounds, red team it, fix, run tests, commit as you, push. finish this, wrap it up / финализируй, доведи до идеала и запушь. Only when review is asked: a bare push or fix-and-push is ship."
 argument-hint: [--no-push] [--no-redteam] [--score]
 ---
 

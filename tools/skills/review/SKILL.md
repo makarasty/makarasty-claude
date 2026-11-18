@@ -1,5 +1,5 @@
 ---
-description: Reviews a diff, branch, PR number, file or directory for bugs. --loop fixes and re-reviews until a round finds nothing (max three rounds); --score has a fresh judge grade the work against what was asked, 1-10, and fixes until 10/10. Use on "ревью", "проведи ревью", "проверь ветку", "найди баги", "проведи ревью и исправь все находки", "по кругу, пока находок не станет ноль", "оцени от 1 до 10", "работай, пока не будет 10/10", or when asked to review changes, a branch or a PR for bugs. Not for style, over-engineering or security audits.
+description: "Reviews a diff, branch, PR or file for bugs; can loop fix and re-review until clean, or score 1-10. code review, find bugs / ревью, проверь ветку, найди баги, по кругу до нуля. Not a plan (redteam), style or a security audit."
 argument-hint: [nothing | <branch> | <PR number> | <file or directory>] [--quick] [--fix | --loop | --score]
 allowed-tools: Bash(git diff:*), Bash(git log:*), Bash(git show:*), Bash(git status:*), Bash(git merge-base:*), Bash(git rev-parse:*), Bash(git ls-files:*), Bash(git hash-object:*), Bash(git symbolic-ref:*), Bash(git fetch:*), Bash(gh pr diff:*), Bash(gh pr view:*), Bash(wc:*), Read, Grep, Glob, Agent, Edit
 ---

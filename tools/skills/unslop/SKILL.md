@@ -1,5 +1,5 @@
 ---
-description: Strips assistant tics out of writing so it reads as a person wrote it. Use for /unslop on or off (the humanised reply mode), or when asked to unslop, de-AI or humanise a given text, file or the last reply. Also on "очеловечь", "перепиши без воды", "убери нейростиль", "сделай живее", "без ИИ-стиля".
+description: "Strips AI tics from writing so it reads as a person wrote it; also an on/off reply mode. unslop, de-AI, humanize this / очеловечь, убери нейростиль, сделай живее, без воды. Not UI look (antislop) or English for others (say)."
 argument-hint: on | off | status | <text, file path, or nothing to rewrite the last reply>
 allowed-tools: Bash(node:*), Bash(cat:*)
 ---

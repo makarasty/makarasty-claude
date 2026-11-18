@@ -1,5 +1,5 @@
 ---
-description: Red team - cheap agents attack a plan, idea, design, tool, data export or finished change from different angles; a strong judge keeps only findings with evidence. Use on "красная команда", "подними красную команду", "запусти red team", "пусть поищут, где развалится", "что тут может развалиться", "перепроверь с красной командой", "поспорь с ней", "red team this". For line-by-line bugs in a diff use /makarasty-tools:review.
+description: "Several agents attack a plan, idea, design or finished change from different angles; a judge keeps only proven findings. red team this / красная команда, где развалится. Not bugs in a diff (review) or questions (grill)."
 argument-hint: [what to attack: nothing for the latest work | a file, folder or plan] [--fix]
 ---
 

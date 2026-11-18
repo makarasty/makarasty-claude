@@ -1,5 +1,5 @@
 ---
-description: Quiet collecting mode for a stream of small bug reports or tasks, fixed together once the person says the codeword. Use on "молчи, пока не скажу абрикос", "накидаю баги, потом скажу кодовое слово", "собирай задачи", "collect until I say". The codeword said alone ("абрикос, приступай") ends a running hold; it does not start one. Pass the person's own codeword as the argument ("молчи пока не скажу апельсин" -> `апельсин`).
+description: "Quiet mode for a stream of small bugs or tasks: just list them, fix all once you say your codeword (pass it as the argument). collect until I say / молчи, пока не скажу кодовое слово, накидаю баги. The codeword alone ends a hold, never starts one."
 argument-hint: [codeword, default абрикос or apricot]
 ---
 

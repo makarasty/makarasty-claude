@@ -1,5 +1,5 @@
 ---
-description: Monthly review of how the person works with Claude from their transcripts, or a developer's whole history turned into plugin changes. Use on "проанализируй мои чаты", "как я работаю с клодом", "ежемесячный разбор", "analyze my chats", "разбери историю другого разработчика", "analyze a developer's history". Not for a fleet run (/makarasty:fleet-analyze) or chats left open (unfinished).
+description: "Monthly review of how you work with Claude from your chat history, or a developer's history turned into plugin changes. analyze my chats / проанализируй мои чаты, разбор истории. Not one fleet (fleet-analyze), not open work (unfinished)."
 argument-hint: [--since YYYY-MM-DD] [--until YYYY-MM-DD] | developer [<config dir>]
 ---
 

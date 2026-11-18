@@ -1,5 +1,5 @@
 ---
-description: Merge a fleet run's findings into one ranked backlog. Use after a run's workers have finished, or when asked what a run found.
+description: "Merges the findings of a fleet run into one ranked backlog once its workers have finished. collect fleet results, what did it find / собери находки флита, что нашли воркеры, собери результаты. Not for waiting (fleet-wait)."
 argument-hint: <run-id>
 allowed-tools: Bash, Read, Write, Glob, Grep, Agent, PushNotification, TaskStop, ToolSearch, mcp__ccd_session_mgmt__set_session_title
 ---

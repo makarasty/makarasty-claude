@@ -1,5 +1,5 @@
 ---
-description: Antislop mode for UI work, plus an audit of existing UI. Use on "antislop on", "антислоп", "включи антислоп", "сделай UI без слопа", "проверь UI на слоп", or to audit a screen or path for AI-looking UI.
+description: "Keeps UI work from looking AI-made and audits an existing screen or path for it. antislop, audit the UI look / антислоп, проверь интерфейс на слоп, сделай UI без нейровида, не как у нейросети. Not for text (unslop)."
 argument-hint: on | off | status | audit <path or url>
 allowed-tools: Bash(node:*), Read, Grep, Glob
 ---

@@ -15,11 +15,14 @@ import { register as inbox } from './inbox.ts'
 import { register as askGuard } from './ask-guard.ts'
 import { register as pushGuard } from './push-guard.ts'
 import { register as verifyGuard } from './verify-guard.ts'
+import { register as skillRouter } from './skill-router.ts'
 
 // The engine loads one hooks module per plugin: this is it.
 export const register: Register = (on, options) => {
   // First: a hook sees another hook's refusal only when it is registered before it.
   loopGuard(on, options)
+  // Before the guards: a call it sends back with a skill hint never reaches them.
+  skillRouter(on, options)
   router(on, options)
   gitGuard(on, options)
   killGuard(on, options)

@@ -1,5 +1,5 @@
 ---
-description: Bring a fleet run back after a restart or crash - wake or reopen the workers whose context survived, respawn the ones whose did not. Use after a crash, a power cut or a Claude Code restart, and on "продолжи" when the watch is gone.
+description: "Brings a fleet run back after a crash, power cut or restart: wakes or respawns its workers. resume the fleet, continue after crash / продолжи флит, подними флит после падения или перезапуска. Not for lifting a pause (fleet-pause)."
 argument-hint: <run-id>
 allowed-tools: Bash, Read, Write, Glob, Grep, Monitor, Agent, TaskStop, ToolSearch, mcp__ccd_session_mgmt__list_sessions, mcp__ccd_session_mgmt__send_message, mcp__ccd_session__start_session, mcp__ccd_session__dismiss_task, mcp__ccd_session_mgmt__detach_session
 ---
