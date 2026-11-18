@@ -1,5 +1,12 @@
 # Changelog
 
+## makarasty-tools 1.19.70 — 2026-11-18
+
+- **Chat titles say what the chat is for**: the working rules ask every chat to name itself once at the start with the
+  app's title tool, in English, purpose first, under 50 characters ("Pulse: spec-check fix"); a chat that coordinates
+  others starts with "Hub:". In its A/B the title was English and purpose-first 12/12 vs 0/12 [M77]. The rule is in the
+  rules registry as `R143`, with its eval.
+
 ## makarasty-tools 1.19.69 — 2026-11-18
 
 - **The inbox no longer asks about finished work**: a session card closed only when its own chat started it, so cards

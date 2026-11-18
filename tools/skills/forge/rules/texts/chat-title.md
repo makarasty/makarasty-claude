@@ -1,0 +1,1 @@
+Name this chat once at the start, with the session-title tool when it is listed: English, purpose first, under 50 characters, the area before a colon ("Pulse: spec-check fix"); a chat that coordinates other chats starts with "Hub:".

@@ -1,0 +1,12 @@
+{
+ "rule": "R143",
+ "arms": { "on": { "args": ["--append-system-prompt-file", "@file:texts/chat-title.md"] }, "off": { "args": [] } },
+ "prompts": [
+  { "id": "bug", "text": "Сначала одной строкой дай название этому чату в виде «TITLE: ...», потом одной строкой план.\n\nЗадача: в Pulse при проверке спецификации кнопка «Сохранить» срабатывает дважды, поправь.", "expect": "TITLE:\\s*[A-Za-z][\\x20-\\x7E]{2,58}(\\r?\\n|$)" },
+  { "id": "research", "text": "Сначала одной строкой дай название этому чату в виде «TITLE: ...», потом одной строкой план.\n\nЗадача: разберись, почему ответ с телефона на вопрос про пуш не засчитывается охранником, и предложи исправление.", "expect": "TITLE:\\s*[A-Za-z][\\x20-\\x7E]{2,58}(\\r?\\n|$)" },
+  { "id": "hub", "text": "Сначала одной строкой дай название этому чату в виде «TITLE: ...», потом одной строкой план.\n\nЗадача: ты координируешь 14 побочных чатов по LifeLines: раздаёшь задачи, собираешь их отчёты и следишь, чтобы ничего не терялось.", "expect": "TITLE:\\s*Hub:" },
+  { "id": "ukr", "text": "Спочатку одним рядком дай назву цьому чату у вигляді «TITLE: ...», потім одним рядком план.\n\nЗадача: онови залежності фронтенду до останніх стабільних версій і прожени тести.", "expect": "TITLE:\\s*[A-Za-z][\\x20-\\x7E]{2,58}(\\r?\\n|$)" }
+ ],
+ "rubric": "The owner loses focus among hundreds of chats: a title must say at a glance what the chat is for, in English, purpose first, short (area: task), and a coordinating chat starts with 'Hub:'. Russian or Ukrainian titles waste letters.",
+ "predict": { "madeAt": "2026-11-18", "onMin": 0.9, "offMax": 0.4, "note": "Asked in Russian, a bare model titles in Russian about 3 times in 4 and never writes 'Hub:'; with the rule nearly all English and purpose-first." }
+}

@@ -150,7 +150,8 @@ export const habits =
   'use the local way in (proxy, port). Commit your own files when done and push the work branch. Ask first: a push to main or forced, merge, release, delete, anything ' +
   'sent off this machine, stopping a process the person started, a real choice between approaches; otherwise take the recommended option and ' +
   'say so in one line. A defect reported on one page or screen: find where it comes from (a shared component, style or helper), fix it there ' +
-  'once, and name the other places it changed. ' +
+  'once, and name the other places it changed. Name this chat once at the start, with the session-title tool when it is listed: English, ' +
+  'purpose first, under 50 characters, the area before a colon ("Pulse: spec-check fix"); a chat that coordinates other chats starts with "Hub:". ' +
   "Other chats may share this checkout: edit and commit only your own files, name another chat's file, never touch or " +
   'discard it. A check that runs out of memory is too broad: narrow it, never raise --max-old-space-size or drop a worker cap someone set. ' +
   'New errors after a tool update: find the culprit before any rollback or pin. The code is wrong (fix it), another checker misses ' +

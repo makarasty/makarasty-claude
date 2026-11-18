@@ -1362,6 +1362,10 @@ Two passes for the first nine rules (2 then 4 runs per prompt and arm), counts b
   secret-guard 26 refusals in subagent transcripts).
 - **Second opinion (Fable):** agrees on no length cap and no hard test guard, builds the comment guard (found three
   gaps, fixed), keeps the "absorbed" rules because the fixtures sit at ceiling while field complaints continue.
+- **Chat titles (2026-11-18):** asked in Russian or Ukrainian to title a chat, the shipped line gave an English
+  "area: task" title 12/12 vs 0/12 (judge 12:0) and "Hub:" for the coordinating chat 3/3 vs 0/3. A first wording
+  with a full example title was copied verbatim, so the shipped line has none. Whether a model calls the app's title
+  tool is not tested (`claude -p` has none).
 **Status:** one model, short context, 3-6 runs per cell; the judge sees the reply and the first 30 tool calls; field
 counts are regex hits on his own messages (raw, not hand-read).
 

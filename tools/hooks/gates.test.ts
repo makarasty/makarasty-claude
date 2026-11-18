@@ -376,12 +376,12 @@ test('token economy: once on startup, clear, resume and compact; MAKARASTY_ECONO
     expect(ctx.filter(c => c === economy)).toHaveLength(1)
   }
   expect(economy.length).toBeLessThan(700)
-  // +150 on 2026-11-17 for the fix-at-the-source line: 6/6 vs 0/6 in its A/B [M77].
-  expect(habits.length).toBeLessThan(1620)
+  // +150 on 2026-11-17 for the fix-at-the-source line, +210 on 11-18 for chat titles: 6/6 vs 0/6 and 12/12 vs 0/12 [M77].
+  expect(habits.length).toBeLessThan(1860)
 })
 
 test('habits: names each standing rule, under its budget', () => {
-  for (const w of [/what you did not check/, /what happened, why, what you did, what the person must do/, /urgent: the core change and one check/, /never a second/, /Commit your own files when done and push the work branch\. Ask first: a push to main or forced, merge, release, delete/, /Never ask for secrets/, /edit and commit only your own files/, /never raise --max-old-space-size/, /find the culprit before any rollback or pin/, /fix it there once, and name the other places it changed/]) expect(habits).toMatch(w)
+  for (const w of [/what you did not check/, /what happened, why, what you did, what the person must do/, /urgent: the core change and one check/, /never a second/, /Commit your own files when done and push the work branch\. Ask first: a push to main or forced, merge, release, delete/, /Never ask for secrets/, /edit and commit only your own files/, /never raise --max-old-space-size/, /find the culprit before any rollback or pin/, /fix it there once, and name the other places it changed/, /English, purpose first, under 50 characters/, /starts with "Hub:"/]) expect(habits).toMatch(w)
 })
 
 test('MAKARASTY_ECONOMY=off and MAKARASTY_FINDINGS=off drop their texts and leave the compact note', async ($, on) => {
