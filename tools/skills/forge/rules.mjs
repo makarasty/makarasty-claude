@@ -30,7 +30,20 @@ const HOME = process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude');
 const OUT = join(HOME, 'makarasty', 'rules');
 
 // ---- where a session's rules really come from ---------------------------------------------------------
+// A relative-path plugin of a marketplace added from a local folder loads in place from that folder, not from
+// its cache copy (Claude Code "In-place and copied plugins"); the cache copy is then stale and unused.
+export function inPlace(name, home = HOME) {
+    try {
+        const [plugin, market] = name.split('@');
+        const m = JSON.parse(readFileSync(join(home, 'plugins', 'known_marketplaces.json'), 'utf8'))[market];
+        if (m?.source?.source !== 'directory' || !m.installLocation) return undefined;
+        const entry = JSON.parse(readFileSync(join(m.installLocation, '.claude-plugin', 'marketplace.json'), 'utf8')).plugins?.find(p => p.name === plugin);
+        return typeof entry?.source === 'string' && entry.source.startsWith('./') ? join(m.installLocation, entry.source) : undefined;
+    } catch { return undefined; }
+}
 export function installed(name) {
+    const live = inPlace(name);
+    if (live) return live;
     try {
         const j = JSON.parse(readFileSync(join(HOME, 'plugins', 'installed_plugins.json'), 'utf8'));
         const rows = (j.plugins ?? j)[name] ?? [];
@@ -365,6 +378,14 @@ function selftest() {
     assert.equal(section('# A\nx\n## B\ny\n## C\nz', 'B'), '## B\ny', 'one section, up to the next heading of its level');
     assert.equal(section('# A\n## B\ny\n### b\nq\n# D', 'B'), '## B\ny\n### b\nq', 'subsections stay in');
     assert.equal(section('# A', 'Nope'), '', 'missing heading is empty, so a check fails');
+    const ip = mkdtempSync(join(tmpdir(), 'rules-inplace-')), mk = join(ip, 'mk');
+    mkdirSync(join(ip, 'plugins'), { recursive: true }); mkdirSync(join(mk, '.claude-plugin'), { recursive: true });
+    writeFileSync(join(mk, '.claude-plugin', 'marketplace.json'), JSON.stringify({ plugins: [{ name: 't', source: './tools' }, { name: 'g', source: { source: 'github' } }] }));
+    writeFileSync(join(ip, 'plugins', 'known_marketplaces.json'), JSON.stringify({ m: { source: { source: 'directory', path: mk }, installLocation: mk }, h: { source: { source: 'github' }, installLocation: mk } }));
+    assert.equal(inPlace('t@m', ip), join(mk, './tools'), 'a relative source of a local marketplace loads from the folder');
+    assert.equal(inPlace('g@m', ip), undefined, 'a non-relative source is a copy');
+    assert.equal(inPlace('t@h', ip), undefined, 'a github marketplace is a copy');
+    rmSync(ip, { recursive: true, force: true });
     assert.deepEqual(ownWords({ type: 'user', message: { content: [{ type: 'text', text: 'ты уверен?' }, { type: 'text', text: '<system-reminder>x' }] } }), ['ты уверен?'], 'system text skipped');
     assert.deepEqual(ownWords({ type: 'user', message: { content: [{ type: 'tool_result', content: 'User has answered your questions: "Q"="Да, всё", ' }] } }), ['Да, всё'], 'dialog answers are his words');
     assert.deepEqual(ownWords({ type: 'user', isSidechain: true, message: { content: 'x' } }), [], 'subagent lines are not his');

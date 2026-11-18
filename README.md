@@ -40,7 +40,9 @@ claude plugin update makarasty@makarasty
 claude plugin update makarasty-tools@makarasty
 ```
 
-Chats that are already running keep the old copy until they restart.
+Chats that are already running keep the old copy until they restart or `/reload-plugins` is typed in them. Installed
+from a local checkout, the plugins load in place from it: there is nothing to update, a change is live in the next
+chat.
 
 The fleet adds about 6,500 characters (its skills and agents) to every chat [M80]. To have it only in the projects
 that run fleets, turn it off for your user (`"makarasty@makarasty": false` under `enabledPlugins` in
@@ -581,8 +583,9 @@ are the contract in executable form.
 
 ## When something looks broken
 
-**A change to the plugin did not take effect.** The install is a cached copy, and `claude plugin update`
-can say "already at latest version" while the source moved. Bump the version, or run
+**A change to the plugin did not take effect.** From a local checkout: start a new chat or type `/reload-plugins`.
+From GitHub the install is a cached copy, and `claude plugin update` can say "already at latest version" while the
+source moved. Bump the version, or run
 `claude plugin uninstall makarasty@makarasty` and install again.
 
 **`.fleet/` is in a cloud-synced folder or on a network share.** The atomic claim is `mkdir`, which means

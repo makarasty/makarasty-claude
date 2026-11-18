@@ -95,12 +95,11 @@ PowerShell 5.1, LF line endings pinned, paths with spaces quoted, `node` over `s
 ## 7. Attack it, then ship it
 
 Run `/makarasty-tools:redteam` on the tool: false triggers and missed ones, token cost, destructive paths,
-Windows, two chats running it at once. Then bump the version (an installed plugin is a cached copy that
-changes only with its version string), add the changelog entry and release at once: in this repo
-`node "${CLAUDE_SKILL_DIR}/release.mjs"` updates every plugin whose version moved and checks the install matches.
-Delivery never waits for a batch; releasing several times a day is fine. After a release, check
-the change in the installed copy (`rules.mjs` reads it); a chat runs the new copy once someone types
-`/reload-plugins` in it by hand. For another marketplace: `claude plugin marketplace update <market>` and
+Windows, two chats running it at once. Then bump the version, add the changelog entry and run
+`node "${CLAUDE_SKILL_DIR}/release.mjs"`. Installed from this checkout's marketplace, the plugins load in place from
+the repo folder: an edit is live in every chat started after it (uncommitted ones too) and in a running chat once
+`/reload-plugins` is typed in it, so release.mjs copies nothing and only reports. A copied install (another machine,
+the GitHub marketplace) is updated by it, or by `claude plugin marketplace update <market>` and
 `claude plugin update <plugin>@<market>`.
 
 ## When a new model ships

@@ -7,6 +7,8 @@
 // Delivery never waits (the owner, 2026-11-18: «доставка должна быть независима от обновления»): a task bumps its
 // version, writes the CHANGELOG entry and releases at once, as often as a day needs. Running chats keep their copy
 // and move to the new one when /reload-plugins is typed in them by hand, or on restart.
+// A plugin installed from this folder's marketplace loads in place from the repo (`claude plugin list --json` shows
+// readFromFolder), so `plugin update` would only add an unused cache copy: 94 piled up by 2026-11-18. Those are skipped.
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -19,15 +21,28 @@ const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const MARKET = 'makarasty';
 const PLUGINS = { 'makarasty': '.claude-plugin/plugin.json', 'makarasty-tools': 'tools/.claude-plugin/plugin.json' };
 
-// The plugins whose installed version is not the repo's.
-export const waiting = s => s.filter(p => p.repo !== p.installed);
+// The plugins whose installed version is not the repo's; one read in place from the repo is never waiting.
+export const waiting = s => s.filter(p => !p.inPlace && p.repo !== p.installed);
+const same = (a, b) => !!a && !!b && resolve(a).toLowerCase() === resolve(b).toLowerCase();
+
+function inPlace() {
+    try {
+        const j = JSON.parse(claude(['plugin', 'list', '--json'])), rows = Array.isArray(j) ? j : j.plugins ?? [];
+        return Object.fromEntries(Object.entries(PLUGINS).map(([name, file]) => {
+            const row = rows.find(r => (r.id ?? r.name) === `${name}@${MARKET}`);
+            return [name, same(row?.readFromFolder, join(REPO, dirname(dirname(file))))];
+        }));
+    } catch { return {}; }
+}
 
 function state() {
     const j = JSON.parse(readFileSync(join(HOME, 'plugins', 'installed_plugins.json'), 'utf8')), rows = j.plugins ?? j;
+    const live = inPlace();
     return Object.entries(PLUGINS).map(([name, file]) => ({
         name,
         repo: JSON.parse(readFileSync(join(REPO, file), 'utf8')).version,
         installed: (rows[`${name}@${MARKET}`] ?? []).find(x => x.scope === 'user')?.version,
+        inPlace: !!live[name],
     }));
 }
 
@@ -41,8 +56,8 @@ function claude(args) {
 
 function main(argv) {
     if (argv.includes('--selftest')) return selftest();
-    const w = waiting(state());
-    if (!w.length) return console.log(`nothing to release: installed = repo (${state().map(p => `${p.name} ${p.repo}`).join(', ')})`);
+    const s = state(), w = waiting(s);
+    if (!w.length) return console.log(`nothing to release: ${s.map(p => `${p.name} ${p.repo}${p.inPlace ? ' (loads from the repo folder: live in new chats and after /reload-plugins)' : ''}`).join(', ')}`);
     const list = w.map(p => `${p.name} ${p.installed ?? '-'} -> ${p.repo}`).join(', ');
     claude(['plugin', 'marketplace', 'update', MARKET]);
     for (const p of w) claude(['plugin', 'update', `${p.name}@${MARKET}`]);
@@ -55,6 +70,7 @@ function selftest() {
     assert.deepEqual(waiting([{ name: 'a', repo: '1.2', installed: '1.2' }]), [], 'installed = repo: nothing to do');
     assert.deepEqual(waiting([{ name: 'a', repo: '1.3', installed: '1.2' }]).map(p => p.name), ['a'], 'a newer repo version is released');
     assert.deepEqual(waiting([{ name: 'a', repo: '1.3' }]).map(p => p.name), ['a'], 'a plugin never installed is released');
+    assert.deepEqual(waiting([{ name: 'a', repo: '1.3', installed: '1.2', inPlace: true }]), [], 'a plugin read in place needs no copy');
     console.log('release.mjs selftest done');
 }
 

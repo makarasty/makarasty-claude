@@ -130,7 +130,8 @@ Review until nothing is left, at most three rounds:
    its normal time, and report a timeout, never retry it.
 3. Review again, only the files the fixes touched, with the full verify pass. A fix that introduced a
    defect is a finding like any other. Stop when a round reports nothing new, or after round three, whichever comes first;
-   findings still open after round three are listed as open.
+   findings still open after round three are listed as open. A finding whose fix failed twice is not patched a
+   third time: report it as a design question (the shape of the code, not the line) with what each fix broke.
 
 `q` findings are never fixed by guessing: they go to the person at the end as one numbered list. The
 report gives each round's count (`round 1: 7 found, 7 fixed; round 2: 1 found, 1 fixed; round 3: 0`), then

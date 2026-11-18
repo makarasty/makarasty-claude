@@ -1,5 +1,16 @@
 # Changelog
 
+## makarasty-tools 1.20.7 — 2026-11-18
+
+- **Releases stop making unused cache copies.** Installed from this checkout's marketplace, both plugins load in place
+  from the repo folder (`claude plugin list --json`: readFromFolder), so `claude plugin update` only added a copy no chat
+  read: 94 for makarasty-tools by 11-18. `forge/release.mjs` skips plugins read in place and still updates copied
+  installs; `forge/rules.mjs` checks the folder a session really loads, not the stale copy. README, forge and the
+  repo's CLAUDE.md say a change is live in the next chat or after `/reload-plugins`.
+- **review `--loop`**: a finding whose fix failed twice is reported as a design question, not patched a third time
+  (idea taken from superpowers' systematic-debugging after a read-only check; the plugin itself is not installed:
+  12 of its 15 skills duplicate ours and 3 conflict with the scoped-test and RAM rules).
+
 ## makarasty-tools 1.20.6 — 2026-11-18
 
 - **No shell at chat start for the unslop and antislop modes.** Their two SessionStart command hooks are gone from
