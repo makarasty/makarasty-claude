@@ -350,7 +350,8 @@ test('the inbox chat asks a box and a card with the flag; answered in their chat
 })
 
 // 2026-11-12: the person left with one question open in the inbox chat; items that came in meanwhile waited behind it.
-test('the queue: a dialog open 10 min when a new item comes in is closed to be asked again with every open item', async ($, on) => {
+// 42 timer ticks of the hook (10.5 min at 15 s) take about 4.6 s on an idle box and passed the default 5 s under load (2026-11-18).
+test('the queue: a dialog open 10 min when a new item comes in is closed to be asked again with every open item', { timeoutMs: 20000 }, async ($, on) => {
   const w = world(on, { self: 'chatA' })
   on('turn.start', (_$, e) => ({ turnId: e.turnId }))
   const put = (id: string) => w.disk.set(`/cfg/makarasty/inbox/items/${id}.json`, JSON.stringify({ id, kind: 'ask', at: 1_000_000, session: id.split('~')[0], cwd: 'C:/work/x', chat: 'c', questions: QUESTIONS }))
