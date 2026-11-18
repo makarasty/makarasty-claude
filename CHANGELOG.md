@@ -1,5 +1,12 @@
 # Changelog
 
+## makarasty-tools 1.20.6 — 2026-11-18
+
+- **No shell at chat start for the unslop and antislop modes.** Their two SessionStart command hooks are gone from
+  plugin.json; the engine module hooks/modes.ts injects the same text (unslop.txt; the antislop root line plus
+  antislop.txt) when the flag file exists. A bash hook costs about 0.149 s against about 0.05 s in the engine [M40],
+  twice per chat start.
+
 ## makarasty-tools 1.20.5 — 2026-11-18
 
 - **The fleet can be on per project**: the skill router reads whether this chat's skill listing has the fleet. Where it

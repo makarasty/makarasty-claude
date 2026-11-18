@@ -84,12 +84,11 @@ const section = (title: string) => console.log(`\n${title}`);
 interface PluginJson { hooks: Record<string, { hooks: { command: string }[] }[]> }
 const plugin = JSON.parse(readFileSync(`${here}/../.claude-plugin/plugin.json`, 'utf8')) as PluginJson;
 const cmdOf = (ev: string, has: string): string => {
-  const c = (plugin.hooks[ev] ?? []).flatMap((g) => g.hooks.map((h) => h.command)).find((c) => c.includes(has));
+  const c = (plugin.hooks?.[ev] ?? []).flatMap((g) => g.hooks.map((h) => h.command)).find((c) => c.includes(has));
   if (c === undefined) return /^(notify|context)\.mjs$/.test(has) ? `node "${here}/${has}"` : '';
   return c.split('${CLAUDE_PLUGIN_ROOT}').join(`${here}/..`);
 };
 const notifyCmd = cmdOf('Stop', 'notify.mjs');
-const unslopCmd = cmdOf('SessionStart', 'unslop.txt');
 const guard = (payload: string) => sh(notifyCmd, { input: payload });
 
 // A local http server in its own process (one here would sleep through every blocking spawnSync below);
@@ -651,15 +650,27 @@ for (const good of ['http://127.0.0.1:9', 'http://localhost:9']) {
 }
 tg.srv.kill();
 
+// The in-engine start hook (hooks/modes.ts) on the temporary config dir and the plugin root: the context a SessionStart adds.
+async function modesContext(root: string, cfgDir: string): Promise<string[]> {
+    const { register } = await import(pathToFileURL(`${root}/hooks/modes.ts`).href);
+    const handlers: ((...a: unknown[]) => Promise<{ additionalContext?: string[] }>)[] = [];
+    register((ev: string, matcher: { source?: string }, fn: never) => { if (ev === 'classic.SessionStart' && matcher.source === 'startup') handlers.push(fn); }, {});
+    const $ = {
+        env: { get: async (n: string) => (n === 'CLAUDE_CONFIG_DIR' ? cfgDir : undefined) },
+        fs: { exists: async (p: string) => existsSync(p), read: async (p: string) => readFileSync(p, 'utf8') },
+        plugin: { root: resolve(root) },
+    };
+    return (await handlers[0]!($, { source: 'startup' }, async () => ({}))).additionalContext ?? [];
+}
 section('unslop');
 const unslop = `${here}/unslop.mjs`;
 out = node([unslop, '--status']).out; check('off by default', 'unslop: off', out);
-out = sh(unslopCmd).out; if (out === '') ok('and the SessionStart hook injects nothing'); else bad('and the SessionStart hook injects nothing', out);
+out = (await modesContext(`${here}/..`, tmp)).join('\n'); if (out === '') ok('and the in-engine SessionStart hook injects nothing'); else bad('and the in-engine SessionStart hook injects nothing', out);
 out = node([unslop, '--enable']).out; check('enable prints the rules for this session', 'UNSLOP MODE ON', out);
 if (exists(`${tmp}/makarasty/unslop.on`)) ok('in the config dir the hook reads'); else bad('in the config dir the hook reads');
-out = sh(unslopCmd).out; check('the hook injects the same rules', 'UNSLOP MODE ON', out);
+out = (await modesContext(`${here}/..`, tmp)).join('\n'); check('the in-engine hook injects the same rules, the exact text of unslop.txt', 'UNSLOP MODE ON', out); if (out.trim() === read(`${here}/unslop.txt`).trim()) ok('and nothing else'); else bad('and nothing else', out);
 node([unslop, '--disable']);
-out = sh(unslopCmd).out; if (out === '') ok('disable stops it'); else bad('disable stops it', out);
+out = (await modesContext(`${here}/..`, tmp)).join('\n'); if (out === '') ok('disable stops it'); else bad('disable stops it', out);
 r = node([unslop, '--help']);
 code('an unknown argument exits 1', 1, r.code);
 check('with usage on stderr', 'usage: node unslop.mjs', r.err);

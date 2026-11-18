@@ -14,6 +14,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
+import { pathToFileURL } from 'node:url';
 
 const fwd = (p: string): string => p.split('\\').join('/');
 const self = resolve(import.meta.dirname);
@@ -58,24 +59,31 @@ test('enable, status, disable print the state lines and move the flag', () => {
   assert.equal(node('--bogus').code, 1);
 });
 
-test('the SessionStart hook in plugin.json prints the pointer only while the flag exists', () => {
-  const plugin = JSON.parse(read(`${tools}/.claude-plugin/plugin.json`));
-  const entries = (plugin.hooks.SessionStart as { matcher: string; hooks: { command: string }[] }[])
-    .filter((e) => e.hooks.some((h) => h.command.includes('antislop.on')));
-  assert.equal(entries.length, 1);
-  assert.equal(entries[0]!.matcher, 'startup|resume|clear|compact');
-  const cmd = entries[0]!.hooks[0]!.command;
-  assert.ok(!cmd.includes('node'), 'no node starts on session start');
-
-  rmSync(flag, { force: true });
-  assert.equal(run('sh', ['-c', cmd]).out, '');
-  mkdirSync(dirname(flag), { recursive: true });
-  node('--enable');
-  const out = run('sh', ['-c', cmd]).out;
-  assert.equal(out, `antislop root: ${tools}\n${pointer.replace(/\n+$/, '')}`);
-  node('--disable');
+// The in-engine start hook (hooks/modes.ts) run on a real config dir and plugin root: the context a SessionStart adds.
+async function modesContext(root: string, cfgDir: string): Promise<string[]> {
+    const { register } = await import(pathToFileURL(`${root}/hooks/modes.ts`).href);
+    const handlers: ((...a: unknown[]) => Promise<{ additionalContext?: string[] }>)[] = [];
+    register((ev: string, matcher: { source?: string }, fn: never) => { if (ev === 'classic.SessionStart' && matcher.source === 'startup') handlers.push(fn); }, {});
+    const $ = {
+        env: { get: async (n: string) => (n === 'CLAUDE_CONFIG_DIR' ? cfgDir : undefined) },
+        fs: { exists: async (p: string) => existsSync(p), read: async (p: string) => readFileSync(p, 'utf8') },
+        plugin: { root: resolve(root) },
+    };
+    return (await handlers[0]!($, { source: 'startup' }, async () => ({}))).additionalContext ?? [];
+}
+test('plugin.json has no SessionStart hook; the in-engine hooks/modes.ts injects the root line and the pointer only while the flag exists', async () => {
+    const plugin = JSON.parse(read(`${tools}/.claude-plugin/plugin.json`));
+    assert.equal(plugin.hooks?.SessionStart, undefined, 'no shell starts on session start');
+    rmSync(flag, { force: true });
+    assert.deepEqual(await modesContext(tools, cfg), []);
+    mkdirSync(dirname(flag), { recursive: true });
+    node('--enable');
+    const ctx = await modesContext(tools, cfg);
+    assert.equal(ctx.length, 1);
+    assert.equal(ctx[0]!.split('\r\n').join('\n').replace(/\n+$/, ''), `antislop root: ${tools}\n${pointer.replace(/\n+$/, '')}`);
+    node('--disable');
+    assert.deepEqual(await modesContext(tools, cfg), []);
 });
-
 test('the pointer is short and every file it names exists', () => {
   assert.ok(pointer.replace(/\n+$/, '').split('\n').length <= 8, 'at most 8 lines');
   assert.ok(Buffer.byteLength(pointer) <= 1200, 'at most 1,200 bytes');
