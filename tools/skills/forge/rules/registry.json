@@ -3414,7 +3414,7 @@
      "date": "2026-11-18"
     }
    ],
-   "field_note": "1431 titles: 54% Russian, 43% English, 47 untitled (counted by the trends-research chat, not rechecked here)",
+   "field_note": "1431 titles: 54% Russian, 43% English, 47 untitled (counted by the trends-research chat, not rechecked here); first real use: this chat renamed itself on 2026-11-18 after the line shipped",
    "eval": "evals/R143-chat-title.json",
    "inForce": [
     {
@@ -3422,7 +3422,7 @@
      "has": "starts with \"Hub:\""
     }
    ],
-   "gap": "text only: no hook can set an app title; whether the model calls the title tool was not tested (claude -p has no such tool)"
+   "gap": "text only today. Candidate mechanism (docs read by the trends chat 2026-11-18, not tested here): SessionStart and UserPromptSubmit hooks may return hookSpecificOutput.sessionTitle and get session_title in their input, so a UserPromptSubmit hook could remind an untitled chat to name itself at call time; a hook cannot write the purpose itself without a model. Unverified on the bundled Claude Code 2.1.321 and in the desktop auto-namer. The language setting would also switch replies away from Russian, so it does not fit."
   }
  ],
  "industry": [
