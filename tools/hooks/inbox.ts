@@ -4,17 +4,17 @@ import { find as secretIn } from './secret-guard.ts'
 import { deliveredYes, heardYes, notePrompt, noteTurnStart } from './push-guard.ts'
 import { configDir as claudeDir, deliveredPairs, readHeard, writeHeard, type Pair } from './consent.ts'
 import { PLUGIN_FRAME, ownWords } from './own-words.ts'
-import { isTelegramPrompt, inboundPrompt, takeInbound, startTelegram, telegramInbound, telegramTurnComplete, telegramTurnStart, telegramWords } from './telegram.ts'
+import { isTelegramPrompt, startTelegram, telegramWords } from './telegram.ts'
 
 // The cross-chat inbox (skill /makarasty-tools:inbox, layout in skills/inbox/core.mjs). Off unless
-// <config>/makarasty/inbox.on exists. In every chat it:
+// <config>/makarasty/inbox.on exists. In every watched chat (one the inbox started or he named: `marked`) it:
 //   1. AskUserQuestion: writes the item, shows the dialog as before, and races it against the inbox; whichever answers
 //      first wins. An inbox answer is returned as the tool's own result, so the model reads it as the dialog's [M63].
 //   2. wrap_up with an `ask`, and an own_initiative session card: writes the item after the call; an inbox answer comes
 //      back as a prompt this chat's timer submits once the chat is idle [M63].
 //   3. Every 15 s (own items only): after 2 min unanswered, a plain explanation by a small model and, only if Telegram is
 //      connected (notify.mjs), one phone message with a button per option. Every chat's timer also polls Telegram
-//      (telegram.ts, one poll per interval across chats); the inbox chat's timer turns his messages into one prompt.
+//      (telegram.ts, one poll per interval across chats); his messages go to the headless inbox, never into a chat.
 //   4. A prompt the person types here closes this chat's open boxes; a started card closes its card item.
 //   5. A chat switched on for finish reports (reports/on/<id>: every session the inbox chat starts, or `inbox.mjs report
 //      on`) writes one report per working turn it ends: wrap_up called, or the turn died on an error. Not when the turn
@@ -148,7 +148,7 @@ export const register: Register = (on) => {
       return r
     }
     const a = await active($)
-    if (!a || (await muted($, a).catch(() => false))) return next(e)
+    if (!a || (await muted($, a).catch(() => false)) || !(await enrolled($, a).catch(() => false))) return next(e)
     startTimer($)
     const questions = e.questions.map((q) => ({ ...q, options: [...q.options] }))
     await supersede($, a, questions).catch(() => undefined)
@@ -240,7 +240,6 @@ export const register: Register = (on) => {
     await markTurn($, 'busy').catch(() => undefined)
     const me = await inboxSelf($).catch(() => undefined)
     if (me) await $.fs.write(`${me.root}/turn`, `busy ${await $.clock.now()}`).catch(() => undefined) // the watchdog reads it
-    if (me) await telegramTurnStart($, me.dir, e.text, e.turnId).catch(() => undefined)
     return next(e)
   }).catch(($, e, next) => next(e))
 
@@ -256,7 +255,6 @@ export const register: Register = (on) => {
     const me = await inboxSelf($).catch(() => undefined)
     if (me) {
       await $.fs.write(`${me.root}/turn`, `idle ${await $.clock.now()}`).catch(() => undefined)
-      await telegramTurnComplete($, me.dir, e).catch(() => undefined) // the answer to his Telegram message goes back to him
       await $.fs.write(`${me.root}/heard`, '').catch(() => undefined) // his word was for that turn only
       // At once, not at the next tick: items that came in while this turn ran (2026-11-12: a dialog here stayed open an
       // hour, three items arrived, and the person typed his next prompt 9 s after it closed, before any tick) [M63].
@@ -425,7 +423,7 @@ async function muted($: D, a: { root: string; session: string }): Promise<boolea
   const host = await $.env.get('CLAUDE_CODE_HOST_SESSION_ID')
   return $.fs.exists(`${a.root}/muted/${safe(host || a.session)}`)
 }
-const silent = async ($: D, a: { dir: string; root: string; session: string }) => (await muted($, a).catch(() => false)) || (await holding($, a).catch(() => false))
+const silent = async ($: D, a: { dir: string; root: string; session: string }) => (await muted($, a).catch(() => false)) || (await holding($, a).catch(() => false)) || !(await enrolled($, a).catch(() => false))
 
 // The chat asks the same dialog again (an Esc, a retry): its earlier open copy leaves the inbox, so the person sees it once.
 async function supersede($: D, a: { dir: string; root: string; session: string }, questions: readonly { question: string }[]): Promise<void> {
@@ -589,11 +587,18 @@ async function urgentRecently($: D, a: { root: string; session: string }, now: n
   return false
 }
 
-// Switched on for finish reports: by this chat's session id or its app id (the inbox knows the app id of what it starts).
+// Watched: the inbox started it, or he named it (follow, report on), by its session id or its app id. A chat he opened
+// himself is his: nothing of it is filed, pushed or reported, and nothing goes into it (owner, 2026-11-18: «отдельно я
+// работаю... он мне никак не должен мешать»). An `auto` mark, left by the old 30-minute rule, counts for nothing.
+async function marked($: D, root: string, ids: (string | undefined)[]): Promise<boolean> {
+  for (const id of ids) {
+    const m = id ? await $.fs.read(`${root}/reports/on/${safe(id)}`).then(String, () => undefined) : undefined
+    if (m !== undefined && !m.startsWith('auto')) return true
+  }
+  return false
+}
 async function enrolled($: D, a: { root: string; session: string }): Promise<boolean> {
-  if (await $.fs.exists(`${a.root}/reports/on/${safe(a.session)}`)) return true
-  const host = await $.env.get('CLAUDE_CODE_HOST_SESSION_ID')
-  return !!host && (await $.fs.exists(`${a.root}/reports/on/${safe(host)}`))
+  return marked($, a.root, [a.session, await $.env.get('CLAUDE_CODE_HOST_SESSION_ID')])
 }
 
 // One file per finish, written once: the wrap_up recap and the final message cut short. A reply that holds a secret is
@@ -845,38 +850,17 @@ async function deliverAnswers($: D, a: { root: string; session: string }): Promi
   }
 }
 
-// Messages the person wrote to the bot, for the inbox chat: one prompt for all that wait, once this chat is idle (a crash
-// that left the turn busy lets the headless inbox take them instead: telegram.ts). Not while another such turn is open.
-async function telegramDeliver($: D, me: { dir: string; root: string; session: string }): Promise<void> {
-  if (inTurn) return
-  const now = await $.clock.now()
-  const t = /^busy (\d+)/.exec(String(await $.fs.read(`${me.root}/turn`).catch(() => '')).trim())
-  if (t && now - Number(t[1]) < CRASH_MS) return
-  // A prompt whose turn never began (2 min, no turn id) or never ended (30 min) goes again with whatever came since.
-  const open = await readJSON<{ ids?: number[]; at?: number; turnId?: string }>($, `${me.dir}/makarasty/telegram/turn.json`)
-  let retry: number[] = []
-  if (open?.ids?.length) {
-    if (now - (open.at ?? 0) < (open.turnId ? 30 : 2) * 60000) return
-    retry = open.ids
-  }
-  const ms = await telegramInbound($, me.dir, retry)
-  if (!ms.length) return
-  await takeInbound($, me.dir, ms)
-  await $.prompt.submit({ text: inboundPrompt(ms, $.plugin.root) })
-}
-
 // The last answer to "is a notify channel configured?" and when it was asked (tick keeps it 10 min).
 let chan = { at: -Infinity, yes: true }
 export async function tick($: D): Promise<void> {
   const me = await inboxSelf($)
   if (me) {
     await $.fs.write(`${me.root}/beat`, String(await $.clock.now())).catch(() => undefined) // the watchdog's sign the timer runs
-    await telegramDeliver($, me).catch(() => undefined)
     void drainStarts($, me).catch(() => undefined) // not awaited: it can run minutes, and the beat and the wake must not wait for it
     return wakeOnce($, me)
   }
   const a = await active($)
-  if (!a) return
+  if (!a || !(await enrolled($, a).catch(() => false))) return
   const now = await $.clock.now()
   let channel: boolean | undefined
   await deliverOnce($, a).catch(() => undefined)

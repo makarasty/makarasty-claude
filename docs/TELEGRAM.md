@@ -22,7 +22,7 @@ the question first and bold, "project · kind · age" small under it. An answere
 | Poll, taps, replies, /start, /status, collapse | `tools/hooks/telegram.ts`, inside the hook engine (`$.http.fetch`), called from every chat's inbox timer | one HTTPS request per 15 s across all chats, no process |
 | Ask message (text, buttons) | `tools/skills/inbox/core.mjs` `phoneAsk`, `phoneKeyboard`; sent by `notify.mjs ask` | only when an item is due |
 | Finish, needs-you, error | `notify.mjs` hook mode (armed chats only) | none: no marker, no node |
-| His free message | the inbox chat, as one `[Telegram]` prompt at its next idle tick; none alive: `inbox.mjs telegram`, one headless `claude -p --model sonnet` turn of a persistent session ("typing…" on the phone while it runs; `INBOX_TG_MODEL` overrides the model) | only per message |
+| His free message | always `inbox.mjs telegram`: one headless `claude -p --model sonnet` turn of a session kept for a day, then a fresh one, so its context stays small ("typing…" on the phone while it runs; `INBOX_TG_MODEL` overrides the model). Never a prompt into the inbox chat or any other: until 1.19.71 it went into the inbox chat, a working Opus chat, a whole turn per message, and in two days into five different chats (2026-11-18) | only per message |
 | Files, screenshot, typing | `notify.mjs file <path>` (photo, video, voice, audio, animation or document by extension, `--as` overrides; 50 MB), `notify.mjs screenshot` (every monitor, Windows), `notify.mjs typing` | only when the model calls them |
 | "❔ Подробнее" | Haiku via `$.model.complete`, only on the tap | only per tap |
 
@@ -46,10 +46,10 @@ Restarts and concurrency
 9. Two chats poll at once: `polled` is claimed ("<ms> <session>") and read back; only the writer polls.
 10. The same batch twice, or a crash before the offset: `seen.json` (the last 300 update ids), written before effects.
 11. A half-written offset: `offset.bak` beside it.
-12. Inbox chat busy: messages wait in `inbound/`; several become one prompt and one answer.
-13. Inbox chat crashed or closed (beat over 60 s old): the headless inbox answers.
-14. Only the turn the `[Telegram]` prompt started sends its answer back (`turn.json` holds its turn id).
-15. That turn aborted or failed: a short "не получилось ответить".
+12. Messages that arrive while a headless run is busy wait in `inbound/`; the next round takes them as one prompt.
+13. Whether an inbox chat runs does not matter: the headless inbox always answers.
+14. The headless session is resumed for a day (`headless.json` `at`), then a new one starts.
+15. A run that failed or timed out: a short "не получилось ответить".
 16. Headless already running: a lock (8 min stale); a run takes what arrives meanwhile, up to three rounds; a 5 min
     timeout says so.
 17. A plugin update moves `${CLAUDE_PLUGIN_ROOT}`: nothing on disk is keyed by it.

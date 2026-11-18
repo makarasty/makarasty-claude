@@ -1,5 +1,20 @@
 # Changelog
 
+## makarasty-tools 1.19.71 — 2026-11-18
+
+- **The inbox leaves your own chats alone**: it watches only the chats it started and the ones you named ("следи за
+  X"). A chat you open yourself files no question, card or report, gets nothing pushed to the phone and nothing sent
+  into it; the 30-minute auto-follow is gone and its old marks count for nothing. `inbox.mjs on` closes the questions
+  and reports left from such chats without a word, so they never wake the inbox chat.
+- **One main chat that stays put**: a plain `inbox.mjs list` in another chat no longer takes the inbox over when the
+  old one is closed; it names the main chat with its link and lists read-only. Only `--take`, on your word, moves it,
+  and the chat then renames itself "Инбокс". In two days the role had hopped across five working chats.
+- **Telegram goes to a small session of its own**: every message is answered by the headless Sonnet inbox, never as
+  a prompt into a working chat (it had been a whole Opus turn in a 20 MB chat per message), and that session starts
+  fresh each day, so its context stays small.
+- **Starts no longer wait all day**: a chat start queued because a Claude window is in front runs within 10 minutes.
+  The inbox skill also knows "new project": a folder beside your projects, `git init`, then the usual start.
+
 ## makarasty-tools 1.19.70 — 2026-11-18
 
 - **Chat titles say what the chat is for**: the working rules ask every chat to name itself once at the start with the

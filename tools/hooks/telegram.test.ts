@@ -246,7 +246,6 @@ for (const [what, text, extra] of [['a reply ending in a question mark', 'а п�
 for (const text of ['идея купить молоко', '💡 купить молоко', '/idea купить молоко', '/ideas']) {
   test(`"${text}": a message for the inbox, no ideas.md, no reply from the poller`, async () => {
     const w = world()
-    w.put(`${INBOX}/beat`, String(w.NOW - 10_000))
     w.feed([say(7, text)])
     await w.tick()
     expect(w.json(`${TG}/inbound/7.json`)).toMatchObject({ id: 7, text })
@@ -269,18 +268,16 @@ test('/status lists the open items, not the answered or the old ones, and says w
   expect(w.inbound()).toEqual([])
 })
 
-test('a plain message with the inbox chat alive: a file for it and a reaction, no process', async () => {
+test('a plain message: a file for it and a reaction', async () => {
   const w = world()
-  w.put(`${INBOX}/beat`, String(w.NOW - 10_000))
   w.feed([say(7, 'сколько вопросов ждёт?')])
   await w.tick()
   expect(w.json(`${TG}/inbound/7.json`)).toEqual({ id: 7, text: 'сколько вопросов ждёт?', message_id: 67, at: w.NOW })
   expect(w.sent('setMessageReaction')[0]!.body).toEqual({ chat_id: '42', message_id: 67, reaction: [{ type: 'emoji', emoji: '👀' }] })
-  await w.wait()
-  expect(w.runs).toEqual([])
 })
 
-for (const [what, beat] of [['an inbox beat older than 60 s', (n: number) => String(n - 61_000)], ['no inbox beat at all', () => undefined]] as const) {
+// Always the headless inbox, the inbox chat running or not (2026-11-18: a working Opus chat paid a turn per message).
+for (const [what, beat] of [['the inbox chat running', (n: number) => String(n - 10_000)], ['an inbox beat older than 60 s', (n: number) => String(n - 61_000)], ['no inbox beat at all', () => undefined]] as const) {
   test(`a plain message with ${what}: the headless inbox turn is started`, async () => {
     const w = world()
     const b = beat(w.NOW)

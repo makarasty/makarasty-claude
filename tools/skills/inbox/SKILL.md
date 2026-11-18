@@ -3,14 +3,17 @@ description: One inbox and coordinator for every chat on this machine, on every 
 argument-hint: [on | off | status | test | report [off] | follow or mute <chat> | what to hand out | спать | проснулся]
 ---
 
-Every chat where makarasty-tools is loaded writes what it waits on into one folder while the inbox is on: its
-AskUserQuestion (the dialog still shows there too), the question of its end-of-turn box, and its session cards. After
+Every chat the inbox watches writes what it waits on into one folder while the inbox is on: its
+AskUserQuestion (the dialog still shows there too), the question of its end-of-turn box, and its session cards. It
+watches only the chats it started and the ones he named (`follow`); a chat he opened himself is his: nothing of it
+comes here and nothing goes into it (owner, 2026-11-18). After
 2 minutes unanswered the asking chat adds a plain explanation and, only when Telegram is connected (notify), sends one
 Telegram message with a button per option; a tap or a reply there answers the item like this chat would (not
 connected: no push is tried, and `list` and `status` say "phone pushes off"; offer `/makarasty-tools:notify setup`; a
-push that failed is reported as failed, never as sent). A prompt that starts with `[Telegram]` is the person writing
-from his phone: his quoted words are his own, the final message goes to his Telegram as is, so keep it to a few lines
-and ask nothing in a dialog. This chat
+push that failed is reported as failed, never as sent). What he writes to the bot goes to a small headless Sonnet
+session of its own, never into this chat or any other; that session's prompts start with `[Telegram]`: his quoted
+words are his own, the final message goes to his Telegram as is, so keep it to a few lines and ask nothing in a
+dialog. This chat
 lists them, asks the person once, and writes the answers; each chat picks up its own. Chats switched on for it also
 leave a finish report here when they end a working turn: every session this chat starts (the plugin switches it on),
 and any chat the person switches on. Reports wake this chat in batches, never one by one. The script is
@@ -20,8 +23,8 @@ and any chat the person switches on. Reports wake this chat in batches, never on
 
 `on`, `off`, `status` run `inbox.mjs on|off|status` and report its lines (status also says when an item last came in,
 when this chat was last woken, when an answer last went out). A chat that is already open loads the switch with its
-next restart or plugin reload. `test` ("проверь инбокс", "работает ли инбокс"): run `inbox.mjs list` once (this chat
-becomes the inbox), then `inbox.mjs test`, and end the turn; the plugin's timer should wake this chat with an item
+next restart or plugin reload. `test` ("проверь инбокс", "работает ли инбокс"): in the inbox chat only (`list` says
+which one it is; another chat names it and stops), run `inbox.mjs list` once, then `inbox.mjs test`, and end the turn; the plugin's timer should wake this chat with an item
 from `inbox-check` within about 15 s. When it does, `inbox.mjs done <its id>` and report "works, woke in N s"; no
 wake within a minute means the wake is broken here (plugin not loaded since the change, or the inbox is off): say so.
 `report` ("включи отчёт", "пусть этот чат отчитывается"): `inbox.mjs report on` in that chat switches on its finish
@@ -44,12 +47,13 @@ one line and restart it. A watchdog missing from the task list means this chat r
 
 ## Review
 
-1. `inbox.mjs list`. It marks this chat as the inbox, so its own asks never enter the inbox. "nothing pending": say so
-   in one line and stop. When another inbox chat is alive (beat under 2 min) `list` prints one line naming it and lists
-   read-only; `inbox.mjs list --take` moves the inbox to this chat (only when the person wants it here).
-   The inbox picks what it watches itself (chats active in the last 30 min, and every chat it started) and never asks
-   which: `list` prints one line "watching N chats: ..." when that set grows; pass it on as one line ("слежу за N
-   чатами: ..."). He changes it in words: "следи за X" (`follow`), "замьють X" (`mute`).
+1. `inbox.mjs list`. It marks this chat as the inbox only when there is none yet, so its own asks never enter the
+   inbox. "nothing pending": say so in one line and stop. When another chat is the inbox, running or not, `list`
+   prints one line naming it with its link and lists read-only: say "главный чат — <link>" in one line and answer
+   nothing here. `inbox.mjs list --take` moves the inbox here only on his word ("сделай этот чат главным",
+   "инбокс здесь"); then rename this chat "Инбокс" (`set_session_title`), so he sees in the sidebar which one it is.
+   The inbox watches the chats it started and the ones he named, never asks which, and never takes a chat because
+   it is active: he changes it in words: "следи за X" (`follow`), "замьють X" (`mute`).
    "## Not asked" and "## Answered but not sent" list questions their chat no longer waits for (he wrote there, it is
    archived or muted, over 12 h old, its chat began a new turn since, a push box whose commit is on the remote) and
    cards whose work is done (a session already runs it, he wrote in its chat after it, or card and chat sat a day

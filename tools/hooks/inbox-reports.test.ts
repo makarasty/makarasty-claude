@@ -7,8 +7,9 @@ declare const setTimeout: (f: (v?: unknown) => void, ms: number) => unknown // t
 // batches. Kept apart from inbox.test.ts, which other chats edit.
 
 const R = '/cfg/makarasty/inbox'
-function world(on: On, o: { self?: string; session?: string; failSubmits?: number; dialog?: Promise<void>; transcript?: 'seen' | 'absent' | 'unreadable' } = {}) {
+function world(on: On, o: { self?: string; session?: string; failSubmits?: number; dialog?: Promise<void>; transcript?: 'seen' | 'absent' | 'unreadable'; watched?: boolean } = {}) {
   const disk = new Map<string, string>([['/cfg/makarasty/inbox.on', 'x']])
+  if (o.watched !== false) disk.set(`${R}/reports/on/local_aaaa`, '2026-11-18T00:00:00Z') // a watched chat; his own ones file nothing
   if (o.self) disk.set(`${R}/self`, o.self)
   const plain = (p: string): string => p.replace(/^[A-Za-z]:/, '').replaceAll('\\', '/')
   mock.env(on, { CLAUDE_CONFIG_DIR: '/cfg', CLAUDE_CODE_HOST_SESSION_ID: 'local_aaaa', CLAUDE_CODE_ACCOUNT_UUID: 'acc1', MAKARASTY_SCREEN: 'off' })
@@ -53,7 +54,7 @@ const turn = (answer: string, extra: object = {}) => ({ answer, reason: 'answer'
 const wrap = (recap: string, extra: object = {}) => ({ tool: 'mcp__ccd_turn__wrap_up', recap, tool_use_id: 'w1', ...extra }) as never
 
 test('opt-in: a chat not switched on writes no report; switched on, a working turn writes one, outside items', async ($, on) => {
-  const w = world(on)
+  const w = world(on, { watched: false })
   await $.tool.call(wrap('Выгрузка готова, тесты зелёные.'))
   await $.turn.complete(turn('Готово. Нашёл ещё: в `export.ts` дата без часового пояса.'))
   expect(w.reports()).toEqual([])

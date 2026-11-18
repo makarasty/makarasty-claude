@@ -31,8 +31,8 @@ Messages reach chats of other accounts too: a fleet coordinator on another accou
      offer a card. The chat keeps the model of that CLI turn (hence `--model`; effort is not carried over [M71]); it
      cannot be renamed or messaged by app id from here, only by name. The import switches that account's window to
      the new chat and back to its old one in about 2 s, and raises it when a Claude window is in front [M71], so
-     `start` waits (exit 4, "queued") while any Claude window is in front or memory is low, and this chat's timer
-     starts it later; `inbox.mjs status` shows queued starts and the last automatic actions. The file
+     `start` waits (exit 4, "queued") while memory is low or a Claude window is in front (that one 10 min at most: he
+     works in one all day), and this chat's timer starts it later; `inbox.mjs status` shows queued starts and the last automatic actions. The file
      `<config>/makarasty/dispatch.off` turns all of this off: then offer a card. A relaunch of a chat near 700K
      context, when answers.md holds his standing answer for it, needs no typed words: `inbox.mjs start <same
      profile> <same folder> <name> --standing "<a piece of that answers.md line>" --relaunch-of <old app id>`
@@ -40,6 +40,11 @@ Messages reach chats of other accounts too: a fleet coordinator on another accou
      of that project, never routed through another project's chat, and the person is never asked to sign in, paste
      or click instead; say the window flip in one line.
   3. `inbox.mjs track <chat> <profile> <project> <task>`; each reply: `inbox.mjs note <chat> <status> <one line>`.
+  A queued `start` (a Claude window in front) runs within 10 min by itself: say "запустится в течение 10 минут".
+- **New project** ("создай новый проект X", "заведи проект"): a folder beside his other projects (the parent folder
+  of the projects his chats run in; ask only when they sit in more than one), named as he said it in kebab-case,
+  then `git init` there, then hand the work out as above with that folder as `cwd`. A folder that exists already
+  is used as it is, never emptied or overwritten.
 - **Status** ("что с задачами"): `inbox.mjs tasks`, plus `list_events` for a chat whose last note is old, then
   `inbox.mjs followed` shown as printed (its "not watched" count line too). Which chats to watch is never asked (C20).
   Asked how long it will run: a table "chat | what is left | rough time", marked as an estimate.

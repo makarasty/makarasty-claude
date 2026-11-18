@@ -21,7 +21,7 @@ test('the last question of a reply is found; code, statements and early question
 })
 
 function world(on: On, o: { self?: string } = {}) {
-  const disk = new Map<string, string>([['/cfg/makarasty/inbox.on', 'x']])
+  const disk = new Map<string, string>([['/cfg/makarasty/inbox.on', 'x'], ['/cfg/makarasty/inbox/reports/on/chatA', '2026-11-18T00:00:00Z']]) // a watched chat
   if (o.self) disk.set('/cfg/makarasty/inbox/self', o.self)
   const plain = (p: string): string => p.replace(/^[A-Za-z]:/, '').replaceAll('\\', '/')
   mock.env(on, { CLAUDE_CONFIG_DIR: '/cfg' })

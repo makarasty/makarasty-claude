@@ -57,7 +57,6 @@ export const STRINGS = {
     explainHint: 'Not clear? Reply to this message with a question.',
     explainNone: 'No explanation: the chat has left the inbox. Reply to this message with a question.',
     offline: 'The computer was unreachable for {h} h: what you wrote earlier than a day ago, Telegram did not keep.',
-    turnFailed: 'Could not answer: the inbox turn was interrupted. Write again.',
     // inbox.mjs: the headless turn
     headlessFailed: 'I could not answer in time: the background inbox did not finish in 5 minutes. Write again or open the inbox on the computer.',
   },
@@ -109,7 +108,6 @@ export const STRINGS = {
     explainHint: 'Непонятно — ответь на это сообщение вопросом.',
     explainNone: 'Пояснения нет: чат ушёл из инбокса. Ответь на это сообщение вопросом.',
     offline: 'Компьютер был недоступен {h} ч: что ты писал раньше, чем за сутки, Telegram не сохранил.',
-    turnFailed: 'Не получилось ответить: ход в инбоксе прервался. Напиши ещё раз.',
     headlessFailed: 'Не успел ответить: фоновый инбокс не закончил за 5 минут. Напиши ещё раз или открой инбокс на компьютере.',
   },
 }

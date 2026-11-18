@@ -5,9 +5,9 @@
 //   node inbox.mjs on | off | status        switch the inbox for every chat of this Claude config dir; status says when it last got an item, woke, carried an answer
 //   node inbox.mjs test                     a check item from a pretend chat: the inbox chat should wake with it by itself
 //   node inbox.mjs watchdog                 run in the inbox chat in the background; exits (and wakes it) only when the wake broke
-//   node inbox.mjs list [--take]            pending items, explained, oldest first; marks this chat as the inbox (not while
-//                                           another inbox chat is alive, unless --take)
-//   node inbox.mjs scan                     file the questions waiting in live chats of every account that have no item (list does it when this chat becomes the inbox)
+//   node inbox.mjs list [--take]            pending items, explained, oldest first; marks this chat as the inbox only when there
+//                                           is none yet, or with --take (his word); elsewhere it lists read-only
+//   node inbox.mjs scan                     file the questions waiting in watched chats of every account that have no item (list does it when this chat becomes the inbox)
 //   node inbox.mjs show <id>               the whole item as JSON (a card's full brief)
 //   node inbox.mjs answer <id> [text]       answer one item (text, or a JSON map on stdin); first answer wins
 //   node inbox.mjs done <id>                the chat answered it itself (dialog, box button, card click, Esc)
@@ -24,7 +24,7 @@
 //                                           a new chat in that folder on that profile's account, named <name>; then SendMessage
 //                                           the brief to <name>. Refused (2) when <config>/makarasty/dispatch.off exists or --said
 //                                           (15+ chars, 3+ words) is not in the person's own prompts of the last 24 h (said.jsonl; one prompt, one
-//                                           start). Queued (4) while a Claude window is in front or under 2 GiB RAM is free.
+//                                           start). Queued (4) while under 2 GiB RAM is free, or a Claude window is in front (10 min at most).
 //   node inbox.mjs start <profile> <folder> <name> --standing "<words>" --relaunch-of <local_app id>
 //                                           the other consent, for a chat relaunching itself at ~700K context: <words> (15+ chars) must be
 //                                           in a line of <config>/makarasty/answers.md about a relaunch at 700K; the old chat must be live,
@@ -297,22 +297,29 @@ function boardLine(/** @type {any} */ c, /** @type {any[]} */ open, /** @type {a
   const q = waits[0] && (waits[0].kind === 'ask' ? waits[0].questions?.[0]?.question : waits[0].kind === 'choice' ? waits[0].ask : `card "${waits[0].title}"`)
   return `${String(c.cwd).split(/[\\/]/).filter(Boolean).pop() || '?'} · ${where} — ${doing}${waits.length ? ` — WAITS FOR YOU: ${String(q ?? '').slice(0, 70)}` : ''}${isMuted(c) ? ' — muted' : ''}`
 }
-// The inbox picks what to watch itself; the person is never asked (owner, 2026-11-13: a multiSelect over 13 chats was
-// "слишком много букв, я не понимаю, что это за чаты, бесполезно"). Watched: chats active in the last 30 min. Not: muted,
-// archived, another inbox chat, a FINISHED one, a second copy of one session (cloned to another account) with no question
-// of its own. A chat the inbox started is watched already (its start writes reports/on). He changes it in words: follow, mute.
-const AUTO_MS = 30 * 60e3
+// The inbox watches only the chats it started and the ones he named (follow, report on); the person is never asked which
+// (owner, 2026-11-13). A chat he opened himself is his and is left alone (owner, 2026-11-18: «отдельно я работаю... он мне
+// никак не должен мешать»): the 30-minute auto-follow is gone, and its `auto` marks count for nothing.
+// Not: muted, archived, another inbox chat, a FINISHED one, a second copy of one session (cloned to another account).
 const NOT_WATCHED = { test: (/** @type {string} */ t) => /^[\s\p{P}]*(inbox|инбокс)(?!\p{L})/iu.test(t) || /\bFINISHED\b/.test(t) } // another inbox chat (its title starts so), or one marked FINISHED (capitals only: "finished state bug" is work)
 const project1 = (/** @type {string} */ cwd) => String(cwd).split(/[\\/]/).filter(Boolean).pop() || '?'
-// What the inbox watches now: switched on, not muted, archived, FINISHED or an inbox, active in 30 min (one the person or
-// the inbox switched on by name: in 3 h); one per session (its newest copy). A switch left from days ago does not make an idle chat "watched".
+// Its switch in reports/on, by app id or session id ('' when none, or only an old `auto` one); the hook reads it the same way (inbox.ts `marked`).
+const markOf = (/** @type {{ host?: string, cli?: string, session?: string }} */ c) => {
+  for (const k of [c.host, c.cli ?? c.session]) { const p = k ? join(root, 'reports', 'on', safe(String(k))) : ''; const m = p && existsSync(p) ? readOr(p) || 'on' : ''; if (m && !m.startsWith('auto')) return m }
+  return ''
+}
+// Open questions and unseen reports of chats it does not watch, left from before 1.19.71: closed and marked seen without a word
+// when the inbox is switched on, so they never wake the inbox chat (the hook files nothing for such a chat any more).
+function forgetUnwatched() {
+  for (const i of items()) if (!answered(i.id) && i.session !== 'inboxcheck' && !markOf(i)) create(join(dir('answers'), `${i.id}.json`), JSON.stringify({ id: i.id, at: Date.now(), by: 'chat', choice: '[not asked: a chat the inbox does not watch]' }))
+  for (const r of reports()) if (!shown(r.id) && !markOf(r)) writeFileSync(join(dir(join('reports', 'seen')), r.id), '')
+}
+// What the inbox watches now: switched on, not muted, archived, FINISHED or an inbox, active in 3 h; one per session (its newest copy).
 function watching(/** @type {string[]} */ not = []) {
-  const now = Date.now(), on = dir(join('reports', 'on')), seen = new Set()
-  const mark = (/** @type {string} */ k) => (existsSync(join(on, safe(k))) ? readOr(join(on, safe(k))) || 'on' : '')
+  const now = Date.now(), seen = new Set()
   return chats().sort((a, b) => b.last - a.last).filter((c) => {
     if (c.archived || not.includes(c.cli) || isMuted(c) || NOT_WATCHED.test(c.title)) return false
-    const m = mark(c.host) || (c.cli ? mark(c.cli) : '')
-    if (!m || now - c.last > (m.startsWith('auto') ? AUTO_MS : LIVE_MS) || (c.cli && seen.has(c.cli))) return false
+    if (!markOf(c) || now - c.last > LIVE_MS || (c.cli && seen.has(c.cli))) return false
     if (c.cli) seen.add(c.cli)
     return true
   })
@@ -320,20 +327,6 @@ function watching(/** @type {string[]} */ not = []) {
 function watchLine(/** @type {any[]} */ w) {
   const p = [...new Set(w.map((c) => project1(c.cwd)))]
   return `watching ${w.length} chat${w.length === 1 ? '' : 's'}${p.length ? `: ${p.slice(0, 6).join(', ')}${p.length > 6 ? ` +${p.length - 6}` : ''}` : ''}`
-}
-function autoFollow(/** @type {string[]} */ not) {
-  const now = Date.now(), on = dir(join('reports', 'on')), open = new Set(items().filter((i) => !answered(i.id)).map((i) => i.host))
-  const live = chats().filter((c) => !c.archived && c.cli && !not.includes(c.cli) && now - c.last < AUTO_MS && !isMuted(c) && !NOT_WATCHED.test(c.title)).sort((a, b) => b.last - a.last)
-  const added = []
-  const seenCli = new Set()
-  for (const c of live) {
-    if (seenCli.has(c.cli) && !open.has(c.host)) continue // the newest copy of a session stands for it
-    seenCli.add(c.cli)
-    if ([c.host, c.cli].some((k) => existsSync(join(on, safe(k))) || existsSync(join(root, 'reports', 'off', safe(k))))) continue
-    writeFileSync(join(on, safe(c.host)), `auto ${new Date().toISOString()}`)
-    added.push(c)
-  }
-  if (added.length) say(`inbox: ${watchLine(watching(not))}\n`)
 }
 // Questions the hook answered by the person's standing rule (auto.jsonl, one line per question) in the last 24 h, not shown yet.
 function autoAnswers() {
@@ -353,6 +346,7 @@ const readOr = (/** @type {string} */ p) => { try { return readFileSync(p, 'utf8
 // Env for tests: INBOX_FG=claude|other|unknown (a comma list: the 1st, 2nd... read), INBOX_FREEMEM (bytes), INBOX_CLAUDE (the CLI).
 const dispatchOff = () => existsSync(join(base, 'dispatch.off'))
 const MIN_FREE = 2 * 1024 ** 3, MODES = ['default', 'plan', 'auto']
+const START_WAIT_MS = (Number(process.env.INBOX_START_WAIT_MIN) || 10) * 60e3 // INBOX_START_WAIT_MIN: the selftest
 const sha1 = (/** @type {string} */ s) => createHash('sha1').update(s).digest('hex')
 const squash = (/** @type {string} */ s) => s.toLowerCase().replace(/\s+/g, ' ').trim()
 // A failed start is retried by --drain up to 3 attempts in all, 10 min apart; then it stays failed (status shows it).
@@ -510,9 +504,11 @@ async function startOne(/** @type {{profile: string, folder: string, name: strin
     const free = process.env.INBOX_FREEMEM !== undefined ? Number(process.env.INBOX_FREEMEM) : freemem()
     led.freemem = free
     if (free < MIN_FREE) return drainStop = true, queue(`only ${Math.round(free / 2 ** 20)} MiB of RAM free (floor ${MIN_FREE / 2 ** 20})`)
-    const closed = (/** @type {string} */ g) => `a Claude window is in front; it starts when none is${g === 'unknown' ? ' (the foreground window could not be read)' : ''}`
+    const closed = (/** @type {string} */ g) => `a Claude window is in front; it starts when none is, or in ${START_WAIT_MS / 60e3} min at the latest${g === 'unknown' ? ' (the foreground window could not be read)' : ''}`
+    // He works in a Claude window most of the day, so a start waited hours (2026-11-17); after the wait the 2 s flip is the lesser harm.
+    const due = Date.now() - (Date.parse(j.at) || Date.now()) >= START_WAIT_MS
     led.gate = gateVerdict()
-    if (led.gate !== 'other') { drainStop = true; return queue(closed(led.gate)) }
+    if (led.gate !== 'other' && !due) { drainStop = true; return queue(closed(led.gate)) }
     if (!argv) { j.state = 'failed'; j.attempts = (j.attempts || 0) + 1; j.note = noWindow(prof); saveJournal(j); console.error(j.note); return end(1, 'failed: no window') }
     drainStop = true // from here the start works (CLI turn or import)
     if (j.state !== 'cli-done' && !j.cliDone) {
@@ -524,7 +520,7 @@ async function startOne(/** @type {{profile: string, folder: string, name: strin
       j.state = 'cli-done'; j.cliDone = true; j.note = ''; saveJournal(j)
     }
     const back = backOf(), g2 = gateVerdict()
-    if (g2 !== 'other') { led.gate += `,${g2}`; return queue(closed(g2)) }
+    if (g2 !== 'other' && !due) { led.gate += `,${g2}`; return queue(closed(g2)) }
     launch(prof, urlOf())
     for (let i = 0, n = Math.ceil((Number(process.env.INBOX_IMPORT_WAIT) || 30e3) / 500); i < n && profileOf(host())?.name !== profile; i++) await new Promise((r) => setTimeout(r, 500)) // INBOX_IMPORT_WAIT (ms): the selftest
     if (profileOf(host())?.name !== profile) {
@@ -642,7 +638,9 @@ async function telegramTurn() {
       // His words, so a chat this turn starts for him has its consent (the poller checked they came from his Telegram id).
       mkdirSync(root, { recursive: true })
       for (const m of ms) appendFileSync(join(root, 'said.jsonl'), `${JSON.stringify({ at: now, session: 'telegram', via: 'telegram', text: m.text.slice(0, 4000) })}\n`)
-      const sess = readJSON(join(tg, 'headless.json')) ?? {}, sid = typeof sess.sid === 'string' ? sess.sid : randomUUID()
+      // A new session each day: every message resumes it, so its context would grow and each answer cost more.
+      const kept = readJSON(join(tg, 'headless.json')) ?? {}, sess = now - (Number(kept.at) || 0) < 24 * 3600e3 ? kept : {}
+      const sid = typeof sess.sid === 'string' ? sess.sid : randomUUID()
       /** @type {string[]} */ let profs = []; try { profs = readdirSync(profilesDir()) } catch { /* no app profiles: the CLI on PATH */ }
       const prof = profs.includes('main') ? 'main' : profs[0]
       const cli = bundledCli({ name: prof ?? '', dir: join(profilesDir(), prof ?? '') })
@@ -716,7 +714,7 @@ function scan(/** @type {string[]} */ selves) {
   for (const c of chats()) {
     if (c.archived || !c.cli || selves.includes(c.cli) || Date.now() - c.last > 24 * 3600e3) continue
     const path = where.get(c.cli)
-    if (!path || holding(c.cli) || isMuted(c)) continue
+    if (!path || holding(c.cli) || isMuted(c) || !markOf(c)) continue // only the chats it watches: one he opened himself is his
     let lines
     try { lines = tailLines(path) } catch { continue }
     const results = new Set(), msgs = []
@@ -759,7 +757,7 @@ function scan(/** @type {string[]} */ selves) {
 
 async function main() {
   const [cmd, id, ...rest] = process.argv.slice(2)
-  if (cmd === 'on') { mkdirSync(base, { recursive: true }); writeFileSync(join(base, 'inbox.on'), `${new Date().toISOString()}\n`); say('inbox: on for every chat that loads makarasty-tools (running chats after their next restart or plugin reload)'); say(`inbox: ${pushLine()}`); autoFollow([process.env.CLAUDE_CODE_SESSION_ID || '', readOr(join(root, 'self'))]); return 0 }
+  if (cmd === 'on') { mkdirSync(base, { recursive: true }); writeFileSync(join(base, 'inbox.on'), `${new Date().toISOString()}\n`); say('inbox: on for every chat that loads makarasty-tools (running chats after their next restart or plugin reload)'); say(`inbox: ${pushLine()}`); forgetUnwatched(); return 0 }
   if (cmd === 'off') { rmSync(join(base, 'inbox.on'), { force: true }); say('inbox: off'); return 0 }
   if (cmd === 'status') {
     const on = existsSync(join(base, 'inbox.on')), all = existsSync(join(root, 'items')) ? items() : []
@@ -772,7 +770,7 @@ async function main() {
     say(`last wake of the inbox chat: ${ago(newest('announced'))}; last answer: ${ago(newest('answers'))}`)
     say(`inbox: ${pushLine()}`)
     say(`inbox chat: ${existsSync(join(root, 'self')) ? readFileSync(join(root, 'self'), 'utf8').trim() : 'none yet (run list once)'}`)
-    say(`finish reports not shown yet: ${reports().filter((r) => !shown(r.id)).length}`)
+    say(`finish reports not shown yet: ${reports().filter((r) => !shown(r.id) && !!markOf(r)).length}`)
     const rows = readOr(ledgerFile()).split(/\r?\n/).filter(Boolean).slice(-10)
     say(`dispatch ledger, last ${rows.length}:`)
     for (const l of rows) { try { const e = JSON.parse(l); say(`  ${e.at} ${e.verb} ${e.profile} ${e.name}: ${e.result} (gate ${e.gate || '-'}, ${e.ms} ms)`) } catch { /* torn line */ } }
@@ -875,7 +873,7 @@ async function main() {
     const open = items().filter((i) => !answered(i.id)), reps = reports()
     // Only what it watches now, one line each; the rest is one count line (he asked for few letters).
     const followed = watching([me || '', self])
-    const busy = all.filter((c) => !followed.some((f) => f.host === c.host) && !isMuted(c) && Date.now() - c.last < AUTO_MS)
+    const busy = all.filter((c) => !followed.some((f) => f.host === c.host) && !isMuted(c) && Date.now() - c.last < 30 * 60e3) // active in 30 min, his own: counted, never watched
     const quiet = all.filter((c) => isMuted(c) && Date.now() - c.last < LIVE_MS)
     say(followed.length ? `${watchLine(followed)}:` : 'inbox: watching no chat')
     for (const c of followed) say(`- ${boardLine(c, open, reps, acc)}`)
@@ -883,11 +881,10 @@ async function main() {
     return 0
   }
   if (cmd === 'report') {
-    // No id: this chat by its app id (the auto pick switches chats on by it), and off also by its session id (an older switch).
+    // No id: this chat by its app id, and off also by its session id (an older switch).
     const keys = (rest[0] ? [rest[0]] : [process.env.CLAUDE_CODE_HOST_SESSION_ID, process.env.CLAUDE_CODE_SESSION_ID]).filter(Boolean).map((k) => safe(String(k)))
     const who = keys[0]
     if ((id !== 'on' && id !== 'off') || !who) { console.error('inbox: report on|off [session id or local_ app id]'); return 2 }
-    // off sticks: the auto pick (autoFollow) does not switch it back on; on or follow lifts it
     if (id === 'on') { writeFileSync(join(dir(join('reports', 'on')), who), new Date().toISOString()); for (const k of keys) rmSync(join(root, 'reports', 'off', k), { force: true }) } else for (const k of keys) { rmSync(join(root, 'reports', 'on', k), { force: true }); writeFileSync(join(dir(join('reports', 'off')), k), '') }
     say(`inbox: finish reports ${id} for ${who}`)
     return 0
@@ -948,17 +945,19 @@ async function main() {
   }
   if (cmd === 'list') {
     const self = process.env.CLAUDE_CODE_SESSION_ID
-    // Another chat that is the inbox and alive (its timer wrote `beat` in the last 2 minutes) is not taken over by a plain
-    // list: this one lists read-only. `--take` moves the inbox here.
+    // The inbox chat moves only on his word (`--take`), even when it is closed: a plain list in any chat used to take it
+    // once the old one's beat was 2 min old, so the role hopped across five working chats in two days (2026-11-18).
     const was = readOr(join(root, 'self')), beatAge = Date.now() - (Number(readOr(join(root, 'beat'))) || 0)
-    const readOnly = !!was && was !== self && !rest.includes('--take') && id !== '--take' && beatAge < 120000
-    if (readOnly) say(`inbox: READ-ONLY, ask and answer nothing here: ${was} is the inbox chat (beat ${Math.round(beatAge / 1000)}s ago); run \`inbox.mjs list --take\` to move it here`)
+    const readOnly = !!was && was !== self && !rest.includes('--take') && id !== '--take'
+    if (readOnly) {
+      const c = chats().find((x) => x.cli === was), name = c ? `[${(c.title || '(no title)').replace(/[[\]]/g, '')}](#${c.host})` : was
+      say(`inbox: READ-ONLY, ask and answer nothing here: the inbox chat is ${name} (${beatAge < 120000 ? 'running' : 'not running now'}); \`inbox.mjs list --take\` moves it here, only on the person's word`)
+    }
     else if (self) {
       mkdirSync(root, { recursive: true }); writeFileSync(join(root, 'self'), self)
       // This chat just became the inbox: questions already waiting in other chats (they filed no item) enter the normal path now.
       if (was !== self || rest.includes('--take') || id === '--take') { try { scan([self]) } catch (e) { console.error(`inbox: scan failed: ${/** @type {Error} */ (e).message}`) } }
     }
-    if (!readOnly) autoFollow([self || '', was])
     if (!readOnly && (was !== self || rest.includes('--take') || id === '--take')) say(`inbox: ${pushLine()}`) // once, when this chat becomes the inbox
     // A question its chat no longer waits for, or a card or box whose work is done, is not asked: closed here, once, one line per
     // chat (owner, 2026-11-13; stale(): the rules). A muted chat's item leaves without a line (he asked for silence).
@@ -968,6 +967,8 @@ async function main() {
     if (!readOnly) sweepOrphans()
     const open = items().map((i) => (readOnly ? named(i, byHost) : rename(i, byHost))).filter((i) => {
       if (answered(i.id) || i.session === self) return false
+      // An item of a chat it does not watch (filed before 1.19.71, or the chat lost its switch): closed silently, as a muted one's.
+      if (i.session !== 'inboxcheck' && !markOf(i)) { if (!readOnly) create(join(dir('answers'), `${i.id}.json`), JSON.stringify({ id: i.id, at: Date.now(), by: 'chat', choice: '[not asked: a chat the inbox does not watch]' })); return false }
       if (i.session === 'inboxcheck' && Date.now() - i.at > 10 * 60e3) { if (!readOnly) create(join(dir('answers'), `${i.id}.json`), JSON.stringify({ id: i.id, at: Date.now(), by: 'chat' })); return false } // a leftover `test` item
       const why = stale(i, byHost)
       if (readOnly) return !why // the real inbox closes those; here they are only left out
@@ -976,7 +977,7 @@ async function main() {
       perChat(closed, i, `${i.kind === 'card' ? `card "${i.title}": ` : ''}${why.replace(/\d+ (h|min) old/, 'over 12 h old')}`)
       return false
     })
-    const done = reports().filter((r) => !shown(r.id) && r.session !== self && !isMuted(r)).map((r) => named(r, byHost))
+    const done = reports().filter((r) => !shown(r.id) && r.session !== self && !isMuted(r) && !!markOf(r)).map((r) => named(r, byHost))
     const auto = autoAnswers()
     // Answers written but not sent (he wrote there, it was archived or too old), once.
     const unsent = new Map()

@@ -10,9 +10,10 @@ const plain = (p: string): string => p.replace(/^[A-Za-z]:/, '').replaceAll('\\'
 const Q = 'Какую базу взять для отчётов?'
 const QUESTIONS = [{ question: Q, header: 'База', multiSelect: false, options: [{ label: 'Postgres', description: 'та, что уже в проекте' }, { label: 'SQLite', description: 'файл рядом с отчётом' }] }]
 
-function world(on: On, o: { on?: boolean; session?: string; self?: string; children?: string[]; now?: number; noChannel?: boolean } = {}) {
+function world(on: On, o: { on?: boolean; session?: string; self?: string; children?: string[]; now?: number; noChannel?: boolean; watched?: boolean } = {}) {
   const disk = new Map<string, string>()
   if (o.on !== false) disk.set('/cfg/makarasty/inbox.on', 'x')
+  if (o.watched !== false) disk.set('/cfg/makarasty/inbox/reports/on/local_aaaa', '2026-11-18T00:00:00Z') // he named it (follow); his own chats are not watched
   if (o.self) disk.set('/cfg/makarasty/inbox/self', o.self)
   const submitted: string[] = []
   const cli: string[][] = []
@@ -156,42 +157,39 @@ test('after 2 minutes an open item gets a plain explanation and one push', async
   expect(w.cli.filter((c) => c[0] === 'push')).toEqual([['push', 'chatA~toolu_4']])
 })
 
-// His Telegram messages (telegram.ts): the inbox chat takes the waiting ones as one prompt when it is idle, and the turn that
-// prompt starts is the one whose answer goes back to his phone as a reply.
-test('a Telegram message for the inbox chat: one prompt when it is idle, its turn marked, and only that turn answers on the phone', async ($, on) => {
+// His Telegram messages go to the headless inbox (telegram.ts), never into the inbox chat: a working Opus chat paid a turn
+// per message and was interrupted by it (2026-11-18).
+test('a Telegram message waiting: the inbox chat gets no prompt for it and leaves it untaken', async ($, on) => {
   const w = world(on, { self: 'chatA' })
-  const fetched: { method: string; body: Record<string, any> }[] = []
-  on('http.fetch', (_$, e) => {
-    const method = e.url.split('/').pop()!
-    fetched.push({ method, body: JSON.parse(e.init?.body ?? '{}') })
-    const result = method === 'getUpdates' ? [] : method === 'sendMessage' ? { message_id: 900 } : true
-    return { value: { status: 200, ok: true, headers: {}, text: JSON.stringify({ ok: true, result }) } } as never
-  })
-  on('turn.start', (_$, e) => ({ turnId: e.turnId }))
-  on('turn.complete', (_$, e) => ({ text: e.answer }))
+  on('http.fetch', () => ({ value: { status: 200, ok: true, headers: {}, text: JSON.stringify({ ok: true, result: [] }) } }) as never)
   const TG = '/cfg/makarasty/telegram'
-  w.disk.set('/cfg/makarasty/notify.json', JSON.stringify({ telegram: { token: '123456789:Zq8Lm3Vb7Nx2Wc5Rt9Yh4Js6', chat_id: '42' } }))
   w.disk.set(`${TG}/inbound/7.json`, JSON.stringify({ id: 7, text: 'сколько вопросов ждёт?', message_id: 55, at: 1_000_000 }))
-  const prompts = () => w.submitted.filter((s) => s.startsWith('[Telegram]'))
   await $.prompt.submit({ text: 'hi' } as never) // starts the timer
-  await w.clock.advance(15000)
-  await w.until(() => prompts().length === 1, 'delivered')
-  expect(prompts()[0]).toContain('> сколько вопросов ждёт?')
-  await w.clock.advance(15000)
+  await w.clock.advance(30000)
   await new Promise((r) => setTimeout(r, 30))
-  expect(prompts().length).toBe(1) // taken: not again
-  await $.turn.start({ text: prompts()[0], turnId: 'tg1' } as never)
-  expect(JSON.parse(w.disk.get(`${TG}/turn.json`)!)).toMatchObject({ ids: [7], message_id: 55, turnId: 'tg1' })
-  await $.turn.complete({ answer: 'не про этот ход', reason: 'answer', durationMs: 1000, isAborted: false, turnId: 'other' } as never)
-  expect(fetched.filter((c) => c.method === 'sendMessage')).toEqual([])
-  await $.turn.complete({ answer: 'Ждёт **2** вопроса.', reason: 'answer', durationMs: 1000, isAborted: false, turnId: 'tg1' } as never)
-  const sent = fetched.filter((c) => c.method === 'sendMessage')
-  expect(sent.length).toBe(1)
-  expect(sent[0]!.body.reply_parameters).toMatchObject({ message_id: 55 })
-  expect(sent[0]!.body.text).toContain('<b>2</b>')
-  expect(JSON.parse(w.disk.get(`${TG}/inbound/7.json`)!).done).toBeGreaterThan(0)
-  expect(w.disk.get(`${TG}/turn.json`)).toBe('{}')
+  expect(w.submitted.filter((s) => s.startsWith('[Telegram]'))).toEqual([])
+  expect(JSON.parse(w.disk.get(`${TG}/inbound/7.json`)!).taken).toBeUndefined()
 })
+
+// A chat he opened himself (no switch in reports/on, or only an old `auto` one) is his: nothing is filed, pushed or reported.
+for (const [what, mark] of [['no switch', undefined], ['an old auto switch', 'auto 2026-11-13T17:01:53.826Z']] as const) {
+  test(`his own chat (${what}): its dialog, box and card file nothing, and a finished turn writes no report`, async ($, on) => {
+    const w = world(on, { watched: false })
+    if (mark) w.disk.set('/cfg/makarasty/inbox/reports/on/local_aaaa', mark)
+    on('turn.complete', (_$, e) => ({ text: e.answer }))
+    const call = $.tool.call({ tool: 'AskUserQuestion', questions: QUESTIONS, tool_use_id: 'toolu_own' })
+    await w.until(() => w.dialog.shown === 1, 'the dialog shows as usual')
+    w.answerDialog({ result: { questions: QUESTIONS, answers: { [Q]: 'Postgres' } } })
+    await call
+    await $.tool.call({ tool: 'mcp__ccd_turn__wrap_up', recap: 'r', ask: 'Запушить?', actions: [{ label: 'Да' }], tool_use_id: 'toolu_ownb' } as never)
+    await $.tool.call({ tool: 'mcp__ccd_session__start_session', initiation: 'own_initiative', title: 'Чистка логов', prompt: 'p', tool_use_id: 'toolu_ownc' } as never)
+    await $.turn.complete({ answer: 'Готово, всё сделал и проверил.', reason: 'answer', durationMs: 1000, isAborted: false, turnId: 't1' } as never)
+    await w.clock.advance(3 * 60e3)
+    expect(w.items()).toEqual([])
+    expect([...w.disk.keys()].filter((k) => k.startsWith('/cfg/makarasty/inbox/reports/') && k.endsWith('.json'))).toEqual([])
+    expect(w.cli.filter((c) => c[0] === 'push')).toEqual([])
+  })
+}
 
 test('no notify channel: the explanation is still written, but no push is tried and nothing says one went out', async ($, on) => {
   const w = world(on, { noChannel: true })

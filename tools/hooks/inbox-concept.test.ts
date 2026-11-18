@@ -10,7 +10,7 @@ declare const setTimeout: (f: (v?: unknown) => void, ms: number) => unknown // t
 const R = '/cfg/makarasty/inbox'
 const H = 3600e3
 function world(on: On, o: { self?: string; session?: string; now?: number; failSubmits?: number; names?: Record<string, string> } = {}) {
-  const disk = new Map<string, string>([['/cfg/makarasty/inbox.on', 'x']])
+  const disk = new Map<string, string>([['/cfg/makarasty/inbox.on', 'x'], [`${R}/reports/on/local_aaaa`, '2026-11-18T00:00:00Z']]) // a watched chat
   if (o.self) disk.set(`${R}/self`, o.self)
   const plain = (p: string): string => p.replace(/^[A-Za-z]:/, '').replaceAll('\\', '/')
   mock.env(on, { CLAUDE_CONFIG_DIR: '/cfg', CLAUDE_CODE_HOST_SESSION_ID: 'local_aaaa', CLAUDE_CODE_ACCOUNT_UUID: 'acc1', MAKARASTY_SCREEN: 'off' })

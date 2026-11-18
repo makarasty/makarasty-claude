@@ -1,6 +1,6 @@
 import type { EngineInterface } from 'claude-code'
-import { explainPrompt, inboundPrompt, isTelegramPrompt, STALE_MS, TG_PROMPT, telegramWords, type Item } from '../skills/inbox/core.mjs'
-import { collapsed, esc, explainHtml, helpHtml, mdToTg, note, phoneKeyboard, statusHtml } from '../skills/notify/render.mjs'
+import { explainPrompt, isTelegramPrompt, STALE_MS, TG_PROMPT, telegramWords, type Item } from '../skills/inbox/core.mjs'
+import { collapsed, esc, explainHtml, helpHtml, note, phoneKeyboard, statusHtml } from '../skills/notify/render.mjs'
 import { langOf, t } from '../skills/notify/strings.mjs'
 import { writeHeard } from './consent.ts'
 
@@ -10,15 +10,14 @@ import { writeHeard } from './consent.ts'
 // (getUpdates timeout 20), so a tap arrives within a second, and renews its lease before each one; another chat takes
 // over once the lease is 30 s old (the leader closed or crashed). Where the engine cannot hold a long request, short
 // polls every 2 s. The person's taps answer inbox items, "❔ Подробнее" writes the explanation on demand, a message he
-// writes goes to the inbox chat (or a headless inbox turn when none runs); only /start and the debug /status are
+// writes goes to the headless inbox turn (`inbox.mjs telegram`), never into a chat; only /start and the debug /status are
 // answered here with no model. Layout under <config>/makarasty/telegram/:
 //   polled          "<ms> <session>": the lease; the writer reads it back and polls only if it is still his
 //   offset, lastok  getUpdates offset; when a poll last worked (a gap over 23 h is told: Telegram keeps updates 24 h)
 //   seen.json       the last 300 update ids, written before an update's effects, so a second poller skips them
 //   log.json        the last 100 handled updates: when the poll returned, how long handling took (the latency record)
 //   asks/<msg>.json an open ask on the phone (notify.mjs ask writes it): item, html, short, options, reply, at
-//   inbound/<update>.json  a message for the inbox chat: text, message_id, at, about (an ask's item), taken (ms)
-//   turn.json       the inbox turn that answers inbound messages: ids, message_id, turnId
+//   inbound/<update>.json  a message for the headless inbox: text, message_id, at, about (an ask's item), taken, done (ms)
 // Design and edge cases: docs/TELEGRAM.md.
 
 type D = Pick<EngineInterface, 'env' | 'fs' | 'http' | 'process' | 'plugin' | 'session' | 'clock' | 'model'>
@@ -193,14 +192,12 @@ async function handle($: D, dir: string, b: { token: string; me: string }, u: Up
   const inbound: Inbound = { id: u.update_id, text: text + extra, message_id: m.message_id, at: now, ...(about ? { about: { item: about.item, short: about.short } } : {}) }
   await $.fs.write(`${tg}/inbound/${u.update_id}.json`, JSON.stringify(inbound))
   await call($, b.token, 'setMessageReaction', { chat_id: b.me, message_id: m.message_id, reaction: [{ type: 'emoji', emoji: '👀' }] }).catch(() => undefined)
-  // The inbox chat takes it at its next idle tick; with none alive, one headless inbox turn answers it.
-  const beat = Number(String(await $.fs.read(`${dir}/makarasty/inbox/beat`).catch(() => '0'))) || 0
-  if (now - beat > ALIVE_MS) {
-    // A run still busy with an earlier message answers this one after it: say so now rather than leave him guessing.
-    const busy = Number(String(await $.fs.read(`${tg}/headless.lock`).catch(() => '0'))) || 0
-    if (now - busy < 8 * 60000) await send($, b, note(t(L, 'queued')), { ...replyTo(m.message_id), disable_notification: true }).catch(() => undefined)
-    void $.process.run(['node', `${$.plugin.root}/skills/inbox/inbox.mjs`, 'telegram'], { timeoutMs: 400000, env: { CLAUDE_CONFIG_DIR: dir } }).catch(() => undefined)
-  }
+  // Always the headless inbox (a small Sonnet session), never a chat: a working Opus chat paid a whole turn per message and
+  // was interrupted by it (2026-11-18: messages landed in five different working chats in two days).
+  // A run still busy with an earlier message answers this one after it: say so now rather than leave him guessing.
+  const busy = Number(String(await $.fs.read(`${tg}/headless.lock`).catch(() => '0'))) || 0
+  if (now - busy < 8 * 60000) await send($, b, note(t(L, 'queued')), { ...replyTo(m.message_id), disable_notification: true }).catch(() => undefined)
+  void $.process.run(['node', `${$.plugin.root}/skills/inbox/inbox.mjs`, 'telegram'], { timeoutMs: 400000, env: { CLAUDE_CONFIG_DIR: dir } }).catch(() => undefined)
   return 'inbound'
 }
 
@@ -284,46 +281,7 @@ async function sweep($: D, dir: string, b: { token: string; me: string }, now: n
 async function openAsk($: D, p: string): Promise<Ask | undefined> { const a = await readJSON<Ask>($, p); return a && !a.closed ? a : undefined }
 async function close($: D, p: string, a: Ask): Promise<void> { await $.fs.write(p, JSON.stringify({ ...a, closed: await $.clock.now() })).catch(() => undefined) }
 
-// ---- the inbox chat's side: waiting messages become one prompt; that turn's answer goes back as a reply ----
-
-export { TG_PROMPT, inboundPrompt, isTelegramPrompt, telegramWords }
-export async function telegramInbound($: D, dir: string, retry: number[] = []): Promise<Inbound[]> {
-  const tg = `${dir}/makarasty/telegram`
-  const out: Inbound[] = []
-  for (const f of await $.fs.list(`${tg}/inbound`).catch(() => [])) {
-    if (!f.name.endsWith('.json')) continue
-    const m = await readJSON<Inbound>($, `${tg}/inbound/${f.name}`)
-    if (m && !m.done && (!m.taken || retry.includes(m.id))) out.push(m)
-  }
-  return out.sort((x, y) => x.id - y.id)
-}
-
-
-export async function takeInbound($: D, dir: string, ms: Inbound[]): Promise<void> {
-  const tg = `${dir}/makarasty/telegram`, now = await $.clock.now()
-  for (const m of ms) await $.fs.write(`${tg}/inbound/${m.id}.json`, JSON.stringify({ ...m, taken: now }))
-  await $.fs.write(`${tg}/turn.json`, JSON.stringify({ ids: ms.map((m) => m.id), message_id: ms[ms.length - 1]!.message_id, at: now }))
-}
-
-// turn.start of the inbox chat: the turn its Telegram prompt started is the one whose answer goes back.
-export async function telegramTurnStart($: D, dir: string, text: string, turnId: string): Promise<void> {
-  if (!isTelegramPrompt(text)) return
-  const t = await readJSON<{ ids?: number[]; message_id: number; at: number; turnId?: string }>($, `${dir}/makarasty/telegram/turn.json`)
-  if (t?.ids?.length && !t.turnId) await $.fs.write(`${dir}/makarasty/telegram/turn.json`, JSON.stringify({ ...t, turnId }))
-}
-
-export async function telegramTurnComplete($: D, dir: string, e: { turnId?: string; reason?: string; answer?: string; isAborted?: boolean }): Promise<void> {
-  const tg = `${dir}/makarasty/telegram`
-  const turn = await readJSON<{ ids: number[]; message_id: number; turnId?: string }>($, `${tg}/turn.json`)
-  if (!turn?.turnId || turn.turnId !== e.turnId || !turn.ids?.length) return
-  const b = await bot($, dir)
-  const L = await lang($, dir)
-  const text = e.reason === 'answer' && !e.isAborted && e.answer?.trim() ? mdToTg(redact(e.answer, t(L, 'hidden'))) : note(t(L, 'turnFailed'))
-  if (b) await send($, b, text, replyTo(turn.message_id)).catch(() => undefined)
-  const now = await $.clock.now()
-  await $.fs.write(`${tg}/turn.json`, '{}')
-  for (const id of turn.ids) { const m = await readJSON<Inbound>($, `${tg}/inbound/${id}.json`); if (m) await $.fs.write(`${tg}/inbound/${id}.json`, JSON.stringify({ ...m, done: now })) }
-}
+export { TG_PROMPT, isTelegramPrompt, telegramWords }
 
 // The secret shapes notify.mjs blanks in an excerpt, for what the engine sends (an explanation, an inbox answer).
 const SECRETS = [

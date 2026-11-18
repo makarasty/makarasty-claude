@@ -27,6 +27,8 @@ const put = (/** @type {Record<string, unknown>} */ it) => { mkdirSync(join(root
 
 try {
   check('on writes the switch', run(['on']).status === 0 && existsSync(join(tmp, 'makarasty', 'inbox.on')))
+  const watch = (/** @type {string} */ k, /** @type {string} */ mark = new Date().toISOString()) => { mkdirSync(join(root, 'reports', 'on'), { recursive: true }); writeFileSync(join(root, 'reports', 'on', k), mark) }
+  watch('chatA') // the inbox watches only the chats it started or he named
   put(item({ id: 'chatA~t1', host: 'local_aaaa', account: 'other-account', explain: 'Чат делает выгрузку и спрашивает, какую базу взять.' }))
   put(item({ id: 'inboxChat~t9', session: 'inboxChat' })) // the inbox chat's own: never listed there
   put(item({ id: 'chatB~old', at: Date.now() - 25 * 3600e3 })) // asked and answered more than a day ago: swept
@@ -144,7 +146,7 @@ try {
     setTimeout(() => writeFileSync(file, '{}'), delay)
     p.on('exit', (status) => res({ status, out }))
   })
-  const OPEN = { INBOX_FREEMEM: '99999999999', INBOX_FG: 'other' }
+  const OPEN = { INBOX_FREEMEM: '99999999999', INBOX_FG: 'other', INBOX_START_WAIT_MIN: '99999999' } // the window wait never runs out here, but in its own check
   const sha = (/** @type {string} */ s) => createHash('sha1').update(s).digest('hex')
   const jfile = (/** @type {string} */ name) => join(root, 'starts', `${sha(`acct2|${tmp}|${name}`)}.json`)
   const jget = (/** @type {string} */ name) => { try { return JSON.parse(readFileSync(jfile(name), 'utf8')) } catch { return undefined } }
@@ -253,6 +255,12 @@ try {
   const dr2 = S(['start', '--drain'], { ...OPEN, INBOX_FG: 'claude' })
   check('--drain retries a failed start older than 10 min with attempts left, not a recent one or one at 3 attempts', dr2.stdout.includes('queued start') && jstate('f-old') === 'queued' && jstate('f-new') === 'failed' && jstate('f-last') === 'failed', dr2.stdout + dr2.stderr)
   check('status shows a failed start that is out of attempts', /failed \(3 attempts\)\tacct2\tf-last/.test(S(['status'], OPEN).stdout), S(['status'], OPEN).stdout)
+  // A Claude window in front holds a start 10 min at most (he works in one all day): then it goes past the gate.
+  jw('w-young', { at: new Date().toISOString() }); jw('w-due', { at: new Date(Date.now() - 11 * 60e3).toISOString() })
+  const capped = (/** @type {string} */ n) => S(['start', 'acct2', tmp, n, '--said', 'x'], { ...OPEN, INBOX_FG: 'claude', INBOX_START_WAIT_MIN: '10', INBOX_PROCS: '' })
+  const wy = capped('w-young'), wd = capped('w-due')
+  check('a Claude window in front: a start under 10 min old stays queued, an older one goes past the gate', wy.status === 4 && jstate('w-young') === 'queued' && /in 10 min at the latest/.test(wy.stdout) && wd.status === 1 && jstate('w-due') === 'failed' && /no running app window/.test(jget('w-due').note), wy.stdout + wd.stdout + wd.stderr)
+  rmSync(jfile('w-young')); rmSync(jfile('w-due'))
   writeFileSync(ledgerPath, `${Array.from({ length: 2600 }, (_, i) => JSON.stringify({ at: 'x', verb: 'start', n: i })).join('\n')}\n`)
   S(['start', 'acct2', tmp, 'n1', '--said', Q1], { ...OPEN, INBOX_FG: 'claude' })
   check('the ledger is trimmed to its last 2000 rows once it passes 2500', ledger().length === 2000 && ledger().at(-1)?.name === 'n1' && ledger()[0].n === 601, String(ledger().length))
@@ -318,12 +326,15 @@ try {
   check('report on with no id switches on the chat running it', run(['report', 'on']).stdout.includes('on for inboxChat') && existsSync(join(root, 'reports', 'on', 'inboxChat')))
   check('track of an app id switches its reports on', r(['track', 'local_66666666-6666-6666-6666-666666666666', 'main', 'p', 'task']).status === 0 && existsSync(join(root, 'reports', 'on', 'local_66666666-6666-6666-6666-666666666666')))
   const rep = (/** @type {Record<string, unknown>} */ o) => { mkdirSync(join(root, 'reports'), { recursive: true }); writeFileSync(join(root, 'reports', `${o.id}.json`), JSON.stringify({ session: String(o.id).split('~')[0], cwd: 'C:\\work\\vize', chat: 'Обнови зависимости (chatR)', host: 'local_rrrr', account: 'my-account', ...o })) }
+  watch('local_rrrr', 'started 1')
+  rep({ id: 'chatU~turn-1', host: 'local_uuuu', at: Date.now() - 60e3, recap: 'чат, за которым инбокс не следит' })
   rep({ id: 'chatR~turn-1', at: Date.now() - 20 * 60e3, recap: 'Обновил vite, тесты зелёные.' })
   rep({ id: 'chatR~turn-2', at: Date.now() - 2 * 60e3, recap: 'Обновил sass.', excerpt: 'Готово. Сверх задачи: в `build.ts` мёртвый импорт.' })
   rep({ id: 'chatS~turn-1', at: Date.now() - 8 * 24 * 3600e3, recap: 'старый' })
   const l1 = run(['list'])
   check('list shows reports under Finished, newest of a chat in full, the earlier one as a line', l1.stdout.includes('## Finished: 1 chats, 2 reports') && l1.stdout.includes('vize — finished 2 min ago') &&
     l1.stdout.includes('Сверх задачи: в `build.ts` мёртвый импорт') && l1.stdout.includes('Earlier, 20 min ago: Обновил vite') && l1.stdout.includes('Open the chat: [Обнови зависимости (chatR)](#local_rrrr)'), l1.stdout)
+  check('a report of a chat it does not watch is not shown', !l1.stdout.includes('не следит'), l1.stdout)
   check('a report older than 7 days is swept', !l1.stdout.includes('старый') && !existsSync(join(root, 'reports', 'chatS~turn-1.json')))
   check('a shown report leaves the next list', run(['list']).stdout.includes('nothing pending'))
   check('reports shows them again', run(['reports']).stdout.includes('Обновил sass.'))
@@ -400,19 +411,20 @@ try {
   put(item({ id: 'chatN~t2', at: Date.now() - 8 * 24 * 3600e3 }))
   run(['list'])
   check('an unanswered item 8 days old is swept', !existsSync(join(root, 'items', 'chatN~t2.json')))
-  // list does not take the inbox from another chat whose timer beat just now; --take does.
+  // list never takes the inbox from another chat, running or not (2026-11-18: the role hopped across five chats); --take does.
   const beat = (/** @type {number} */ ago) => writeFileSync(join(root, 'beat'), String(Date.now() - ago))
   writeFileSync(join(root, 'self'), 'otherChat'); beat(10e3)
   const ro = run(['list'])
-  check('list leaves a live inbox chat alone and says how to take over', ro.status === 0 && ro.stdout.includes('inbox: READ-ONLY, ask and answer nothing here: otherChat is the inbox chat (beat ') && ro.stdout.includes('inbox.mjs list --take') && readFileSync(join(root, 'self'), 'utf8') === 'otherChat', ro.stdout)
-  check('a dead inbox chat (no beat for 3 min) is taken over', (beat(180e3), run(['list']).status === 0) && readFileSync(join(root, 'self'), 'utf8') === 'inboxChat')
+  check('list leaves a live inbox chat alone and says how to take over', ro.status === 0 && ro.stdout.includes('inbox: READ-ONLY, ask and answer nothing here: the inbox chat is otherChat (running)') && ro.stdout.includes('inbox.mjs list --take') && readFileSync(join(root, 'self'), 'utf8') === 'otherChat', ro.stdout)
+  const dead = (beat(180e3), run(['list']))
+  check('a closed inbox chat (no beat for 3 min) is not taken over either: read-only, it says so', dead.status === 0 && dead.stdout.includes('otherChat (not running now)') && readFileSync(join(root, 'self'), 'utf8') === 'otherChat', dead.stdout)
   writeFileSync(join(root, 'self'), 'otherChat'); beat(10e3)
   check('--take moves the inbox here', run(['list', '--take']).status === 0 && readFileSync(join(root, 'self'), 'utf8') === 'inboxChat')
   // A plain terminal (no session id) listing while a live inbox exists does not mark reports as seen.
   writeFileSync(join(root, 'self'), 'otherChat'); beat(10e3)
   rep({ id: 'chatV~turn-1', at: Date.now() - 60e3, recap: 'ещё не видел' })
   const term = spawnSync(process.execPath, [cli, 'list'], { env: { ...env, CLAUDE_CODE_SESSION_ID: '' }, encoding: 'utf8' })
-  check('a terminal list leaves reports unseen and the inbox chat alone', term.stdout.includes('otherChat is the inbox chat') && !existsSync(join(root, 'reports', 'seen', 'chatV~turn-1')) && readFileSync(join(root, 'self'), 'utf8') === 'otherChat', term.stdout)
+  check('a terminal list leaves reports unseen and the inbox chat alone', term.stdout.includes('the inbox chat is otherChat') && !existsSync(join(root, 'reports', 'seen', 'chatV~turn-1')) && readFileSync(join(root, 'self'), 'utf8') === 'otherChat', term.stdout)
   writeFileSync(join(root, 'self'), 'inboxChat'); run(['list'])
   // The coordinator's task file is written through a unique temp name: a leftover fixed name cannot block it.
   mkdirSync(join(tmp, 'makarasty', 'coord', 'tasks.json.tmp'), { recursive: true })
@@ -438,11 +450,12 @@ try {
   const line = (/** @type {string} */ type, /** @type {unknown} */ content, /** @type {Record<string, unknown>} */ x = {}) => JSON.stringify({ type, timestamp: new Date(x.ts ? Number(x.ts) : T).toISOString(), message: { role: type, content }, ...x })
   const askTool = (/** @type {string} */ id) => ({ type: 'tool_use', id, name: 'AskUserQuestion', input: { questions: [{ question: `Which DB for ${id}?`, options: [{ label: 'Postgres' }, { label: 'SQLite' }] }] } })
   const wrapTool = (/** @type {string} */ id) => ({ type: 'tool_use', id, name: 'mcp__ccd_turn__wrap_up', input: { ask: `Push the branch ${id}?`, recap: 'Fixed login.', actions: [{ label: 'Yes, push' }, { label: 'Not now' }] } })
-  /** @param {string} name @param {string[]} lines @param {{ago?: number, archived?: boolean}} [o] */
+  /** @param {string} name @param {string[]} lines @param {{ago?: number, archived?: boolean, unwatched?: boolean}} [o] */
   const chat = (name, lines, o = {}) => {
     const cli = randomUUID(), host = `local_${randomUUID()}`
     writeFileSync(join(cdir, `${host}.json`), JSON.stringify({ cliSessionId: cli, cwd: `C:\\work\\${name}`, title: `Chat ${name}`, lastActivityAt: Date.now() - (o.ago ?? 60e3), isArchived: !!o.archived }))
     writeFileSync(join(tdir, `${cli}.jsonl`), `${lines.join('\n')}\n`)
+    if (!o.unwatched) watch(host)
     return { cli, host }
   }
   const u = (/** @type {string} */ text) => line('user', text)
@@ -461,6 +474,7 @@ try {
   const meta = chat('meta-after', [u('x'), line('assistant', [askTool('toolu_B1')]), line('user', 'hook text', { isMeta: true })])
   const old8 = chat('eight-days', [u('x'), line('assistant', [askTool('toolu_D8')], { ts: Date.now() - 8 * 24 * 3600e3 })]) // the chat is active now, its question is 8 days old
   const wrapRe = chat('wrap-reask', [u('x'), line('assistant', [wrapTool('toolu_R2')])])
+  const own = chat('his-own', [u('x'), line('assistant', [askTool('toolu_O1')])], { unwatched: true })
   const idOf = (/** @type {{cli: string}} */ c, /** @type {string} */ t) => `${c.cli}~${t}`
   mkdirSync(join(root, 'items'), { recursive: true }); mkdirSync(join(tmp, 'makarasty', 'hold', held.cli), { recursive: true })
   writeFileSync(join(root, 'items', `${idOf(existing, 'toolu_A3')}.json`), '{"mine":1}')
@@ -480,6 +494,7 @@ try {
   check('scan files nothing for an answered AskUserQuestion, nor a wrap_up with a later prompt', !itemOf(answered, 'toolu_A2') && !itemOf(wrapLater, 'toolu_W1'))
   check('scan leaves an existing item alone (no duplicate, no rewrite)', readFileSync(join(root, 'items', `${idOf(existing, 'toolu_A3')}.json`), 'utf8') === '{"mine":1}' && !sc.stdout.includes('toolu_A3'))
   check('scan skips a hold chat, the inbox chat itself, a chat idle over 24 h, an archived one, a subagent turn', !itemOf(held, 'toolu_A4') && !itemOf(me, 'toolu_A5') && !itemOf(oldChat, 'toolu_A6') && !itemOf(arch, 'toolu_A7') && !itemOf(side, 'toolu_A8'))
+  check('scan skips a chat the inbox does not watch: one he opened himself', !itemOf(own, 'toolu_O1') && !sc.stdout.includes('toolu_O1'))
   check('a question older than 24 h is not filed even in a chat active now', !itemOf(old8, 'toolu_D8') && !sc.stdout.includes('toolu_D8'))
   check('a wrap_up while the chat\'s earlier box answer is undelivered is not filed', !itemOf(wrapRe, 'toolu_R2') && !sc.stdout.includes('toolu_R2'))
   mkdirSync(join(root, 'delivered'), { recursive: true }); writeFileSync(join(root, 'delivered', `${wrapRe.cli}~toolu_R1`), '1')
@@ -513,11 +528,11 @@ try {
     const box = (/** @type {number} */ n, /** @type {Record<string, unknown>} */ o = {}) => put({ id: `cs${n}~b${n}`, kind: 'choice', at: Date.now() - 5 * 60e3, session: `cs${n}`, host: H(n), cwd: `C:/work/proj${n}`, chat: `Чат номер ${n} (cs${n})`, ask: `Запушить ветку ${n}?`, actions: ['Да', 'Нет'], ...o })
     rmSync(join(root, 'self'), { force: true })
 
-    // 5. the inbox picks what to watch itself, never asks (owner, 2026-11-13): active in 30 min, not archived, FINISHED, an inbox, a copy
+    // 5. it watches only what it started or he named, never asks which, and switches nothing on by itself (owner, 2026-11-18)
     const f1 = C(['list']), on5 = (/** @type {number} */ n) => existsSync(join(root, 'reports', 'on', H(n)))
-    check('5. the first list asks nothing and says in one line which chats it watches', !f1.stdout.includes('First run') && !f1.stdout.includes('AskUserQuestion') && /inbox: watching 4 chats: .*proj1/.test(f1.stdout), f1.stdout)
-    check('5. watched: the chats active in 30 min; not archived, FINISHED, idle 2 h, an inbox chat, nor a second copy of one session', on5(1) && on5(2) && on5(4) && on5(5) && ![3, 6, 7, 8, 9].some(on5))
-    check('5. the line comes only when the watched set grows', !C(['list']).stdout.includes('inbox: watching'))
+    check('5. the first list asks nothing and switches no chat on by itself: his own chats are left alone', !f1.stdout.includes('AskUserQuestion') && !f1.stdout.includes('inbox: watching') && ![1, 2, 3, 4, 5, 6, 7, 8, 9].some(on5), f1.stdout)
+    for (const n of [1, 2, 3, 4, 5]) watch(H(n))
+    watch(H(6)); watch(H(8), 'auto 2026-11-13T17:01:53.826Z') // FINISHED is never watched; an old auto mark counts for nothing
     const bd = C(['followed'])
     check('5. followed: one line per watched chat and a count line, nothing more', bd.stdout.startsWith('watching 4 chats') && bd.stdout.includes(`- proj1 · [Чат номер 1](#${H(1)})`) && !bd.stdout.includes('Чат номер 8') && bd.stdout.split(/\r?\n/).filter(Boolean).length === 6, bd.stdout)
 
@@ -582,6 +597,7 @@ try {
     const P = join(tmp, 'done-profiles'), H = (/** @type {string} */ n) => `local_${n.repeat(8)}-0000-0000-0000-000000000000`, h = 3600e3, now = Date.now()
     const regAt = (/** @type {string} */ prof) => { const d = join(P, prof, 'claude-code-sessions', 'my-account', 'org'); mkdirSync(d, { recursive: true }); return d }
     const reg = (/** @type {string} */ n, /** @type {Record<string, unknown>} */ o = {}, prof = 'main') => writeFileSync(join(regAt(prof), `${H(n)}.json`), JSON.stringify({ sessionId: H(n), cliSessionId: `ds${n}`, cwd: `C:/work/p${n}`, title: `Чат ${n}`, createdAt: now - 200 * h, lastActivityAt: now - 60e3, latestUserFrameAt: now - 300 * h, ...o }))
+    for (const n of '123456789') watch(`ds${n}`)
     const card = (/** @type {string} */ n, /** @type {string} */ k, /** @type {number} */ ago, /** @type {Record<string, unknown>} */ o = {}) => put({ id: `ds${n}~${k}`, kind: 'card', at: now - ago, session: `ds${n}`, host: H(n), cwd: `C:/work/p${n}`, chat: `Чат ${n} (ds${n})`, title: `Карточка ${k}`, brief: 'x', taskId: `task_${k}`, ...o })
     const D = (/** @type {string[]} */ a) => spawnSync(process.execPath, [cli, ...a], { env: { ...env, INBOX_PROFILES_DIR: P, CLAUDE_CODE_SESSION_ID: 'doneInbox' }, encoding: 'utf8' })
     // A repo with an origin: one commit pushed to origin/master, one only local.
