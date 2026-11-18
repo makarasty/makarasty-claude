@@ -1,5 +1,15 @@
 # Changelog
 
+## makarasty-tools 1.20.1 — 2026-11-18
+
+- **Started sessions go to the top level** (owner 11-18: «пусть она создает сразу у чата на топ-уровне»). A started
+  session stayed linked and each turn it ended woke the chat that started it at its full context: 197 wakes in 14
+  days, 78% with no work, about 477K context each; the starters had started up to 36 sessions and detached almost
+  none [M81]. `tools/hooks/detach.ts` now calls `detach_session` right after every `start_session` or
+  `hand_off_to_session` that started one, and when the note that the person clicked a card arrives; the start result
+  gets one line saying so. `wake_when_done: true` keeps a session linked; `MAKARASTY_DETACH=off` drops the hook.
+  Wakes were 0.19% of all use in those 14 days: the big waker is `<task-notification>` (36%), not touched here.
+
 ## makarasty-tools 1.20.0, makarasty 1.18.16 — 2026-11-18
 
 - **Skills trigger from plain words, for anyone** (owner 11-18, as relayed: "make it universal and

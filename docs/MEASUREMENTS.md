@@ -1574,3 +1574,27 @@ roughly one to two hours of wall clock, for about six percent of a weekly maximu
 The fair comparison is not a cheaper fleet but reading the codebase to find the same defects, which costs
 orders of magnitude more tokens and cannot find the ones that only exist at runtime: a request sent with an empty parameter, a catch that turns a thrown query into an empty result
 labelled as no data, a count branch and a select branch disagreeing under one filter.
+
+## M81 — What wakes a chat with a big context, and what started sessions cost their starter (2026-11-18)
+All main-session transcripts on this machine modified in the 14 days to 2026-11-18 (1,945 files, subagent files left
+out), each turn classed by the message that began it (leading system reminders skipped), its model calls summed with
+weights input 1, 5-minute cache write 1.25, 1-hour write 2, cache read 0.1, output 5 (11,837M units in all).
+"No work" = at most one tool call and under 600 output tokens.
+- **Typed by the person:** 8,841 turns, 58.6%. **`<task-notification>`:** 11,142 turns, 36.0%, context at start
+  395K on average: background shells 15.3%, subagents 10.8%, Monitor events 8.2%; turns with no work among them 1.6%.
+- **A started session's turn end (`<side-sessions-event>`):** 197 turns, 0.19% (189.7M cache read, 22.2M units, about
+  113K units each), context at start 477K on average, 154 of 197 (78%) with no work. Messages a session sent its
+  starter: 4 turns, 0.02%. Compaction summaries: 69 turns, 0.44%.
+- **The starters:** the 17 woken chats had started 1-36 sessions each (`start_session`, none by `hand_off_to_session`
+  in 30 days) and called `detach_session` 0-6 times; the most-woken had 67 wakes for 36 starts and 2 detaches.
+  Detach was written only into the handoff skill, the fleet relaunch and the inbox card start; a plain start, a
+  clicked card and a parallel plan step stayed linked.
+- **Probe:** a Haiku child started with `user_asked`, `use_worktree` false answered "Started session \"…\"
+  (session_id: local_…, name: …)"; `detach_session` on it at once: "is now a top-level session … you are no longer
+  told when its turns end" (and M56 (b): a detached child's turn end sends no note).
+- **Compacting the starter instead:** one compaction of a 477K chat reads it once and writes a summary, about the
+  cost of one or two wakes, and drops what the starter knew; detach costs nothing and keeps it.
+**Rule:** `tools/hooks/detach.ts` detaches every session started with `start_session` or `hand_off_to_session`
+unless `wake_when_done: true`, and a card the person clicked when its note arrives; `MAKARASTY_DETACH=off` drops it.
+**Status:** weights approximate plan-limit use by API prices, not the app's own meter; the clicked-card path and
+`$.tool.call` of a deferred MCP tool were checked in hook tests only, not live.

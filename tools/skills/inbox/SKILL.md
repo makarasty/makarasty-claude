@@ -116,7 +116,8 @@ one line and restart it. A watchdog missing from the task list means this chat r
    - box: `inbox.mjs answer <id> "<label>"`;
    - card, start: `inbox.mjs show <id>` for its brief, start it with `start_session` (`initiation`
      "user_asked", `cwd` the item's folder, `prompt` its brief, `background` its background or the brief's goal), then
-     `detach_session` on the new session so it does not wake this chat, then `inbox.mjs answer <id> "Started from
+     `detach_session` on the new session so it does not wake this chat (the `detach.ts` hook does it and says so after
+     the start result; call it only when that line is missing), then `inbox.mjs answer <id> "Started from
      the inbox"` (the card's chat then withdraws its own card). A refused start (a turn the plugin or a message began
      cannot start one): say why in one line, propose it as a card here instead, and answer nothing, so the card
      stays in its chat. Decline: `inbox.mjs answer <id> "Declined"`.
