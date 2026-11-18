@@ -10,7 +10,7 @@ const plain = (p: string): string => p.replace(/^[A-Za-z]:/, '').replaceAll('\\'
 const Q = 'Какую базу взять для отчётов?'
 const QUESTIONS = [{ question: Q, header: 'База', multiSelect: false, options: [{ label: 'Postgres', description: 'та, что уже в проекте' }, { label: 'SQLite', description: 'файл рядом с отчётом' }] }]
 
-function world(on: On, o: { on?: boolean; session?: string; self?: string; children?: string[]; now?: number; noChannel?: boolean; watched?: boolean } = {}) {
+function world(on: On, o: { on?: boolean; session?: string; self?: string; children?: string[]; now?: number; noChannel?: boolean; watched?: boolean; env?: Record<string, string> } = {}) {
   const disk = new Map<string, string>()
   if (o.on !== false) disk.set('/cfg/makarasty/inbox.on', 'x')
   if (o.watched !== false) disk.set('/cfg/makarasty/inbox/reports/on/local_aaaa', '2026-11-18T00:00:00Z') // he named it (follow); his own chats are not watched
@@ -20,7 +20,7 @@ function world(on: On, o: { on?: boolean; session?: string; self?: string; child
   let answerDialog: ((v: unknown) => void) | undefined
   const dialog = { shown: 0, closed: 0 }
   let wake: (() => void) | undefined
-  mock.env(on, { CLAUDE_CONFIG_DIR: '/cfg', CLAUDE_CODE_HOST_SESSION_ID: 'local_aaaa', CLAUDE_CODE_ACCOUNT_UUID: 'acc1', MAKARASTY_SCREEN: 'off' })
+  mock.env(on, { CLAUDE_CONFIG_DIR: '/cfg', CLAUDE_CODE_HOST_SESSION_ID: 'local_aaaa', CLAUDE_CODE_ACCOUNT_UUID: 'acc1', MAKARASTY_SCREEN: 'off', ...o.env })
   const clock = mock.clock(on, { now: o.now ?? 1_000_000 })
   on('session.id', () => ({ value: o.session ?? 'chatA' }))
   on('session.cwd', () => ({ value: 'C:\\work\\reports-app' }))
@@ -374,6 +374,104 @@ test('the queue: a dialog open 10 min when a new item comes in is closed to be a
   expect(w.submitted.filter((s) => s.startsWith('Inbox:'))).toEqual([]) // no prompt queued behind the turn
 })
 
+// A question left unanswered reaches his Telegram in any chat (owner, 2026-11-18), the inbox on or off.
+const TG = JSON.stringify({ telegram: { token: '123456789:Zq8Lm3Vb7Nx2Wc5Rt9Yh4Js6', chat_id: '42' } }) // telegram.test.ts's fake
+const pushes = (w: { cli: string[][] }) => w.cli.filter((c) => c[0] === 'push')
+const polled = (w: { disk: Map<string, string> }) => w.disk.get('/cfg/makarasty/telegram/polled')
+
+test('phone ask, inbox off: the dialog goes to Telegram after 5 min (not before), a tap answers it in the chat, then the loop and the poll stop', { timeoutMs: 20000 }, async ($, on) => {
+  const w = world(on, { on: false })
+  w.disk.set('/cfg/makarasty/notify.json', TG)
+  const call = $.tool.call({ tool: 'AskUserQuestion', questions: QUESTIONS, tool_use_id: 'p1' })
+  await w.until(() => w.items().length === 1, 'filed')
+  expect(w.items()[0].phone).toBe(true)
+  for (let i = 0; i < 19; i++) await w.clock.advance(15000) // 4 min 45 s
+  expect(pushes(w)).toEqual([])
+  expect(polled(w)).toBeUndefined() // no Telegram poll before anything was pushed
+  await w.clock.advance(15000)
+  await w.until(() => pushes(w).length === 1, 'pushed')
+  expect(pushes(w)[0]).toEqual(['push', 'chatA~p1'])
+  await w.clock.advance(1000)
+  await w.until(() => polled(w) !== undefined, 'poll started for his tap')
+  w.inboxAnswers('chatA~p1', { answers: { [Q]: 'SQLite' } }) // his tap: telegram.ts runs `inbox.mjs answer`
+  const r = await call
+  expect((r.result as { answers: Record<string, string> }).answers).toEqual({ [Q]: 'SQLite' })
+  await w.clock.advance(15000) // the loop sees nothing open and stops
+  const n = w.cli.length, p = polled(w)
+  for (let i = 0; i < 8; i++) await w.clock.advance(15000)
+  expect([w.cli.length, polled(w), pushes(w).length]).toEqual([n, p, 1])
+})
+
+test('phone ask: no question, no timer and no poll; a wrap_up box goes too; MAKARASTY_PHONE_ASK sets the minutes', async ($, on) => {
+  const w = world(on, { on: false, env: { MAKARASTY_PHONE_ASK: '1' } })
+  w.disk.set('/cfg/makarasty/notify.json', TG)
+  await $.prompt.submit({ text: 'hi' } as never)
+  for (let i = 0; i < 8; i++) await w.clock.advance(15000)
+  expect([w.cli.length, polled(w)]).toEqual([0, undefined])
+  void $.tool.call({ tool: 'mcp__ccd_turn__wrap_up', ask: 'Запушить ветку?', recap: 'Готово.', actions: [{ label: 'Да' }, { label: 'Нет' }], tool_use_id: 'w1' } as never)
+  await w.until(() => w.items().length === 1, 'box filed')
+  expect([w.items()[0].kind, w.items()[0].phone]).toEqual(['choice', true])
+  for (let i = 0; i < 4; i++) await w.clock.advance(15000)
+  await w.until(() => pushes(w).length === 1, 'pushed after 1 min')
+})
+
+test('phone ask: he types in that chat, and its open phone box is closed', async ($, on) => {
+  const w = world(on, { on: false })
+  w.disk.set('/cfg/makarasty/notify.json', TG)
+  await $.tool.call({ tool: 'mcp__ccd_turn__wrap_up', ask: 'Запушить ветку?', recap: 'Готово.', actions: [{ label: 'Да' }], tool_use_id: 'w2' } as never)
+  await w.until(() => w.items().length === 1, 'box filed')
+  await $.prompt.submit({ text: 'нет, сначала тесты', origin: { kind: 'composer' } } as never)
+  await w.until(() => w.cli.some((c) => c[0] === 'done' && c[1] === 'chatA~w2'), 'closed by his typing')
+})
+
+test('phone ask: MAKARASTY_PHONE_ASK=off: the dialog alone, nothing filed', async ($, on) => {
+  const w = world(on, { on: false, env: { MAKARASTY_PHONE_ASK: 'off' } })
+  w.disk.set('/cfg/makarasty/notify.json', TG)
+  const call = $.tool.call({ tool: 'AskUserQuestion', questions: QUESTIONS, tool_use_id: 'p3' })
+  await w.until(() => w.dialog.shown === 1, 'shown')
+  w.answerDialog({ result: { questions: QUESTIONS, answers: { [Q]: 'Postgres' } } })
+  await call
+  expect(w.items()).toEqual([])
+})
+
+test('phone ask: no Telegram config, inbox off: nothing filed', async ($, on) => {
+  const w = world(on, { on: false })
+  const call = $.tool.call({ tool: 'AskUserQuestion', questions: QUESTIONS, tool_use_id: 'p4' })
+  await w.until(() => w.dialog.shown === 1, 'shown')
+  w.answerDialog({ result: { questions: QUESTIONS, answers: { [Q]: 'Postgres' } } })
+  await call
+  expect(w.items()).toEqual([])
+})
+
+test('phone ask, inbox on: a watched chat takes the inbox path (no phone item, no second one)', async ($, on) => {
+  const w = world(on)
+  w.disk.set('/cfg/makarasty/notify.json', TG)
+  const call = $.tool.call({ tool: 'AskUserQuestion', questions: QUESTIONS, tool_use_id: 'p5' })
+  await w.until(() => w.items().length === 1 && w.dialog.shown === 1, 'filed')
+  expect(w.items().map((i) => [i.id, i.phone])).toEqual([['chatA~p5', undefined]])
+  w.answerDialog({ result: { questions: QUESTIONS, answers: { [Q]: 'Postgres' } } })
+  await call
+})
+
+test('phone ask, inbox on and the chat not watched: a phone item', async ($, on) => {
+  const w = world(on, { watched: false })
+  w.disk.set('/cfg/makarasty/notify.json', TG)
+  const call = $.tool.call({ tool: 'AskUserQuestion', questions: QUESTIONS, tool_use_id: 'p6' })
+  await w.until(() => w.items().length === 1 && w.dialog.shown === 1, 'filed')
+  expect(w.items()[0].phone).toBe(true)
+  w.answerDialog({ result: { questions: QUESTIONS, answers: { [Q]: 'Postgres' } } })
+  await call
+})
+
+test('the inbox chat is not woken by a phone-only ask of another chat', async ($, on) => {
+  const w = world(on, { self: 'chatA' })
+  w.disk.set('/cfg/makarasty/inbox/items/chatB~t9.json', JSON.stringify({ id: 'chatB~t9', kind: 'ask', at: 1, session: 'chatB', cwd: 'C:/work/x', chat: 'c', questions: QUESTIONS, phone: true }))
+  await $.prompt.submit({ text: 'hi' } as never)
+  await w.clock.advance(15000)
+  await w.clock.advance(15000)
+  expect(w.submitted.filter((s) => s.startsWith('Inbox:'))).toEqual([])
+})
+
 // "continue?" questions: answered at once when the person's profile.md / answers.md says so, and only then.
 const CQ = 'Продолжить с миграцией схемы?' // not the bare shape ask-guard.ts already refuses
 const cont = (labels: string[], q = CQ) => [{ question: q, header: 'Дальше', multiSelect: false, options: labels.map((label) => ({ label })) }]
@@ -553,8 +651,9 @@ const PUSH_Q = 'Запушить коммит 08ab63c в master репозито
 const HEARD_A = (id: string) => `/cfg/makarasty/inbox/heard-answers/${id}.json`
 // Chat A asks the push in its box; the inbox answers «Да, пушь» (with the record his act left, or without it); the
 // timer delivers it; the app starts the turn with that prompt, which no prompt.submit hook of this plugin sees.
-async function boxAnsweredFromInbox($: Parameters<Parameters<typeof test>[1]>[0], on: On, heardOf?: object) {
-  const w = world(on)
+async function boxAnsweredFromInbox($: Parameters<Parameters<typeof test>[1]>[0], on: On, heardOf?: object, phone = false) {
+  const w = world(on, phone ? { on: false } : {})
+  if (phone) w.disk.set('/cfg/makarasty/notify.json', TG)
   on('turn.start', (_$, e) => ({ turnId: e.turnId }))
   w.disk.set('/cfg/makarasty/inbox/turns/chatA', 'idle 1')
   await $.tool.call({ tool: 'mcp__ccd_turn__wrap_up', recap: 'Коммит готов.', ask: PUSH_Q, actions: [{ label: 'Да, пушь' }, { label: 'Нет' }], tool_use_id: 'toolu_w' } as never)
@@ -570,6 +669,12 @@ const masterPush = { tool: 'Bash', command: 'git push origin master' } as never
 
 test('regression 2026-11-17: his inbox «Да, пушь» to this chat\'s push question, on record, lets that push run', async ($, on) => {
   await boxAnsweredFromInbox($, on, { via: 'dialog', pairs: [{ question: PUSH_Q, answer: 'Да, пушь' }] })
+  expect(await $.tool.call(masterPush)).not.toEqual({ deny: PUSH_MESSAGE })
+})
+
+test('inbox off: his Telegram tap «Да, пушь» on a phone-only push box, on record, lets that push run', async ($, on) => {
+  const w = await boxAnsweredFromInbox($, on, { via: 'phone', pairs: [{ question: PUSH_Q, answer: 'Да, пушь' }] }, true)
+  expect(w.items()[0].phone).toBe(true)
   expect(await $.tool.call(masterPush)).not.toEqual({ deny: PUSH_MESSAGE })
 })
 

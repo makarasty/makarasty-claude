@@ -313,7 +313,7 @@ const markOf = (/** @type {{ host?: string, cli?: string, session?: string }} */
 // Open questions and unseen reports of chats it does not watch, left from before 1.19.71: closed and marked seen without a word
 // when the inbox is switched on, so they never wake the inbox chat (the hook files nothing for such a chat any more).
 function forgetUnwatched() {
-  for (const i of items()) if (!answered(i.id) && i.session !== 'inboxcheck' && !markOf(i)) create(join(dir('answers'), `${i.id}.json`), JSON.stringify({ id: i.id, at: Date.now(), by: 'chat', choice: '[not asked: a chat the inbox does not watch]' }))
+  for (const i of items()) if (!answered(i.id) && i.session !== 'inboxcheck' && !i.phone && !markOf(i)) create(join(dir('answers'), `${i.id}.json`), JSON.stringify({ id: i.id, at: Date.now(), by: 'chat', choice: '[not asked: a chat the inbox does not watch]' }))
   for (const r of reports()) if (!shown(r.id) && !markOf(r)) writeFileSync(join(dir(join('reports', 'seen')), r.id), '')
 }
 // What the inbox watches now: switched on, not muted, archived, FINISHED or an inbox, active in 3 h; one per session (its newest copy).
@@ -994,7 +994,7 @@ async function main() {
     const byHost = hosts(), closed = new Map()
     if (!readOnly) sweepOrphans()
     const open = items().map((i) => (readOnly ? named(i, byHost) : rename(i, byHost))).filter((i) => {
-      if (answered(i.id) || i.session === self) return false
+      if (answered(i.id) || i.session === self || i.phone) return false // a phone-only ask: Telegram's, never the inbox chat's
       // An item of a chat it does not watch (filed before 1.19.71, or the chat lost its switch): closed silently, as a muted one's.
       if (i.session !== 'inboxcheck' && !markOf(i)) { if (!readOnly) create(join(dir('answers'), `${i.id}.json`), JSON.stringify({ id: i.id, at: Date.now(), by: 'chat', choice: '[not asked: a chat the inbox does not watch]' })); return false }
       if (i.session === 'inboxcheck' && Date.now() - i.at > 10 * 60e3) { if (!readOnly) create(join(dir('answers'), `${i.id}.json`), JSON.stringify({ id: i.id, at: Date.now(), by: 'chat' })); return false } // a leftover `test` item

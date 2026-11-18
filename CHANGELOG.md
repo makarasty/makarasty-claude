@@ -1,5 +1,18 @@
 # Changelog
 
+## makarasty-tools 1.20.10 — 2026-11-18
+
+- **A question left unanswered reaches Telegram in any chat** (owner, 2026-11-18, via the trends chat: «Если я долго не
+  отвечаю на вопрос, нужно писать телеграм»). Before, only chats the inbox watches pushed, and the inbox was off on this
+  machine, so every question just waited. Now an AskUserQuestion dialog or a wrap_up box in any other chat becomes a
+  phone-only ask when Telegram is set up (notify.json): after 5 minutes it goes to Telegram with a button per option,
+  and a tap answers it in that chat (a box answer enters as a prompt at the chat's idle moment). `MAKARASTY_PHONE_ASK`
+  sets the minutes; `off` turns it off. Chats the inbox watches keep their 2-minute path, with no second push.
+- No cost without a question: the 15 s loop starts when a phone ask is filed and stops, with its Telegram poll, once none
+  is open (one last poll collapses the message of one answered on the computer). Typing in that chat closes its boxes.
+- The inbox chat never sees a phone-only ask: no wake, and `list` neither shows nor closes it. A tap on a phone-only push
+  box counts as his word for push-guard, as an inbox answer does.
+
 ## makarasty-tools 1.20.9 — 2026-11-18
 
 - **notify: a Telegram send whose outcome is unknown is never sent twice.** Incident (owner, 2026-11-18): `notify.mjs file`

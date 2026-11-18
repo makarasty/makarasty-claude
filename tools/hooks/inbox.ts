@@ -4,7 +4,7 @@ import { find as secretIn } from './secret-guard.ts'
 import { deliveredYes, heardYes, notePrompt, noteTurnStart } from './push-guard.ts'
 import { configDir as claudeDir, deliveredPairs, readHeard, writeHeard, type Pair } from './consent.ts'
 import { PLUGIN_FRAME, ownWords } from './own-words.ts'
-import { isTelegramPrompt, startTelegram, telegramWords } from './telegram.ts'
+import { bot, isTelegramPrompt, startTelegram, stopTelegram, telegramTick, telegramWords } from './telegram.ts'
 import { noteSkillPrompt } from './skill-router.ts'
 
 // The cross-chat inbox (skill /makarasty-tools:inbox, layout in skills/inbox/core.mjs). Off unless
@@ -35,6 +35,29 @@ async function active($: D): Promise<{ dir: string; root: string; session: strin
   const root = `${dir}/makarasty/inbox`, session = await $.session.id()
   const self = await $.fs.read(`${root}/self`).catch(() => '')
   return String(self).trim() === session ? undefined : { dir, root, session }
+}
+
+// A question the person leaves unanswered goes to his Telegram in ANY chat (owner, 2026-11-18: «Если я долго не отвечаю на
+// вопрос, нужно писать телеграм»), not only in chats the inbox watches: the inbox's folder when Telegram is set up
+// (notify.json) and the full inbox path does not take this chat (off, or a chat it does not watch), not the inbox chat,
+// muted or a hold chat. MAKARASTY_PHONE_ASK: minutes before the push (default 5), `off` turns it off.
+export const PHONE_ASK_MIN = 5
+async function phoneAfterMs($: D): Promise<number | undefined> {
+  const v = String((await $.env.get('MAKARASTY_PHONE_ASK')) ?? '').trim()
+  if (/^(off|0|no|false)$/i.test(v)) return undefined
+  return (Number(v) > 0 ? Number(v) : PHONE_ASK_MIN) * 60000
+}
+async function phoneOnly($: D): Promise<{ dir: string; root: string; session: string } | undefined> {
+  if (!(await phoneAfterMs($))) return undefined
+  const dir = await claudeDir($)
+  if (!dir || !(await bot($, dir).catch(() => undefined))) return undefined
+  const root = `${dir}/makarasty/inbox`, session = await $.session.id()
+  if (String(await $.fs.read(`${root}/self`).catch(() => '')).trim() === session) return undefined
+  const a = { dir, root, session }
+  const full = await active($).catch(() => undefined)
+  if (full && (await enrolled($, full).catch(() => false))) return undefined // the inbox path asks it, and pushes it itself
+  if ((await muted($, a).catch(() => false)) || (await holding($, a).catch(() => false))) return undefined
+  return a
 }
 
 // The same folder when the inbox is on and this chat IS the inbox (the last chat that ran `inbox.mjs list`).
@@ -129,6 +152,60 @@ function startTimer($: D): void {
   })
 }
 
+// The phone-only loop runs only while this chat has a phone ask open, or an answer from the phone still to enter it; then it
+// stops with its Telegram poll (a chat with no open question has no timer). It starts the poll once an ask is pushed.
+let phoneTimer: ReturnType<D['clock']['every']> | undefined
+function startPhone($: D): void {
+  if (phoneTimer) return
+  let busy = false
+  phoneTimer = $.clock.every(TICK_MS, () => {
+    if (busy) return
+    busy = true
+    void phoneTick($).catch(() => undefined).finally(() => { busy = false })
+  })
+}
+async function phoneTick($: D): Promise<void> {
+  const a = await phoneOnly($)
+  const after = (await phoneAfterMs($)) ?? Infinity
+  let left = false
+  if (a) {
+    await deliverOnce($, a).catch(() => undefined)
+    const now = await $.clock.now()
+    for (const it of await openItems($, a)) {
+      if (!it.phone) continue
+      left = true
+      if (now - it.at < after || !(await pushDue($, a.root, it.id, now))) continue
+      await cli($, a.dir, ['push', it.id]).catch(() => undefined)
+      phonePushed = true
+      startTelegram($) // his tap comes back through the poll
+    }
+    left ||= await phoneUndelivered($, a)
+  }
+  if (left) return
+  phoneTimer?.cancel(); phoneTimer = undefined
+  if (timer) return
+  stopTelegram()
+  // One last poll: its sweep collapses the phone message of a question answered here, so no tap lands on it later.
+  if (phonePushed) { phonePushed = false; await telegramTick($).catch(() => undefined) }
+}
+let phonePushed = false
+// An answer from the phone to a phone box that has not entered this chat yet (it waits for the chat's idle moment).
+async function phoneUndelivered($: D, a: { root: string; session: string }): Promise<boolean> {
+  for (const f of await $.fs.list(`${a.root}/answers`).catch(() => [])) {
+    const id = f.name.slice(0, -5)
+    if (!f.name.endsWith('.json') || !ownedBy(f.name, a.session) || (await $.fs.exists(`${a.root}/delivered/${id}`)) || (await $.fs.exists(`${a.root}/skipped/${id}`))) continue
+    const it = await readJSON<Item>($, `${a.root}/items/${id}.json`)
+    if (it?.phone && it.kind === 'choice' && (await readJSON<Answer>($, `${a.root}/answers/${f.name}`))?.by === 'inbox') return true
+  }
+  return false
+}
+// pushed/<id> is empty once pushed, or {fails, at} after a failed try (inbox.mjs push: 3 tries, 5 min apart).
+async function pushDue($: D, root: string, id: string, now: number): Promise<boolean> {
+  if (!(await $.fs.exists(`${root}/pushed/${id}`))) return true
+  const m = await readJSON<{ fails: number; at: number }>($, `${root}/pushed/${id}`)
+  return !!m && m.fails < 3 && now - m.at >= 300000
+}
+
 export const register: Register = (on) => {
   chan = { at: -Infinity, yes: true } // a reload asks again
   on('tool.call', { tool: 'AskUserQuestion' }, async ($, e, next) => {
@@ -148,17 +225,20 @@ export const register: Register = (on) => {
       }
       return r
     }
-    const a = await active($)
-    if (!a || (await muted($, a).catch(() => false)) || !(await enrolled($, a).catch(() => false))) return next(e)
-    startTimer($)
+    const full = await active($)
+    const watched = full && !(await muted($, full).catch(() => false)) && (await enrolled($, full).catch(() => false)) ? full : undefined
+    const phone = watched ? undefined : await phoneOnly($).catch(() => undefined)
+    const a = watched ?? phone
+    if (!a) return next(e)
+    if (phone) startPhone($); else startTimer($)
     const questions = e.questions.map((q) => ({ ...q, options: [...q.options] }))
     await supersede($, a, questions).catch(() => undefined)
     // A "continue?" for work already under way, and the person said continue questions are answered yes: answered at once.
     // The value says who answered, so the asking chat does not take it for the person's own words; auto.jsonl is what `list` shows him.
-    const standing = continueAnswer({ kind: 'ask', questions } as Item)
+    const standing = phone ? undefined : continueAnswer({ kind: 'ask', questions } as Item) // an inbox rule: a phone-only ask only waits
     const rule = standing ? await continueRule($, a.dir) : undefined
     const got: { auto?: Answer } = {} // set in the callback: a bare `let` is narrowed to undefined after it
-    const item = await newItem($, a, e.tool_use_id, { kind: 'ask', questions }, async (id) => {
+    const item = await newItem($, a, e.tool_use_id, { kind: 'ask', questions, ...(phone ? { phone: true } : {}) }, async (id) => {
       if (!standing || !rule || (await $.fs.exists(`${a.root}/answers/${id}.json`))) return
       const by = (label: string) => `${label} [answered by the person's standing rule: "${rule}"]`
       got.auto = { id, at: await $.clock.now(), by: 'inbox', answers: Object.fromEntries(Object.entries(standing).map(([q, l]) => [q, by(l)])), standing: true }
@@ -206,9 +286,15 @@ export const register: Register = (on) => {
     const input = e as unknown as { ask?: string; recap?: string; actions?: { label?: string; action?: string }[]; tool_use_id?: string; agentId?: string }
     if (!r.isError && !r.deny && !input.agentId) wrapRecap = String(input.recap ?? '').trim()
     if (!input.ask?.trim() || r.isError || r.deny) return r
-    const a = await active($)
-    if (a) startTimer($)
-    if (a && !(await silent($, a)) && (await reasked($, a, input.ask).catch(() => 'new')) === 'new') await newItem($, a, input.tool_use_id, { kind: 'choice', ask: input.ask, recap: input.recap, actions: (input.actions ?? []).map((x) => x.label ?? x.action ?? '').filter(Boolean) }).catch(() => undefined)
+    const full = await active($)
+    if (full) startTimer($)
+    const watched = full && !(await silent($, full)) ? full : undefined
+    const phone = watched ? undefined : await phoneOnly($).catch(() => undefined)
+    const a = watched ?? phone
+    if (a && (await reasked($, a, input.ask).catch(() => 'new')) === 'new') {
+      await newItem($, a, input.tool_use_id, { kind: 'choice', ask: input.ask, recap: input.recap, actions: (input.actions ?? []).map((x) => x.label ?? x.action ?? '').filter(Boolean), ...(phone ? { phone: true } : {}) }).catch(() => undefined)
+      if (phone) startPhone($)
+    }
     return r
   }).catch(($, e, next) => next(e))
 
@@ -311,7 +397,8 @@ export const register: Register = (on) => {
         return next({ ...e, context: [...(e.context ?? []), `Inbox: ${finishedLine(waiting)} Show them with the makarasty-tools inbox skill (inbox.mjs list) along with what the person asks.`] })
       }
     }
-    const a = await active($).catch(() => undefined)
+    // A phone-only ask open here: his typing answers it too (read only while one is open, so a chat with none pays nothing).
+    const a = (await active($).catch(() => undefined)) ?? (phoneTimer ? await phoneOnly($).catch(() => undefined) : undefined)
     const his = typed && hisWords(e.text) // a plugin message typed as composer text answers nothing
     if (a && (his || started)) {
       for (const it of await openItems($, a)) {
@@ -512,7 +599,7 @@ async function heardDialog($: D, root: string, ids: string[], r: unknown): Promi
 // In an asking chat: this turn's prompt is the inbox's delivery of an answer to one of its push questions, and his act
 // behind that answer is on record (consent.ts Heard), at most STALE_MS old: the age an answer may still be delivered at.
 async function deliveredHeard($: D, text: string): Promise<boolean> {
-  const a = await active($)
+  const a = (await active($)) ?? (await phoneOnly($).catch(() => undefined)) // his tap on a phone-only box counts as well
   if (!a) return false
   const pairs = deliveredPairs(text)
   const now = await $.clock.now()
@@ -718,8 +805,8 @@ async function wake($: D, me: { dir: string; root: string; session: string }): P
     const id = f.name.slice(0, -5)
     if (ownedBy(id, me.session) || (await $.fs.exists(`${me.root}/answers/${id}.json`)) || (await $.fs.exists(`${me.root}/announced/${id}`))) continue
     const it = await readJSON<Item>($, `${me.root}/items/${f.name}`)
-    // No wake for what `list` would only close: a muted chat's item, or a box or found question over 12 h old.
-    if (!it || (await $.fs.exists(`${me.root}/muted/${safe(it.session)}`)) || (it.host && (await $.fs.exists(`${me.root}/muted/${safe(it.host)}`))) || ((it.kind === 'choice' || it.found === 'scan') && undeliverable(it, { now }))) continue
+    // No wake for what `list` would only close: a muted chat's item, or a box or found question over 12 h old. A phone-only ask is the phone's.
+    if (!it || it.phone || (await $.fs.exists(`${me.root}/muted/${safe(it.session)}`)) || (it.host && (await $.fs.exists(`${me.root}/muted/${safe(it.host)}`))) || ((it.kind === 'choice' || it.found === 'scan') && undeliverable(it, { now }))) continue
     fresh.push(it)
   }
   if (inTurn) {
@@ -867,12 +954,7 @@ export async function tick($: D): Promise<void> {
   let channel: boolean | undefined
   await deliverOnce($, a).catch(() => undefined)
   for (const it of await openItems($, a)) {
-    if (now - it.at < PUSH_AFTER_MS) continue
-    // pushed/<id> is empty once pushed, or {fails, at} after a failed try (inbox.mjs push: 3 tries, 5 min apart)
-    if (await $.fs.exists(`${a.root}/pushed/${it.id}`)) {
-      const m = await readJSON<{ fails: number; at: number }>($, `${a.root}/pushed/${it.id}`)
-      if (!m || m.fails >= 3 || now - m.at < 300000) continue
-    }
+    if (now - it.at < PUSH_AFTER_MS || !(await pushDue($, a.root, it.id, now))) continue
     if (!it.explain) {
       const r = await $.model.complete({ model: 'haiku', prompt: explainPrompt(it), maxTokens: 600, timeoutMs: 60000 }).catch(() => undefined)
       // Re-read after the model's wait (up to 60 s): `list` may have renamed the chat meanwhile, and an old copy would undo it.

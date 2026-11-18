@@ -6,6 +6,7 @@ export type Item = {
   questions?: Question[]; ask?: string; actions?: string[]; recap?: string
   title?: string; brief?: string; background?: string; taskId?: string
   context?: string; explain?: string; host?: string; account?: string; found?: string
+  phone?: boolean // a phone-only ask (inbox off, or a chat it does not watch): Telegram only, never the inbox chat
 }
 export type Answer = { id: string; at: number; by: 'inbox' | 'chat'; answers?: Record<string, string>; choice?: string }
 export const PUSH_AFTER_MS: number

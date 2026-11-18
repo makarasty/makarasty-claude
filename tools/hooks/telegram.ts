@@ -48,7 +48,7 @@ async function lang($: D, dir: string): Promise<string> {
   return langIs
 }
 // The bound chat, or undefined: a token with no chat bound at setup answers nobody.
-async function bot($: D, dir: string): Promise<{ token: string; me: string } | undefined> {
+export async function bot($: D, dir: string): Promise<{ token: string; me: string } | undefined> {
   const c = await readJSON<{ telegram?: { token?: unknown; chat_id?: unknown } }>($, `${dir}/makarasty/notify.json`)
   const token = c?.telegram?.token, me = c?.telegram?.chat_id
   return typeof token === 'string' && /^\d+:[\w-]{20,}$/.test(token) && (typeof me === 'string' || typeof me === 'number') && String(me) ? { token, me: String(me) } : undefined
@@ -76,6 +76,8 @@ let timer: { cancel: () => void } | undefined
 export function startTelegram($: D): void {
   timer ??= $.clock.every(1000, () => { void telegramTick($).catch(() => undefined) })
 }
+// The phone-only ask stops its poll once no question of its chat is open (inbox.ts phoneTick).
+export function stopTelegram(): void { timer?.cancel(); timer = undefined }
 let pausedUntil = 0
 // One poll at a time in this chat: a slow tap ("Подробнее" waits up to 60 s on the model) must not let the timer start a
 // second poll beside it. A poll stuck past a minute (a request the engine never ends) is given up, and long polls with it.

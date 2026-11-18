@@ -82,7 +82,9 @@ anyone else. One setup serves every account that shares this config dir. `test` 
   comes on the later turn. A turn another plugin's Stop hook blocked sends nothing.
 - **could not be delivered at the time** - the finish was saved and goes out at the next chance: the chat
   reopening, or setup connecting Telegram.
-- **inbox questions** - with the inbox on, a question nobody answered for 2 minutes comes to Telegram: the
+- **inbox questions** - a question nobody answered comes to Telegram: after 2 minutes in a chat the inbox watches;
+  in any other chat, the inbox on or off, after 5 minutes (`MAKARASTY_PHONE_ASK=<minutes>` changes it, `off` turns it
+  off; a dialog and a wrap_up box, with no timer or poll while none is open). The
   question bold, "project · kind · age" under it, a button per option and "❔ Подробнее" (a plain explanation,
   written only when tapped). A tap or a reply answers it; a reply ending in "?" asks the inbox about it. The
   message then collapses to one grey line "question — answer"; answered on the computer, it collapses too.

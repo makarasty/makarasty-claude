@@ -335,6 +335,12 @@ try {
   check('list shows reports under Finished, newest of a chat in full, the earlier one as a line', l1.stdout.includes('## Finished: 1 chats, 2 reports') && l1.stdout.includes('vize — finished 2 min ago') &&
     l1.stdout.includes('Сверх задачи: в `build.ts` мёртвый импорт') && l1.stdout.includes('Earlier, 20 min ago: Обновил vite') && l1.stdout.includes('Open the chat: [Обнови зависимости (chatR)](#local_rrrr)'), l1.stdout)
   check('a report of a chat it does not watch is not shown', !l1.stdout.includes('не следит'), l1.stdout)
+  // A phone-only ask (inbox off, or a chat it does not watch): the phone's, so list neither shows nor closes it.
+  mkdirSync(join(root, 'items'), { recursive: true })
+  writeFileSync(join(root, 'items', 'chatP~ph1.json'), JSON.stringify({ id: 'chatP~ph1', kind: 'ask', at: Date.now() - 60e3, session: 'chatP', cwd: 'C:\\work\\own', chat: 'Свой чат (chatP)', questions: [{ question: 'Телефонный вопрос?', options: [{ label: 'Да' }] }], phone: true }))
+  const lp = run(['list'])
+  check('list neither shows nor closes a phone-only ask', !lp.stdout.includes('Телефонный вопрос') && !existsSync(join(root, 'answers', 'chatP~ph1.json')), lp.stdout)
+  rmSync(join(root, 'items', 'chatP~ph1.json'))
   check('a report older than 7 days is swept', !l1.stdout.includes('старый') && !existsSync(join(root, 'reports', 'chatS~turn-1.json')))
   check('a shown report leaves the next list', run(['list']).stdout.includes('nothing pending'))
   check('reports shows them again', run(['reports']).stdout.includes('Обновил sass.'))
