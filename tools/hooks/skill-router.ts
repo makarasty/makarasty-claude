@@ -77,6 +77,23 @@ export const HINT = (s: Skill, end: boolean) =>
   `the skill ${s.name}: ${s.description}\nIf they ask for that to be done now, invoke it with the Skill tool first. If not (a ` +
   `question about the topic, other work), ignore this hint${end ? ' and end the turn as it is' : ' and make this call again'}.`
 
+// The fleet plugin is turned on per project, so in most projects its skills are not loaded. A request for one there gets
+// how to turn it on, not a skill the chat cannot call.
+export const OFF_HINT = (s: Skill, end: boolean) =>
+  `Automatic hint from the makarasty-tools skill router (a small model, may be wrong): the person's last message may ask for ` +
+  `the fleet skill ${s.name} (${s.description}), but the fleet plugin is not on in this project, so it cannot run here. If ` +
+  `they ask for it, tell them in one line: to turn it on here, add "makarasty@makarasty": true under "enabledPlugins" in ` +
+  `.claude/settings.local.json at the project root, then restart the chat or type /reload-plugins; offer to add the line. ` +
+  `If not, ignore this hint${end ? ' and end the turn as it is' : ' and make this call again'}.`
+
+// Whether this chat's skill listing carries the fleet's skills: undefined until the first listing is seen.
+let fleetListed: boolean | undefined
+export const hintFor = (s: Skill, end: boolean, fleet = fleetListed) => (/^makarasty:/.test(s.name) && fleet === false ? OFF_HINT : HINT)(s, end)
+export function sawListing(text: string, first: boolean): boolean | undefined {
+  const found = /^- makarasty:fleet-/m.test(String(text))
+  return first || found ? found : undefined
+}
+
 // The calls a hint may send back: they only look around (or run a shell command the skill may want to run its own
 // way), so a call sent back loses nothing. A Write, an Edit or a brief is never sent back.
 const LOOK = /^(Read|Grep|Glob|ToolSearch|Bash|PowerShell|ListAgents)$/
@@ -137,7 +154,7 @@ export async function skillStop($: Pick<D, 'clock'>, e: { stop_hook_active?: boo
   turn = { ...ENDED }
   if (e.stop_hook_active || t.done || t.calls || !t.hint) return undefined
   const s = await Promise.race([t.hint, late($, 3000)])
-  return s && s !== 'late' ? HINT(s, true) : undefined
+  return s && s !== 'late' ? hintFor(s, true) : undefined
 }
 
 export const register: Register = (on) => {
@@ -155,6 +172,13 @@ export const register: Register = (on) => {
     if (t.done) return next(e) // a Skill call in the same batch ran while this one waited
     if (s === undefined || s === 'late') { if (t.settled && ++t.after >= FIRST_CALLS) t.done = true; return next(e) }
     t.done = true
-    return s ? { deny: HINT(s, false) } : next(e)
+    return s ? { deny: hintFor(s, false) } : next(e)
+  }).catch(($, e, next) => next(e))
+
+  // Read, never changed: a later listing may carry only new skills, so only the first one may say "no fleet".
+  on('prompt.attachment', { type: 'skill_listing' }, async ($, e, next) => {
+    const r = await next(e)
+    if (!e.agentId) fleetListed = sawListing(String(r.text ?? e.text ?? ''), fleetListed === undefined) ?? fleetListed
+    return r
   }).catch(($, e, next) => next(e))
 }

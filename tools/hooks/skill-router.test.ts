@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
-import { HINT, frontmatter, newest, pick, worth } from './skill-router.ts'
+import { HINT, OFF_HINT, frontmatter, hintFor, newest, pick, sawListing, worth } from './skill-router.ts'
 
 const SKILLS = [{ name: 'makarasty-tools:commit', description: 'Commits this chat as you.' }, { name: 'makarasty:fleet-wait', description: 'Waits for a fleet.' }]
 
@@ -30,6 +30,18 @@ test('worth: the person\'s own short prompt, pastes left out; a slash command, a
     ['Another Claude session sent a message: commit and push', 'composer'], ['The makarasty-tools plugin sent a message: push', 'composer'], [`run the brief ${'x'.repeat(1000)}`, 'sdk'],
     ['<command-message>inbox</command-message>\n<command-name>/makarasty-tools:inbox</command-name>\n<command-args>подготовь shop к деплою</command-args>', 'composer']] as const)
     expect([t.slice(0, 30), o, worth(t, o)]).toEqual([t.slice(0, 30), o, false])
+})
+
+test('fleet off in this project: a fleet hint says how to turn it on; a tools hint, or fleet on or unknown, is the plain hint', () => {
+  const wait = SKILLS[1]!, commit = SKILLS[0]!
+  expect(sawListing('- makarasty-tools:commit: x\n- makarasty:fleet-wait: y', true)).toBe(true)
+  expect(sawListing('- makarasty-tools:commit: x', true)).toBe(false)
+  expect(sawListing('- makarasty-tools:commit: x', false)).toBeUndefined() // a later delta without fleet changes nothing
+  expect(hintFor(wait, false, false)).toBe(OFF_HINT(wait, false))
+  expect(OFF_HINT(wait, false)).toContain('"makarasty@makarasty": true')
+  expect(hintFor(wait, false, true)).toBe(HINT(wait, false))
+  expect(hintFor(wait, false, undefined)).toBe(HINT(wait, false))
+  expect(hintFor(commit, true, false)).toBe(HINT(commit, true))
 })
 
 test('newest: the highest version folder, by number, not by name or time', () => {

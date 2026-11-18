@@ -42,6 +42,12 @@ claude plugin update makarasty-tools@makarasty
 
 Chats that are already running keep the old copy until they restart.
 
+The fleet adds about 6,500 characters (its skills and agents) to every chat [M80]. To have it only in the projects
+that run fleets, turn it off for your user (`"makarasty@makarasty": false` under `enabledPlugins` in
+`~/.claude/settings.json`) and on in each such project's `.claude/settings.local.json`
+(`"enabledPlugins": { "makarasty@makarasty": true }`; the file is local, so other developers are not touched). In
+a project without it, a request for a fleet skill gets one line from makarasty-tools' skill router on how to turn it on.
+
 ### Requirements
 
 - Claude Code with function hooks. This release ran on 2.1.322 [M65]. The hooks run inside the engine, so a

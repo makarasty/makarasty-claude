@@ -1,5 +1,14 @@
 # Changelog
 
+## makarasty-tools 1.20.5 — 2026-11-18
+
+- **The fleet can be on per project**: the skill router reads whether this chat's skill listing has the fleet. Where it
+  does not, a request for a fleet skill gets one line on how to turn it on (`"makarasty@makarasty": true` under
+  `enabledPlugins` in the project's `.claude/settings.local.json`, then a restart or `/reload-plugins`) instead of a
+  hint to call a skill the chat cannot load. The fleet costs 6,497 characters per chat (skill listing 2,172, agent
+  listing 4,325; 47,161 against 40,664 in a headless chat with the owner's plugins); in 30 days it ran in 5 projects.
+  README says how to keep it to those.
+
 ## makarasty-tools 1.20.4 — 2026-11-18
 
 - **`/makarasty-tools:video` catches text spilling out of its box and defaults to English.** A box sized by hand for Russian
