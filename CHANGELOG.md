@@ -1,5 +1,12 @@
 # Changelog
 
+## makarasty-tools 1.19.73 — 2026-11-18
+
+- **Batch release**: `forge/release.mjs` moves the installed plugins to the repo's versions at most twice a day (once
+  per half-day, read from the install record, no state file, no model call); otherwise it says what is queued and from
+  when. A task still bumps its version and writes this file. `--now` releases at once on the owner's word. 22 releases
+  went out in about 26 hours on 11-17/18, in bursts of 8-10.
+
 ## makarasty-tools 1.19.72 — 2026-11-18
 
 - **verify-guard reads research replies too** (owner 11-18, «Да, расширить»): a turn whose text states numbers or verdicts

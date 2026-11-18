@@ -3423,6 +3423,37 @@
     }
    ],
    "gap": "text only today. Candidate mechanism (docs read by the trends chat 2026-11-18, not tested here): SessionStart and UserPromptSubmit hooks may return hookSpecificOutput.sessionTitle and get session_title in their input, so a UserPromptSubmit hook could remind an untitled chat to name itself at call time; a hook cannot write the purpose itself without a model. Unverified on the bundled Claude Code 2.1.321 and in the desktop auto-namer. The language setting would also switch replies away from Russian, so it does not fit."
+  },
+  {
+   "id": "R144",
+   "rule": "Plugin releases are batched: each task commits, bumps its version and writes its CHANGELOG entry, but the install (marketplace update + plugin update) runs at most twice a day through release.mjs; --now only on the owner's word.",
+   "ru": "Плагин выпускается пачкой не чаще 2 раз в день; задача только коммитит, поднимает версию и пишет CHANGELOG.",
+   "layer": "plugin",
+   "enforced": "text",
+   "enforcer": "tools/skills/forge/release.mjs (gates the install by half-day; nothing stops a chat that runs claude plugin update by hand)",
+   "complaints": [
+    "owner 2026-11-18, relayed"
+   ],
+   "complaintChats": null,
+   "conflicts": [
+    "~/.claude/CLAUDE.md line: one version bump per task, then marketplace update + plugin update"
+   ],
+   "status": "active",
+   "owner_confirmed": "relayed by the trends chat local_e9b725b8: his pick «Да, 2 раза в день (Recommended)» on 2026-11-18; не подтверждено in this chat",
+   "sources": [
+    {
+     "file": "CLAUDE.md",
+     "anchor": "Hard rules, version bump",
+     "date": "2026-11-18"
+    },
+    {
+     "file": "tools/skills/forge/SKILL.md",
+     "anchor": "7. Attack it, then ship it",
+     "date": "2026-11-18"
+    }
+   ],
+   "field_note": "22 releases of makarasty-tools in about 26 h on 11-17/18, in bursts of 8-10 within 2-3 h (cache folder times)",
+   "gap": "the owner's global CLAUDE.md still says update per task; no hook refuses a direct claude plugin update; why the local marketplace copies instead of loading in place is not checked"
   }
  ],
  "industry": [
