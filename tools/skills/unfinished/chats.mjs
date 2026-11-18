@@ -4,7 +4,10 @@
 // last human prompts, the last assistant text, files edited, open todos, commit/push counts, and which of the
 // edited files are still uncommitted. It judges nothing.
 //
-//   node chats.mjs [--cwd <dir>] [--days 7] [--limit 40] [--self <session-id>] [--json]
+//   node chats.mjs [--cwd <dir>] [--days 7] [--limit 40] [--self <session-id>] [--json] [--all]
+//
+// Ledger: ${config dir}/makarasty/unfinished/<basename of the main project path>.md, lines `- <id8> | <verdict> | <YYYY-MM-DD> | <why>`.
+// A chat with a line there is hidden until it has a message newer than that day (`later:<date>`: until that date); --all shows them.
 //   node chats.mjs --selftest
 //
 // Transcripts: ${CLAUDE_CONFIG_DIR:-~/.claude}/projects/<cwd with every non-alphanumeric as ->/*.jsonl.
@@ -13,10 +16,10 @@
 // shortcut: Task* todo ids are assumed sequential from 1 per chat; upgrade if a transcript breaks that.
 // shortcut: an assistant line over 2 MB is not parsed; its timestamp, last text tail and edit paths come from regexes over its
 // first and last 64 KB, so an edit in the middle of it can be missed. Such chats are counted and marked as partly read.
-import { createReadStream, readdirSync, statSync, openSync, readSync, closeSync, existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { createReadStream, readFileSync, readdirSync, statSync, openSync, readSync, closeSync, existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { homedir, tmpdir } from 'node:os';
-import { join, resolve, relative, isAbsolute, sep, dirname } from 'node:path';
+import { join, resolve, relative, isAbsolute, sep, dirname, basename } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
@@ -228,7 +231,32 @@ export function uncommitted(edited, dirty) {
     return edited.filter(f => { const k = key(f); return dirty.some(d => d.dir ? k.startsWith(d.p + '/') || k === d.p : k === d.p); });
 }
 
-export async function collect({ cwd, days = 7, limit = 40, self = null, cfg }) {
+// Ledger of settled chats: id8 -> {verdict, date}; the last line of an id wins. A missing or unreadable file is an empty ledger.
+export function readLedger(cfg, cwd) {
+    const main = resolve(cwd).replace(/[\\/]\.claude[\\/]worktrees[\\/].*$/, '');
+    const m = new Map();
+    let text; try { text = readFileSync(join(cfg, 'makarasty', 'unfinished', basename(main) + '.md'), 'utf8'); } catch { return m; }
+    for (const line of text.split(/\r?\n/)) {
+        const x = /^- ([\w-]+)\s*\|\s*([^|]+?)\s*\|\s*(\d{4}-\d{2}-\d{2})\s*\|/i.exec(line);
+        if (x) m.set(x[1].toLowerCase(), { verdict: x[2], date: x[3] });
+    }
+    return m;
+}
+
+const dayStart = d => new Date(+d.slice(0, 4), +d.slice(5, 7) - 1, +d.slice(8, 10)).getTime();
+
+// null when the chat has no ledger line; else {hidden, mark}
+export function settledOf(ids, act, ledger, now = Date.now()) {
+    const key = [...ledger.keys()].find(k => ids.some(i => i.startsWith(k)));
+    if (!key) return null;
+    const { verdict, date } = ledger.get(key);
+    const later = /^later:(\d{4}-\d{2}-\d{2})$/.exec(verdict);
+    if (later) return now < dayStart(later[1]) ? { hidden: true, mark: `settled: ${verdict}` } : { hidden: false, mark: `settled: ${verdict}` };
+    if (act > dayStart(date) + 864e5 - 1) return { hidden: false, mark: `settled earlier: ${verdict} ${date}` };
+    return { hidden: true, mark: `settled: ${verdict} ${date}` };
+}
+
+export async function collect({ cwd, days = 7, limit = 40, self = null, cfg, showAll = false }) {
     const since = Date.now() - days * 864e5;
     const files = projectFiles(cfg, cwd, since);
     const titles = desktopTitles(since);
@@ -264,10 +292,17 @@ export async function collect({ cwd, days = 7, limit = 40, self = null, cfg }) {
             m.handoff ||= s.handoff; m.partial = Math.max(m.partial, s.partial);
         } else { Object.assign(s, { clones: [], forkOf: g[0]?.id ?? null }); g.push(s); all.push(s); }
     }
+    const ledger = readLedger(cfg, cwd);
+    let hidden = 0;
+    for (const s of all) {
+        s.settled = settledOf([s.id, ...s.clones], s.act, ledger);
+        if (s.settled?.hidden && !showAll) { s.drop = true; hidden++; }
+    }
+    const kept = all.filter(s => !s.drop);
     const check = repoCheck();
     const gitRepo = git(cwd, ['rev-parse', '--show-toplevel']).status === 0;
     const rel = f => { const r = relative(cwd, f); return r && !r.startsWith('..') && !isAbsolute(r) ? r.split(sep).join('/') : null; };
-    const chats = all.sort((a, b) => b.act - a.act || b.mtime - a.mtime).slice(0, limit).map(s => {
+    const chats = kept.sort((a, b) => b.act - a.act || b.mtime - a.mtime).slice(0, limit).map(s => {
         const d = titles.get(s.id);
         const open = (s.todos ?? []).filter(t => t.status !== 'completed').map(t => clip(mask(t.content ?? t.subject ?? t.activeForm), 120));
         const mine = s.edited.filter(rel); // files outside the project (scratchpads, temp) are not its open work
@@ -278,21 +313,22 @@ export async function collect({ cwd, days = 7, limit = 40, self = null, cfg }) {
             start: s.start, last: s.last, live: Date.now() - s.mtime < LIVE_MS && Date.now() - s.act < 6 * LIVE_MS,
             first: clip(s.first, 300), prompts: s.prompts, lastText: cut(s.lastText), asks: endsWithQuestion(s.lastText),
             edited: mine.map(rel), editedOutside: s.edited.length - mine.length, uncommitted: pick('dirty'), unchecked: pick('unchecked'),
-            partial: s.partial, openTodos: open, commits: s.commits, pushes: s.pushes, handoff: s.handoff, clones: s.clones, forkOf: s.forkOf,
+            settled: s.settled?.mark ?? null, partial: s.partial, openTodos: open, commits: s.commits, pushes: s.pushes, handoff: s.handoff, clones: s.clones, forkOf: s.forkOf,
         };
     });
-    return { cwd, days, skipped, gitRepo, total: all.length, chats };
+    return { cwd, days, skipped, hidden, gitRepo, total: kept.length, chats };
 }
 
 const ago = ms => { const m = Math.round(ms / 60000); return m < 60 ? `${m}m` : m < 2880 ? `${Math.round(m / 60)}h` : `${Math.round(m / 1440)}d`; };
 
 export function render(r) {
     const bigs = r.chats.reduce((n, c) => n + c.partial, 0);
-    const L = [`# ${r.total > r.chats.length ? `showing ${r.chats.length} of ${r.total}` : r.chats.length} chats in ${r.cwd} (last ${r.days}d)${bigs ? `, ${bigs} line(s) over 2 MB read only partly` : ''}${r.skipped ? `, ${r.skipped} without a human prompt skipped` : ''}${r.gitRepo ? '' : ', not a git repo'}`];
+    const L = [`# ${r.total > r.chats.length ? `showing ${r.chats.length} of ${r.total}` : r.chats.length} chats in ${r.cwd} (last ${r.days}d)${bigs ? `, ${bigs} line(s) over 2 MB read only partly` : ''}${r.skipped ? `, ${r.skipped} without a human prompt skipped` : ''}${r.hidden ? `, ${r.hidden} settled earlier hidden` : ''}${r.gitRepo ? '' : ', not a git repo'}`];
     r.chats.forEach((c, i) => {
         const age = c.last ? ago(Date.now() - Date.parse(c.last)) + ' ago' : '?';
         const head = c.title ?? clip(c.first, 60);
         L.push('', `## ${i + 1}. ${head} (${c.id.slice(0, 8)}, ${c.live ? 'LIVE, ' : ''}last msg ${age}${c.account ? ', ' + c.account : ''}${c.archived ? ', archived' : ''}${c.forkOf ? ', fork of ' + c.forkOf.slice(0, 8) : ''})`);
+        if (c.settled) L.push(`- ${c.settled}`);
         if (!c.prompts.includes(c.first)) L.push(`- first: ${c.first}`);
         c.prompts.forEach((p, k) => L.push(`- ${k === c.prompts.length - 1 ? 'last' : 'prev'} ask: ${p}`));
         L.push(`- reply${c.asks ? ' (ends with a question)' : ''}: ${c.lastText || '-'}`);
@@ -389,6 +425,25 @@ async function selftest() {
             'api_key=zzz', 'x-api-key: zzz', 'token: zzz', 'пароль: zzz', 'secret=zzz', 'passwd: zzz', 'a'.repeat(32), 'aB3'.repeat(12)]) assert.ok(mask(`x ${s} y`).includes('‹masked›') && !/zzz/.test(mask(s)), 'not masked: ' + s);
         assert.equal(mask('risk-assessment-framework src/components/features/authentication/x.ts'), 'risk-assessment-framework src/components/features/authentication/x.ts');
         { const t = Date.now(); mask('x'.repeat(200000)); mask('a.b+'.repeat(50000)); assert.ok(Date.now() - t < 1000, `mask is linear: 400k chars took ${Date.now() - t} ms`); }
+        // ledger: hidden, shown because newer, later before and after its date, --all
+        const ymd = d => new Date(d - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10);
+        const tomorrow = ymd(new Date(Date.now() + 864e5)), yesterday = ymd(new Date(Date.now() - 864e5));
+        const ldir = join(cfg, 'makarasty', 'unfinished'); mkdirSync(ldir, { recursive: true });
+        writeFileSync(join(ldir, 'proj2.md'), ['# Settled chats', 'garbage line', '- wtchat | skip | 2026-11-01 | not ours',
+            '- sec | closed | 2026-10-20 | was checked', `- f1 | later:${tomorrow} | 2026-10-01 | wait`, `- f2 | later:${yesterday} | 2026-10-01 | wait`].join('\n'));
+        const r4 = await collect({ cwd: cwd2, days: 1e5, cfg }), by4 = id => r4.chats.find(x => x.id === id);
+        assert.ok(!by4('wtchat'), 'settled and not newer: hidden');
+        assert.ok(!by4('f1'), 'later:<tomorrow> is hidden');
+        assert.equal(r4.hidden, 2); assert.match(render(r4), /, 2 settled earlier hidden/);
+        assert.equal(by4('sec').settled, 'settled earlier: closed 2026-10-20', 'newer message: shown with the old verdict');
+        assert.equal(by4('f2').settled, `settled: later:${yesterday}`, 'later:<yesterday> is shown again');
+        assert.match(render(r4), /- settled earlier: closed 2026-10-20/);
+        const r5 = await collect({ cwd: cwd2, days: 1e5, cfg, showAll: true }), by5 = id => r5.chats.find(x => x.id === id);
+        assert.equal(by5('wtchat').settled, 'settled: skip 2026-11-01'); assert.equal(by5('f1').settled, `settled: later:${tomorrow}`);
+        assert.equal(r5.chats.length, r4.chats.length + 2); assert.equal(r5.hidden, 0);
+        const wtLedger = readLedger(cfg, join(cwd2, '.claude', 'worktrees', 'wt1'));
+        assert.equal(wtLedger.size, 4, 'a worktree path reads the main project ledger');
+        assert.equal(readLedger(cfg, join(root, 'nothing')).size, 0, 'no file: empty ledger');
         console.log('chats.mjs selftest done');
     } finally { rmSync(root, { recursive: true, force: true }); }
 }
@@ -404,7 +459,7 @@ async function main(argv) {
         if (!(x > 0) || !Number.isFinite(x)) { console.error(`${n} needs a positive number, got "${argv[i + 1] ?? ''}"`); process.exit(2); }
         return x;
     };
-    const r = await collect({ cwd, cfg, days: num('--days', 7), limit: num('--limit', 40), self: flag('--self', null) });
+    const r = await collect({ cwd, cfg, days: num('--days', 7), limit: num('--limit', 40), self: flag('--self', null), showAll: argv.includes('--all') });
     console.log(argv.includes('--json') ? JSON.stringify(r, null, 1) : render(r));
 }
 

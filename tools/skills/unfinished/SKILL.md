@@ -11,7 +11,7 @@ reading the text.
 ## 1. Run the script
 
 ```bash
-node "${CLAUDE_SKILL_DIR}/chats.mjs" --cwd "<project path>" --self ${CLAUDE_SESSION_ID} [--days N] [--limit N]
+node "${CLAUDE_SKILL_DIR}/chats.mjs" --cwd "<project path>" --self ${CLAUDE_SESSION_ID} [--days N] [--limit N] [--all]
 ```
 
 `<project path>` is this chat's working directory unless the person named another project. Days come
@@ -27,6 +27,11 @@ another (same start, different prompts) is its own card, marked `fork of <id8>`.
 or say so. Uncommitted files are looked up in the repository that owns each file, so a `.claude/worktrees/`
 edit counts.
 
+The person's earlier answers live in a ledger, `~/.claude/makarasty/unfinished/<project folder name>.md`, one line per chat:
+`- <id8> | <verdict> | <YYYY-MM-DD> | <why>`, verdict `closed`, `abandoned`, `skip`, `later:<date>` or `handed:<chat>`. The script hides a
+chat with a line unless it has a newer message (then its card says `settled earlier: <verdict> <date>`); `later:<date>` hides until
+that date. The header counts the hidden ones; `--all` shows them. Never ask again about a chat the ledger settled.
+
 ## 2. Decide per chat
 
 Pick one: **closed**, **open**, **waiting on the person**, **abandoned**.
@@ -37,6 +42,8 @@ Pick one: **closed**, **open**, **waiting on the person**, **abandoned**.
   sent, a vendor's reply, "the owner did X") is a claim too: check it (`Test-Path`, `git ls-remote origin <branch>`
   after `git fetch --prune`) or mark it "из чата, не проверено". An intent the chat wrote as a past fact
   ("отправляем" as "sent") is reported as an intent.
+- Before asking the person anything, check it yourself: git, `Test-Path`, the chat's transcript, the other chat's last reply.
+  Only what no check answers becomes a question.
 - Open findings files are open items: the project's `docs/FINDINGS-OPEN.md` and
   `~/.claude/makarasty/findings/<project>.md`. List their lines under open work.
 - A chat that is **live** (marked LIVE) is someone's work in progress: report it and leave its files alone,
@@ -67,7 +74,13 @@ Then one `AskUserQuestion`: continue one of them here (`/makarasty-tools:handoff
 collect the open items into a hold list (`/makarasty-tools:hold`), hand them to a fleet, or nothing.
 Start none of them before the answer.
 
+## 4. Record the answers
+
+When the person answers, append to the ledger one line per chat they settled, their words quoted and today's date
+(`- 4f2a91bc | skip | 2026-11-18 | not ours. Owner: «пропускаем»`). A findings-file item they skipped is marked there
+`SKIPPED <date> (owner: «...»)` instead of staying open. Chats you classified closed or abandoned get a line too, with the check as the why.
+
 ## Done when
 
 Every chat the script listed is classified, each "done" and each outside-state "waiting" was checked or marked unchecked,
-and the person got the grouped report plus the one question.
+and the person got the grouped report plus the one question; their answers are in the ledger.

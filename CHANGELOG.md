@@ -1,5 +1,14 @@
 # Changelog
 
+## makarasty-tools 1.20.3 — 2026-11-18
+
+- **`/makarasty-tools:unfinished` remembers the person's answers** (owner 11-18: ~40 items answered skip / done / later, and no
+  question the agent could have checked). A ledger `~/.claude/makarasty/unfinished/<project folder>.md` holds one line per
+  settled chat (`- <id8> | <verdict> | <date> | <why>`); `chats.mjs` hides those chats until they have a newer message (`later:<date>`:
+  until that date), shows the changed ones with `settled earlier: <verdict> <date>`, counts the hidden in the header, and `--all`
+  shows everything. The skill now says: check it yourself (git, Test-Path, transcript) before asking, and write each answer to the
+  ledger, marking skipped findings-file items `SKIPPED <date> (owner: «...»)`. On this project 63 of 78 chats were hidden.
+
 ## makarasty-tools 1.20.2 — 2026-11-18
 
 - **"All" means all**: every main chat gets one more paragraph: the person's literal words (all rows, their columns,
