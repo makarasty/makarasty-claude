@@ -93,11 +93,9 @@ PowerShell 5.1, LF line endings pinned, paths with spaces quoted, `node` over `s
 
 Run `/makarasty-tools:redteam` on the tool: false triggers and missed ones, token cost, destructive paths,
 Windows, two chats running it at once. Then bump the version (an installed plugin is a cached copy that
-changes only with its version string) and add the changelog entry. In this repo the install is a batch release,
-at most twice a day: `node "${CLAUDE_SKILL_DIR}/release.mjs"` releases when this half-day had none, otherwise it
-says queued and the next chat after the slot ships it. An urgent fix (a guard or hook wrongly blocking work, a
-crash, a broken hook) ships at once, no question: `release.mjs --urgent "<what is blocked or broken>"`; anything
-else waits for the batch, or `--now` on the owner's word. After a release, check
+changes only with its version string), add the changelog entry and release at once: in this repo
+`node "${CLAUDE_SKILL_DIR}/release.mjs"` updates every plugin whose version moved and checks the install matches.
+Delivery never waits for a batch; releasing several times a day is fine. After a release, check
 the change in the installed copy (`rules.mjs` reads it); a chat runs the new copy once someone types
 `/reload-plugins` in it by hand. For another marketplace: `claude plugin marketplace update <market>` and
 `claude plugin update <plugin>@<market>`.

@@ -3426,20 +3426,18 @@
   },
   {
    "id": "R144",
-   "rule": "Plugin releases are batched: each task commits, bumps its version and writes its CHANGELOG entry; the install runs at most twice a day through release.mjs. An urgent fix (a guard or hook wrongly blocking work, a crash, a broken hook) ships at once with --urgent \"<reason>\", no question; --now on the owner's word.",
-   "ru": "Плагин выпускается пачкой не чаще 2 раз в день; срочный фикс (охранник ошибочно блокирует, падение, сломанный хук) выходит сразу без вопроса.",
+   "rule": "Plugin delivery never waits: each task bumps its version, writes its CHANGELOG entry and releases at once (release.mjs), as often as needed; running chats move to the new copy on /reload-plugins or restart.",
+   "ru": "Доставка плагина не ждёт: задача поднимает версию, пишет CHANGELOG и сразу выпускает, сколько угодно раз в день.",
    "layer": "plugin",
    "enforced": "text",
-   "enforcer": "tools/skills/forge/release.mjs (gates the install by half-day; nothing stops a chat that runs claude plugin update by hand)",
+   "enforcer": "tools/skills/forge/release.mjs (one command for both plugins, checks the install)",
    "complaints": [
     "owner 2026-11-18, relayed"
    ],
    "complaintChats": null,
-   "conflicts": [
-    "~/.claude/CLAUDE.md line: one version bump per task, then marketplace update + plugin update"
-   ],
+   "conflicts": [],
    "status": "active",
-   "owner_confirmed": "batch: his pick «Да, 2 раза в день (Recommended)» 2026-11-18 (relayed by the trends chat); urgent exception: «Да, так» 2026-11-18 typed in the Hub chat (relayed by the Hub, не подтверждено in this chat)",
+   "owner_confirmed": "his words in this chat, 2026-11-18: «доставка должна быть независима от обновления ... И можно делать это несколько раз за день. В чем проблема?» (replaces the relayed twice-a-day batch)",
    "sources": [
     {
      "file": "CLAUDE.md",
@@ -3457,8 +3455,8 @@
      "date": "2026-11-18"
     }
    ],
-   "field_note": "22 releases of makarasty-tools in about 26 h on 11-17/18, in bursts of 8-10 within 2-3 h (cache folder times)",
-   "gap": "the global ~/.claude/CLAUDE.md line still says update per task: in this chat he answered «Нет, оставить» (2026-11-18); the Hub relays «Да, так» to rewrite it; the line is not edited until he says so in this chat. No hook refuses a direct claude plugin update. Why the local marketplace copies instead of loading in place is not checked."
+   "field_note": "22 releases in about 26 h on 11-17/18; the owner sees no harm in that",
+   "gap": "why the local marketplace copies instead of loading in place is not checked; old cache folders are swept by Claude Code after 14 days (relayed, not checked)"
   }
  ],
  "industry": [

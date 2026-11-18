@@ -1,5 +1,11 @@
 # Changelog
 
+## makarasty-tools 1.19.75 — 2026-11-18
+
+- **Delivery never waits**: the twice-a-day batch is gone, on the owner's word («доставка должна быть независима от
+  обновления»). `forge/release.mjs` now releases every plugin whose version moved, at once, and checks the install
+  matches the repo; a task releases as soon as it is done, as often as a day needs.
+
 ## makarasty-tools 1.19.74 — 2026-11-18
 
 - **Urgent fixes ship at once**: `forge/release.mjs --urgent "<what is blocked or broken>"` releases outside the batch,
