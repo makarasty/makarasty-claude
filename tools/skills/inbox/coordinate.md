@@ -48,20 +48,26 @@ Messages reach chats of other accounts too: a fleet coordinator on another accou
 - **Status** ("что с задачами"): `inbox.mjs tasks`, plus `list_events` for a chat whose last note is old, then
   `inbox.mjs followed` shown as printed (its "not watched" count line too). Which chats to watch is never asked (C20).
   Asked how long it will run: a table "chat | what is left | rough time", marked as an estimate.
-- **Night** ("поставь всё на паузу", "иду спать"): every chat `ListAgents` shows busy, and every tracked chat not
+- **Night** is optional: the person may just press the power button (owner, 2026-11-19: "просто нажать кнопку"), and
+  the morning list below finds what it cut. Only when he asks ("поставь всё на паузу", "иду спать"): every chat `ListAgents` shows busy, and every tracked chat not
   done, gets one message: «Оператор выключает компьютер на ночь: доведи текущий шаг до безопасной точки, запиши, где
   остановился, ничего нового не начинай и ответь одной строкой. Если ты координатор флита: поставь флит на паузу.»
   Track the untracked ones too (task "running at night"), then `note <chat> paused`. Report who confirmed and who
   did not answer. In auto mode the classifier may refuse these messages ("Interfere With Workloads") [M63]: then
   list the chats with their links and ask the person to approve the sends in one line; never route around it.
-- **Morning** ("проснулся", "я тут", "возобнови всё"): resume one chat at a time (memory: heavy runs at once push
+- **Morning** ("проснулся", "я тут", "возобнови всё", "подними чаты"): never on boot or by itself, only on his word
+  (owner, 2026-11-19: a limit may be why a chat stopped). First `inbox.mjs interrupted`: the chats the power-off cut
+  mid-turn or with background agents unreported, plus a usage-limit stop; with the chats noted `paused` that is the
+  list. Show it numbered (title, project, why, last time) and ask once: all, some (his numbers) or none. Then resume
+  only those, one chat at a time (memory: heavy runs at once push
   this machine into the pagefile), by message where the chat is listed; messages never switch a window [M71].
   After a night with the computer off no chat runs and `ListAgents` lists none; `inbox.mjs open <app id>` of each
   paused chat starts it in its own account's window (it raises that window: one at a time), and it is listed
   seconds later [M63]. Track the app id at night for that (`inbox.mjs chats --live`). A night reply
   sent after this chat closed is lost: read the chat's last message (its transcript) before the resume. Then every chat
-  noted `paused` gets «Продолжай с того места, где
-  остановился; если ты координатор флита: сними флит с паузы», then `note <chat> working`.
+  he picked gets «Компьютер выключали посреди твоей работы: фоновые агенты и команды остановлены. Проверь git status и
+  что успело сохраниться, перезапусти нужное и продолжай с того места, где остановился; если упёрся в лимит, скажи одной
+  строкой; если ты координатор флита: сними флит с паузы», then `note <chat> working` for a tracked one.
 - **Open a chat** ("открой <проект>"): `inbox.mjs chats <project>` for its app id, `inbox.mjs open <app id>`.
   To point the person at another chat, give its clickable link; never open it in a split pane or a separate window
   unasked. The one exception: a chat whose Browser pane must be on screen may get its own window, and that chat

@@ -510,6 +510,17 @@ try {
   const sc2 = spawnSync(process.execPath, [cli, 'scan'], { env: meEnv, encoding: 'utf8' })
   check('a second scan files nothing again', sc2.stdout.includes('scan found no waiting question') && !sc2.stdout.includes('found a waiting'), sc2.stdout)
   check('an answered item is not filed again by a scan', (writeFileSync(join(root, 'answers', `${idOf(open1, 'toolu_A1')}.json`), '{}'), rmSync(join(root, 'items', `${idOf(open1, 'toolu_A1')}.json`)), !spawnSync(process.execPath, [cli, 'scan'], { env: meEnv, encoding: 'utf8' }).stdout.includes('toolu_A1')))
+  // interrupted: chats the power-off cut mid-work (boot set 1 h after the fixtures' timestamps).
+  const asst = (/** @type {unknown[]} */ c, /** @type {string} */ stop, x = {}) => line('assistant', c, { ...x, message: { role: 'assistant', content: c, stop_reason: stop } })
+  const midTurn = chat('cut-mid-turn', [u('build it'), asst([{ type: 'tool_use', id: 'toolu_M1', name: 'Bash', input: {} }], 'tool_use')])
+  const bgOpen = chat('cut-bg-agent', [u('x'), toolRes('toolu_G0').replace('"ok"', '"Async agent launched. agentId: abc123def"'), asst([{ type: 'text', text: 'waiting' }], 'end_turn')])
+  const bgDone = chat('bg-reported', [u('x'), line('user', 'Async agent launched. agentId: fed321cba'), line('user', '<task-notification><task-id>fed321cba</task-id><status>completed</status></task-notification>'), asst([{ type: 'text', text: 'done' }], 'end_turn')])
+  const quiet = chat('ended-clean', [u('x'), asst([{ type: 'text', text: 'all done' }], 'end_turn')])
+  const after = chat('resumed-after-boot', [u('x'), asst([{ type: 'tool_use', id: 'toolu_M2', name: 'Bash', input: {} }], 'tool_use', { ts: T + 2 * 3600e3 })])
+  const ir = spawnSync(process.execPath, [cli, 'interrupted'], { env: { ...meEnv, INBOX_BOOT: String(T + 3600e3) }, encoding: 'utf8' })
+  const hit = (/** @type {{host: string}} */ c) => ir.stdout.split('\n').find((l) => l.includes(c.host)) ?? ''
+  check('interrupted lists a chat cut mid-turn and one whose background agent never reported', hit(midTurn).includes('\tmid-turn\t') && hit(bgOpen).includes('1 background task(s) unreported'), ir.stdout + ir.stderr)
+  check('interrupted skips a reported agent, a turn that ended clean, a chat active after boot, the inbox chat itself', !hit(bgDone) && !hit(quiet) && !hit(after) && !ir.stdout.includes(me.host), ir.stdout)
   // The built-in list (`claude agents --json`): a dialog of a live chat that it shows idle is gone; one it shows waiting is filed.
   const liveIdle = chat('live-idle', [u('x'), line('assistant', [askTool('toolu_L3')])]), liveWait = chat('live-waiting', [u('x'), line('assistant', [askTool('toolu_L4')])])
   const agents = JSON.stringify([{ sessionId: liveIdle.cli, kind: 'interactive', status: 'idle' }, { sessionId: liveWait.cli, kind: 'interactive', status: 'waiting', waitingFor: 'input needed' }])

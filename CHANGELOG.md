@@ -1,5 +1,14 @@
 # Changelog
 
+## makarasty-tools 1.20.11 — 2026-11-19
+
+- **Morning: the chats the power-off cut, resumed only on his word** (owner, 2026-11-19: «просто нажать эту кнопку»,
+  «не автоматически ... возможно, там кончился лимит»). New `inbox.mjs interrupted` reads the transcripts of chats last
+  seen in the 24 h before boot and lists the ones cut mid-turn, with background agents or commands that never reported,
+  or stopped on a usage limit; a chat with a turn after boot is left out. "проснулся" / "подними чаты" shows that list
+  numbered and resumes only the ones he picks, one at a time, with a message that says background work was lost. The
+  night pause is now optional: pressing the power button is enough. The Pulse upgrade lost 23 of 42 h to two such nights.
+
 ## makarasty-tools 1.20.10 — 2026-11-18
 
 - **A question left unanswered reaches Telegram in any chat** (owner, 2026-11-18, via the trends chat: «Если я долго не

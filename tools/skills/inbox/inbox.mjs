@@ -45,7 +45,7 @@
 import { execFileSync, spawn, spawnSync } from 'node:child_process'
 import { appendFileSync, closeSync, existsSync, fstatSync, mkdirSync, openSync, readFileSync, readdirSync, readSync, renameSync, rmSync, statSync, writeFileSync, writeSync } from 'node:fs'
 import { createHash, randomUUID } from 'node:crypto'
-import { freemem, homedir } from 'node:os'
+import { freemem, homedir, uptime } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { REPORT_TTL_MS, TTL_MS, UNSEEN_REPORT_TTL_MS, clean, contextOf, expired, inboundPrompt, itemId, normalizeAnswer, phoneAsks, render, renderReports, safe, sourceTag, undeliverable } from './core.mjs'
@@ -782,6 +782,40 @@ function scan(/** @type {string[]} */ selves) {
   return filed
 }
 
+// The chats the last power-off cut mid-work, from their transcripts: last seen in the 24 h before boot, and either
+// mid-turn (the last answer did not end the turn), or ended a turn while background agents or commands it started had
+// not reported. Lists only; the resume is the person's word (owner, 2026-11-19: "не автоматически", a limit may be why).
+function interrupted(/** @type {string[]} */ selves, boot = Number(process.env.INBOX_BOOT) || Date.now() - uptime() * 1e3) {
+  const projects = join(dirname(base), 'projects'), where = new Map(), out = []
+  try { for (const d of readdirSync(projects)) { try { for (const f of readdirSync(join(projects, d))) if (f.endsWith('.jsonl')) where.set(f.slice(0, -6), join(projects, d, f)) } catch { /* not a folder */ } } } catch { return out }
+  for (const c of chats()) {
+    if (c.archived || !c.cli || selves.includes(c.cli) || boot - c.last > 24 * 3600e3) continue
+    const path = where.get(c.cli)
+    if (!path) continue
+    let lines
+    try { lines = tailLines(path, 6000, 8 * 1024 * 1024) } catch { continue }
+    const started = new Set(), ended = new Set()
+    let open = false, limit = false, at = 0
+    for (const l of lines) {
+      let e
+      try { e = JSON.parse(l) } catch { continue }
+      if (!e || e.isSidechain) continue
+      at = Date.parse(e.timestamp) || at
+      const content = e.message?.content, text = typeof content === 'string' ? content : Array.isArray(content) ? content.map((b) => typeof b?.content === 'string' ? b.content : Array.isArray(b?.content) ? b.content.map((x) => x?.text ?? '').join('') : b?.text ?? '').join('\n') : ''
+      for (const m of text.matchAll(/(?:agentId: |running in background with ID: )([a-z0-9]+)/g)) started.add(m[1])
+      for (const m of text.matchAll(/<task-id>([a-z0-9]+)<\/task-id>[\s\S]*?<status>(completed|killed|stopped|failed)<\/status>/g)) ended.add(m[1])
+      if (e.type === 'user' && !e.isMeta) open = true
+      else if (e.type === 'assistant') { if (e.message?.stop_reason === 'end_turn') open = false; limit = !!e.isApiErrorMessage && /limit|429/i.test(text) }
+    }
+    // The transcript's own last entry, not the app's lastActivityAt: a turn after boot means it already runs again.
+    if (!at || at >= boot || boot - at > 24 * 3600e3) continue
+    const pending = [...started].filter((x) => !ended.has(x)).length
+    if (!open && !pending && !limit) continue
+    out.push({ ...c, last: at, why: limit ? 'usage limit' : open ? 'mid-turn' : `${pending} background task(s) unreported` })
+  }
+  return out.sort((a, b) => b.last - a.last)
+}
+
 async function main() {
   const [cmd, id, ...rest] = process.argv.slice(2)
   if (cmd === 'on') { mkdirSync(base, { recursive: true }); writeFileSync(join(base, 'inbox.on'), `${new Date().toISOString()}\n`); say('inbox: on for every chat that loads makarasty-tools (running chats after their next restart or plugin reload)'); say(`inbox: ${pushLine()}`); forgetUnwatched(); return 0 }
@@ -858,6 +892,13 @@ async function main() {
     const list = chats().filter((c) => !c.archived && (!project || inProject(c.cwd, project)) && (!live || Date.now() - c.last < LIVE_MS)).sort((a, b) => b.last - a.last)
     for (const c of list) say(`${c.profile}\t${c.host}\t${Math.round((Date.now() - c.last) / 60e3)} min\t${c.cwd}`)
     if (!list.length) say('inbox: no chat matches')
+    return 0
+  }
+  if (cmd === 'interrupted') {
+    // `interrupted`: the chats the last power-off cut mid-work, newest first. Starts nothing.
+    const list = interrupted([process.env.CLAUDE_CODE_SESSION_ID || ''])
+    for (const c of list) say(`${c.profile}\t${c.host}\t${new Date(c.last).toISOString().slice(0, 16)}\t${c.why}\t${c.title || '(no title)'}\t${c.cwd}`)
+    if (!list.length) say('inbox: no chat was cut mid-work by the last power-off')
     return 0
   }
   if (cmd === 'children') {

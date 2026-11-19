@@ -1,5 +1,5 @@
 ---
-description: "Coordinator for every chat on this machine: answers their questions, sends work to other projects, pauses all chats for the night. inbox / инбокс, что спрашивают чаты, поставь всё на паузу, иду спать. Not leftovers (unfinished) or one fleet (fleet-pause)."
+description: "Coordinator for every chat on this machine: answers their questions, sends work to other projects, pauses all chats for the night, lists chats a power-off cut and resumes the ones picked. inbox / инбокс, что спрашивают чаты, поставь всё на паузу, иду спать, подними заснувшие чаты. Not leftovers (unfinished) or one fleet (fleet-pause)."
 argument-hint: [on | off | status | test | report [off] | follow or mute <chat> | what to hand out | спать | проснулся]
 ---
 
