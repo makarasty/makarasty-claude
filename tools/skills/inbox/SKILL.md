@@ -1,6 +1,6 @@
 ---
 description: "Coordinator for every chat on this machine: answers their questions, sends work to other projects, pauses all chats for the night, lists chats a power-off cut and resumes the ones picked. inbox / инбокс, что спрашивают чаты, поставь всё на паузу, иду спать, подними заснувшие чаты. Not leftovers (unfinished) or one fleet (fleet-pause)."
-argument-hint: [on | off | status | test | report [off] | follow or mute <chat> | what to hand out | спать | проснулся]
+argument-hint: [on | off | status | test | report [off] | follow or mute <chat> | scheduler on|off|status | what to hand out | спать | проснулся]
 ---
 
 Every chat the inbox watches writes what it waits on into one folder while the inbox is on: its
@@ -37,6 +37,9 @@ and switches nothing; show the list numbered and ask which, in one AskUserQuesti
 until `follow`. Only on his explicit word: never mute a chat because he is working in it. `followed` ("за какими
 чатами следишь", "что с чатами"): `inbox.mjs followed`, one line per chat (project, link, what it does, whether it
 waits for him); show those lines as they are, nothing added.
+`scheduler on|off|status` ("бот должен отвечать без открытых чатов", "выключи фоновый бот"): `inbox.mjs scheduler
+on|off|status`, Windows only. `on` creates a hidden Task Scheduler task that keeps the bot answering while no chat is
+open (a persistent change on his machine: only on his explicit yes); report its lines as they are.
 Anything else, or nothing, is the review below.
 
 The person wants to see that the inbox is alive, not to trust it: whenever this chat becomes the inbox (its first

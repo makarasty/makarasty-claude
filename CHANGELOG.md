@@ -1,5 +1,17 @@
 # Changelog
 
+## makarasty-tools 1.20.12 — 2026-11-19
+
+- **The Telegram bot answers with no chat open** (owner, 2026-11-19: with no active chat "it must still work").
+  New `inbox.mjs scheduler on|off|status` (Windows): a hidden Task Scheduler task, at log on and every minute, keeps a
+  resident watcher (`watcher.mjs`) that runs `telegram.ts` unchanged through a node stand-in for the hook engine and
+  shares the chats' poll lease, so whoever is alive polls and a chat takes over 30 s after the watcher stops. Task
+  settings from a red-team pass: no 72 h limit, normal priority, `IgnoreNew` plus the minute trigger as the restart,
+  `conhost --headless` for no window; a 30 s limit per Bot API request, exit for a fresh start when hung, failing or
+  the plugin moved. "❔ Подробнее" there is a tool-less, plugin-less `claude -p --model haiku`. `notify setup` now holds
+  the lease while it waits for the Start code. Measured: about 70 MB and 16 ms CPU per 30 s idle; watcher selftest 13
+  checks (`node tools/skills/inbox/watcher-selftest.mjs`). The CLI lookup moved to `skills/inbox/cli.mjs`.
+
 ## makarasty-tools 1.20.11 — 2026-11-19
 
 - **Morning: the chats the power-off cut, resumed only on his word** (owner, 2026-11-19: «просто нажать эту кнопку»,

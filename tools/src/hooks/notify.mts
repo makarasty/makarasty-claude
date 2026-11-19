@@ -708,6 +708,11 @@ async function setup() {
   const code = randomBytes(6).toString('hex');
   say(`  4. Your bot is @${me.username}. Telegram opens it now: press Start.`, `     (or open https://t.me/${me.username}?start=${code})`, '');
   openLink(`tg://resolve?domain=${me.username}&start=${code}`);
+  // The chats' and the watcher's poll (telegram.ts) wait while the lease is fresh; a lease dated past the 15 min wait keeps
+  // them off this bot, so none of them takes the Start as an unknown message.
+  const lease = join(dir, 'telegram', 'polled');
+  const hold = (until: number) => { try { mkdirSync(dirname(lease), { recursive: true }); writeFileSync(lease, `${until} setup`); } catch { /* the poll may then take the Start; setup times out */ } };
+  hold(Date.now() + 16 * 60e3);
   let offset = 0;
   const chat = await waitFor(async () => {
     let ups: TgUpdate[] = [];
@@ -718,9 +723,10 @@ async function setup() {
     }
     return undefined;
   }, 200);
-  if (!chat) { say('', `notify: Start was not pressed within 15 minutes; nothing was saved. Run setup again.`); return done(1); }
+  if (!chat) { hold(0); say('', `notify: Start was not pressed within 15 minutes; nothing was saved. Run setup again.`); return done(1); }
   // Confirm the updates read here, so the first poll does not see the Start again.
   await telegram(token, 'getUpdates', { offset, timeout: 0 }).catch(() => undefined);
+  hold(0);
 
   const one: Config = { ...cfg, telegram: { token, chat_id: chat } };
   const r = await sendWith(one, `<b>${esc(tr('connectedTitle', { host: hostname() }))}</b>\n${esc(tr('connectedBody'))}`, '', 'wait');

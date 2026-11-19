@@ -19,7 +19,7 @@ the question first and bold, "project · kind · age" small under it. An answere
 
 | Part | Where | Cost when idle |
 |---|---|---|
-| Poll, taps, replies, /start, /status, collapse | `tools/hooks/telegram.ts`, inside the hook engine (`$.http.fetch`), called from every chat's inbox timer | one HTTPS request per 15 s across all chats, no process |
+| Poll, taps, replies, /start, /status, collapse | `tools/hooks/telegram.ts`, inside the hook engine (`$.http.fetch`) on every chat's own 1 s timer, or in the watcher (below) | one long poll (20 s) at a time across all chats; one file read per chat per second |
 | Ask message (text, buttons) | `tools/skills/inbox/core.mjs` `phoneAsk`, `phoneKeyboard`; sent by `notify.mjs ask` | only when an item is due |
 | Finish, needs-you, error | `notify.mjs` hook mode (armed chats only) | none: no marker, no node |
 | His free message | always `inbox.mjs telegram`: one headless `claude -p --model sonnet` turn of a session kept for a day, then a fresh one, so its context stays small ("typing…" on the phone while it runs; `INBOX_TG_MODEL` overrides the model). Never a prompt into the inbox chat or any other: until 1.19.71 it went into the inbox chat, a working Opus chat, a whole turn per message, and in two days into five different chats (2026-11-18) | only per message |
@@ -29,6 +29,33 @@ the question first and bold, "project · kind · age" small under it. An answere
 Files: `~/.claude/makarasty/notify.json` (token, chat), `~/.claude/makarasty/telegram/` (layout in the header of
 `telegram.ts`). His taps and messages count as his word, like typing (owner, 2026-11-17): a `[Telegram]` prompt's
 quoted lines are read by push-guard and the start consent, and nothing else in that prompt is.
+
+## The watcher: answering with no chat open
+
+The chats poll only while one is open. `inbox.mjs scheduler on` (Windows, his explicit yes: a persistent change) adds a
+resident node process that runs `telegram.ts` unchanged with a node stand-in for `$` (`tools/skills/inbox/watcher.mjs`;
+session id `watcher`, the same lease). Chosen over a Windows service (session 0: no screenshots, wrong profile), a
+one-shot task per minute (up to 90 s late, a process each minute), a Run key or Startup shortcut (no restart), a
+VBScript launcher (being removed from Windows) and a webhook (needs a public address). Measured 2026-11-19 on this
+box: about 61 MB for node plus 10 MB for the hidden console, 0 ms CPU over 20 s idle.
+
+- Task "makarasty Telegram watcher": at log on and every minute; `IgnoreNew` makes a running watcher skip the minute,
+  so that trigger is the restart (RestartOnFailure fires only when the launch itself fails). Interactive session,
+  `ExecutionTimeLimit PT0S` (the default kills at 72 h), priority 5 (the default 7 is below normal and the headless
+  Sonnet would inherit it), no battery or idle stops. Action: `conhost.exe --headless node <config>/makarasty/bin/tg-watch.mjs`;
+  no window, and every process it starts shares that hidden console.
+- `tg-watch.mjs` is copied to the config dir, so the task never names a plugin version; it finds the plugin where
+  Claude Code loads it (a folder marketplace in place, else the install cache) and runs nothing when it is disabled.
+- `watcher.lock` ("<pid> <ms>", touched every 10 s): one watcher per config dir; a lock untouched for a minute is dead.
+- Exits for a fresh start: the plugin moved (update), a tick ran 3 min, or 120 ticks failed in a row; a clean exit
+  writes `polled` = `0 watcher`, so a chat takes over at once. Inbox off: it idles and holds no lease.
+- Each Bot API request has a 30 s limit (node's own would wait 300 s for headers after sleep or a dropped network).
+- "❔ Подробнее" in the watcher is a `claude -p --model haiku` with `--safe-mode --tools "" --strict-mcp-config
+  --no-session-persistence` in an empty temp folder: the engine's call has no tools either, and the prompt is another
+  chat's text. About 3 000 tokens and 3 s (measured 2026-11-19); it is paid by the CLI login, like the headless inbox.
+- `watcher.log` beside the lease: start, stop, failures; the token never appears in it. `inbox.mjs scheduler status`
+  shows the task, the watcher, the lease and the last good poll.
+- `notify setup` dates `polled` 16 min ahead while it waits for the Start code, so no poller takes the code as a message.
 
 ## Edge cases
 
@@ -80,5 +107,13 @@ UX
     and effort as asked); its final message goes to Telegram, a failure as one line. Once `-p` has ended (never before:
     two writers break a session) it opens in the app as a chat of the same name (`claude://resume`, the window flips
     back to the chat it showed); `inbox.mjs job-open <id>` does it for a job that ended without.
+Watcher
+34. No chat open and the watcher off, or the computer asleep: nobody polls; Telegram keeps updates 24 h (8).
+35. The watcher dies mid-reply: the hidden console lives until that reply's processes end (at most about 7 min), and
+    `IgnoreNew` holds the minute trigger until then; an open chat takes the lease after 30 s meanwhile.
+36. A chat on an older version that ignores `polled` gets 409s beside the watcher, as beside any other poller (9);
+    it stops when that chat restarts.
+37. The watcher runs headless turns with the Task Scheduler user environment, not the app's: `CLAUDE_CONFIG_DIR` is
+    passed to it with `--config`, and the CLI login in that dir pays, as for every headless turn.
 28. Until 1.19.63 `inbox.mjs telegram` sat after the item-id check and exited "needs an item id": no free message was
     ever answered with the inbox chat closed. The inbox selftest now runs it.

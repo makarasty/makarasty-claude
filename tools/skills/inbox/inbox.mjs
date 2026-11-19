@@ -15,6 +15,7 @@
 //   node inbox.mjs push <id>                one phone message for the item through notify.mjs, once; with no notify channel: no attempt, no record
 //   node inbox.mjs telegram                 answer the person's waiting Telegram messages with one headless inbox turn (the hook runs it
 //                                           when no inbox chat is running)
+//   node inbox.mjs scheduler on|off|status  Windows: a hidden Task Scheduler watcher polls Telegram while no chat is open (watcher.mjs)
 //   node inbox.mjs job <folder> <name> --said "<his words>" [--model m] [--effort e]
 //                                           long work he asked for from Telegram: a background session (`claude --bg`) in that folder
 //                                           whose final message goes to his Telegram (jobs/<id>.json); consent as for start
@@ -51,6 +52,7 @@ import { fileURLToPath } from 'node:url'
 import { REPORT_TTL_MS, TTL_MS, UNSEEN_REPORT_TTL_MS, clean, contextOf, expired, inboundPrompt, itemId, normalizeAnswer, phoneAsks, render, renderReports, safe, sourceTag, undeliverable } from './core.mjs'
 import { mdToTg, note, phoneKeyboard } from '../notify/render.mjs'
 import { langOf, t } from '../notify/strings.mjs'
+import { bundledCli, mainCli, mainProf, profilesDir } from './cli.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const base = join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'makarasty')
@@ -98,9 +100,7 @@ function items() {
   return out.sort((a, b) => a.at - b.at)
 }
 const norm = (/** @type {string} */ id) => id.split('~').map(safe).join('~')
-// The desktop profile that holds a chat: <profiles>/<name>/claude-code-sessions/<account>/<org>/local_<id>.json. Several
-// accounts run side by side as separate app windows, one profile folder each (launched with --user-data-dir).
-const profilesDir = () => process.env.INBOX_PROFILES_DIR || join(process.env.LOCALAPPDATA || '', 'Claude-Profiles')
+// The desktop profile that holds a chat: <profiles>/<name>/claude-code-sessions/<account>/<org>/local_<id>.json.
 // Kept: `claude agents --json` names no profile, and the app window that opens a chat is chosen by its profile.
 function profileOf(/** @type {string} */ host) {
   const top = profilesDir()
@@ -356,18 +356,6 @@ const retryable = (/** @type {any} */ j) => j.state === 'queued' || j.state === 
 const journals = () => { try { return readdirSync(join(root, 'starts')).filter((f) => f.endsWith('.json')).map((f) => readJSON(join(root, 'starts', f))).filter(Boolean) } catch { return [] } }
 const saveJournal = (/** @type {any} */ j) => { j.updated = new Date().toISOString(); writeFileSync(join(dir('starts'), `${j.key}.json`), JSON.stringify(j, null, 1)) }
 const ledgerFile = () => join(base, 'coord', 'dispatch.jsonl')
-const bundledCli = (/** @type {{name: string, dir: string}} */ prof) => {
-  if (process.env.INBOX_CLAUDE) return process.env.INBOX_CLAUDE
-  const top = join(prof.dir, 'claude-code'), ver = (/** @type {string} */ v) => v.split('.').map((n) => Number(n) || 0)
-  try {
-    const vs = readdirSync(top).sort((a, b) => { const x = ver(a), y = ver(b); for (let i = 0; i < Math.max(x.length, y.length); i++) if ((x[i] ?? 0) !== (y[i] ?? 0)) return (y[i] ?? 0) - (x[i] ?? 0); return 0 }) // newest first
-    for (const v of vs) for (const h of readdirSync(join(top, v))) { const exe = join(top, v, h, 'claude.exe'); if (existsSync(exe)) return exe }
-  } catch { /* no bundled CLI */ }
-  return 'claude'
-}
-// The profile whose CLI runs the inbox's own sessions: main, else the first one (undefined: no app profiles, the CLI on PATH).
-const mainProf = () => { /** @type {string[]} */ let p = []; try { p = readdirSync(profilesDir()) } catch { /* no app profiles */ } return p.includes('main') ? 'main' : p[0] }
-const mainCli = () => bundledCli({ name: mainProf() ?? '', dir: join(profilesDir(), mainProf() ?? '') })
 // The standing answer: {id, line} when `standing` is in a line of answers.md that is about a relaunch at 700K, and `old` is a live
 // chat of this profile and folder that has not been relaunched yet (<root>/standing-used/<its app id>, one per old chat). Else {why}.
 function standingConsent(/** @type {string} */ standing, /** @type {string} */ old, /** @type {string} */ profile, /** @type {string} */ folder, /** @type {boolean} */ mark) {
@@ -996,6 +984,7 @@ async function main() {
 
   // Before the item-id check below: it takes no id (it sat after it from 1.19.52 and never ran).
   if (cmd === 'telegram') return telegramTurn()
+  if (cmd === 'scheduler') return (await import('./watcher.mjs')).schedulerCmd(id)
   if (cmd === 'job') return jobCmd([id, ...rest].filter((x) => x !== undefined))
   if (cmd === 'job-run') return jobRun(id ?? '')
   if (cmd === 'job-open') {
