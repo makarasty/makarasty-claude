@@ -109,7 +109,8 @@ function profileOf(/** @type {string} */ host) {
     const sessions = join(top, name, 'claude-code-sessions')
     if (!existsSync(sessions)) continue
     for (const acc of readdirSync(sessions)) for (const org of readdirSync(join(sessions, acc))) {
-      if (existsSync(join(sessions, acc, org, `${host}.json`))) return { name, dir: join(top, name) }
+      const rec = join(sessions, acc, org, `${host}.json`)
+      if (existsSync(rec)) return { name, dir: join(top, name), rec }
     }
   }
   return undefined
@@ -488,7 +489,13 @@ async function startOne(/** @type {{profile: string, folder: string, name: strin
   const lock = lockTake(profile)
   if (!lock) return queue(`another start of ${profile} is running`)
   try {
-    const host = () => `local_${j.sid}`, doneLine = (/** @type {string} */ flip) => { say(`inbox: started ${host()} in profile ${profile}, folder ${folder}${flip}`); nextLine(name, profile) }
+    const host = () => `local_${j.sid}`, doneLine = (/** @type {string} */ flip) => {
+      say(`inbox: started ${host()} in profile ${profile}, folder ${folder}${flip}`)
+      // The app keeps the CLI turn's model but writes no effort [M71]; set_session_effort applies from the next turn. Only
+      // a relaunch: it stays on this account, and another account's chat answers "not found" by app id [M70].
+      if (j.effort && relaunchOf) say(`next: mcp__ccd_session_mgmt__set_session_effort ${host()} ${j.effort} (before the brief; denied once by auto mode: send it again)`)
+      nextLine(name, profile)
+    }
     const imported = () => { j.state = 'imported'; saveJournal(j); writeFileSync(join(dir(join('reports', 'on')), host()), `started ${new Date().toISOString()}`) } // its finish reports come
     // A retry whose link already took effect (the import was only slow): done, and no link fired again.
     if ((j.state === 'cli-done' || j.cliDone) && profileOf(host())?.name === profile) {
@@ -553,6 +560,12 @@ async function startCmd(/** @type {string | undefined} */ id, /** @type {string[
     console.error('inbox: usage: start <profile> <folder> <chat name> --said "<his words>" | --standing "<words of answers.md>" --relaunch-of <app id> [--model m] [--effort e] [--mode default|plan|auto]  |  start --drain  (a profile under Claude-Profiles, an existing folder)'); return 2
   }
   if (o.mode && !MODES.includes(o.mode)) { console.error(`inbox: --mode ${o.mode} refused: only ${MODES.join(', ')}`); return 2 }
+  if (o['relaunch-of']) {
+    // A relaunch continues the same work: the old chat's own model and effort, never a default or a cheaper pick (owner, 2026-11-20).
+    const rec = profileOf(o['relaunch-of'])?.rec, old = rec ? readJSON(rec) : undefined
+    if (old?.model) { if (o.model && o.model !== old.model) say(`inbox: --model ${o.model} ignored: a relaunch keeps ${old.model}`); o.model = old.model }
+    if (old?.effort) o.effort = old.effort
+  }
   return startOne({ profile: id, folder, name, said: o.said, standing: o.standing, relaunchOf: o['relaunch-of'], model: o.model, effort: o.effort, mode: o.mode })
 }
 

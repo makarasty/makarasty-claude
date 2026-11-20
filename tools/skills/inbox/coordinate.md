@@ -36,7 +36,9 @@ Messages reach chats of other accounts too: a fleet coordinator on another accou
      `<config>/makarasty/dispatch.off` turns all of this off: then offer a card. A relaunch of a chat near 700K
      context, when answers.md holds his standing answer for it, needs no typed words: `inbox.mjs start <same
      profile> <same folder> <name> --standing "<a piece of that answers.md line>" --relaunch-of <old app id>`
-     (one relaunch per old chat), then the handoff brief by `SendMessage`. A project's task runs in a chat
+     (one relaunch per old chat; it copies the old chat's model and effort and ignores `--model`), then the
+     `set_session_effort` line it prints, then the handoff brief by `SendMessage`. The model rule above is for new
+     work: a relaunch or handoff keeps the old chat's model and effort (owner, 2026-11-20). A project's task runs in a chat
      of that project, never routed through another project's chat, and the person is never asked to sign in, paste
      or click instead; say the window flip in one line.
   3. `inbox.mjs track <chat> <profile> <project> <task>`; each reply: `inbox.mjs note <chat> <status> <one line>`.

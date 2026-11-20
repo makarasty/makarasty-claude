@@ -1,5 +1,16 @@
 # Changelog
 
+## makarasty-tools 1.20.13 — 2026-11-20
+
+- **A relaunch keeps the old chat's model and effort** (owner, 2026-11-20: the parent's model must pass to the chat it
+  starts). `inbox.mjs start --relaunch-of` reads the old chat's app record (1955 of 1965 records hold both) and uses its
+  model, ignoring a `--model` the chat passed; since the app writes no effort for a CLI-made chat [M71], it prints a
+  `next: set_session_effort` step. Of the 4 relaunches so far, one ran on the CLI default (Sonnet medium) and one was
+  downgraded to Sonnet by the chat itself. The handoff skill, the 700K reminder (`gates.ts`), `coordinate.md` and
+  `docs/MODELS.md` now say `start_session` inherits both when `model`/`effort` are left out (14 of 14 children checked)
+  and a handoff passes neither; the skill's "Model:" line no longer picks Sonnet for a written plan. The receiver
+  prompt's "read first" vs "readback before any tool call" contradiction is fixed. inbox selftest 193/193, tools 531/531.
+
 ## makarasty-tools 1.20.12 — 2026-11-19
 
 - **The Telegram bot answers with no chat open** (owner, 2026-11-19: with no active chat "it must still work").

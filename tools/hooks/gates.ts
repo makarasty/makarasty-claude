@@ -90,7 +90,7 @@ export const reminder = (tokens: number, standing?: string): string => {
   const k = Math.round(tokens / 1000)
   if (standing) return `This chat's context is at ${k}k tokens. The person's standing answer (answers.md) covers this: "${standing.slice(0, 200)}". ` +
     `Answer the person's message as usual; then, at the end of this turn and without asking, relaunch: write the handoff (/makarasty-tools:handoff), ` +
-    `start the new chat in the same account and folder (start_session on a turn the person typed; otherwise the inbox skill's \`inbox.mjs start ... --standing ... --relaunch-of <this chat's id>\`), ` +
+    `start the new chat in the same account and folder on this chat's model and effort (start_session on a turn the person typed, with no \`model\` or \`effort\`: it inherits both; otherwise the inbox skill's \`inbox.mjs start ... --standing ... --relaunch-of <this chat's id>\`, which copies them, then the \`next: set_session_effort\` line it prints), ` +
     `and name the new chat with its link in your last message. Not while a commit, push or question of yours is open, a background task runs, or a fleet run you coordinate is live (its relaunch is fleet-plan 8b).`
   return `This chat's context is at ${k}k tokens. Answer the person's message as usual; then say the context size once, save the state and notes (progress, open items, decisions) where a new chat could pick them up, and keep working. ` +
     `Offer a handoff with /makarasty-tools:handoff only if the person asked for one: a handoff costs answer quality in the next chat's first prompts [M49]. ` +

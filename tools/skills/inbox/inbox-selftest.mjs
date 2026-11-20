@@ -266,11 +266,15 @@ try {
   check('the ledger is trimmed to its last 2000 rows once it passes 2500', ledger().length === 2000 && ledger().at(-1)?.name === 'n1' && ledger()[0].n === 601, String(ledger().length))
   // The standing answer: a relaunch at ~700K context needs no typed prompt, only a line of answers.md and a live old chat of the same profile and folder.
   writeFileSync(join(tmp, 'makarasty', 'answers.md'), ['- Relaunch a chat at ~700K context: «Да, все чаты» — every chat relaunches itself with a handoff, no question (2026-11-12)', '- Deploy to staging: «Да» — about 700 users, no question', '- Relaunch a chat when it is slow: «Да» — every chat relaunches itself, no limit stated'].join('\n'))
-  const relChat = (/** @type {string} */ profile, /** @type {string} */ n, /** @type {string} */ cwd, /** @type {boolean} */ archived = false) => {
+  const relChat = (/** @type {string} */ profile, /** @type {string} */ n, /** @type {string} */ cwd, /** @type {boolean} */ archived = false, extra = {}) => {
     const d = join(prof, profile, 'claude-code-sessions', 'acc', 'org'); mkdirSync(d, { recursive: true })
-    const host = `local_aaaaaaaa-0000-0000-0000-00000000000${n}`; writeFileSync(join(d, `${host}.json`), JSON.stringify({ cwd, lastActivityAt: Date.now(), isArchived: archived })); return { host, f: join(d, `${host}.json`) }
+    const host = `local_aaaaaaaa-0000-0000-0000-00000000000${n}`; writeFileSync(join(d, `${host}.json`), JSON.stringify({ cwd, lastActivityAt: Date.now(), isArchived: archived, ...extra })); return { host, f: join(d, `${host}.json`) }
   }
   const oA = relChat('acct2', '1', tmp), oB = relChat('acct2', '2', tmp), oDev = relChat('dev', '3', tmp), oDir = relChat('acct2', '4', join(tmp, 'elsewhere')), oArc = relChat('acct2', '5', tmp, true)
+  const oM = relChat('acct2', '6', tmp, false, { model: 'claude-opus-5-5', effort: 'high' })
+  const dryM = S(['start', 'acct2', tmp, 'rl-model', '--standing', 'every chat relaunches itself', '--relaunch-of', oM.host, '--model', 'sonnet'], { ...OPEN, INBOX_DRY_OPEN: '1' })
+  check('standing: a relaunch runs on the old chat\'s model and effort, a --model passed is ignored', dryM.status === 0 && / --model claude-opus-5-5 --effort high/.test(dryM.stdout) && !/-n rl-model --model sonnet/.test(dryM.stdout) && /ignored: a relaunch keeps/.test(dryM.stdout), dryM.stdout + dryM.stderr)
+  rmSync(oM.f)
   const SW = '--standing', STAND = 'every chat relaunches itself'
   const sdir = join(root, 'standing-used'), standN = () => (existsSync(sdir) ? readdirSync(sdir).length : 0)
   const RL = (/** @type {string} */ name, /** @type {string[]} */ rest, x = {}) => S(['start', 'acct2', tmp, name, ...rest], { ...OPEN, INBOX_FG: 'claude', ...x })

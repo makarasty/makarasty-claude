@@ -25,8 +25,9 @@ coordinating a run, or an operator who explicitly asks for a handoff of a coordi
 
 ## Sending
 
-The next chat knows only the chip's prompt and the file, on whichever model the person picks: it must not
-need this chat's judgement to begin.
+The next chat knows only the chip's prompt and the file: it must not need this chat's judgement to begin. It
+runs on this chat's model and effort: `start_session` inherits both when `model` and `effort` are left out
+(14 of 14 children checked, 2026-11-20), so a handoff never passes them unless the person named a model.
 
 ### 1. Settle what is running
 
@@ -118,8 +119,8 @@ chat says or asks the person stays in the person's language. Sections, each only
 - **Open questions**: what only this chat could answer, if anything is still unclear.
 - **Source**: this chat's title, its `local_...` id, its `CLAUDE_CODE_SESSION_ID`, and the transcript's
   absolute path from step 2.
-- **Model**: `sonnet` when Next is a written plan to carry out, `opus` when judgement is left, `fable`
-  only for design.
+- **Model**: this chat's model and effort as `get_session` "self" prints them; the next chat keeps them. A
+  cheaper pick downgraded a relaunch the owner wanted on his model (2026-11-19, Stedi; owner, 2026-11-20).
 
 The file must stand on its own: asking this chat later costs a turn at its full context and may stall.
 Reference what already lives in a file (a spec, a plan, a findings list) by path; do not copy it. Aim
@@ -156,7 +157,7 @@ turn a watch event or another session started):
 - `prompt`: the receiver prompt below, filled in, plus the focus from the arguments, if any.
 
 > Continue work handed off from the chat '<title>' (<id>). Read <handoff file> in full before anything
-> else. Your first message, before any other tool call, is a readback in at most five lines in the
+> else. Your first message after that read, before any other tool call, is a readback in at most five lines in the
 > person's language: the goal, what is done and verified, what is unverified, the first step. Then work.
 > This session may have opened in a fresh worktree without the work. Load
 > mcp__ccd_directory__change_directory with ToolSearch and move to <checkout path>; until this turn ends
@@ -193,8 +194,7 @@ transcript, or ask the person."
 
 ### 7. Reply and stop
 
-Two lines in the person's language: the chip is up, which model to open it on with the reason in a few
-words, and that from now on the task is discussed in the new chat, not here. Then stop working on the task, so two chats never edit the same files. Do not archive this
+Two lines in the person's language: the chip is up on this chat's model and effort, and that from now on the task is discussed in the new chat, not here. Then stop working on the task, so two chats never edit the same files. Do not archive this
 chat; the person does that once the new chat has given its readback. Answer questions from the next chat
 briefly, from what this chat knows.
 

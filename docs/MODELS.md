@@ -204,9 +204,10 @@ what runs. The `effort:` line is what runs in all four of those unless a call pa
 **Opt-in chats only.** In one chat, the default, there is no worker session to switch: the coordinator names
 the model on each `Agent` call. What follows is for a run that chose separate worker chats.
 
-The coordinator sets each queue worker's model and effort; the operator does not [M35]. A chip starts on
-whatever the app's model menu shows at the start, so the run says what it wants. `mcp__ccd_session__start_session` accepts `model` and `effort`, but the printed CHIP blocks do not carry them, so a
-new chat still starts on the menu model and the procedure below applies.
+The coordinator sets each queue worker's model and effort; the operator does not [M35]. A session started
+with `mcp__ccd_session__start_session` inherits the starting chat's model and effort when `model` and `effort`
+are left out (14 of 14 checked, 2026-11-20), and only a cheaper `model` or a lower `effort` takes effect; the
+printed CHIP blocks carry neither, so a worker that wants another one gets it by the procedure below.
 
 The tools are the desktop app's session tools, deferred, so load them with ToolSearch first:
 
