@@ -1,5 +1,28 @@
 # Changelog
 
+## makarasty-tools 1.20.21 — 2026-11-20
+
+- **The review-and-score loop converges** (`review` section 10, M83). The Pulse fix took 39 hand-briefed reviews
+  at 4-8/10 with no trend: a free 1-10 score, criteria rewritten each round, 45 % of findings an old class in new
+  words, fixes that added one more regex word, and a design the reviewers called the cause three times that
+  never changed. Now: "9+/10 with no defect" is a gate (9 = every criterion holds, no blocking bug, only
+  non-blocking items open); a ledger keeps every finding's class and status; a finder searches without the
+  ledger and a judge sorts its lines (new, reopened, refuted); fixes go per class with a test pinning several
+  members; heuristic code (word lists, regex routing, parsing) is judged on a frozen labelled set with a pass line,
+  and a finder's own new rows never set this round's rate; a class that comes back gets a measured redesign
+  (up to three shapes, built and compared), built without waiting, with "smallest change" and "minimal diff from
+  base" yielding to it; the loop stops at 9, at a plateau, or at the caps. `--fix`, `--loop`, `--score`,
+  `redteam --fix` and `finish` point there.
+- **`review-loop.ts`**: a chat that briefs its own scoring reviewers (no skill loaded) gets a note on the first and
+  the fourth such brief of a session, pointing at section 10; a brief that carries a ledger is left alone.
+  `MAKARASTY_REVIEW_LOOP=off` drops it. Complaint C28.
+- Checked by an A/B on the shipped Pulse commit (old brief x2, new brief x2 twice, then two rounds of the split
+  loop with a real redesign): old-brief judges 6 and 6 with 39 and 47 new lines and one more word list each;
+  ledger judges agree byte for byte but missed a new class the ledger-free reviewers found, hence the split;
+  round 40 sorted 93 finder lines into reopened classes plus one new blocking class; round 41's measured redesign
+  took the routing classes from B 242/293, C 91/116, G 0/11 to 293/293, 116/116, 11/11 and surfaced two real
+  answer-side defects in the shipped commit (recorded for LifeLines). Tests: tools 536/536.
+
 ## makarasty-tools 1.20.20 — 2026-11-20
 
 - **New chats import on the main account again:** `inbox.mjs` spawned the app window with verbatim arguments and an

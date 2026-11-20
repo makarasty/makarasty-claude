@@ -1633,3 +1633,48 @@ finished side sessions.
   from `C:\Program Files\WindowsApps\...`, so the window split the line: node spawn not imported in 30 s, PowerShell
   `Start-Process` and node with a quoted `argv0` imported in 5 s. Dev's copy has no space in its path (4 of 4 worked).
 **Status:** current for app 5.1231.2.
+
+## M83 — Why the 9+/10 review loop did not converge, and a loop that does (2026-11-20)
+**2026-11-20**, five owner chats of 11-18..20 read from their transcripts and verdict files by four Sonnet passes
+(Pulse "upgrade 35c finish", "answer fix finish", "UI redesign complaints", "upgrade explainer video"; darkkitty
+"8+ с красной командой"), plus an A/B of judges (Opus 5.5, high) on the shipped Pulse fix `11857c502c`.
+- **What ran:** no chat invoked `review`, `finish` or `redteam --fix` for its loop; 57 reviewers were briefed by hand
+  with "Bar: 9+/10 with NO defect", a free 1-10 score and a criteria text rewritten almost every round, so the
+  skill's three-round cap and fixed criteria never applied. Briefs carried "deliberate MINIMAL DIFF from HEAD" and
+  the coder brief "Smallest complete change".
+- **Pulse answer fix:** 39 reviews over two chats, scores 5,6,6,5,6,5,6,6,7,6,6,6,6,6,7,6,7,6,6,6,6,7,7,7,8,7 then
+  7,6,5,4,4,5,5,6,5,5,7,6,6: never 9, no trend; shipped at 6 by the owner's pick. Reviews 27-39: 51 findings, 23
+  (45 %) an earlier class in new words, 10 made by the previous fix, 14 new, 4 nits; 67 % closed in the next pass,
+  nearly all by adding words to a regex list. 13 reviews cost 31.3M input tokens and 107 reviewer minutes; the
+  earlier chat's 44 reviewers (both its loops) 187M input and 363 minutes.
+- **Architecture raised, not changed:** reviewers wrote "Words cannot close this hole, so make the change
+  structural" (R35), "Another list round is likely to leave more synonyms" (R38), "a regex router cannot fully
+  separate the two" (R39); the chat changed approach four times inside the regex frame and named a model router
+  only in its final report. No text called the redesign too big; nothing gave the loop a trigger or permission.
+- **Other loops:** the guide loop reached 9 four times, two of them contradicted by the next live walk. darkkitty:
+  6 of 8 second-round findings came from patching one copy of a fact kept in two places. Video: a card height
+  grown three times for a `px` appended by a shared helper.
+- **A/B, same commit, old brief x2:** 6/10 and 6/10; 39 and 47 fresh failing lines; each proposed one more word
+  list, one adding it "will not catch the next round's words". Both also found a real new class (non-ASCII and
+  curly-apostrophe names stay in the Knowledge Base).
+- **New brief (ledger, frozen labelled set of 617 rows from the reviewers' own lines, pass line) x2:** both gate
+  FAIL 8 on the same disputed row, rates re-measured byte for byte; with the judge's own rows kept out of the rate
+  and a set-aside for a disputed label x2: both PASS 9, stop. But 0 of 4 ledger judges found the non-ASCII class
+  that 2 of 2 ledger-free reviewers found, so the search and the sorting were split.
+- **Split loop, round 40:** a judge with the ledger sorted the 93 lines of the two ledger-free finders: 50 reopened
+  B, 25 reopened C, 2 nits, 11 a new blocking class G ("Call Mary Smith about the calls she missed last week" forced
+  to analysis); gate FAIL 8, next step a fix of G and a redesign of B and C. **Round 41:** three shapes built and
+  measured: the winner (a done-verb evidence gate, any token in the subject gap, orders aimed at a person are jobs)
+  holds G 11/11, B 293/293, C 116/116 outside the accepted limits, the committed tests 464/464 and 40 new pins
+  (the shipped commit: G 0/11, B 242/293, C 91/116). A fresh finder found 33 lines; the judge sorted them: no new
+  class, 8 lines made worse by the redesign (a no-verb data question with an unlisted qualifier), and two blocking
+  answer-side classes already in the shipped commit that 39 rounds had not found (a day's figure printed under a
+  week's label; a stub with a digit escaping the rescue). Gate FAIL 8 again, so 10.6 called a redesign of the
+  answer-side class; round 42 was still running when this entry was written.
+**Rule:** `review` section 10: the bar is a gate (9 = all criteria pass, no blocking bug), a ledger of classes, a
+finder without the ledger and a judge with it, fixes per class, heuristic code judged on a frozen labelled set,
+a measured redesign with explicit permission when a class comes back, plateau stop and caps; `review-loop.ts`
+notes the first and fourth hand-run scoring brief of a session. Sources weighed: Anthropic's evaluator-optimizer
+and evals guidance, Google's code-review standard, Conventional Comments, Sonar's new-code gate, the self-correction
+and Self-Refine papers (side-session note `research-judge-loops.md`).
+**Status:** current for makarasty-tools 1.20.21.
