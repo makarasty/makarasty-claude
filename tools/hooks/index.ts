@@ -12,7 +12,7 @@ import { register as generatedGuard } from './generated-guard.ts'
 import { register as commentGuard } from './comment-guard.ts'
 import { register as gates } from './gates.ts'
 import { register as inbox } from './inbox.ts'
-import { register as askGuard } from './ask-guard.ts'
+import { register as askGuard, ledger as askLedger } from './ask-guard.ts'
 import { register as pushGuard } from './push-guard.ts'
 import { register as verifyGuard } from './verify-guard.ts'
 import { register as skillRouter } from './skill-router.ts'
@@ -24,6 +24,8 @@ import { register as reviewLoop } from './review-loop.ts'
 export const register: Register = (on, options) => {
   // First: a hook sees another hook's refusal only when it is registered before it.
   loopGuard(on, options)
+  // Right after it: notes every guard's refusal of a question, so the Stop hook can send back one the chat dropped.
+  askLedger(on, options)
   // Before the guards: a call it sends back with a skill hint never reaches them.
   skillRouter(on, options)
   router(on, options)

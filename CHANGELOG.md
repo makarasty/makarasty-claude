@@ -1,5 +1,31 @@
 # Changelog
 
+## makarasty-tools 1.20.24 — 2026-11-20
+
+- **A refused question is asked again or said in one line, never lost** (M85, C29). 95 refused dialogs and
+  end-of-turn asks in 75 chains over 14 days: 59 were shown again, but 3 chains lost a question outright (6 in all,
+  4 of them the dialog the owner saw break off on a red error while its chat ran the investigation the refusal sent
+  it to), and 3 more settled it without a word. `ask-guard.ts` gains a ledger, registered right after loop-guard so
+  it sees every guard's refusal: each refused question is noted by call id, prompt count (`session.turns()`) and
+  session; a later passing ask, or a line with "?" the chat writes after the refused call, covers it (status and
+  decision lines never do: a wrong reminder costs a continuation, a wrong clear loses the question). At the Stop
+  (`gates.ts`, after the other checks) the rest goes back to the chat once a turn with the refusal reason; a refusal
+  from an earlier prompt or another conversation is not sent back. Every "fix it first" refusal now ends with the
+  same line: the question is not dropped, ask it again or put it in the reply. Continue-only asks are never noted.
+- **Fewer wrong refusals.** The screen and behaviour gates also read `metadata.source` "screened: ..." /
+  "investigated: ..." (24 of 42 such refusals put the word there; a bare word still does not pass). "что делать /
+  что делаем" no longer makes a decision a behaviour question (8 of 8 such hits were plans and updates). The secret
+  check no longer fires on "200 тыс. токенов", "секреты в транскриптах" or "чат сам запустил", and after a red team
+  catches more real asks than before: polite and infinitive forms, "нужен пароль", a secret named in the ask or an
+  option ("Пароль от базы?", "Скину пароль"), env names like OPENAI_API_KEY. The command check reads at most eight
+  command-like words between the tool and its flag (prose like "12 процессов node из C:\Program Files" passes),
+  quoted strings and «» quotes count, winget/choco/scoop added.
+- Checked: tools 546/546 (`claude plugin test tools`); a replay of the 73 refused chains still on disk: the ledger
+  sends back 16: 7 questions that reached the person in no form in that turn, 3 asked only minutes later after an
+  investigation, 6 already written in the chat's own words or re-asked narrower (one extra continuation each, at
+  most one a turn). Red team: four attackers (loops and state, regex leaks, coverage arithmetic, the numbers), two
+  rounds on the fixes.
+
 ## makarasty-tools 1.20.23 — 2026-11-20
 
 - **`report` explains instead of listing cards** (M84). The card page ("Маршрут": a route of numbered stations,

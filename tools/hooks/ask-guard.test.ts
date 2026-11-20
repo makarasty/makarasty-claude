@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
-import { BEHAVIOUR, BOX, COMMAND, DEFERRED, ELSEWHERE, MESSAGE, OTHER_CHAT, SELF, SCREEN, behaviour, continueBox, continueQuestions, defers, holdsCommand, onlyContinue, pointsAbove, sendsToChat, staked } from './ask-guard.ts'
+import { BEHAVIOUR, BOX, COMMAND, DEFERRED, ELSEWHERE, MESSAGE, NOT_DROPPED, OTHER_CHAT, SELF, SCREEN, asksSelf, behaviour, continueBox, continueQuestions, defers, freshLedger, holdsCommand, investigated, leftAtStop, notePassed, noteRefusal, onlyContinue, pointsAbove, reminder, screened, sendsToChat, staked } from './ask-guard.ts'
 
 const q = (question: string, ...labels: string[]) => ({ question, header: 'h', multiSelect: false, options: labels.map((label) => ({ label, description: '' })) })
 
@@ -314,4 +314,143 @@ test('a stake is the act the ask or a label proposes, at a word start; every que
   expect(staked([q('Сервер проверяет это тестом — коммит 2026-11-05. Как назвать вкладку?', 'Paste', 'Output')])).toBe(false)
   expect(staked([q('Запушить?', 'Да', 'Нет'), q('Как назвать вкладку?', 'Paste', 'Output')])).toBe(false)
   expect(defers([{ question: 'Где деплоить?', options: [{ label: 'Пока не знаю', description: 'Сначала посмотрю превью, потом решим.' }] }])).toBe(false)
+})
+
+// Real refused asks from 2026-11-13..20 [M85]: a question a guard refused is asked again or said in one line, never lost.
+const opts = (...labels: string[]) => labels.map((label) => ({ label, description: '' }))
+const WEEKEND = [
+  { question: 'Порог для кода, который угадывает смысл фраз (пример — Pulse решает, вопрос про данные клиники или про правила). Какой ставить по умолчанию?', header: 'Порог', options: opts('95% (Рекомендую)', '98%', 'Решать в каждой задаче') },
+  { question: 'Сколько и каких «искателей» (агентов, которые ищут ошибки) ставить на каждый круг? Данных пока нет: все наши искатели были дорогой моделью.', header: 'Искатели', options: opts('Сначала измерить (Рекомендую)', '1 дорогой', '1 дорогой + 2 дешёвых') },
+  { question: 'HTML-отчёты на рабочем столе тебе не нравятся. Что делать?', header: 'Отчёты', options: opts('Переделать концепцию (Рекомендую)', 'Только текст в чате', 'Оставить как есть') },
+  { question: 'Что ещё запустить отдельными задачами (можно несколько)?', header: 'Ещё задачи', options: opts('Pulse — хабу на выходные', 'Расследовать обрыв вопросов', 'Измерить качество судей') },
+]
+type M = { role: string; text: string }
+const transcript = (on: On) => { let msgs: M[] = [{ role: 'user', text: 'Давай обсудим, задавай вопросы' }]; on('session.messages', () => ({ value: msgs as never })); return (text: string) => { msgs = [...msgs, { role: 'assistant', text }] } }
+const stopNow = ($: { classic: { Stop(e: never): Promise<{ block?: unknown }> } }, last = '', again = false) => $.classic.Stop({ stop_hook_active: again, last_assistant_message: last } as never)
+const stops = (on: On) => on('classic.Stop', async () => ({}))
+
+test('real false positives no longer refuse: "что делать", a usage figure in tokens, a chat that "сам запустил", node in prose', () => {
+  expect(behaviour(WEEKEND)).toBe(false)
+  expect(behaviour([q('Spotify 1.2.84 → 1.3.10: обновление сотрёт патч SpotX. Что делать?', 'Не трогать', 'Обновить')])).toBe(false)
+  expect(asksSelf([q('Рутина в чатах сейчас идёт на Opus, модель тратит около 200 тыс. токенов на сводку. Переводить на Sonnet?', 'Да', 'Нет')])).toBe(false)
+  expect(asksSelf([q('Хаб-чат 17.11 сам запустил около 12 чатов, почти все про тулинг. Сделать правило?', 'Да', 'Нет')])).toBe(false)
+  expect(asksSelf([q('Чат написал тебе команды: положить новый тестовый ключ Stedi в секрет. Выдал права и положил новый тестовый ключ?', 'Да, сделал', 'Позже')])).toBe(false)
+  expect(asksSelf([q('Добавить создание тестовых аккаунтов только на sandbox, с паролями в локальном gitignored-файле?', 'Да', 'Нет')])).toBe(false)
+  expect(holdsCommand([q('Git 2.56, Node 26.13.1 и OBS 33 мешают работающим чатам: сейчас работают 12 процессов node из C:\\Program Files\\nodejs. Когда ставить?', 'Сам после перезагрузки', 'Сейчас')])).toBe(false)
+  expect(holdsCommand([{ question: 'Когда ставить?', options: [{ label: 'Сам после перезагрузки', description: 'Перед запуском Claude выполнишь: winget upgrade --id Git.Git -e' }] }])).toBe(true)
+  expect(asksSelf([q('Поднимешь сам (`cd frontend; npm run dev`) или мне запустить его через панель браузера?', 'Подниму', 'Запусти ты')])).toBe(true)
+})
+
+test('red team: real asks for a secret or a by-hand run still refuse in every form', () => {
+  for (const t of ['Введите пароль от sandbox-базы', 'Отправь токен бота сюда', 'Можешь прислать токен бота?', 'Нужен пароль от sandbox-БД. Есть?', 'Какой пароль у песочницы?', 'Your staging API key?',
+    'Введи, пожалуйста, значение переменной окружения STRIPE_SECRET_KEY', 'Скинь из .env значение STRIPE_SECRET_KEY', 'What’s the API key for staging?', 'Введи OPENAI_API_KEY', 'Пришли ключ от Stedi',
+    'Запустите миграцию вручную', 'Сможешь самостоятельно выполнить миграцию?', 'Самостоятельно запусти миграцию', 'Запусти seed.mjs сам и скажи, что вышло', 'Please restart the dev server manually', 'Try running the script yourself'])
+    expect([t, asksSelf([q(t, 'Да', 'Нет')])]).toEqual([t, true])
+  expect(asksSelf([q('Как передать доступ к sandbox?', 'Скину пароль в чат', 'Иначе')])).toBe(true)
+  for (const t of ['pip install requests flask django numpy -U', 'git commit "Исправил баг" --amend', 'Выполни «git push --force origin main». Готово?'])
+    expect([t, holdsCommand([q(t, 'Да', 'Нет')])]).toEqual([t, true])
+})
+
+test('the screen takes what the tool schema allows: metadata.source "screened: ..." or "investigated: ..."', async ($, on) => {
+  expect(screened({ source: 'screened: checked CLAUDE.md, ports and the answers file; his taste' })).toBe(true)
+  expect(screened({ source: 'screened' })).toBe(false)
+  expect(investigated({ source: 'investigated: callers: list menu, case page; history: git log -S e16ecd1491; usage: не посчитано, prod proxy down' })).toBe(true)
+  const passed = world(on, { MAKARASTY_SCREEN: 'on' })
+  expect(await ask($, WEEKEND)).toEqual({ deny: SCREEN })
+  await ask($, WEEKEND, { source: 'screened: a plan and taste question only he answers; nothing on disk settles it' })
+  expect(passed).toEqual(['AskUserQuestion'])
+})
+
+test('every refusal that sends the chat off to fix or check first says the question is not dropped', () => {
+  for (const m of [SCREEN, BEHAVIOUR, SELF, DEFERRED, COMMAND, ELSEWHERE]) expect(m.endsWith(NOT_DROPPED)).toBe(true)
+  expect(MESSAGE.includes(NOT_DROPPED)).toBe(false)
+})
+
+const call = (id: string, text = '') => ({ role: 'assistant', text, toolUses: [{ tool_use_id: id }] })
+const said = (text: string) => ({ role: 'assistant', text })
+const user = (text: string) => ({ role: 'user', text })
+
+test('ledger: what the chat wrote after the refused call in this turn, or a shorter re-ask, covers a question; the rest is sent back', () => {
+  const st = freshLedger()
+  noteRefusal(st, WEEKEND.map((w) => w.question), 'Not asked yet: this asks how the product or code should behave. First run ...', 't1')
+  const msgs = [user('Давай обсудим'), call('t1', 'HTML-отчёты, порог, искатели: ниже вопросы.'), said('Still waiting on the fact-checker and three cheap finders.')]
+  const left = leftAtStop(st, msgs)
+  expect(left.map((r) => r.question)).toEqual(WEEKEND.map((w) => w.question))
+  expect(reminder(left)).toContain('4 questions this turn tried to ask the person were refused')
+  expect(reminder(left)).toContain('(refused: this asks how the product or code should behave.)')
+  expect(st.refused).toEqual([])
+  const push = 'Пуш Max отклонён pre-push хуком (ничего не ушло). Причина: Rost в origin/main добавил проверку «type-debt ratchet» со своим базовым счётом, а в коде Max она насчитала 68 новых «дыр» типизации: почти все — `!` в тестах. Что делаем?'
+  noteRefusal(st, [push], 'Not asked: the question or an option holds a command.', 't2')
+  notePassed(st, ['Пуш Max остановила проверка типового долга из ветки Rost: в коде Max 68 новых «дыр» (в основном `!` в тестах отчётов). Что делаем?'])
+  expect(st.refused).toEqual([])
+  noteRefusal(st, ['Где снят первый скрин с тёмным углом и скруглённой границей?'], 'Screen this question first.', 't3')
+  expect(leftAtStop(st, [user('x'), call('t3'), said('Не нашёл сам.\nВопрос: где снят первый скрин с тёмным углом и скруглённой границей?')])).toEqual([])
+})
+
+test('ledger: narration, a status recap or a short unrelated question does not count as asking', () => {
+  const st = freshLedger()
+  const vite = 'Для скриншотов страницы Console › External systems нужен vite на :5173. Сейчас он не запущен. Поднимаю его через панель браузера?'
+  noteRefusal(st, [vite], 'Screen this question first.', 'v1')
+  notePassed(st, ['Какой вариант?'], 'Делаю скриншоты страницы Console External systems, vite на :5173 не запущен.')
+  expect(leftAtStop(st, [user('x'), call('v1'), said('Делаю скриншоты страницы Console External systems, vite на :5173 не запущен.')]).length).toBe(1)
+  noteRefusal(st, ['Удалить ветку cleanup-comments после мержа?'], 'Not asked: x.', 'd1')
+  notePassed(st, [], 'Ветку cleanup-comments доделал, тесты зелёные.')
+  expect(st.refused.length).toBe(1)
+  notePassed(st, ['Мержить PR 41 в main?'])
+  noteRefusal(st, ['Мержить PR 42 в main?'], 'Not asked: x.', 'm1')
+  notePassed(st, ['Мержить PR 41 в main?'])
+  expect(st.refused.map((r) => r.question)).toEqual(['Удалить ветку cleanup-comments после мержа?', 'Мержить PR 42 в main?'])
+})
+
+test('ledger: one dialog\'s questions never replace each other, a prefix is not a retry, a re-worded retry is', () => {
+  const st = freshLedger()
+  noteRefusal(st, ['Какую базу взять для отчётов: Postgres или SQLite?', 'Какую базу взять для логов?', 'Это баг?'], 'Not asked: x.', 'a')
+  expect(st.refused.length).toBe(3)
+  noteRefusal(st, ['5056_life_lines-app · Флит отчётов: удалять файлы Classic?'], 'Not asked: x.', 'b')
+  noteRefusal(st, ['5056_life_lines-app · Флит отчётов: мержить ветку?'], 'Not asked: x.', 'c')
+  expect(st.refused.length).toBe(5)
+  const st2 = freshLedger()
+  noteRefusal(st2, ['Admin может захватить чужой аккаунт: меняет email пользователя на свой ящик и шлёт туда reset пароля. Как должно работать?'], 'Not asked: x.', 'p')
+  noteRefusal(st2, ['Admin может захватить чужой аккаунт: сам меняет email пользователя на свой ящик и шлёт туда reset пароля. Как должно работать?'], 'Not asked yet: y.', 'q')
+  expect(st2.refused.map((r) => r.why)).toEqual(['y.'])
+})
+
+test('ledger: a refusal from an earlier prompt (aborted, failed) or another conversation (/clear) is not sent back', () => {
+  const st = freshLedger()
+  noteRefusal(st, ['Какую базу взять для отчётов флита, Postgres или SQLite?'], 'Screen this question first.', 'old', 3, 's1')
+  expect(leftAtStop(st, [user('первый'), call('old'), user('новая задача'), said('Готово.')], '', 4, 's1')).toEqual([])
+  noteRefusal(st, ['Какую базу взять для отчётов флита, Postgres или SQLite?'], 'Screen this question first.', 'old', 3, 's1')
+  expect(leftAtStop(st, [said('Готово.')], '', 3, 's2')).toEqual([])
+  noteRefusal(st, ['Какую базу взять для отчётов флита, Postgres или SQLite?'], 'Screen this question first.', 'old', 3, 's1')
+  expect(leftAtStop(st, [user('Stop hook feedback: Not finished'), said('Готово.')], '', 3, 's1').length).toBe(1)
+})
+
+test('hook: a refused dialog the chat never asks again comes back at the Stop; a passing re-ask or a continue-only ask does not', async ($, on) => {
+  world(on, { MAKARASTY_SCREEN: 'on' })
+  stops(on)
+  const add = transcript(on)
+  const vite = [q('Для скриншотов страницы Console › External systems нужен vite на :5173. Сейчас он не запущен. Поднимаю его через панель браузера?', 'Да', 'Нет')]
+  expect(await ask($, vite)).toEqual({ deny: SCREEN })
+  add('Жду, пока эмулятор начнёт слушать :5001, после этого вход и скриншоты.')
+  const b = String((await stopNow($, 'Жду, пока эмулятор начнёт слушать :5001.')).block)
+  expect(b).toContain('a question this turn tried to ask the person was refused')
+  expect(b).toContain('нужен vite на :5173')
+  expect(await ask($, [q('Порт :5173 занят другим чатом. Какой порт взять для второго vite этого чата?', '5174', '5180')])).toEqual({ deny: SCREEN })
+  expect((await stopNow($, 'Жду.', true)).block).toBeUndefined()
+  expect((await stopNow($)).block).toBeUndefined()
+  const base = [q('Какую базу взять для отчётов флита, Postgres или SQLite?', 'Postgres', 'SQLite')]
+  expect(await ask($, base)).toEqual({ deny: SCREEN })
+  await ask($, base, { source: 'screened: a choice of approach; CLAUDE.md and docs do not settle it' })
+  expect(await ask($, [q('Продолжать?', 'Да', 'Нет')])).toEqual({ deny: MESSAGE })
+  expect(await $.tool.call({ tool: 'mcp__ccd_turn__wrap_up', recap: 'r', ask: 'Продолжить?', actions: [{ label: 'Да' }, { label: 'Нет' }] } as never)).toEqual({ deny: BOX })
+  expect((await stopNow($, 'Готово.')).block).toBeUndefined()
+})
+
+test('hook: MAKARASTY_ASK_GUARD=off refuses nothing and sends nothing back at the Stop', async ($, on) => {
+  const passed = world(on, { MAKARASTY_SCREEN: 'on', MAKARASTY_ASK_GUARD: 'off' })
+  stops(on)
+  transcript(on)
+  await ask($, [q('Какой цвет у кнопки Save на странице отчётов оставить?', 'Синий', 'Зелёный')])
+  expect(passed).toEqual(['AskUserQuestion'])
+  expect((await stopNow($)).block).toBeUndefined()
 })

@@ -16,6 +16,8 @@ export const MESSAGE =
   'Not asked: whether to go on with work the person already asked for is answered yes, always. Carry on and report at the end. ' +
   'Ask only what is theirs to decide (a push with its commits, a delete, a real choice between approaches) and name that decision.'
 export const BOX = `${MESSAGE} Call wrap_up again without the ask.`
+// Every other refusal sends the chat to fix or check something first; this tail keeps the question alive [M85].
+export const NOT_DROPPED = ' The refusal does not drop the question: fix it and ask again in this turn, or put it in your reply as one plain line (what you need from the person, your pick); if a check settles it, one line on what you decided.'
 
 // A question that sends the person elsewhere by pointing "above" ("в чате по ссылке выше", "the link above") reaches
 // them without that text when the inbox relays it, and they cannot find the chat among dozens. The question itself must
@@ -23,7 +25,7 @@ export const BOX = `${MESSAGE} Call wrap_up again without the ask.`
 export const ELSEWHERE =
   'Not asked: the question points at a link or chat "above", which the person does not see when the dialog is relayed. ' +
   'Name the place in the question itself (the chat title and its account, or the exact path or command) and the exact action, ' +
-  'put the chat link [title](#local_<id>) in the text right above the call, then ask again.'
+  'put the chat link [title](#local_<id>) in the text right above the call, then ask again.' + NOT_DROPPED
 const ABOVE = /(ссылк[аеиуой]*|чат[еау]?|окн[еоа]|link|chat|window)\s+(выше|сверху|above)|(выше|above)\s+(по ссылке|ссылк|link)|по ссылке (выше|сверху)|linked above/i
 // A step in another chat (press its card, answer there, check there) is not a dialog: while a dialog is open the person
 // cannot use the link above it, a link cannot go inside it, and opening the chat for them does not help (the dialog
@@ -42,9 +44,11 @@ export function sendsToChat(questions: readonly Q[]): boolean {
 export const COMMAND =
   'Not asked: the question or an option holds a command, which cannot be copied from the dialog. Put the command in a ' +
   'code block in the text right above the call (on Windows in a form Windows PowerShell 5.1 runs: `;` instead of `&&`, ' +
-  'tagged powershell), and keep the question a short title ("Запустил? Что вышло?"), then ask again.'
-const TOOLS = '(?:npm|npx|pnpm|yarn|bun|bunx|node|deno|git|gh|python3?|pip|uv|cargo|go|dotnet|docker|claude|powershell|pwsh|cmd|bash|sh|curl|wget)'
-const CMD = new RegExp(`&&|\\|\\||(?:^|[\\s\`(])cd\\s+["']?(?:[A-Za-z]:[\\\\/]|[~./\\\\])|(?:^|[\\s\`(])${TOOLS}\\s+(?:\\S+\\s+)*?(?:-{1,2}[A-Za-z]|[A-Za-z]:[\\\\/]|\\.{0,2}[\\\\/]\\S|\\S+\\.(?:m?[jt]s|json|ps1|sh|py)\\b)`, 'i')
+  'tagged powershell), and keep the question a short title ("Запустил? Что вышло?"), then ask again.' + NOT_DROPPED
+// Up to eight command-like words (or quoted strings) between the tool and its flag or path: an unbounded gap read prose
+// ("12 процессов node из C:\Program Files", "Python в 17 чатах ... -X") as a command [M85].
+const TOOLS = '(?:npm|npx|pnpm|yarn|bun|bunx|node|deno|git|gh|python3?|pip|uv|cargo|dotnet|docker|claude|powershell|pwsh|cmd|bash|sh|curl|wget|winget|choco|scoop)'
+const CMD = new RegExp(`&&|\\|\\||(?:^|[\\s\`(«"'])cd\\s+["']?(?:[A-Za-z]:[\\\\/]|[~./\\\\])|(?:^|[\\s\`(«"'])${TOOLS}\\s+(?:(?:"[^"\\n]*"|'[^'\\n]*'|[^\\s,;а-яё"']+)\\s+){0,8}?(?:-{1,2}[A-Za-z]|[A-Za-z]:[\\\\/]|\\.{0,2}[\\\\/]\\S|\\S+\\.(?:m?[jt]s|json|ps1|sh|py)\\b)`, 'i')
 export function holdsCommand(questions: readonly Q[]): boolean {
   if (!Array.isArray(questions)) return false
   return questions.some((q) => [str(q?.question), ...(Array.isArray(q?.options) ? q.options : []).flatMap((o) => [str(o?.label), str(o?.description)])].some((t) => CMD.test(t)))
@@ -55,12 +59,35 @@ export function holdsCommand(questions: readonly Q[]): boolean {
 export const SELF =
   'Not asked: the question asks the person for a password, token or secret, or to run something themselves. No secret is ' +
   'asked in chat, ever. First find how this machine already reaches it (a local proxy or tunnel, open ports, the env files ' +
-  "and scripts the project uses, its docs), do the step yourself, and ask only for a decision that stays the person's."
-const SECRET = /(парол|password|passwd|\bpass(word)?\b|токен|token|секрет|secret|api[ -]?key|ключ(а|ом)? (api|доступа)|credential|учётн[а-я]* данн|учетн[а-я]* данн|\b[A-Z][A-Z0-9]*_(PASS|PASSWORD|TOKEN|SECRET|KEY)\b)/i
-const BYHAND = /(запусти|выполни|прогони|run|execute|start)[^?.!\n]{0,40}(сам(?![а-я])|самостоятельно|вручную|у себя|yourself|by hand|manually|on your (machine|side))|(сам(?![а-я])|вручную|yourself|manually)[^?.!\n]{0,20}(запусти|выполни|прогони|run|execute)/i
+  "and scripts the project uses, its docs), do the step yourself, and ask only for a decision that stays the person's." + NOT_DROPPED
+// A secret is asked when a verb asks for one anywhere ("введите пароль", "можешь прислать токен"), or when the ask sentence
+// or an option names one in the singular ("Пароль от базы?", "Скину пароль"). The question's other sentences and plurals do
+// not count: 22 of 23 refusals matched "токенов" of a usage figure, a leak being described or "чат сам запустил" [M85].
+// Words are bounded (no "ключевые", "primary_key"); an env name counts only in capitals, so it is matched without the i flag.
+const SECRET_WORD = '(?:парол[ьяюе]?(?![а-яё])|password|passwd|токен(?:а|ом|у|ы)?(?![а-яё])|token|секрет(?:а|ом|у|ы)?(?![а-яё])|secret|api[-_ ]?key|(?:stripe|access|private|ssh|signing|license) key|ключ(?:а|ом|у|и)?(?![а-яё])|pin\\b|пин-код|credential|учётн[а-я]* данн|учетн[а-я]* данн)'
+const ENV = '\\b[A-Z][A-Z0-9_]*_(?:PASS|PASSWORD|TOKEN|SECRET|KEY)\\b'
+const GIVE = '(?:(?:дай|пришли|скинь|кинь|введи|вставь|вбей|напиши|подскажи|сообщи|скажи|продиктуй|отправь|укажи|назови|передай|выдай|предоставь)(?:те)?|дашь|дадите|пришлёшь|пришлешь|пришлёте|пришлете|скинешь|скинете|напишешь|подскажешь|введёшь|введешь|сообщишь|скажешь|передашь|отправишь|укажешь|назовёшь|назовешь|выдашь|вставишь|поделись|поделитесь|прислать|ввести|вставить|скинуть|назвать|написать|подсказать|send|give|paste|share|provide|enter|supply|tell me|what(?:\'s|’s| is| are)(?: the| your))'
+// The gap stops at a sentence end (". ") but not at a dot inside ".env" or "v2.1".
+const GAP = '(?:[^?!.\\n]|\\.(?=\\S)){0,60}'
+const SECRET = new RegExp(`(?<![a-zа-яё])${GIVE}(?![a-zа-яё])${GAP}${SECRET_WORD}`, 'i')
+const GIVE_SPAN = new RegExp(`(?<![a-zа-яё])${GIVE}(?![a-zа-яё])(${GAP}\\S*)`, 'gi')
+const ENV_RE = new RegExp(ENV)
+const asksEnv = (t: string): boolean => [...t.matchAll(GIVE_SPAN)].some((m) => ENV_RE.test(m[1] ?? ''))
+// A bare ask for a key or PIN ("Ключ от Stedi?", "Your Stripe key?").
+const BARE_KEY = /(?<![a-zа-яё])(?:ключ|key|pin|пин)(?:а|ом|у)?\s+(?:от|для|к|to|for)\s+\S+\?\s*$|^\s*(?:your\s+)?\S+\s+key\?\s*$/i
+const NEED = new RegExp(`(?<![a-zа-яё])(?:нужен|нужна|нужны|need)\\s+(?:(?:мне|нам|твой|твоя|ваш|ваша|the|your)\\s+)?${SECRET_WORD}`, 'i')
+// Named in the ask or an option, singular, and not as a feature ("восстановление пароля", "secret manager", "хранить токен").
+const NAMED = /(?<![a-zа-яё])(?<!(?:ли|без|сброс|сброса|сбросить|сбрось|восстановление|восстановления|показать|хранить|храним|ротировать|reset|forgot|show|store|rotate|hash) )(парол[ьяю](?![а-яё])|password(?![\s-]+(?:reset|rules|policy|length|manager|hash|field|based))|passwd|токен(?:а|ом|у)?(?![а-яё])|token(?![a-z]| (?:refresh|budget|limit|count|usage))|секрет(?:а|ом|у)?(?![а-яё])|secret(?![a-z]| (?:manager|field|store))|api[-_ ]?key|(?:stripe|access|private|ssh|signing|license) key|ключ(?:а|ом|у)? (?:от|для|к)\s|пин-код|credential|учётн[а-я]* данн|учетн[а-я]* данн)/i
+const RUN = '(?:запусти|выполни|прогони|подними|перезапусти)(?:те)?(?![а-яё])|(?:запустишь|выполнишь|прогонишь|поднимешь|перезапустишь)|(?:можешь|сможешь|можете|сможете)\\s+(?:[а-яё]+\\s+)?(?:запустить|выполнить|прогнать|поднять|перезапустить)|\\b(?:re)?(?:run|start)\\b|\\b(?:execute|launch|running)\\b'
+const BY = '(?<![а-яё])сам(?![а-яё])|самостоятельно|вручную|у себя|yourself|by hand|manually|on your (?:machine|side)'
+const BYHAND = new RegExp(`(?:${RUN})[^?!\\n]{0,60}(?:${BY})|(?:${BY})[^?!\\n]{0,30}(?:${RUN})|(?:можешь|сможешь|можете|сможете)\\s+(?:${BY})\\s+(?:запустить|выполнить|прогнать|поднять|перезапустить)`, 'i')
 export function asksSelf(questions: readonly Q[]): boolean {
   if (!Array.isArray(questions)) return false
-  return questions.some((q) => { const t = [str(q?.question), ...(Array.isArray(q?.options) ? q.options : []).map((o) => str(o?.label))].join('\n'); return SECRET.test(t) || BYHAND.test(t) })
+  return questions.some((q) => {
+    const labels = (Array.isArray(q?.options) ? q.options : []).map((o) => str(o?.label))
+    const t = [str(q?.question), ...labels].join('\n')
+    return SECRET.test(t) || asksEnv(t) || NEED.test(t) || BYHAND.test(t) || [lastSentence(str(q?.question)), ...labels].some((s) => NAMED.test(s) || ENV_RE.test(s) || BARE_KEY.test(s))
+  })
 }
 
 // The screen: a question reaches the person only after the asking chat checked it could not answer it itself. Of 95
@@ -72,10 +99,12 @@ export const SCREEN =
   'Explore agent given this question and the project folder): the project CLAUDE.md and docs, what runs locally (ports, ' +
   'proxies, processes), the scripts and env it uses, earlier answers in this chat and the standing answers. If that settles ' +
   'it, do the step and do not ask. If something must be started that you cannot start, ask the person to start it (never a ' +
-  'password). Otherwise ask again with metadata {"screened": "<one line: what you checked and why only the person can answer>"}.'
+  'password). Otherwise ask again with metadata {"source": "screened: <one line: what you checked and why only the person can answer>"}.' + NOT_DROPPED
 export function screened(meta: unknown): boolean {
   const m = meta && typeof meta === 'object' ? (meta as Record<string, unknown>) : {}
-  return (typeof m.screened === 'string' && m.screened.trim().length >= 20) || /^inbox(:|$)/.test(str(m.source))
+  // Chats put it in metadata.source, the only field the tool's schema shows: 24 of 42 screen and behaviour refusals carried a bare
+  // "screened" or "investigated" there [M85]. A bare word still does not pass; the detail does.
+  return (typeof m.screened === 'string' && m.screened.trim().length >= 20) || /^screened\s*:\s*\S.{18,}/is.test(str(m.source).trim()) || /^inbox(:|$)/.test(str(m.source))
 }
 // The screen is skipped only when every question's own ask (its last sentence) or an option label proposes an act that
 // stays the person's, matched at a word start. Matched anywhere, evidence did it: "коммит 2026-11-05" in a description,
@@ -97,8 +126,9 @@ export const BEHAVIOUR =
   'Sonnet high): every caller of the code each option changes (menus, other apps, API, crons); `git log -S`/`-L` for each ' +
   'side (who, when, why); real usage (a read-only count, or "не посчитано: <why>"); what each option breaks for a user. ' +
   'Open every function a claim rests on: a name is not a check. Put what you found in the question in 3-5 plain lines, mark ' +
-  'anything unchecked "не проверено", then ask again with metadata {"investigated": "callers: ...; history: ...; usage: ..."}.'
-const BEHAVES = /(?<![a-zа-яё])(как (должн|правильно|делать|сделать|быть|забирать|тестировать|закрываем|растягивать|встаёт|встает)|должн|должен|что (делаем|делать|сделать|верно)|чем чинить|насколько|как задумано|так задумано|это дефект|запрещ|запрет|разреш|ограничива|скрыва|скрыть|оставля|хранить|should|behav|allow|refuse|block)/i
+  'anything unchecked "не проверено", then ask again with metadata {"source": "investigated: callers: ...; history: ...; usage: ..."}.' + NOT_DROPPED
+// Not "что делать / что делаем": a plain decision (a Spotify update, the weekend plan, HTML reports) asks it too, 8 of 8 hits [M85].
+const BEHAVES = /(?<![a-zа-яё])(как (должн|правильно|делать|сделать|быть|забирать|тестировать|закрываем|растягивать|встаёт|встает)|должн|должен|что верно|чем чинить|насколько|как задумано|так задумано|это дефект|запрещ|запрет|разреш|ограничива|скрыва|скрыть|оставля|хранить|should|behav|allow|refuse|block)/i
 // A stake question is the person's whatever it asks; the gate is for the rest.
 export function behaviour(questions: readonly Q[]): boolean {
   if (!Array.isArray(questions)) return false
@@ -106,7 +136,8 @@ export function behaviour(questions: readonly Q[]): boolean {
 }
 export function investigated(meta: unknown): boolean {
   const m = meta && typeof meta === 'object' ? (meta as Record<string, unknown>) : {}
-  const t = str(m.investigated)
+  const src = /^\s*investigated\s*:([\s\S]*)$/i.exec(str(m.source))
+  const t = [str(m.investigated), src ? src[1]! : ''].sort((a, b) => b.length - a.length)[0]!
   return t.trim().length >= 80 && /(caller|вызыва|вызов|кто зов|callers|menu|меню)/i.test(t) && /(git|histor|истори|коммит|commit)/i.test(t) && /(usage|count|посчит|prod|прод|used|использ)/i.test(t)
 }
 
@@ -114,7 +145,7 @@ export function investigated(meta: unknown): boolean {
 // the agent could do now; the question then rests on what it has not looked at.
 export const DEFERRED =
   'Not asked yet: an option puts off a check ("сначала посмотрю / посчитаю"). That check is part of the question: do it now, ' +
-  'then ask again with its result in the question text.'
+  'then ask again with its result in the question text.' + NOT_DROPPED
 // The agent's own voice ("сначала я смотрю", "сначала посчитать"); an option in the person's voice ("сначала посмотрю превью") is theirs.
 const DEFERS = /сначала,?\s+(я\s+(смотр|посмотр|провер|гляну|сверю|посчита|изуч|разбер|выясн)|посчитать|проверить,? (ошибк|есть ли|сколько)|посмотреть,? (логи|есть ли|сколько))|first,?\s+i('ll| will)?\s+(check|look|verify|count)/i
 export function defers(questions: readonly Q[]): boolean {
@@ -196,6 +227,124 @@ export function continueBox(ask: string, actions: readonly { label?: unknown; ac
   if (typeof ask !== 'string' || !ask.trim() || !Array.isArray(actions) || actions.some((a) => str(a?.action))) return false
   // A box with no buttons, or a bare "Продолжить?", is the same yes/no question.
   return onlyContinue(ask, actions.length ? actions.map((a) => str(a?.label)) : ['Да', 'Нет'], recap)
+}
+
+// A refused ask still needs the person, or one line saying the chat settled it. Of 75 chains of refused asks 11-06..11-20,
+// 3 lost a question outright (6 in all, 4 of them one dialog its chat forgot while the investigation the refusal asked for
+// ran) [M85]. `ledger` (registered right after loop-guard, so it sees every guard's refusal) notes each refused dialog or
+// end-of-turn ask by call id, prompt count and session; a later passing ask, or a question line the chat writes after the
+// refused call, covers it. The rest goes back to the chat from the plugin's one Stop hook (gates.ts), at most once a turn.
+type Msg = { role: string; text: string; toolUses?: readonly { tool_use_id?: string }[] }
+type Refusal = { question: string; why: string; id: string; turn: number; session: string }
+export type Ledger = { refused: Refusal[]; sentBack: boolean }
+export const freshLedger = (): Ledger => ({ refused: [], sentBack: false })
+const ledgerNow = freshLedger()
+// Five-letter stems, so a re-ask in other word forms ("сессий" / "сессии") still matches; numbers stay whole (PR 41 / PR 42).
+// The inbox's "<project> · <chat title>: " tag is dropped first: every question it relays from one chat carries it.
+const core = (s: string): string => s.replace(/^[^:?\n]{2,80} · [^:?\n]{2,120}:\s+/, '')
+const stems = (s: string): string[] => [...new Set(words(core(s)).filter((w) => w.length > 3 || (/^\d+$/.test(w) && w.length > 1)).map((w) => w.slice(0, 5)))]
+// Whether a question was asked is decided only by what reaches the person as a question: a passing ask, or a written line
+// with "?". Narration, status and decision lines never clear one, however many of its words they reuse ("Закоммитил в
+// makarasty-claude (master)"); a wrong reminder costs one continuation, a wrong clear loses the question [M85].
+// A shown ask is judged against the shorter side (a re-ask often cuts a long question to a line) but needs four shared
+// stems (all of a shorter question's), so "Какой вариант лучше?" covers no long question.
+export const COVER = 0.5
+export function covers(text: string, question: string): boolean {
+  const q = stems(question)
+  if (!q.length) return words(question).length > 0 && ` ${words(text).join(' ')} `.includes(` ${words(question).join(' ')} `)
+  const t = new Set(stems(text))
+  const hits = q.filter((w) => t.has(w)).length
+  return hits >= Math.min(q.length, 4) && hits / Math.max(Math.min(q.length, t.size), Math.min(q.length, 4)) >= COVER
+}
+export function saidIn(text: string, question: string): boolean {
+  return text.split(/\n+/).some((line) => line.includes('?') && covers(line, question))
+}
+// A re-worded retry (an earlier call) replaces its earlier wording when most stems are shared. At 0.75 the replay's real
+// retries stayed as duplicates (up to 6 lines for 3 questions); below 0.6 short look-alikes merge ("...сообщений?" / "...отчётов?").
+export const RETRY = 0.6
+const same = (a: string, b: string): boolean => {
+  const x = new Set(stems(a)), y = stems(b)
+  const both = y.filter((w) => x.has(w)).length
+  return both > 0 && both / (x.size + y.length - both) >= RETRY
+}
+export function noteRefusal(st: Ledger, questions: readonly string[], deny: string, id = '', turn = 0, session = ''): void {
+  const why = deny.replace(/^Not asked( yet)?: /, '').split(/(?<=[.!?])\s/)[0]!.slice(0, 160)
+  // A re-worded retry (an earlier call, most stems shared) replaces its earlier wording; one dialog's questions never
+  // replace each other, and two questions that only share a prefix ("5056_life_lines-app · Флит отчётов: ...") both stay.
+  const fresh = questions.filter((q) => q.trim())
+  st.refused = st.refused.filter((r) => !fresh.some((q) => same(q, r.question)))
+  for (const question of fresh) st.refused.push({ question, why, id, turn, session })
+}
+// Each shown question on its own as well as the whole (the options' text would outweigh a re-ask cut to one line); a recap
+// is a line the person reads, not a question, so it is judged as one.
+export function notePassed(st: Ledger, asks: readonly string[], said = ''): void {
+  st.refused = st.refused.filter((r) => !asks.some((t) => covers(t, r.question)) && !(said && saidIn(said, r.question)))
+}
+// At a Stop: this turn's refusals that nothing after their call covered. A refusal from an earlier prompt (an aborted or
+// failed turn) or another conversation (/clear) is dropped: the person was there or the turn is gone. The ledger empties.
+export function leftAtStop(st: Ledger, msgs: readonly Msg[], last = '', turn = 0, session = ''): Refusal[] {
+  const at = (id: string): number => (id ? msgs.findIndex((m) => m.toolUses?.some((u) => u.tool_use_id === id)) : -1)
+  const left = st.refused.filter((r) => {
+    if (r.turn !== turn || r.session !== session) return false
+    const i = at(r.id)
+    const after = i >= 0 ? msgs.slice(i + 1).filter((m) => m.role === 'assistant').map((m) => m.text).join('\n') : ''
+    return !saidIn(`${after}\n${last}`, r.question)
+  })
+  st.refused = []
+  return left
+}
+export function reminder(left: readonly Refusal[]): string {
+  const one = left.length === 1
+  return `Not finished: ${one ? 'a question' : `${left.length} questions`} this turn tried to ask the person ${one ? 'was' : 'were'} refused by a guard and never reached them:\n` +
+    left.map((r, i) => `${i + 1}. «${r.question.length > 300 ? `${r.question.slice(0, 300)}…` : r.question}» (refused: ${r.why})`).join('\n') +
+    '\nFor each: ask it again now, fixed the way the refusal said, or write it in your last message as one plain numbered line ' +
+    '(what you need from the person, the options, your pick). If you settled it yourself, one line on what you decided and why.'
+}
+type Session = { session: { messages(): Promise<readonly Msg[]>; turns(): Promise<number>; id(): Promise<string> } }
+async function where($: Session): Promise<[number, string]> {
+  return [await $.session.turns().catch(() => -1), await $.session.id().catch(() => '')]
+}
+// Once a turn: a Stop that comes back after this hook's own block (stop_hook_active) ends the turn whatever is left, so a chat
+// that keeps re-wording into new refusals cannot loop. gates.ts calls askStopSeen on every Stop, before the checks that may
+// send the turn back first, so the mark never outlives its turn and a Stop sent back by another check still gets this one.
+export function askStopSeen(e: { stop_hook_active?: boolean }): void {
+  if (!e.stop_hook_active) ledgerNow.sentBack = false
+}
+export async function askStop($: { env: { get(k: string): Promise<string | undefined> } } & Session, e: { last_assistant_message?: string }): Promise<string | undefined> {
+  if (!ledgerNow.refused.length) return undefined
+  if (ledgerNow.sentBack || (await $.env.get('MAKARASTY_ASK_GUARD')) === 'off') { ledgerNow.refused = []; return undefined }
+  const [turn, session] = await where($)
+  const left = leftAtStop(ledgerNow, await $.session.messages().catch(() => []), e.last_assistant_message ?? '', turn, session)
+  if (!left.length) return undefined
+  ledgerNow.sentBack = true
+  return reminder(left)
+}
+const askTexts = (qs: readonly Q[]): string[] => [...qs.map((q) => str(q?.question)), qs.map((q) => [str(q?.question), ...(Array.isArray(q?.options) ? q.options : []).map((o) => `${str(o?.label)} ${str(o?.description)}`)].join('\n')).join('\n')]
+// Everything after next(e): a throw there must not run the dialog twice, so nothing here may throw.
+async function record($: Session, r: { deny?: string; isError?: boolean }, id: unknown, refused: () => string[], shown: () => string[], said = ''): Promise<void> {
+  try {
+    if (r.deny === undefined) { if (!r.isError) notePassed(ledgerNow, shown(), said); return }
+    const [turn, session] = await where($)
+    noteRefusal(ledgerNow, refused(), r.deny, str(id), turn, session)
+  } catch { /* the ledger is advice: a failure leaves the call's own result alone */ }
+}
+export const ledger: Register = (on) => {
+  on('tool.call', { tool: 'AskUserQuestion' }, async ($, e, next) => {
+    const r = await next(e)
+    const i = e as unknown as { agentId?: unknown; tool_use_id?: unknown; questions?: unknown }
+    if (i.agentId) return r
+    const qs = (Array.isArray(i.questions) ? i.questions : []) as readonly Q[]
+    await record($, r, i.tool_use_id, () => { const cont = new Set(continueQuestions(qs)); return qs.filter((_, n) => !cont.has(n + 1)).map((q) => str(q?.question)) }, () => askTexts(qs))
+    return r
+  })
+  on('tool.call', { tool: 'mcp__ccd_turn__wrap_up' }, async ($, e, next) => {
+    const r = await next(e)
+    const i = e as unknown as { agentId?: unknown; tool_use_id?: unknown; recap?: unknown; ask?: unknown; actions?: unknown }
+    if (i.agentId) return r
+    const acts = (Array.isArray(i.actions) ? i.actions : []) as { label?: unknown; action?: unknown }[]
+    await record($, r, i.tool_use_id, () => (continueBox(str(i.ask), acts, str(i.recap)) ? [] : [str(i.ask)]), () => (str(i.ask).trim() ? [str(i.ask)] : []), str(i.recap))
+    return r
+  })
 }
 
 export const register: Register = (on) => {

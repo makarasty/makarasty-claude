@@ -1733,3 +1733,54 @@ understanding and ease 1-10. Two readers per page (Sonnet high, Haiku high).
   50-70 thousand tokens and 20-80 s, mostly the page text and the brief).
 **Status:** 2 reports, 2 readers per cell per round, self-scored by the readers; the key-fact check was done by the
 author against the originals, not blind.
+
+## M85 — Questions that break off on a red error: refused asks, what they cost, and a ledger (2026-11-20)
+**2026-11-20**, every AskUserQuestion and wrap_up `ask` whose tool result was an error in the owner's transcripts
+(`~/.claude/projects/**/*.jsonl`, events 11-06..11-20), grouped into chains (same chat, same turn), each chain followed
+to the end of its turn and into later turns; an Opus judge read all 95 refusals; a Sonnet agent re-checked the labels
+against the raw transcripts.
+- **Count:** 95 refused asks in 75 chains. ask-guard 84 (screen 25, self 23, behaviour 17, command 15, other-chat 2,
+  deferred 1, above 1), verify-guard 5 (wrap_up after an unchecked edit), inbox rules 4, not a hook 2 (session ended,
+  owner pressed reject). Continue-only refusals: 0 in the window.
+- **What followed:** 59 chains showed the question again as a dialog (4 of them only part of it), 5 wrote it as numbered
+  prose (the owner answered one, "1 не трогай / 2 закрой и обнови ..."), 4 asked it in a later turn, 3 settled it
+  themselves without a word (started vite, used headless Chromium, a standing decision), and 3 lost a question
+  outright: d592244e 11-20 (a 4-question dialog refused as "behaviour" on "Что делать?"; the chat ran the
+  investigation and never asked; the owner's complaint was written in that chat), 007b6c78 11-17 (the six-defences
+  question dropped from a re-ask that kept only the push), f822570e 11-14 (written to a handoff file instead).
+- **Cost until the question was shown or the turn ended:** median 1 extra model call, 2.4K output and 443K input tokens
+  (mostly cache reads) per chain; 203 calls, 325K output and 59.6M input in all. Screen refusals were a toll: 16 of
+  18 re-asks carried the same text, now with metadata. Worst chain: facdfb73 11-20, refused 4 times (command,
+  behaviour, command, behaviour), then written as prose.
+- **Were the refusals right:** the judge called 19 right, 74 wrong, 2 not a hook. Wrong by cause: self 22 of 23
+  ("200 тыс. токенов", "секреты в транскриптах", "Хаб-чат сам запустил", "reset пароля" in a description), behaviour
+  15 of 17 ("Что делать?" in 8 of 8 hits: weekend plan, Spotify update, HTML reports), command (prose read as a command:
+  "12 процессов node из C:\Program Files"; the judge called all 15 wrong, the author keeps 9 that held a real command),
+  screen 20 of 25 mostly metadata form: 24 of the 42 screen and behaviour refusals carried a bare "screened" or
+  "investigated" in `metadata.source`, the one field the tool's schema shows, while the guard read other keys.
+- **Were the questions good:** 47 plain, 48 awkward (the owner's "кринжовые"): jargon and internal ids (file:line,
+  M51, ratchet) 17, missing context ("ссылка выше", another chat's labels) 9, the agent's own call or a "continue?" 9,
+  options that do not say who does what 5, several questions glued or too long 4, English to a Russian reader 3.
+  Example: "Порог для кода, который угадывает смысл фраз ... Какой ставить по умолчанию?" (owner: «Я не понимаю, что
+  такое порог для эвристического кода»).
+- **Fix:** the ledger in `ask-guard.ts` (see C29). Replay of the 73 chains still on disk (2 transcripts deleted)
+  through the new code with what each chat really did next: the ledger sends back 16: 7 reached the person in no form
+  in that turn (the 3 losses, the 3 silent settles, a decision written as a bullet), 3 were asked minutes later after
+  an investigation, 6 were already written in the chat's own words or re-asked narrower (each costs one continuation
+  in the same turn, at most one a turn). Only a line with "?" covers a question: at 0.7 of its words a plain line
+  cleared real ones ("Закоммитил в makarasty-claude (master)"). Gate replay of the 84 ask-guard refusals: 14 now pass,
+  16 move to the screen (which now accepts `source: "screened: ..."`), the rest refuse as before.
+- **Red team (4 Sonnet attackers, 2 rounds on the fixes, judged here):** confirmed and fixed: a block loop (no
+  stop_hook_active check), a "reminded" set that never expired, a once-a-turn mark that outlived its turn when another
+  check blocked first (the d592244e shape: verify-guard's research check blocked its first Stop), a turn start read
+  from user lines that hook feedback and task notices also write (now `session.turns()` and the session id), a
+  message-count index broken by the 4096 cap and compaction, sibling questions evicting each other, a stemless
+  question wiping the ledger, coverage cleared by a short unrelated ask, a status recap or narration, 21 real secret
+  or by-hand asks the first narrowing let through ("Введите пароль", "Можешь прислать токен?", "Ключ от Stedi?",
+  "Запустите миграцию вручную") and the misfires its broadening added ("primary_key", "ключевые метрики", "Показать
+  пароль"). Left: a re-ask refused again in the reminder's continuation is not sent back a second time (the loop
+  breaker); "Which type of API key", English prose with a path ("go to /admin") or "Node.js" after git/node/claude
+  still misfire; 4-letter stems ("тест"/"тесты") and a language switch can cost a false reminder.
+- **Not measured:** live chats on the new version (the replay assumes each chat would act as it did); how often the
+  owner saw the re-asked dialog after the red one (the app's rendering is not in the transcript).
+**Status:** current; one window, one judge; the outcome labels re-checked against raw transcripts.

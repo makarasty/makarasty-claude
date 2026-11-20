@@ -1,6 +1,7 @@
 import type { EngineInterface, Register } from 'claude-code'
 import { register as routes, stopBlock } from './routes.ts'
 import { researchStop } from './verify-guard.ts'
+import { askStop, askStopSeen } from './ask-guard.ts'
 import { holding, skillStop } from './skill-router.ts'
 
 // Two features that are usually off, asked inside the engine instead of by a shell or node started on every prompt:
@@ -183,7 +184,7 @@ export const asking =
   'different outcomes or the person\'s taste decides. Before asking how the code or the product should behave, run the investigation ' +
   'pass (callers, git history, real usage, what each option breaks; open every function a claim rests on): the question carries ' +
   'what it found, the unchecked marked "не проверено", and a check you can run now goes before it, never into an option. ' +
-  'AskUserQuestion takes metadata "screened" (what you checked), or "investigated" for a behaviour question. Several questions go in one ask ' +
+  'AskUserQuestion takes metadata {"source": "screened: <what you checked>"}, or "investigated: ..." for a behaviour question. Several questions go in one ask ' +
   '(AskUserQuestion), the recommended option first. Plain words, no jargon. Each option ' +
   'says what happens if picked and why it beats the others here, resting on a fact you checked (a test, a number, how this project ' +
   'already does it); an unchecked one is marked a guess. A turn that ends waiting on the person ends with a ' +
@@ -276,7 +277,8 @@ export const register: Register = (on, options) => {
     // A turn sent back to route its findings is not finished: no "done" message for it.
     // The skill router's turn ends on every Stop, so it runs first.
     const skill = await skillStop($, e).catch(() => undefined)
-    const block = (await stopBlock($, e).catch(() => undefined)) ?? (await researchStop($, e).catch(() => undefined)) ?? skill
+    askStopSeen(e)
+    const block = (await stopBlock($, e).catch(() => undefined)) ?? (await researchStop($, e).catch(() => undefined)) ?? skill ?? (await askStop($, e).catch(() => undefined))
     if (block) return { ...(await next(e)), block }
     if (await armed($, e.session_id)) void notify($, e, 20000).catch(() => {})
     return next(e)

@@ -400,7 +400,7 @@ test('asking: one line names each rule the person asked for, under its budget', 
   // every option say why it beats the others, with checked facts, in plain words (+~500 chars).
   // 11-17: a behaviour question gets the investigation pass and the metadata the ask-guard reads (+~400 chars) [M76].
   expect(asking).toMatch(/investigation pass/)
-  expect(asking).toMatch(/"screened"/)
+  expect(asking).toMatch(/"source": "screened: /)
   expect(asking.length).toBeLessThan(2000)
 })
 
