@@ -98,7 +98,7 @@ finding gets one destination before the merge: fixed (in the conflict resolution
 the merge, never by dropping the branch's side), asked (the one question), recorded (the project's findings file,
 else `~/.claude/makarasty/findings/<project>.md`) or handed (which chat, card or person). A branch with a finding
 that has none is not merged: name the finding, merge the branches that are clean, report it. Both sides' changes
-stay either way. A branch whose commits are all this user's own (`git shortlog -sne HEAD..<b>`) skips the review.
+stay either way. Commits under the user's own name are no reason to skip: every chat commits as the user.
 
 **Before each merge** `git diff --cached --name-only` must print nothing, and no dirty file may be one
 the branch changes (`git diff --name-only HEAD...<b>` against `git status --short`); git refuses the
