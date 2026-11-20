@@ -51,7 +51,7 @@ finding or keep a refuted one to look thorough.
 
 With `--fix`: fix the confirmed findings in the files this chat changed, at the root and per class; a
 defect shared by several callers is fixed once in the shared place. A finding that names the design as the
-cause, or a class that comes back after its fix, goes through `makarasty-tools:review` section 10.5: the
+cause, or a class that comes back after its fix, goes through `makarasty-tools:review` section 10.4: the
 new shape is built and measured, not only reported. A confirmed finding in someone else's
 file is reported as not edited. Then continue the attacker that found it (`SendMessage` to its agent id)
 with only the fix, to check it is closed. At most three rounds; the last round also gets one fresh

@@ -1647,34 +1647,58 @@ finished side sessions.
   (45 %) an earlier class in new words, 10 made by the previous fix, 14 new, 4 nits; 67 % closed in the next pass,
   nearly all by adding words to a regex list. 13 reviews cost 31.3M input tokens and 107 reviewer minutes; the
   earlier chat's 44 reviewers (both its loops) 187M input and 363 minutes.
-- **Architecture raised, not changed:** reviewers wrote "Words cannot close this hole, so make the change
-  structural" (R35), "Another list round is likely to leave more synonyms" (R38), "a regex router cannot fully
-  separate the two" (R39); the chat changed approach four times inside the regex frame and named a model router
-  only in its final report. No text called the redesign too big; nothing gave the loop a trigger or permission.
+- **Architecture raised, the frame kept:** from round 32 the reviewers asked for structural shapes ("Words cannot
+  close this hole, so make the change structural", R35; "Another list round is likely to leave more synonyms",
+  R38; a regex router "cannot fully separate the two", R39's hand-back); the chat changed shape inside regex
+  routing five times (23h, 23j, 23k, 23l-m, 23n-q) and named a model router only in its final report. No text
+  called the redesign too big; nothing gave the loop a trigger or permission.
 - **Other loops:** the guide loop reached 9 four times, two of them contradicted by the next live walk. darkkitty:
   6 of 8 second-round findings came from patching one copy of a fact kept in two places. Video: a card height
   grown three times for a `px` appended by a shared helper.
-- **A/B, same commit, old brief x2:** 6/10 and 6/10; 39 and 47 fresh failing lines; each proposed one more word
-  list, one adding it "will not catch the next round's words". Both also found a real new class (non-ASCII and
-  curly-apostrophe names stay in the Knowledge Base).
-- **New brief (ledger, frozen labelled set of 617 rows from the reviewers' own lines, pass line) x2:** both gate
-  FAIL 8 on the same disputed row, rates re-measured byte for byte; with the judge's own rows kept out of the rate
-  and a set-aside for a disputed label x2: both PASS 9, stop. But 0 of 4 ledger judges found the non-ASCII class
-  that 2 of 2 ledger-free reviewers found, so the search and the sorting were split.
-- **Split loop, round 40:** a judge with the ledger sorted the 93 lines of the two ledger-free finders: 50 reopened
-  B, 25 reopened C, 2 nits, 11 a new blocking class G ("Call Mary Smith about the calls she missed last week" forced
-  to analysis); gate FAIL 8, next step a fix of G and a redesign of B and C. **Round 41:** three shapes built and
-  measured: the winner (a done-verb evidence gate, any token in the subject gap, orders aimed at a person are jobs)
-  holds G 11/11, B 293/293, C 116/116 outside the accepted limits, the committed tests 464/464 and 40 new pins
-  (the shipped commit: G 0/11, B 242/293, C 91/116). A fresh finder found 33 lines; the judge sorted them: no new
-  class, 8 lines made worse by the redesign (a no-verb data question with an unlisted qualifier), and two blocking
-  answer-side classes already in the shipped commit that 39 rounds had not found (a day's figure printed under a
-  week's label; a stub with a digit escaping the rescue). Gate FAIL 8 again, so 10.6 called a redesign of the
-  answer-side class; round 42 was still running when this entry was written.
-**Rule:** `review` section 10: the bar is a gate (9 = all criteria pass, no blocking bug), a ledger of classes, a
-finder without the ledger and a judge with it, fixes per class, heuristic code judged on a frozen labelled set,
-a measured redesign with explicit permission when a class comes back, plateau stop and caps; `review-loop.ts`
-notes the first and fourth hand-run scoring brief of a session. Sources weighed: Anthropic's evaluator-optimizer
-and evals guidance, Google's code-review standard, Conventional Comments, Sonar's new-code gate, the self-correction
-and Self-Refine papers (side-session note `research-judge-loops.md`).
-**Status:** current for makarasty-tools 1.20.21.
+- **A/B, same commit, old brief x2:** 6/10 and 6/10; 39 and 47 fresh failing lines (+5 the second left open);
+  each proposed one more word list, one adding it "will not catch the next round's words". Both found a real new
+  class (non-ASCII and curly-apostrophe names stay in the Knowledge Base).
+- **Ledger brief x2:** both gate FAIL 8 on the same disputed row, rates re-measured byte for byte. The rule was then
+  edited (a judge's own rows out of the rate, a set-aside for a disputed label) and run x2: both PASS 9, stop, while
+  the same commit still held a blocking class (G below) and two answer-side ones: a gate that ends the loop is not
+  proof the defects are gone, and n is 2 + 2 on one commit. 0 of 4 ledger judges found the non-ASCII class that 2
+  of 2 ledger-free reviewers found (one class, small n), so the search and the sorting were split.
+- **Split loop, round 40:** a judge with the ledger sorted the 91 lines of the two ledger-free finders (+2 ledger
+  nits re-run): 50 reopened B, 25 reopened C, 2 nits, 11 a new blocking class G ("Call Mary Smith about the calls
+  she missed last week" forced to analysis); gate FAIL 8, next a fix of G and a redesign of B and C. **Round 41:**
+  three shapes built and measured; the winner (a done-verb evidence gate, any token in the subject gap, orders
+  aimed at a person are jobs) holds G 11/11, B 293/293, C 116/116 outside the accepted limits, the committed tests
+  464/464 and 40 new pins (the shipped commit: G 0/11, B 242/293, C 91/116). A fresh finder found 33 lines; the
+  judge sorted them: no new class, 8 made worse by the redesign, and two blocking answer-side classes already in
+  the shipped commit that 39 rounds had not found (a day's figure printed under a week's label; a stub with a digit
+  escaping the rescue). Gate FAIL 8; the judge called a redesign of the answer side. **Round 42** (judged by the rewritten
+  rule): all 10 of round 41's blocking lines closed (answer cases 13/13, R/A/F/G 100 %, B 307/308); its redesign
+  made 5 new blocking answer lines (a list put under any line ending in ":"), and 13 realistic data questions a
+  finder wrote now count, so open blocking lines went 10 -> 19 and the judge called a plateau: one redo of the
+  answer rule, the C rows to the report. Three rounds of the split loop closed every class they started with and
+  surfaced real ones 39 regex rounds missed; they did not reach 9, and the loop ends by its plateau and caps, not
+  by running out of findings. The remaining work went to a cloud session as a patch.
+- **Red team of the first version (5 Sonnet attackers, judged here):** confirmed and fixed in 1.20.22: a realistic
+  input missing from the frozen set could not block, so the loop could stop at 9 with the owner's own question
+  class failing; the plateau read the capped score (8 -> 8) as no progress; one clean round ended the run; caps
+  per design and per judge round did not add up; limits and classes written by the chat; `--loop` had no criteria
+  and re-reviewed only touched files; no round 0; the hook fired twice in 39 rounds and named no file. Practice
+  check: Contrast Security reports the same growth of findings (to 37, exit on budget) and escalates to a person;
+  Anthropic's harness post dropped per-sprint evaluation for one end pass; public review-loop skills cap at 3-5
+  rounds with severity gates; none uses a ledger-free finder, class reopening or a measured redesign.
+- **Finder models, same brief and commit:** four classes known to be real in `11857c502c` (non-ASCII names,
+  "Call Mary" forced to analysis, a stub with a digit, a day's figure under a wider label). Opus finders (high; two
+  on the commit with the old brief, one on round 41's code, whose answer side was unchanged) found them in 2/2,
+  1/2, 1/1 and 1/1 of the runs that could see each; three Sonnet finders (high) found the digit stub 3/3 and the
+  other three 0/3, while each brought 4-7 new candidate lines no judge has sorted. The models miss different
+  things, so section 10.3 runs one Opus and two Sonnet finders. Cost per finder: Opus about 200K tokens and 9-11
+  minutes, Sonnet 260-290K and 11-15 minutes.
+**Rule:** `review` section 10: round 0 (criteria, ledger, a labelled set for heuristic code from two labellers),
+a gate on blocking lines (9 = all criteria pass, none blocking; realistic finder rows count at once), finders
+without the ledger and a judge with it that writes the classes, fixes per class, a measured redesign with explicit
+permission, a confirm round, a plateau on blocking lines, eight rounds in all, a report that says converged,
+plateau or capped; `review-loop.ts` notes scoring briefs 1, 2, 4, 8 and 16 of a session with the skill's path.
+Sources weighed: Anthropic's evaluator-optimizer, evals and harness posts, Google's code-review standard,
+Conventional Comments, Sonar's new-code gate, Contrast Security's reviewer study, the self-correction and
+Self-Refine papers (side-session note `research-judge-loops.md`).
+**Status:** current for makarasty-tools 1.20.22.

@@ -1,11 +1,29 @@
 # Changelog
 
+## makarasty-tools 1.20.22 — 2026-11-20
+
+- **`review` section 10 rewritten after a red team of 1.20.21** (5 attackers: convergence, will a chat follow it,
+  published practice, cost, fact-check; M83). Fixed: a realistic input missing from the frozen set could not
+  block, so the loop could stop at 9 with the owner's own question class failing (now a finder row the judge rules
+  realistic counts at once, and any failing input of the requested class, a false figure or a regression blocks);
+  the plateau read the capped score 8 -> 8 as no progress (now it counts open blocking lines); one clean round
+  ended the run (now a confirm round with two fresh finders); caps did not add up (now eight rounds in all);
+  limits and classes written by the chat (now the judge writes classes, a limit needs the person's quoted words);
+  `--loop` had no criteria and re-reviewed only touched files; no round 0 (now criteria, ledger template, a
+  labelled set from two Sonnet labellers with input dimensions such as accents and phone punctuation, 95 % by
+  default). Finders: one Opus and two Sonnet, since they missed different known defects (M83). Fixer and design
+  briefs carry "the shape may change"; a "minimal diff" a chat wrote yields, the person's own does not. The report
+  opens with `converged`, `plateau` or `capped`.
+- **`review-loop.ts`**: notes scoring briefs 1, 2, 4, 8 and 16 with the skill's path and three steps; catches
+  "out of 10", "10 из 10", "scores", grade, audit; a brief is exempt only when it names a ledger file. 13 of 14
+  real Pulse briefs match (the 14th is a coder brief). Tests: tools 536/536.
+
 ## makarasty-tools 1.20.21 — 2026-11-20
 
 - **The review-and-score loop converges** (`review` section 10, M83). The Pulse fix took 39 hand-briefed reviews
   at 4-8/10 with no trend: a free 1-10 score, criteria rewritten each round, 45 % of findings an old class in new
-  words, fixes that added one more regex word, and a design the reviewers called the cause three times that
-  never changed. Now: "9+/10 with no defect" is a gate (9 = every criterion holds, no blocking bug, only
+  words, fixes that added one more regex word, and regex routing kept although reviewers asked for a
+  structural change from round 32. Now: "9+/10 with no defect" is a gate (9 = every criterion holds, no blocking bug, only
   non-blocking items open); a ledger keeps every finding's class and status; a finder searches without the
   ledger and a judge sorts its lines (new, reopened, refuted); fixes go per class with a test pinning several
   members; heuristic code (word lists, regex routing, parsing) is judged on a frozen labelled set with a pass line,
@@ -19,7 +37,7 @@
 - Checked by an A/B on the shipped Pulse commit (old brief x2, new brief x2 twice, then two rounds of the split
   loop with a real redesign): old-brief judges 6 and 6 with 39 and 47 new lines and one more word list each;
   ledger judges agree byte for byte but missed a new class the ledger-free reviewers found, hence the split;
-  round 40 sorted 93 finder lines into reopened classes plus one new blocking class; round 41's measured redesign
+  round 40 sorted 91 finder lines into reopened classes plus one new blocking class; round 41's measured redesign
   took the routing classes from B 242/293, C 91/116, G 0/11 to 293/293, 116/116, 11/11 and surfaced two real
   answer-side defects in the shipped commit (recorded for LifeLines). Tests: tools 536/536.
 

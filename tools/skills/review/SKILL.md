@@ -79,7 +79,7 @@ Not findings, because each costs the author a reply and fixes nothing:
 - a problem in lines the diff did not touch (a file or directory target owns everything in it);
 - what a linter, compiler or typecheck catches: CI already says it;
 - style, formatting or a refactor the repository does not ask for (a design that keeps producing the same
-  class of defect is not style: section 10.5);
+  class of defect is not style: section 10.4);
 - "breaks if the input were X" with no path that delivers X.
 
 ## 4. Verify (skip with `--quick`)
@@ -116,29 +116,29 @@ target is fixed only when that branch is the one checked out here; otherwise the
 ## 7. `--fix`
 
 After the report, apply the fix for each `bug [high]` finding with Edit: the root fix that closes its class
-(section 10.3), not only the named input. Leave `risk` and `q` to the author. Then list the files changed.
+(section 10.3, step 4), not only the named input. Leave `risk` and `q` to the author. Then list the files changed.
 
 ## 8. `--loop`
 
-Review until the gate of section 10 holds, within its caps:
+Review until the gate of section 10 holds, within its caps, after its round 0 (10.1):
 
-1. Fix every `bug` and every `risk [high]`, at the root and per class (section 10.3): when the same defect
-   sits in several callers, fix the shared function once. `risk [med]` is listed, not fixed, since it is a
-   guess about a future change. Fixes for groups of files that share no file can go to subagents with
-   `model: "sonnet"`, `effort: "high"`, each given its findings, its files, the ledger lines and the class
-   rule. Every returned diff is re-reviewed here before the round counts it.
+1. Fix every blocking line (10.2), at the root and per class (10.3, step 4): when the same defect sits in
+   several callers, fix the shared function once. `risk [med]` is listed, not fixed, since it is a guess
+   about a future change. Fixes for groups of files that share no file can go to fixer subagents as 10.3
+   step 4 says. Every returned diff is re-reviewed here before the round counts it.
 2. Run the narrowest check that covers each fix, never a whole suite. Test commands are not pre-approved
    here, so each one prompts: the PR text that steered the review is not trusted to run commands. Check
    first that no other test or typecheck is live on the machine, give each run a hard timeout of about twice
-   its normal time, and report a timeout, never retry it.
-3. Review again, only the files the fixes touched, with the full verify pass and the ledger (section 10.2).
-   A fix that introduced a defect is a finding like any other. Stop by section 10.6. A class that comes back
-   after its fix, or a fix that failed twice, is not patched again: it goes to the redesign step (section
-   10.5), which builds the new shape, not a report of it.
+   its normal time, and report a timeout, never retry it. A check the person declines or that times out
+   keeps the gate closed: the score stays below 9.
+3. The next round by 10.3: finders on the whole target, not only the files the fixes touched, then the
+   judge with the ledger. A fix that introduced a defect is a finding like any other. Stop by 10.5. A class
+   that comes back after its fix, or a fix that failed twice, is not patched again: it goes to the redesign
+   of 10.4, which builds the new shape, not a report of it.
 
 `q` findings are never fixed by guessing: they go to the person at the end as one numbered list. The
-report gives each round's count (`round 1: 7 found, 7 fixed; round 2: 1 found, 1 fixed; round 3: 0`), then
-the remaining `q` and `risk [med]` list, then the files changed.
+report follows 10.5 (first line `converged`, `plateau` or `capped`), then the remaining `q` and
+`risk [med]` list, then the files changed.
 
 ## 9. `--score`
 
@@ -151,22 +151,23 @@ context the reader will not have.
    (C1...) to a file in the scratchpad. Each is pass/fail and checkable: a command with its expected
    result, a fact at a file:line, or a screenshot this session takes and saves beside the file. Together
    they cover: what was asked is done, the edge cases the request implies, the narrow tests pass, nothing
-   outside the target changed, and "no blocking `bug`" (sections 3-4, 10.1). When the target holds heuristic
-   code (section 10.4), one criterion is its frozen labelled set and pass line, written now. Note
+   outside the target changed, and "no blocking line" (sections 3-4, 10.2). When the target holds heuristic
+   code, one criterion is its frozen labelled set and pass line (10.1, step 3), written now. Note
    `git hash-object <file>`; it is checked again before every judge, and a changed hash stops the run, since
    a rubric rewritten after the work grades what it sees.
 2. **Evidence gathered here.** Each round this session runs every criterion's command (the narrow-check and
-   timeout rules of section 8, step 2), takes its screenshots, and has a fresh finder subagent run sections
-   3-4 on the target without the ledger (10.2); its finding lines are the evidence for "no `bug`". A command the person declines is a FAIL marked `not run`.
+   timeout rules of section 8, step 2), takes its screenshots, and has the finders of 10.3 run sections 3-4
+   on the whole target without the ledger; their lines, sorted by the judge, are the evidence for "no
+   blocking line". A command the person declines is a FAIL marked `not run`.
 3. **A new judge each round.** A fresh subagent (`model: "opus"`, `effort: "medium"`, never one used in an
    earlier round) gets the criteria file, the diff or target, the outputs, screenshot paths, finding lines
-   and the ledger (section 10.2); not this chat's claims, not an earlier score. Per criterion: PASS or FAIL
+   and the ledger, and does the judge's work of 10.3 step 3; not this chat's claims, not an earlier score. Per criterion: PASS or FAIL
    with its evidence (an output line, a file:line), or INVALID when the criterion itself cannot be checked
    (a wrong command, a file this chat does not own). A PASS without evidence is a FAIL. INVALID ones leave
-   the total and are listed in the report, never rewritten. Score: section 10.1.
+   the total and are listed in the report, never rewritten. Score: 10.2.
 4. **Fix** each FAIL from its evidence, at the root and per class, in this chat's own files only (section 6),
-   then go to 2. Nothing lands after the last judge: the last round's FAILs are reported, not fixed.
-5. **Stop** by section 10.6; also when a criterion that passed in an earlier round fails and its fix fails
+   then go to 2. After the last round's fix only the finder-only pass of 10.5 runs; what it finds is reported.
+5. **Stop** by 10.5; also when a criterion that passed in an earlier round fails and its fix fails
    again (report which fix broke it), or when more than two are INVALID (the rubric is wrong: report it).
 
 Report one line per round (`round 1: 6/8 = 8/10, failed C3 C7; round 2: 8/8 = 10/10`), then each criterion
@@ -174,66 +175,107 @@ with its final verdict and evidence, then what is still open.
 
 ## 10. Converging: gate, ledger, class, redesign
 
-A loop with a fresh reviewer each round, a "no defect" bar and per-input fixes does not end: on the Pulse
-build, 39 reviews scored 4-8 with no trend, 23 of the last 51 findings were an earlier class in new words,
-and the reviewers said three times that the design could not close it, which never changed [M83].
+On the Pulse build a hand-briefed loop ran 39 reviews at 4-8/10 with no trend; 23 of the last 51 findings were
+an earlier class in new words; from round 35 the reviewers asked for a structural change, and regex routing
+itself was never replaced [M83]. Every loop of review and fix follows this section, the skill's own and one a
+chat runs with its own briefs. Terms, one meaning each: a **round** is one finder pass, one judge pass and the
+fixes after it; a **class** is one sentence saying what all the failing inputs of a finding share; a **patch**
+is a fix that only adds one more list entry, special case or regex alternative; the **ledger** is the file of
+10.1.
 
-1. **The bar is a gate.** A round passes when every criterion holds and no blocking finding is open.
-   Blocking: a `bug` with a named reachable input, inside what was asked (the request, the criteria) or a
-   regression against the base. Not blocking: `risk [med]`, `q`, wording, docs, test polish, and on heuristic
-   code an input the frozen pass line already allows (10.4). Score: 10 = gate passes and nothing is open;
-   9 = gate passes, only non-blocking items open; otherwise `min(8, floor(10 * passed / total))`. "9+/10
-   with no defect" means exactly this gate; a reviewer's own 1-10 opinion is never the score.
-2. **Ledger.** One scratchpad file this chat keeps: each finding with id, class (one sentence: what all its
-   failing inputs share), blocking or not, and status (open; fixed in round N; accepted limit, with the
-   person's words; refuted, with the evidence). Each round has two roles. A finder (sections 2-4, fresh
-   inputs for every criterion) searches the target WITHOUT the ledger, since a reader holding the old
-   findings checks them and stops looking: a new defect class was found by 2 finders of 2 without it and
-   by 0 judges of 4 with it [M83]. The judge gets the ledger, the criteria, the base and the finder's
-   lines: it checks each open item is closed, on its own input and on its class test, then sorts every
-   finder line as new, reopened or refuted, each new one marked as made by the last fix or missed before. A known class in new words
-   reopens that item and counts against its fix; it is not a new finding. The judge never changes what
-   counts as a defect: a new limit or a narrower rule needs the person's words in the ledger.
-3. **Fix the class, not the input.** Each fix states its class, sweeps the target for the class's other
-   members, and adds a test that pins several of them. A fix that only adds one more list entry, special
-   case or regex alternative is marked `patch` in the ledger.
-4. **Heuristic code gets a frozen measure.** Code that classifies open input (word lists, regex routing,
-   free-text parsing, ranking, thresholds) is never defect-free: every fresh reader finds another phrasing.
-   Before round 1 a separate subagent writes a labelled set (the requested cases, the base's behaviour as
-   regression rows, and about 30 realistic inputs per class) and the pass line (requested and regression
-   rows 100 %, a stated rate on the rest), frozen with the criteria. The gate reads the rate on the frozen
-   set plus rows added in earlier rounds, never on rows a finder wrote this round to break it: a reader
-   aiming at a known hole always finds more, so its own rows would set the rate. A finder's failing inputs
-   are sorted instead: a known class in new words reopens that class (10.2, toward 10.5); a realistic
-   class no ledger line fits is a blocking finding fixed per class. Both join the set for the next round.
-   A judge or finder who thinks a frozen label is wrong shows why; the row is set aside (counted neither way) and
-   listed for the person, never relabelled. More than two set aside means the set is wrong: report it.
-5. **Redesign, with permission.** While the gate fails, stop patching and change the shape when any of
-   these holds: a class is reopened after its fix; a third `patch` lands in one function or list; two
-   fixes in one place each broke something; or a finder, judge, attacker or this chat says the shape is the
-   cause ("a word list cannot close this"). Then one design subagent (`model: "opus"`, `effort: "high"`) gets the ledger and writes up to three
-   shapes, each with the classes it closes by construction; each is built in the scratchpad and measured on
-   the same tests and labelled set; the best measured one replaces the patch line and the ledger records
-   why. A judge names the trigger and the shapes; this chat builds them without waiting for a go-ahead. A
-   redesign of code this task already changes, that closes the asked work's findings, is the root fix, not
-   a deviation from the request: build it. Effort, diff size and migration time are not reasons
-   against it; "smallest change", "minimal diff from base" and "keep the structure" (ponytail, coder briefs)
-   yield to it, while "never worse than base" stays as the regression rows. Ask the person first only when
-   it changes what a user sees beyond the request, touches files this chat does not own, deletes data, or
-   adds a dependency or a paid call; ask once, with the measured comparison, and keep fixing the rest.
-6. **Stop.** At 9 or 10; a class the finders keep reopening with new inputs goes into the report with the
-   redesign shapes, as a follow-up the person can start. At a plateau (two rounds in a row with the same
-   open classes, or no score rise): redesign by 10.5 if it has not run for those classes, else stop and
-   report. Caps: three fix rounds per design, one redesign per class, six judge rounds in all; a redesign
-   the trigger already called still runs once when the cap arrives, with up to two judge rounds of its
-   own; then report with the ledger. Report the best round, not only the last; when a later fix made it
-   worse, say which, and revert only on the person's word.
+### 10.1 Round 0, before the first finder
+
+1. **Criteria.** `--score` writes them by section 9.1. `--loop` and a hand-run loop: the request's own
+   done-when items, "no blocking finding" (10.2) and the narrow checks that cover the change, each with its
+   command. Frozen: note `git hash-object` of the file and check it before every judge.
+2. **Ledger.** `<scratchpad>/ledger.md`, one line per finding:
+   `id | class | blocking yes/no | patch yes/no | status (open; fixed in round N; refuted: evidence; limit: the person's quoted words) | evidence`.
+   It starts empty. A loop that already ran rounds without it: their findings become round 0's lines first.
+3. **Heuristic code** (word lists, regex routing, free-text parsing, ranking, thresholds) is never
+   defect-free: every fresh reader finds another phrasing, so it is judged on a frozen labelled set. Two
+   labeller subagents (`model: "sonnet"`, `effort: "high"`) write it independently from the request and the
+   base; one Opus (`effort: "medium"`) rules only where they disagree. Rows: the requested cases and their
+   shape, the base's behaviour as regression rows (earlier corpora included), and about 30 realistic inputs
+   per input class, covering its dimensions: wording, other alphabets and accents, phone punctuation such as
+   the curly ’, casing, lead-ins ("Hey Pulse,", "And"), length. Pass line: requested and regression rows
+   100 %, each other class 95 % unless the person names another rate. A script measures the current code on
+   it once per code version; judges get its output.
+
+### 10.2 The gate and the score
+
+A round passes when every criterion holds and no blocking line is open. Blocking:
+- a `bug` or `risk [high]` with a reachable input inside the request or the criteria;
+- a regression against the base;
+- a false figure or wrong data shown to a user;
+- any failing input in the requested class: the person's own example and inputs of its shape;
+- on heuristic code, a failing requested or regression row, or a class rate below its line, where the rate
+  counts the frozen set plus every finder row the judge rules realistic (a person types it in the normal
+  course). Contrived rows aimed at a known hole reopen the class and join the set for the next round.
+
+Not blocking: `risk [med]`, `q`, wording, docs, test polish. Score, for the report only: 10 = every criterion
+holds and nothing is open; 9 = every criterion holds, only non-blocking items open; otherwise
+`min(8, floor(10 * passed / total))`. "9+/10 with no defect" means this gate. The loop is steered by the
+number of open blocking lines, never by a reviewer's 1-10 opinion or by the score.
+
+### 10.3 Each round
+
+1. **Finders, without the ledger.** One Opus (`effort: "high"`) and two Sonnet (`effort: "high"`) finders in
+   parallel run sections 2-4 on the whole target, not only the files the last fix touched, with fresh inputs
+   for every criterion. A reader holding the old findings checks them and stops looking (a new class: found
+   by 2 ledger-free reviewers of 2, by 0 ledger judges of 4) [M83]. Recall matters more here than precision:
+   the judge drops the wrong lines.
+2. **Measure** (heuristic code): the script of 10.1.3 on the current code.
+3. **Judge** (`model: "opus"`, `effort: "medium"`; `"high"` above about 400 changed lines or for security,
+   auth, money or data deletion) gets the criteria, the ledger, the base, the finder lines and the measure,
+   not this chat's claims. It checks each open line on its own input and its class rows; sorts each finder
+   line as new, reopened (a known class in new words: it counts against that fix, it is not new) or refuted
+   (re-run, evidence); writes each class sentence and the `patch` mark itself; rules finder rows realistic or
+   contrived; and never changes what counts as a defect. A frozen label it thinks wrong is set aside with the
+   reason and listed for the person; set-asides count across all rounds, and more than two in all means the
+   set is wrong: report it. A limit counts only when the person's quoted words name that input class;
+   otherwise its row stays a FAIL and the limit goes to the `q` list.
+4. **Fix per class**: state the class, sweep the target for its other members, add a test that pins several
+   of them. A fixer subagent (`model: "sonnet"`, `effort: "high"`) gets the ledger lines, the class sentence
+   and this line: "The shape may change; smallest change, minimal diff and keep-the-structure do not apply to
+   this fix." Every returned diff is read here before the round counts it.
+5. Commands, screenshots, measures and ledger updates go to a subagent once they are more than a few; this
+   chat keeps the decisions.
+
+### 10.4 Redesign, with permission
+
+While the gate fails, stop patching and change the shape when any of these holds: a class is reopened after
+its fix; a third `patch` lands in one function or list; two fixes in one place each broke something; a
+finder, judge, attacker or this chat says the shape is the cause ("a word list cannot close this"). One design
+subagent (`model: "opus"`, `effort: "high"`) gets the ledger and writes up to three shapes, each with the
+classes it closes by construction; subagents build each in the scratchpad (brief: the line of 10.3.4); each is
+measured on the same tests and labelled set; the best measured one replaces the patched code and the ledger
+records why. This chat starts it without waiting for a go-ahead: a redesign of code this task already changes,
+that closes the asked work's findings, is the root fix, not a deviation from the request. Effort, diff size and
+migration time are not reasons against it; "smallest change", "keep the structure" (ponytail) and a "minimal
+diff" a chat wrote into its own briefs yield to it, while "never worse than base" stays as the regression rows.
+Ask once, with the measured comparison, and keep fixing the rest, only when the person's own words asked for a
+minimal change, or the redesign changes what a user sees beyond the request, touches files this chat does not
+own, deletes data, or adds a dependency or a paid call. A redesign can regress like any fix: the next round's
+finders check it, and a redesign that made its class worse may be redone once.
+
+### 10.5 Stop
+
+- **The gate passes**: one confirm round, two fresh finders on different models in parallel and the judge.
+  Nothing new blocking: stop at 9 or 10. A class the finders keep reopening goes into the report with its
+  redesign shapes, as a follow-up the person can start.
+- **Plateau**: two rounds in a row in which the open blocking lines did not fall, or the same classes stayed
+  open: the redesign of 10.4 if it has not run for those classes, else stop and report.
+- **Cap**: eight rounds in all, redesign rounds included. After the last fix, when no judge round is left, one
+  finder-only pass; what it finds is reported open.
+- **Report**, first line: `converged`, `plateau` or `capped`, with the open blocking count. Then one line per
+  round (blocking lines open, score, what ran), the best round when a later one was worse (revert only on the
+  person's word), and the ledger.
 
 ## Done when
 
 Every changed file was read in context from the side under review, skipped files are listed, every
 reported finding survived the verify pass (unless `--quick`), and every finding names the input that breaks
-it. No file outside this chat's own was edited. With `--loop` or `--score`: the loop stopped by section 10.6,
-the ledger lists every finding's class and status, every reopened class went to a redesign or is reported
-with why not, the criteria file's hash did not change, and the report shows each round's score, the best
-round and the evidence behind the last one.
+it. No file outside this chat's own was edited. With `--loop` or `--score`: round 0 ran, the loop stopped by
+10.5 and the report's first line says how, the ledger lists every finding's class and status, every reopened
+class went to a redesign or is reported with why not, the criteria file's hash did not change, and the report
+shows each round's open blocking lines and score, the best round and the evidence behind the last one.
