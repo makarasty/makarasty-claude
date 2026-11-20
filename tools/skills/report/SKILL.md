@@ -1,129 +1,128 @@
 ---
-description: "Builds a summary or overview as one visual HTML file on the Desktop, items numbered and triaged. make a report, summary for me / сделай отчёт, сводка, отчёт в html, покажи визуально. Not before/after screenshots (proof)."
+description: "Explains a result, plan or decision to someone who saw none of the work: the story first, a picture or example where it helps, in chat or as an HTML page. make a report, explain it clearly / сделай отчёт, объясни понятно, сводка. Not screenshots (proof) or data exports (export)."
 ---
 
-The reader scans in seconds and wants pictures before prose; the page labels are Russian. You write DATA (a JSON file);
-`report.mjs` draws the page. Never hand-write the HTML or its CSS: the look, both themes, phone width and
-contrast are already solved there.
+You hold all the context and the reader holds none: they saw no tool calls, files, agents or other chats, and they
+switch in from other work. What reads as obvious to you reads as a riddle to them. The job is understanding,
+not a summary: the reader finishes knowing what happened, why it matters to them and what to do, without
+guessing. Long is fine when it explains; a short text that needs your hidden context is the failure.
 
-## Steps
+## 1. Chat or file
 
-0. Never print a secret. To check a config that may hold a token or key, test that the file or key exists
-   (`Test-Path`, `jq 'has("token")'`, a modified time); never output its values, not even to your own log.
-1. Collect the facts. Every number, id, path and date comes from a source you read in this session. A thing
-   you did not verify is said to be unverified in its text. Never write that the reader did or sent
-   something unless they said so. A changelog or log tells the past, not the present: before an item asks the
-   reader to do something, look at the current state (a file, a command, a status) and write what you looked at
-   and when in `checked` (it is shown on the card). Never write «проверено» in `src`: it only names the source.
-   If you cannot check, the title starts with «Проверить».
-2. Cut the facts into items: one item = one thing someone does or decides. Item count follows the reader's
-   priority, not how much you found: his main topics get the items, a topic he called minor gets ONE item with
-   everything else about it in that item's `more`, and goes in `minor` (the build counts its mentions). Answer for each: who holds it
-   (`owner`) and when it matters (`stop`). A shipped change is ONE done row; what the reader should know about
-   it goes in that row's `more`. A card only when the reader must do or decide something; an info card only for what is
-   not in done: a risk, a behaviour the reader will notice, a number they need.
-3. Order: stops in time order (what needs the reader now first). Inside a stop, the reader's own items first.
-4. Write `<name>.json` in your scratchpad or the system temp dir, never on the Desktop (schema below), then run
-   `node "${CLAUDE_SKILL_DIR}/report.mjs" <name>.json "<Desktop>/<Title>.html"` (Desktop: `[Environment]::GetFolderPath('Desktop')`
-   on Windows, `~/Desktop` elsewhere).
-   Every `ERROR` stops the build and no file is written: fix the content and run again. Never rename or reword
-   a title just to pass a check. If a check is plainly wrong for this report, set `"allowWarnings": true` and
-   say which one in your reply.
-   Before building, re-read every number and every "what switches what" against the source: a weak draft
-   inverts numbers (30 instead of 139) and pins a switch to the wrong feature.
-5. Cold read, for a report built from research or with more than 10 items: give one fresh agent (Sonnet) ONLY the
-   JSON, nothing of your research, and ask for each item: what is this, why does it matter to the reader, what
-   does he do, what changes with each answer. Rewrite every item it cannot answer or answers wrong, then build again.
-6. Reply with the exact path and one line on what is inside.
+- **Chat text** is the default for an answer in the conversation. Sections 2 and 4 apply there too.
+- **A page** when the person asks for a file, report or page, or when the answer needs a picture chat cannot show,
+  a table wider than chat, or will be reread on another day (a plan, an instruction to follow later).
+- A standing rule like "files for me are HTML on my Desktop" says what a file looks like, not that every answer
+  becomes a file.
+- One topic is one file: the same subject the person asked about keeps its file name, and an update overwrites it.
+  Never a new file per turn, never a file nobody asked for. The chat reply names the path and says why it is a page.
 
-## Write for a reader who was not there
+## 2. How to write it
 
-The reader saw none of your research: no sources, agents, tabs or chats. Each card stands on its own.
-- First use of a tool, product, service, command, skill, abbreviation or internal id on the page: say in plain
-  words what it is, in parentheses: «context7 (сервис, который подсовывает модели свежую документацию библиотек)»,
-  or «сервис документации (context7)». `known` lists only names the reader used himself (his messages, his
-  profile), never one you met in research. A «quoted» button or menu label needs no explanation. Words you
-  coined while working («повтор», «флот», «строка», «книга жалоб») are explained the same way.
-- A title says the thing in plain words: no unexplained names, abbreviations, internal ids (task, rule, agent,
-  source numbers) or code. «Чужое (Trail of Bits, context7): ставить или своё?» fails; «Взять чужие проверки
-  кода или написать свои?» with the names explained in `text` passes.
-- `text` says why it matters to the reader: what he gains, loses or risks (time, money, safety, comfort).
-- A question to the reader (a `?` or a title starting «Решить», «Выбрать») has `answers`: each answer and
-  what it changes, [["да", "ночью идут тесты, утром сводка"], ["нет", "всё как сейчас"]]. Never «Ответь да или нет» alone.
-  Each question is its own item: never several questions packed into one card's `tags`.
-- No pointers into context he never saw: «вариант B» or «случай A» without what it is, «как нашёл агент 3»,
-  «первая волна», «из повтора», «источник [4]», «см. выше» (cards open from the overview, out of order).
-  `src` names a source he can open or knows, never your working files (`12-verification.md`).
-- One fact in one card; others name what follows from it. A set of reports from one research: each item lives
-  in one report, the others say where it is. A minor topic never leads the page (headline, item 1).
+Order:
+1. **Title**: the news in one plain sentence, what a person would say aloud: «Stedi на проде: проверка страховки
+   работает, поиск Medicare ID пока нет», not «Сводка по Stedi».
+2. **Opening paragraph**: the whole story in 3–6 sentences for someone who knows nothing about it: what this is,
+   what happened, what it means for the reader, what is needed from them («от тебя нужно только...» or «от тебя
+   ничего не нужно»), and the one unknown that would change that, if there is one. A reader who stops here has
+   the essentials.
+3. **The picture**, near the top. Most results have something to show: what calls what and where it broke, a
+   timeline, a before/after, numbers side by side, the real screen, the real message or error text. Show the thing
+   instead of describing it. A picture that repeats a sentence, or numbers that compare nothing, is noise. In chat:
+   a table, or a short arrow line in a code block (`LifeLines → Stedi → Medicare: ошибка 41`); when the picture is
+   essential and chat cannot hold it, make the page.
+4. **Explanation** in connected prose: why it happened, what each part means, with a concrete example for every
+   abstract claim: the real error text, a real case, the real question a user typed, the exact number.
+5. **Что от тебя нужно** (when something is): a numbered list, one action per item, each with how: the exact menu
+   path in «quotes», the file path, or the command in a code block. A decision is its own `### N. Question?` heading
+   with every option as a bullet: what it is, what changes if picked, «(рекомендую)» on yours and why; no
+   recommendation you cannot back. Actions and questions share one count straight through (actions 1–2, then
+   `### 3. Question?`), in chat too, so the person can answer «3 две, 4 свернуть».
+6. **Подробности** (when there is more): the full steps of later actions (who, where, what to click, what to undo
+   after), the rest of the facts, smaller risks. Plain headings lower on the page, never collapsed: the important
+   part is on top and the reader scrolls down for the rest. A later action the person may answer about continues
+   the numbering of the questions above it.
+7. **Чем проверено**, always: what you checked yourself now (a command and its result, a file read, a page looked
+   at), what you took from someone else's report, and what nobody checked. This is the one place for your process.
 
-## Writing an item
+Complete before short. Before writing, list every action (with who does it and how), decision, open question,
+risk, way back and "not checked" flag in your facts; each one is on the page, on top or in Подробности, with its
+exact steps and its flag. Shortening drops words, never one of these, and never turns "checked two of nine" into
+"checked all" or adds a recommendation the facts do not make.
 
-- `title`: what to do, starting with a verb or the thing's name, at most 60 characters. `text`: one or two short
-  sentences, shown first in the card: an intro, never the conclusion. Long text goes to `more`.
-- One visual per item: `steps` for an order of actions, `bars` for comparing numbers, `big` for one number
-  that matters, `tags` for a set of ids or names, `figure` (own inline SVG/HTML, no `<script>`, no links) if none fits.
-- `owner` holds the item; add others to `owners`. `who` only for a hand-off, 2 words ("Аня → ты"), never someone else.
-- The reader's colour means "needs you". The reader's items need them unless the stop has `"info": true` or
-  the item `"ask": false` (for facts and things they only should know). The `[[N]]` count in `headline` equals the
-  items at the first stop that need the reader.
-- An item that needs the reader says how: `steps`, `cmd`, `answers`, or a `how` line («Ответь номером: "2 забыть"»).
-- `cmd`: a command or chat phrase the reader runs, exactly, with an absolute path; it gets a copy button. Find the path
-  first; never pin a cache version that the next update removes. Step text then names it in a few words.
-- A count in `text` or a step title equals what it counts ("3 шага" next to 3 steps). A `big` total equals its bars.
-- `steps`: each `title` is one whole Russian phrase ("Деплой кода", not "Деплой" + "кода", not "Job"); ids and
-  commands go in step `text`. `must` only on a step people skip at a cost, never on every step.
-- `bars`: `barsNote` says what they count; `barsUnit` is a symbol ("KB", "$", "%", "мс") or three noun forms
-  (["обход", "обхода", "обходов"]). Sort them (a time series: `"barsKeepOrder": true`); `hot: true` marks the one that matters.
-- A change is never justified by its size (lines, files, KB, tokens). `effect` is optional: only where you
-  propose or ship a change and its value to the reader is not already in the title or text, never on an info
-  card. It has `text`, `basis`, `how`. "measured" = a number you or a named check produced, with the sample in
-  `how`; a changelog claim or anything unchecked is "forecast". An item about cost itself: `"costIsGoal": true`.
-- `warn` only for a real consequence. `more`: the text behind "Подробнее" (string or list; done rows too),
-  at most 1200 characters, only what the reader can use: a file or folder name, not a full path, unless the reader must open it.
-- `flag`: 1–4 words naming what is unverified («чаты не проверены») or your suggestion, at most 40 characters;
-  the reason goes in `text`. The card says it once: a flag, not also the text.
-- Stops are time. A milestone stop holds the event itself; category stops ("Риски", "Не проверено") go after the
-  last time stop. A stop `note` never repeats the count or the stop name. `kind: "done"` only for finished work.
-- Say the source once: `meta` or footer (not both) for one source, `src` on cards if they differ. `meta` is under
-  80 characters and never repeats `project`; `headline` is under 100.
-- Backticks around every command, path, file, ref, env var, id, hash and version, lowercase ids too (`vue-tsc`,
-  `d5aecfa3d6`), `done` too; dates and counts plain. One style per tag list. `[[text]]` only in `headline`, `sub`.
-- Typography: en dash in ranges ("6–9 KB"), decimal comma ("1,8"), "2 400" not "2400", "тыс." not "K",
-  «около 40» or «примерно на 40» not "~40" (read it aloud: «на около» is wrong), × → − not x -> -. No HTML, no em dash, no emoji.
+Plain words:
+- Every name, product, abbreviation, id or term on first use gets a plain explanation, in the same sentence or the
+  next: «HETS-аттестация (подтверждение у подрядчика Medicare, что практика разрешает проверять её пациентов)».
+  Terms you coined while working («флот», «раунд 42», «класс B», «судья») are replaced with what they are. Only
+  names the person wrote themself need none.
+- No pointers into context they never saw: «вариант B», «как нашёл агент 3», «как прошлое письмо», «другой чат»,
+  a commit hash or file name as the reason for something. Say what it is instead.
+- Prose for reasoning, lists for separate items and steps. A sentence over about 25 words or a paragraph over
+  5 sentences usually hides two thoughts: split it. A long text gets headings that say what each part tells.
+- Numbers come with what they count and compare to («4 из 13 вопросов не прошли ни разу»). A change is justified
+  by its effect for the reader (measured: with method and sample; or a forecast, said so), never by its size
+  in lines, files or tokens.
+- Before asking the reader to act on history (a changelog, git log, another chat's report), look at the current
+  state and say what you looked at.
+- Never write that the reader did, sent or decided something without their words; never print a secret: to check
+  a config, test that the key exists, never its value.
+- Leave out what the reader will not use: the story of your process, ids nobody opens, the full list of done items
+  when one sentence covers them, legends, badges, collapsed sections.
 
-## Schema
+## 3. Build the page
 
-```json
-{
-  "title": "Сводка проекта 10–17.11",           // browser tab name
-  "project": "Atlas",
-  "meta": "10–17.11 · 55 чатов · сверено 17.11 14:39",
-  "headline": "Сейчас на тебе [[3 пункта]]. Деплой ведёт Аня.",   // the one sentence that matters
-  "sub": "optional second line",
-  "owners": { "you": "Ты", "anya": "Аня" },      // first is always the reader; colour and shape follow this order
-  "known": ["Telegram", "API"],                  // names the reader uses himself: no explanation needed
-  "minor": ["Spotify"],                          // topics he called minor: at most one item each
-  "stops": [ { "id": "now", "name": "Сейчас", "note": "Нужен ты", "kind": "now" },
-             { "id": "deploy", "name": "Деплой", "kind": "milestone" },
-             { "id": "later", "name": "Без срока", "kind": "nodate" },
-             { "id": "fyi", "name": "Для сведения", "info": true },
-             { "id": "done", "name": "Готово", "kind": "done" } ],  // kind: now | milestone | nodate | done | none
-  "items": [ { "stop": "now", "owner": "you", "who": "Аня → ты", "ask": true, "title": "...", "text": "...",
-               "steps": [ { "title": "Колонки рассылок", "text": "джоба `add-automation-send-columns`", "must": true }, { "title": "Деплой кода", "main": true } ],
-               "cmd": "node \"C:\\full\\path\\tool.mjs\" setup", "how": "Ответь номером: «1 да» или «1 нет».",
-               "answers": [ ["да", "что изменится"], ["нет", "что изменится"] ],
-               "bars": [ { "label": "main", "value": 1149, "hot": true } ], "barsNote": "what the bars count", "barsUnit": "KB",
-               "big": { "value": "$36,6 тыс.", "note": "..." }, "figure": "<svg viewBox=...>...</svg>",
-               "tags": [ ["SH-5", "аудио как рабочее время"] ], "warn": "...",
-               "effect": { "text": "what changes for the reader", "basis": "measured", "how": "method, sample, who checked" },
-               "more": [ "paragraph", "paragraph" ], "flag": "моё предложение", "src": "where it comes from",
-               "checked": "what you looked at now, and when" } ],
-  "done": [ { "date": "17.11", "text": "...", "more": "optional" } ],
-  "footer": "..."
-}
+Write `<name>.md` in your scratchpad or the system temp dir (never on the Desktop) with the Write tool, which saves
+UTF-8 (PowerShell 5.1 `Set-Content` turns Cyrillic into `?`), then:
+`node "${CLAUDE_SKILL_DIR}/report.mjs" <name>.md "<Desktop>/<Topic>.html"`
+`<Topic>` is a short name of the subject that stays the same across updates («Stedi на проде»), not the title
+sentence. Desktop: `[Environment]::GetFolderPath('Desktop')` on Windows, `~/Desktop` elsewhere. An `ERROR` writes no file:
+fix the text and run again. A `NOTE` is advice. Never hand-write HTML or CSS; the look, both themes and phone
+width are solved in the script. Markdown it reads, with pictures:
+
+````
+```flow
+Broward, проверка | LifeLines -> Stedi -> Medicare (ok: покрытие активно)
+Artisans, проверка | LifeLines -> Stedi -> Medicare (bad: ошибка 41)
+= Где оборвался каждый запрос
 ```
+````
+`flow`: one row per line, an optional label before `|`, steps joined by `->`, a step may end with `(ok: note)`,
+`(bad: note)` or `(wait: note)`; the last line `= caption`. Good for what calls what, where it broke, a timeline.
 
-Example: `${CLAUDE_SKILL_DIR}/example.json`. Stops are yours to name: for a review use
-"Блокеры / Исправить / Потом / Готово", for research "Вывод / Варианты / Риски".
-Numbers run down the page in stop order. Write plain spaces: the page keeps numbers and ids together itself.
+````
+```bars
+* Opus: 34 %
+Sonnet: 61 %
+= Доля ответов с ошибкой на 200 вопросах
+```
+````
+`bars`: `label: number unit` per line (thousands with a space: `2 400`), `*` marks the one that matters,
+`= what they count` is required; sizes only, signed numbers go in a table.
+Also: tables (`| a | b |` with a `|---|` line) for side-by-side facts, `> ` for a warning or a way back,
+```` ```svg ```` for a drawing nothing else fits (a `viewBox`, shapes and text only, `currentColor` for ink so it
+reads in the dark theme),
+`![caption](file.png)` for a real screenshot (embedded into the page). Example: `${CLAUDE_SKILL_DIR}/example.md`.
+
+## 4. Blind reader (acceptance)
+
+A page is done when a reader without your context understands it. Give one fresh agent (Sonnet) the `.md` path and
+nothing about your work. If it needs to know who the reader is, give it a card written only from the person's own
+messages and profile (their company, people, products), never from this work and never a term the page explains.
+Ask, in the page's language:
+1. Retell in 3–6 sentences what this is about and what happened.
+2. What must you do now, step by step?
+3. Which decisions are asked, and what changes with each option?
+4. What is not checked or unknown?
+5. Every word, name, number or sentence you did not understand or had to guess, quoted.
+Compare 1–4 with what you meant. Fix every miss and every quote in 5 that the person would not know either
+(explain, replace or cut), rebuild, and ask one new reader. Stop when 1–4 are right and 5 holds nothing the person
+lacks, or after three readers; «Чем проверено» then says how many readers ran and what they still could not follow.
+For chat text that carries a decision or more than a few facts, reread it as that reader before sending.
+The reader cannot see what the page left out: when the page retells a longer source (another report, a plan, a
+log), also give one agent the source and the page and ask for every action, decision, risk and flag the page
+dropped, weakened or added; fix each one. Neither agent gets a secret, a key or a patient's data: hand them the
+page and source with those removed.
+
+## 5. Reply
+
+The exact path of the page, why it is a page, and one line on what the reader needs to do.

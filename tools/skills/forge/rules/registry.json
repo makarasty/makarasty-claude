@@ -1,6 +1,6 @@
 {
  "about": "The owner's rules for AI agents: where each is written, how it is enforced, the complaint it answers, and how rules.mjs checks it. Universal rules only; project rules live in the project.",
- "updated": "2026-11-17",
+ "updated": "2026-11-20",
  "rules": [
   {
    "id": "R001",
@@ -2920,7 +2920,7 @@
    "ru": "Файл для чтения: HTML на моём рабочем столе, не .md.",
    "layer": "plugin",
    "enforced": "test",
-   "enforcer": "tools/skills/report (SKILL.md + report.mjs, refuses to write the file on an ERROR)",
+   "enforcer": "tools/skills/report (SKILL.md section 1 picks chat or file; report.mjs refuses to write the page on an ERROR)",
    "complaints": [],
    "complaintChats": null,
    "conflicts": [],
@@ -2934,12 +2934,17 @@
      "file": "tools/skills/report/report.mjs",
      "anchor": "build checks (7ef586d, M78)",
      "date": "2026-11-17"
+    },
+    {
+     "file": "tools/skills/report/SKILL.md",
+     "anchor": "explainer rework (M84)",
+     "date": "2026-11-20"
     }
    ],
    "inForce": [
     {
      "text": "tools:skills/report/report.mjs",
-     "has": "fail("
+     "has": "errors.push("
     }
    ]
   },
@@ -3310,8 +3315,8 @@
    "rule": "A change shown to the owner states its effect for him, measured (a number and the sample) or forecast, never its size as the reason.",
    "ru": "Изменение показывается эффектом для меня (замер с числом и выборкой или прогноз), а не объёмом.",
    "layer": "plugin",
-   "enforced": "test",
-   "enforcer": "tools/skills/report/report.mjs effect checks",
+   "enforced": "text",
+   "enforcer": "tools/skills/report/SKILL.md section 2",
    "complaints": [
     "board rule 2"
    ],
@@ -3328,23 +3333,28 @@
      "file": "tools/skills/report/report.mjs",
      "anchor": "build checks (7ef586d, M78)",
      "date": "2026-11-17"
+    },
+    {
+     "file": "tools/skills/report/SKILL.md",
+     "anchor": "explainer rework (M84)",
+     "date": "2026-11-20"
     }
    ],
    "inForce": [
     {
-     "text": "tools:skills/report/report.mjs",
-     "has": "effect.basis must be"
+     "text": "tools:skills/report/SKILL.md",
+     "has": "never by its size"
     }
    ],
-   "gap": "checked only in report pages; chat replies are text only"
+   "gap": "prose only since M84: the page builder no longer parses effects"
   },
   {
    "id": "R141",
    "rule": "A report never asks the reader to act on history (changelog, git log, commits) without saying what current state was checked.",
    "ru": "Просьба ко мне по журналу изменений только после проверки текущего состояния.",
    "layer": "plugin",
-   "enforced": "test",
-   "enforcer": "tools/skills/report/report.mjs HISTORY check",
+   "enforced": "text",
+   "enforcer": "tools/skills/report/SKILL.md section 2",
    "complaints": [
     "T11",
     "board rule 4"
@@ -3357,12 +3367,17 @@
      "file": "tools/skills/report/report.mjs",
      "anchor": "build checks (7ef586d, M78)",
      "date": "2026-11-17"
+    },
+    {
+     "file": "tools/skills/report/SKILL.md",
+     "anchor": "explainer rework (M84)",
+     "date": "2026-11-20"
     }
    ],
    "inForce": [
     {
-     "text": "tools:skills/report/report.mjs",
-     "has": "the source is history"
+     "text": "tools:skills/report/SKILL.md",
+     "has": "act on history"
     }
    ]
   },
@@ -3382,8 +3397,8 @@
    "sources": [
     {
      "file": "tools/skills/report/SKILL.md",
-     "anchor": "rule 0",
-     "date": "2026-11-17"
+     "anchor": "never print a secret (section 2)",
+     "date": "2026-11-20"
     }
    ],
    "gap": "text only; secret-guard checks files written, not tool output or replies (a Haiku printed a bot token into its log, 2026-11-17)"
@@ -3507,8 +3522,8 @@
    "rule": "A report is readable without the research behind it: every name, abbreviation or id is explained in plain words at its first use, a question lists each answer with what it changes, no pointers into unseen context, and a minor topic gets one item.",
    "ru": "Отчёт понятен без контекста исследования: каждое название объяснено простыми словами, у вопроса написано, что меняет каждый ответ, мелкая тема получает один пункт.",
    "layer": "plugin",
-   "enforced": "test",
-   "enforcer": "tools/skills/report/report.mjs term, answers, context and minor checks; selftest.mjs",
+   "enforced": "text",
+   "enforcer": "tools/skills/report/SKILL.md sections 2 and 4 (blind reader as acceptance)",
    "complaints": [
     "owner 2026-11-20, 52-item research report: «Trail of Bits, context7», «/focus» unexplained; Spotify (minimum priority) in dozens of items"
    ],
@@ -3520,15 +3535,20 @@
      "file": "tools/skills/report/SKILL.md",
      "anchor": "Write for a reader who was not there",
      "date": "2026-11-20"
+    },
+    {
+     "file": "tools/skills/report/SKILL.md",
+     "anchor": "explainer rework (M84)",
+     "date": "2026-11-20"
     }
    ],
    "inForce": [
     {
-     "text": "tools:skills/report/report.mjs",
-     "has": "without saying what it is"
+     "text": "tools:skills/report/SKILL.md",
+     "has": "Blind reader"
     }
    ],
-   "gap": "why an item matters to the reader is not checkable by a script: the SKILL cold-read step covers it"
+   "gap": "no script can tell whether a page explains; a fresh reader agent judges it (M84)"
   }
  ],
  "industry": [

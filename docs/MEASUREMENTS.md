@@ -1702,3 +1702,34 @@ Sources weighed: Anthropic's evaluator-optimizer, evals and harness posts, Googl
 Conventional Comments, Sonar's new-code gate, Contrast Security's reviewer study, the self-correction and
 Self-Refine papers (side-session note `research-judge-loops.md`).
 **Status:** current for makarasty-tools 1.20.22.
+
+## M84 — Card pages vs explainer pages: blind readers on two real reports (2026-11-20)
+Two real owner reports of 2026-11-20 built by the card skill (`report` 1.20.21: a Stedi rollout status, 16 items;
+a weekend plan with 7 decisions, 29 items) were rewritten from the same facts as explainer pages (the new skill:
+title as the news, an opening paragraph with the whole story, a `flow` picture, numbered questions with options,
+«Чем проверено»). Readers: fresh agents given only the visible page text, one page each (no reader saw both
+versions), asked to retell, list actions, decisions, unknowns, and quote everything they had to guess, then score
+understanding and ease 1-10. Two readers per page (Sonnet high, Haiku high).
+- **Round 1, no context card:** understanding old 5,7,5,6 (mean 5,75) vs new 7,8,6,8 (7,25); ease old 3,5,3,4
+  (3,75) vs new 6,6,5,5 (5,5). Guessed items: the old weekend page about 60 (Sonnet) vs about 20 on the new one.
+- **Round 2, a card of what the owner knows without this work** (his practices, people, branches, models), new
+  pages fixed after round 1: understanding old 7,7,6,7 (6,75) vs new 7,7,7,8 (7,25); ease old 4,5,4,4 (4,25) vs
+  new 7,6,6,5 (6,0). Every reader of a new page retold the key facts and every decision option right; the old
+  weekend page lost that question 2 had no recommendation for one reader and mixed file names into the reasons.
+- **Final readers** on the fixed pages (Sonnet, card): 7/7 and 7/6; what they still quoted was domain terms the owner
+  uses himself (HETS, Discovery, Medicare ID), so the stop rule is "1-4 right, 5 holds nothing the person lacks".
+- **Caught by readers, not by the author:** a pointer to «как прошлое» письмо, a contradiction on who returned error 15,
+  «другой чат», and a recommendation the rewrite added that the original plan did not make.
+- **What readers cannot catch:** a red-team agent given source and page found the rewrites had dropped actions the
+  owner needs (the step-by-step Broward retry with its mandatory undo, the merge to main, disabling the old key, two
+  open decisions of the weekend plan), weakened the rollback and strengthened two claims ("all 9 checked", "617 real
+  user questions"). Blind readers retold the shortened pages correctly because they never saw what was missing, so
+  the skill now lists every action, decision, risk and flag before writing and runs a source-vs-page agent when it
+  retells a longer source. With everything restored (Stedi 569 to 929 words, weekend 973 to 1 444), the final
+  readers scored 6/5 and 7/5: still every key fact and option retold right, ease lower than the short pages' 7/7
+  and 7/6. Completeness costs ease; the skill keeps it and moves detail into «Подробности» below the top.
+- **Not measured:** the owner's own reading (one page shown to him), real chats writing with the new skill (the
+  two pages were written by the skill's author), the cost of the blind-reader step in a chat (each reader here took
+  50-70 thousand tokens and 20-80 s, mostly the page text and the brief).
+**Status:** 2 reports, 2 readers per cell per round, self-scored by the readers; the key-fact check was done by the
+author against the originals, not blind.

@@ -1,443 +1,253 @@
 #!/usr/bin/env node
-// Turns a report JSON into one self-contained HTML file ("Маршрут" design: a time spine with stations).
-// Usage: node report.mjs <report.json> <out.html>
-// Strict: any WARN fails the build (exit 1, no file) unless the JSON sets "allowWarnings": true.
-// A weak writer ships a page that looks right but says wrong things; these checks are the only reviewer it gets.
-// After changing a check: node selftest.mjs (the example builds, each broken copy fails with its message).
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
+// Turns an explanation written in Markdown into one self-contained, readable HTML page (an article, not a dashboard).
+// Usage: node report.mjs <explain.md> <out.html>
+// Supported: # to ####, paragraphs, - * and 1. lists (nested by indent), > note boxes, ``` or ~~~ code (copy button),
+// ```flow, ```bars and ```svg pictures, ![caption](image.png) on its own line (embedded), | tables |, **bold**, *italic*,
+// `code`, [text](url), ---. An ERROR writes no file. Whether the page explains anything is judged by the blind reader
+// in SKILL.md, not here. After changing a check: node selftest.mjs
+import { readFileSync, writeFileSync, mkdirSync, existsSync, renameSync, realpathSync } from 'node:fs';
+import { dirname, resolve, extname, basename, join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
-const [src, out] = process.argv.slice(2);
-if (!src || !out) { console.error('usage: node report.mjs <report.json> <out.html>'); process.exit(2); }
-const r = JSON.parse(readFileSync(src, 'utf8'));
-const warn = [];
-const fail = (m) => { console.error('ERROR ' + m); process.exit(1); };
-
-const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-// Glue wraps a run in a nowrap span and never changes a character, so find and copy stay exact.
-// Each run joins one token to one neighbour: a dot to the words before it, a Latin id, a thousands group,
-// an arrow or × with both sides, a range, a number and its noun, a product and its version (before
-// punctuation), or a short word and the next word. A dot that opens a segment (after code) sticks to it too.
-const GLUE = new RegExp([
-  String.raw`^ ·`,
-  String.raw`(?:\S+ ){1,2}·`,
-  String.raw`\S+ [→×] \S+`,
-  String.raw`(?<![\p{L}\d-])[A-Za-z][A-Za-z\d]*(?:-[A-Za-z\d]+)+(?![\p{L}\d-])`,
-  String.raw`[-−+]?\d{1,3}(?: \d{3})+(?!\d)`,
-  String.raw`\d[\d.,]*[-–]\d[\d.,]*`,
-  String.raw`\p{L}+ \d{1,4}(?:[.,]\d+)*(?=[,.;:)!?]|$)`,
-  String.raw`(?<![\p{L}\d])(?:\p{L}{1,2}|\d[\d.,:]*) \S+`,
-].join('|'), 'gu');
-const glue = (t) => t.replace(GLUE, (m) => (m.length > 28 ? m : `<span class="nw">${m}</span>`));
-// Code never breaks inside a name. A path breaks only at a slash, backslash or space; a segment over
-// 30 characters gets one break, at the hyphen nearest its middle.
-const pieces = (seg) => {
-  if (seg.length <= 30) return [seg];
-  const cuts = [...seg.matchAll(/-/g)].map((m) => m.index + 1);
-  if (!cuts.length) return [seg];
-  const at = cuts.reduce((a, b) => (Math.abs(b - seg.length / 2) < Math.abs(a - seg.length / 2) ? b : a));
-  return [seg.slice(0, at), seg.slice(at)];
-};
-const codeHtml = (c) => {
-  if (c.length <= 24) return `<code class="nw">${esc(c)}</code>`;
-  return `<code>${c.split(/(?<=[\\/ ])/).flatMap(pieces).map((p) => (p.length > 30 ? esc(p) : `<span class="nw">${esc(p)}</span>`)).join('<wbr>')}</code>`;
-};
-// Inline markup for plain strings: `code` and [[accent]] only, everything else is escaped.
-// Punctuation after code stays with it, and a range of two codes (`1.18.12`–`1.18.15`) is one unit.
-const md = (s) => {
-  const parts = String(s ?? '').split(/(`[^`]+`|\[\[.+?\]\])/);
-  const out = [];
-  for (let i = 0; i < parts.length; i++) {
-    const part = parts[i];
-    if (i % 2 === 0) { out.push(glue(esc(part))); continue; }
-    if (part[0] === '[') { const hl = part.slice(2, -2); out.push(`<span class="hl${hl.length <= 24 ? ' nw' : ''}">${glue(esc(hl))}</span>`); continue; }
-    const code = codeHtml(part.slice(1, -1));
-    const next = parts[i + 1] ?? '';
-    if (next === '–' && parts[i + 2]?.[0] === '`') {
-      out.push(`<span class="nw">${code}–${codeHtml(parts[i + 2].slice(1, -1))}</span>`);
-      parts[i + 1] = ''; parts[i + 2] = '``'; i += 2; continue;
+export function build(md, baseDir = '.') {
+  const errors = [];
+  const notes = [];
+  const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  // Code spans become placeholders first, so bold and links may wrap them and nothing inside them is touched.
+  const inline = (s) => {
+    const codes = [];
+    let t = esc(String(s).replace(/`([^`]+)`/g, (m, c) => `\u0000${codes.push(c) - 1}\u0000`));
+    t = t.replace(/&lt;br\s*\/?&gt;/gi, '<br>').replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/(^|[\s(«])\*(?=\S)([^*]*?\S)\*(?=[\s).,;:!?»]|$)/g, '$1<em>$2</em>')
+      .replace(/\[([^\]]+)\]\(((?:[^()\s]|\([^()\s]*\))+)\)/g, (m, txt, u) => (/^(https?:|file:|mailto:)/i.test(u) ? `<a href="${u}">${txt}</a>` : m));
+    return t.replace(/\u0000(\d+)\u0000/g, (m, n) => `<code>${esc(codes[n])}</code>`);
+  };
+  const svgSafe = (svg) => {
+    if (!/^\s*<svg[\s>]/i.test(svg) || !/<\/svg>\s*$/i.test(svg)) { errors.push('an ```svg block must start with <svg and end with </svg>'); return ''; }
+    if (/<(script|style|foreignObject|iframe|object|embed)|[\s/"']on\w+\s*=|javascript:|&#|&(?!(?:amp|lt|gt|quot);)[a-z]+;|(?:href|src)\s*=\s*(?!["']?#)/i.test(svg)) {
+      errors.push('an svg picture holds a script, a style, an event handler, an encoded character or an outside link: draw it with shapes and text only');
+      return '';
     }
-    const punct = next.match(/^[,.;:)»!?]/);
-    if (punct) { out.push(`<span class="nw">${code}${esc(punct[0])}</span>`); parts[i + 1] = next.slice(1); continue; }
-    out.push(code);
-  }
-  return out.join('');
-};
-const list = (v) => (v == null || v === '' ? [] : Array.isArray(v) ? v : [v]);
-const plural = (n, one, few, many) => { const a = n % 10, b = n % 100; return `${n} ${a === 1 && b !== 11 ? one : a >= 2 && a <= 4 && (b < 12 || b > 14) ? few : many}`; };
-const lowerFirst = (s) => (/^\p{Lu}\p{Ll}/u.test(s) ? s[0].toLowerCase() + s.slice(1) : s);
-const words = (s) => new Set(String(s).toLowerCase().split(/[^\p{L}\d]+/u).filter(Boolean));
-const plain = (s) => String(s ?? '').replace(/`[^`]*`/g, ' ');
-
-for (const k of ['title', 'headline', 'stops', 'items']) if (!r[k]) fail(`missing "${k}"`);
-const owners = Object.entries(r.owners ?? { you: 'Ты' });
-if (owners.length > 6) warn.push(`${owners.length} owners: only 6 colours and shapes exist, merge some`);
-const ownerCls = Object.fromEntries(owners.map(([id], i) => [id, `o${Math.min(i + 1, 6)}`]));
-const ownerName = Object.fromEntries(owners);
-const reader = owners[0][0];
-const stops = r.stops;
-const stopIds = new Set(stops.map((s) => s.id));
-const KINDS = new Set(['now', 'milestone', 'nodate', 'done']);
-const done = (r.done ?? []).map((d) => ({ ...d }));
-// The done list hangs off the stop of kind "done", else (only when there is a done list) the stop "done" or the last one.
-const doneStop = (stops.find((s) => s.kind === 'done') ?? (done.length ? stops.find((s) => s.id === 'done') ?? stops.at(-1) : null))?.id;
-const kindOf = (s) => s.kind ?? (s.id === doneStop ? 'done' : '');
-const infoStop = new Set(stops.filter((s) => s.info).map((s) => s.id));
-for (const s of stops) if (s.kind && !KINDS.has(s.kind)) warn.push(`stop "${s.id}": unknown kind "${s.kind}", use now, milestone, nodate, done or none`);
-
-let n = 0;
-// Numbers follow the page order: stops in order, items in their JSON order inside a stop.
-const items = stops.flatMap((s) => r.items.filter((it) => it.stop === s.id)).map((it) => ({ ...it, n: ++n }));
-for (const d of done) d.n = ++n;
-for (const it of r.items) {
-  if (!stopIds.has(it.stop)) fail(`item "${it.title}": unknown stop "${it.stop}"`);
-  if (!ownerCls[it.owner]) fail(`item "${it.title}": unknown owner "${it.owner}"`);
-}
-// The reader's colour means "this needs you"; the reader's other items render neutral.
-const needs = (it) => it.ask ?? (it.owner === reader && it.stop !== doneStop && !infoStop.has(it.stop));
-// Facts at an info stop are neutral whoever owns them, so the overview never reads them as open work.
-const cls = (it) => (infoStop.has(it.stop) || (it.owner === reader && !needs(it)) ? 'info' : ownerCls[it.owner]);
-
-// Ids, files, paths, versions and hyphen ranges must be in backticks (copy, find and wrapping depend on it).
-// Standard names (UTF-8, SHA-256, GPT-4) are words, not ids. A path is lowercase segments with 2+ slashes,
-// a glob or a trailing slash: "Done/Partly/Blocked" and "16/17/18" are lists, not paths.
-const STANDARD = /^(?:UTF|SHA|ISO|GPT|COVID|RFC|IEEE|MD|AES|RSA|ECMA|ES|HTTP|TLS|USB|PCI)-/;
-const PLAIN = [
-  // One-letter prefixes count only with a number (X-037); H-1B is a visa, not an id.
-  [/\b[A-Z]{1,6}-[A-Z\d]*\d[A-Z\d]*\b/g, 'an id', (m) => !STANDARD.test(m) && (/^[A-Z]{2}/.test(m) || /^[A-Z]-\d+$/.test(m))],
-  [/https?:\/\/\S+|\b[a-z][\w-]*(?:\.[a-z][\w-]*)+\/[\w./-]*/g, 'a URL'],
-  [/\b[a-z]+_[a-z_]+\b/g, 'a snake_case name'],
-  [/\b[\w.-]+\.(?:md|mjs|cjs|ts|tsx|vue|json|html|ps1|sh|py|yml|yaml)\b/g, 'a file name'],
-  [/(?<![\w.])(?:[a-z0-9_.-]*[a-z][a-z0-9_.-]*\/){2,}[a-z0-9_.*-]*|(?<![\w.])[a-z][\w.-]*\/(?:\*|(?=[\s,.;:)»]|$))/g, 'a path'],
-  [/\b\d{1,3}\.\d{1,3}\.\d{1,3}\b/g, 'a version'],
-  [/\b(?=[0-9a-f]*\d)(?=[0-9a-f]*[a-f])[0-9a-f]{7,40}\b/g, 'a commit hash'],
-];
-const lint = (where, s) => {
-  const t = plain(s);
-  for (const [re, what, ok = () => true] of PLAIN) { const m = (t.match(re) ?? []).find(ok); if (m) warn.push(`${where}: "${m.trim()}" looks like ${what}: put it in backticks`); }
-  const big = t.match(/(?<![\d.,])\b\d{5,}\b(?![.,]\d)/);
-  if (big) warn.push(`${where}: "${big[0]}" needs a thousands space ("37 035"), or backticks if it is a code`);
-  if (/~\s?\d/.test(t)) warn.push(`${where}: "~" before a number: write «около 40» or «примерно на 40», as a person would say it`);
-  const range = t.match(/(?<![\d-])\d{1,3}-\d{1,3}(?![\d-])/);
-  if (range) warn.push(`${where}: "${range[0]}" is a range: use an en dash (–)`);
-  const k = t.match(/\d[\d.,–]*\s?[Kk]\b/);
-  if (k) warn.push(`${where}: "${k[0]}" uses a Latin K: write "тыс."`);
-  // Only a date with a 4-digit year: `22.11` may be a version as well as a date.
-  const date = String(s).match(/`(\d{1,2}\.\d{1,2}\.\d{4})`/);
-  if (date) warn.push(`${where}: "${date[1]}" is a date: dates and counts are plain text, drop the backticks`);
-};
-for (const k of ['headline', 'sub', 'meta', 'footer']) if (r[k]) lint(k, r[k]);
-for (const s of stops) if (s.note) lint(`stop "${s.id}" note`, s.note);
-
-const SIZE = /\d[\d\s,.]*\s*(строк|файл|KB|КБ|МБ|MB|токен|lines?\b|files?\b|tokens?\b)/i;
-const SHRINK = /меньше|больше|сократ|уменьш|экономи|−|→/i;
-const HISTORY = /changelog|release notes|журнал изменений|git log|коммит/i;
-const UNIT = /\$|€|₽|%|\bKB\b|\bMB\b|КБ|МБ|\bмс\b|\bms\b/;
-const SYMBOLS = new Set(['$', '€', '₽', '%', 'KB', 'MB', 'GB', 'КБ', 'МБ', 'ГБ', 'мс', 'ms', 'с', 's']);
-for (const it of items) {
-  const w = (m) => warn.push(`#${it.n} ${m}`);
-  const texts = [it.title, it.text, it.warn, it.how, it.checked, it.flag, it.src, it.barsNote, it.big?.note, it.effect?.text, it.effect?.how,
-    ...(it.steps ?? []).flatMap((s) => [s.title, s.text]), ...list(it.more), ...(it.tags ?? []).map((t) => (Array.isArray(t) ? t[1] : t)),
-    ...(it.answers ?? []).flat()];
-  for (const s of texts) if (s) lint(`#${it.n}`, s);
-  if ((it.title ?? '').length > 60) w('title over 60 chars: shorten, move the rest to "text"');
-  if ((it.text ?? '').length > 220) w('text over 220 chars: keep 1-2 sentences, move the rest to "more"');
-  if (it.who && it.who.length > 14) w(`"who" over 14 chars: at most 2 words, e.g. "Аня → ты"`);
-  if (it.who && ![...words(it.who)].some((x) => words(ownerName[it.owner]).has(x))) w(`"who" (${it.who}) names someone other than owner "${ownerName[it.owner]}": add that person to "owners" and use them as owner`);
-  if (it.steps?.length > 1 && it.steps.every((s) => s.must)) w('every step is "must": mark only the steps people skip at a cost');
-  // Something the reader must act on says how: a command, steps, or one line on where to click or what to answer.
-  if (needs(it) && !it.cmd && !it.steps && !it.how && !it.answers) w('needs the reader but says not how: add "how" (where to click or what to answer), "steps", "cmd" or "answers"');
-  // A question to the reader says what each answer changes, so he can answer without the research behind it (owner, 2026-11-20).
-  if (needs(it) && (/\?/.test(plain(`${it.title} ${it.text ?? ''}`)) || /^(?:решить|выбрать)(?![\p{L}])/iu.test(it.title ?? ''))
-    && !(Array.isArray(it.answers) && it.answers.length >= 2)) w('asks the reader a question but has no "answers": list each answer with what it changes, [["да", "что будет"], ["нет", "что будет"]]');
-  // Seven questions packed into one card's tags reached the owner with no context and no consequences (2026-11-20).
-  if ((it.tags ?? []).some((t) => /\?/.test(plain(Array.isArray(t) ? t[1] : t)))) w('a question inside a tag: each question to the reader is its own item with "answers"');
-  if (list(it.more).join(' ').length > 1200) w('"more" over 1200 chars: keep what the reader can use, drop file lists and research notes');
-  for (const a of it.answers ?? []) {
-    if (!Array.isArray(a) || a.length !== 2 || !a[0] || !a[1]) { w('"answers" holds pairs: [["да", "что будет"], ["нет", "что будет"]]'); break; }
-    if (String(a[0]).length > 24) w(`answer "${a[0]}" over 24 chars: the answer is a word or two, what it changes goes second`);
-  }
-  const stop = stops.find((s) => s.id === it.stop);
-  if (needs(it) && /(?:^|[^\p{L}])(?:ничего не (?:нужно|надо)|ничего делать не надо|для сведения|факты)(?:[^\p{L}]|$)/iu.test(stop.note ?? '')) w(`stop "${stop.id}" says nothing is needed, yet this item needs the reader: set "info": true on the stop or "ask": false on the item`);
-  if (it.figure && /(?:src|href)\s*=\s*["']?\s*(?:https?:)?\/\/|url\(\s*["']?\s*(?:https?:)?\/\//i.test(it.figure)) w('figure loads an external URL: inline it, the file must work offline');
-  if (it.figure && /<script/i.test(it.figure)) w('figure has a <script>: draw with SVG or HTML only');
-  if (it.bars && !it.barsNote) w('bars have no "barsNote": say what they count');
-  if (it.bars && !it.barsUnit && UNIT.test(`${it.barsNote ?? ''} ${it.big?.value ?? ''}`)) w('bars count a unit ($, KB, %, мс...) but have no "barsUnit"');
-  if (typeof it.barsUnit === 'string' && !SYMBOLS.has(it.barsUnit.trim())) w(`barsUnit "${it.barsUnit}" is a word: use a symbol (${[...SYMBOLS].join(' ')}) or three forms ["обход", "обхода", "обходов"]`);
-  if (Array.isArray(it.barsUnit) && it.barsUnit.length !== 3) w('barsUnit as a list needs three forms: ["обход", "обхода", "обходов"]');
-  // Bars read best sorted; a time series keeps its order with "barsKeepOrder": true.
-  const vals = (it.bars ?? []).map((b) => Number(b.value) || 0);
-  if (vals.length > 2 && !it.barsKeepOrder && !vals.every((v, i) => !i || v <= vals[i - 1]) && !vals.every((v, i) => !i || v >= vals[i - 1])) w('bars are not sorted: sort them, or set "barsKeepOrder": true for a time series');
-  if ((it.flag ?? '').length > 40) w('flag over 40 chars: a 1–4 word label; the reason goes in "text" or "more"');
-  // History is not state: an ask built from a changelog may already be done. "checked" says what was looked at
-  // now and when; it is printed on the card, so a fake one sits in front of the reader.
-  if (needs(it) && HISTORY.test(`${it.src ?? ''} ${r.meta ?? ''} ${r.footer ?? ''}`) && !it.checked) w('needs the reader, and the source is history (changelog, git log, commits): look at the current state and write it in "checked" (what, when)');
-  if (it.checked && /не\s*провер/i.test(it.checked)) w('"checked" says it was not checked: check it, or drop the ask and add a flag');
-  if (it.checked && !/\d/.test(it.checked)) w('"checked" names what you looked at and when (a date or time), not just "да"');
-  if (/провер|свер/i.test(it.src ?? '')) w('"src" says what was checked: that goes in "checked"; "src" only names the source');
-  // Plain tags are one style: all code or all words.
-  const plainTags = (it.tags ?? []).filter((t) => !Array.isArray(t)).map((t) => /^`[^`]+`$/.test(t));
-  if (plainTags.includes(true) && plainTags.includes(false)) w('tags mix code and plain words: pick one style, or use [id, words] pairs');
-  if (it.effect && !needs(it) && it.owner === reader) w('effect on an item that needs nothing from the reader: effect only where you propose or ship a change');
-  // A total and its parts must agree when they share a unit; otherwise the check cannot tell and is skipped.
-  if (it.big && it.bars && typeof it.barsUnit === 'string') {
-    const v = String(it.big.value), unit = v.replace(/[\d\s.,−-]/g, '').trim();
-    if (unit === it.barsUnit.trim()) {
-      const total = Number(v.replace(/[^\d,.]/g, '').replace(',', '.')), sum = it.bars.reduce((a, b) => a + (Number(b.value) || 0), 0);
-      if (Number.isFinite(total) && Math.abs(total - sum) > Math.max(1, total * 0.005)) w(`big says ${v} but the bars add up to ${sum.toLocaleString('ru-RU')}: reconcile them or add the missing part as a bar`);
+    if (!/<svg[^>]*\sviewBox=/i.test(svg)) { errors.push('an svg picture needs a viewBox, or it will not shrink to a phone'); return ''; }
+    return svg.trim();
+  };
+  const MIME = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml' };
+  const image = (alt, path) => {
+    const fig = (src) => `<figure><img src="${src}" alt="${esc(alt)}">${alt ? `<figcaption>${inline(alt)}</figcaption>` : ''}</figure>`;
+    if (/^https?:\/\//i.test(path)) return fig(esc(path));
+    const file = resolve(baseDir, path);
+    const mime = MIME[extname(file).toLowerCase()];
+    if (!mime) { errors.push(`image "${path}": use png, jpg, gif, webp or svg`); return ''; }
+    if (!existsSync(file)) { errors.push(`image "${path}" not found (paths are relative to the .md file)`); return ''; }
+    return fig(`data:${mime};base64,${readFileSync(file).toString('base64')}`);
+  };
+  // Split on a separator outside parentheses and backticks, so "(bad: a -> b)" and `a | b` stay whole.
+  const splitOutside = (s, sep, parens = true) => {
+    const out = [];
+    let depth = 0, code = false, cur = '';
+    for (let i = 0; i < s.length; i++) {
+      const c = s[i];
+      if (c === '`') code = !code;
+      else if (parens && !code && c === '(') depth++;
+      else if (parens && !code && c === ')') depth = Math.max(0, depth - 1);
+      if (!code && depth === 0 && s.startsWith(sep, i) && s[i - 1] !== '\\') { out.push(cur); cur = ''; i += sep.length - 1; continue; }
+      cur += c;
     }
+    out.push(cur);
+    return out;
+  };
+  const caption = (lines) => lines.find((l) => /^=\s/.test(l.trim()));
+
+  // ```flow: one row per line, "label | step -> step (ok: note) -> step (bad: note)"; a last line "= caption".
+  // Boxes are HTML, not SVG, so long words wrap instead of overflowing.
+  const flow = (lines) => {
+    const cap = caption(lines);
+    const rows = lines.filter((l) => l.trim() && l !== cap).map((l) => {
+      const parts = splitOutside(l, '|');
+      const label = parts.length > 1 ? parts[0].trim() : '';
+      const chain = (parts.length > 1 ? parts.slice(1).join('|') : parts[0]).trim();
+      const steps = splitOutside(chain.replace(/-->|→/g, '->'), '->').map((s) => {
+        const m = s.trim().match(/^(.*?)\s*\((ok|bad|wait)(?::\s*(.*))?\)$/i);
+        if (m) return { t: m[1], st: m[2].toLowerCase(), note: m[3] };
+        // A plain "(frontend)" is text; only a near-miss of a status is a mistake worth stopping for.
+        if (/\((fail(ed)?|error|warn(ing)?|done|good|success|pending)(:[^)]*)?\)$/i.test(s.trim())) errors.push(`flow step "${s.trim()}": the status is ok, bad or wait`);
+        return { t: s.trim() };
+      });
+      if (steps.some((s) => !s.t)) errors.push(`flow row "${l.trim()}": an empty step around "->"`);
+      return `<div class="flow-row">${label ? `<div class="flow-label">${inline(label)}</div>` : ''}<div class="flow-steps">${steps.map((s) => `<div class="step${s.st ? ` ${s.st}` : ''}"><b>${inline(s.t)}</b>${s.note ? `<em class="sr">: </em><span>${inline(s.note)}</span>` : ''}</div>`).join(' <i aria-hidden="true">→</i> ')}</div></div>`;
+    });
+    if (!rows.length) errors.push('an empty ```flow block');
+    return `<figure class="flow">${rows.join('')}${cap ? `<figcaption>${inline(cap.trim().replace(/^=\s*/, ''))}</figcaption>` : ''}</figure>`;
+  };
+  // ```bars: "label: 62 %" per line (the number is the last colon's value; thousands with a space, decimals with a
+  // comma or dot), "*" before a label marks the one that matters, a last line "= caption" says what they count.
+  const bars = (lines) => {
+    const cap = caption(lines);
+    const rows = lines.filter((l) => l.trim() && l !== cap).map((raw) => {
+      const l = raw.replace(/\*\*/g, '');
+      // The label ends at the first colon followed by a space and a number, so "В 12:30: 5 мин" and "Run: 5 at 10:30" both read right.
+      const m = l.match(/^\s*(?:[-+]\s+)?(\*?)\s*(.+?):\s+([$€£₽]?)\s*([−-]?\d{1,3}(?:[  ]\d{3})+(?![\d.,])(?:[.,]\d+)?|[−-]?\d+(?:[.,]\d+)?)\s*(.*)$/);
+      if (!m) { errors.push(`bars line "${l.trim()}": write "label: number unit"`); return null; }
+      const v = Number(m[4].replace(/[  ]/g, '').replace(',', '.').replace('−', '-'));
+      if (v < 0) { errors.push(`bars line "${l.trim()}": bars show sizes; put signed numbers in a table`); return null; }
+      return { hot: !!m[1], label: m[2].replace(/\*\*/g, '').trim(), v, shown: `${m[3]}${m[4]}${m[5] ? ` ${m[5]}` : ''}` };
+    }).filter(Boolean);
+    if (!cap) errors.push('a ```bars block needs a last line "= what the bars count"');
+    const max = Math.max(...rows.map((r) => r.v), 0) || 1;
+    return `<figure class="bars">${rows.map((r) => `<div class="bar${r.hot ? ' hot' : ''}"><span>${inline(r.label)}</span><div><i style="width:${Math.max(1, Math.round((r.v / max) * 100))}%"></i><b>${esc(r.shown)}</b></div></div>`).join('')}${cap ? `<figcaption>${inline(cap.trim().replace(/^=\s*/, ''))}</figcaption>` : ''}</figure>`;
+  };
+
+  const FENCE = /^(\s*)(`{3,}|~{3,})\s*([\w-]*)/;
+  const MARK = /^(\s*)([-*+]|\d{1,3}[.)]) (.*)$/;
+  const blocks = (lines) => {
+    const out = [];
+    let i = 0;
+    const isBreak = (l) => /^\s*$/.test(l) || FENCE.test(l) || /^(#{1,4} |> ?|\s*(?:[-*+]|\d{1,3}[.)]) |\|.*\||---\s*$|!\[)/.test(l);
+    while (i < lines.length) {
+      const l = lines[i];
+      if (/^\s*$/.test(l)) { i++; continue; }
+      let m;
+      if ((m = l.match(/^(#{1,4}) (.+)$/))) { const n = Math.min(m[1].length, 3); out.push(`<h${n}>${inline(m[2].trim())}</h${n}>`); i++; continue; }
+      if ((m = l.match(FENCE))) {
+        const [, , fence, langRaw] = m;
+        const lang = langRaw.toLowerCase();
+        const close = new RegExp(`^\\s*${fence[0] === '`' ? '`' : '~'}{${fence.length},}\\s*$`);
+        const body = [];
+        i++;
+        while (i < lines.length && !close.test(lines[i])) body.push(lines[i++]);
+        if (i >= lines.length) errors.push('a code block is never closed');
+        i++;
+        if (lang === 'svg') { const s = svgSafe(body.join('\n')); if (s) out.push(`<figure>${s}</figure>`); }
+        else if (lang === 'flow') out.push(flow(body));
+        else if (lang === 'bars') out.push(bars(body));
+        else out.push(`<pre><button type="button">${ui.copy}</button><code>${esc(body.join('\n'))}</code></pre>`);
+        continue;
+      }
+      if (/^> ?/.test(l)) {
+        const body = [];
+        while (i < lines.length && /^> ?/.test(lines[i])) body.push(lines[i++].replace(/^> ?/, ''));
+        out.push(`<blockquote>${blocks(body)}</blockquote>`);
+        continue;
+      }
+      if ((m = l.match(/^!\[([^\]]*)\]\(((?:[^()]|\([^()]*\))+)\)\s*$/))) { out.push(image(m[1], m[2])); i++; continue; }
+      if (/^---\s*$/.test(l)) { out.push('<hr>'); i++; continue; }
+      if (/^\|.*\|\s*$/.test(l)) {
+        const rows = [];
+        while (i < lines.length && /^\|.*\|\s*$/.test(lines[i])) rows.push(lines[i++]);
+        const cells = (r) => splitOutside(r.trim().slice(1, -1), '|', false).map((c) => c.trim().replace(/\\\|/g, '|'));
+        if (!(rows[1] && /^\|[\s:|-]+\|\s*$/.test(rows[1]))) { errors.push('a table needs a | --- | line under its header'); continue; }
+        const head = cells(rows[0]);
+        const row = (r) => { const c = cells(r); while (c.length < head.length) c.push(''); return c; };
+        out.push(`<table><thead><tr>${head.map((c) => `<th>${inline(c)}</th>`).join('')}</tr></thead><tbody>${rows.slice(2).map((r) => `<tr>${row(r).map((c) => `<td>${inline(c)}</td>`).join('')}</tr>`).join('')}</tbody></table>`);
+        continue;
+      }
+      if ((m = l.match(MARK))) {
+        const indent = m[1].length;
+        const ordered = /\d/.test(m[2]);
+        const start = ordered ? parseInt(m[2], 10) : 1;
+        const items = [];
+        while (i < lines.length) {
+          const im = lines[i].match(MARK);
+          if (!im || im[1].length !== indent || /\d/.test(im[2]) !== ordered) break;
+          const body = [im[3]];
+          i++;
+          // An item owns the lines indented past its marker, and blank lines between them.
+          while (i < lines.length) {
+            const nx = lines[i];
+            if (/^\s*$/.test(nx)) {
+              let j = i;
+              while (j < lines.length && /^\s*$/.test(lines[j])) j++;
+              if (j < lines.length && lines[j].match(/^\s*/)[0].length > indent) { while (i < j) { body.push(''); i++; } continue; }
+              break;
+            }
+            const lead = nx.match(/^\s*/)[0].length;
+            if (lead > indent) { body.push(nx.slice(Math.min(lead, indent + im[2].length + 1))); i++; continue; }
+            if (lead === indent && !isBreak(nx)) { body.push(nx.trim()); i++; continue; }
+            break;
+          }
+          const inner = blocks(body);
+          items.push(`<li>${inner.replace(/^<p>([\s\S]*?)<\/p>(?=\n|$)/, '$1')}</li>`);
+          // A blank line between two items of the same list keeps the list going ("loose" list).
+          let j = i;
+          while (j < lines.length && /^\s*$/.test(lines[j])) j++;
+          const nx = j < lines.length && lines[j].match(MARK);
+          if (j > i && nx && nx[1].length === indent && /\d/.test(nx[2]) === ordered) i = j;
+        }
+        out.push(ordered ? `<ol${start !== 1 ? ` start="${start}"` : ''}>${items.join('')}</ol>` : `<ul>${items.join('')}</ul>`);
+        continue;
+      }
+      const para = [];
+      while (i < lines.length && !isBreak(lines[i])) para.push(lines[i++].trim());
+      if (!para.length) { para.push(l.trim()); i++; }
+      out.push(`<p>${para.map(inline).join('<br>\n')}</p>`);
+    }
+    return out.join('\n');
+  };
+
+  const lines = md.replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n').split('\n');
+  // Checks look at the prose only: code may legitimately hold "# comment", {{ x }}, TODO or <style>.
+  const inFence = [];
+  for (let i = 0, open = null; i < lines.length; i++) {
+    const m = lines[i].match(FENCE);
+    if (open) { inFence[i] = true; if (m && m[2][0] === open[0] && m[2].length >= open.length && !m[3]) open = null; }
+    else if (m) { inFence[i] = true; open = m[2]; }
   }
-  if (it.effect && !['measured', 'forecast'].includes(it.effect.basis)) w('effect.basis must be "measured" or "forecast"');
-  if (it.effect?.basis === 'measured' && (!/\d/.test(it.effect.how ?? '') || /не провер/i.test(it.effect.how ?? ''))) w('a "measured" effect needs a number or sample in "how" and cannot be unchecked: otherwise it is "forecast"');
-  // Size is never the reason for a change (owner, 2026-11-17). Only a size offered as the gain trips this:
-  // a size and a comparison in the title or text of an item that is still open.
-  const sizeText = `${it.title} ${it.text ?? ''}`;
-  if (!it.effect && !it.costIsGoal && it.stop !== doneStop && !infoStop.has(it.stop) && SIZE.test(sizeText) && SHRINK.test(sizeText)) w('talks about size (lines, files, KB, tokens): give "effect" (what changes for the reader), or set "costIsGoal": true when the item is about cost');
-  if (it.costIsGoal && !(SIZE.test(sizeText) && SHRINK.test(sizeText))) w('"costIsGoal" changes nothing here: drop it');
-}
-// The reader saw none of the research (owner, 2026-11-20: «Trail of Bits, context7», «`/focus`» meant nothing to him).
-// A Latin name or a code in a title, or a Latin name in the card's visible text, is said in plain words in parentheses
-// at its first use on the page: «context7 (сервис со свежей документацией библиотек)» or «сервис документации (context7)».
-// "known" lists what the reader uses daily; units are not names, and a «quoted» button or menu label is read off the screen.
-const LATIN = String.raw`[A-Za-z][\w.+#/-]*(?: [A-Za-z][\w.+#/-]*)*`;
-const UNITS = new Set(['kb', 'mb', 'gb', 'tb', 'ms', 's', 'px']);
-const termKey = (t) => t.replace(/^`|`$/g, '').replace(/[./-]+$/, '').toLowerCase();
-const known = new Set((r.known ?? []).flatMap((k) => [termKey(k), ...termKey(k).split(' ')]));
-const explained = new Set();
-const TERM = '(`[^`]+`|' + LATIN + ')';
-const NAME_FIRST = new RegExp(TERM + String.raw` ?\([^()]*\p{Script=Cyrillic}[^()]*\)`, 'gu');
-const WORDS_FIRST = new RegExp(String.raw`\p{Script=Cyrillic}[^()]* \(` + TERM + String.raw`\)`, 'gu');
-const explain = (s) => { for (const re of [NAME_FIRST, WORDS_FIRST]) for (const m of String(s ?? '').matchAll(re)) explained.add(termKey(m[1])); };
-const clear = (t) => { const k = termKey(t); return UNITS.has(k) || !/\p{L}/u.test(k) || known.has(k) || explained.has(k) || k.split(' ').every((x) => known.has(x) || explained.has(x)); };
-for (const it of items) {
-  const seen = [it.title, it.text, it.warn, it.how, ...(it.steps ?? []).flatMap((s) => [s.title, s.text]), ...(it.answers ?? []).flat(),
-    ...(it.tags ?? []).map((t) => (Array.isArray(t) ? t[1] : null))];
-  seen.forEach(explain);
-  for (const t of it.tags ?? []) if (Array.isArray(t) && t[1]) explained.add(termKey(String(t[0])));
-  const terms = [...String(it.title ?? '').match(/`[^`]+`/g) ?? [], ...seen.flatMap((s) => plain(s).replace(/«[^»]*»/g, ' ').match(new RegExp(LATIN, 'g')) ?? [])];
-  const bad = [...new Map(terms.filter((t) => !clear(t)).map((t) => [termKey(t), t.replace(/[./-]+$/, '')])).values()];
-  if (bad.length) warn.push(`#${it.n} names ${bad.map((t) => `"${t}"`).join(', ')} without saying what it is: plain words in parentheses at the first use on the page, or "known" if the reader uses it daily`);
-  bad.forEach((t) => explained.add(termKey(t)));
-  // Cards open from the overview, out of order, and the research itself is never on the page.
-  const prose = plain([...seen, ...list(it.more)].filter(Boolean).join(' \n '));
-  const ref = prose.match(/(?<![\p{L}])(?:агент(?:а|ом|у)? ?№? ?\d+(?!\d| ?(?:сек|мин|час|дн|раз|шаг))|источник(?:а|е|у|ом)? ?№? ?\d+|см\.? (?:выше|ниже)|как (?:выше|ниже)|по данным исследования|(?:перв|втор|трет)\p{L}* волн\p{L}*|волн(?:а|ы|е|у|ой) \d|из повтора|в повторе|файле? проверки|папке исследования)|\[\d+\]/iu)
-    ?? prose.match(/(?<![\p{L}])(?:вариант|случа[йяеюи]|случаи)(?:а|е|у|ом)? [A-ZА-Г](?![\p{L}\d]| ?\()/u);
-  if (ref) warn.push(`#${it.n} points into context the reader never saw ("${ref[0]}"): say the thing itself`);
-}
-// Item count follows the reader's priority: a topic he called minor gets one item, its details go in that item's "more".
-for (const name of r.minor ?? []) {
-  const hits = items.filter((it) => JSON.stringify(it).toLowerCase().includes(String(name).toLowerCase()));
-  if (hits.length > 1) warn.push(`minor topic "${name}" is in ${hits.length} items (${hits.map((it) => '#' + it.n).join(', ')}): collapse it into one item, the rest goes in its "more"`);
-  if (`${r.headline} ${r.sub ?? ''}`.toLowerCase().includes(String(name).toLowerCase()) || hits[0]?.n === 1) warn.push(`minor topic "${name}" leads the page (headline, sub or item 1): the reader's main topics go first`);
-}
-// A source chip is for the reader to open; research working files ("12-verification.md") he never saw are noise.
-const workSrc = items.filter((it) => /\b\d{2}-[\w-]+\.md\b/.test(it.src ?? ''));
-if (workSrc.length) warn.push(`${workSrc.length} cards (${workSrc.slice(0, 5).map((it) => '#' + it.n).join(', ')}${workSrc.length > 5 ? '...' : ''}) cite research working files in "src": name a source the reader can open or knows, or drop "src"`);
-// One fact lives in one card: a number repeated across many cards means the cards retell each other.
-const factCount = {};
-for (const it of items) for (const x of new Set(plain(JSON.stringify(it)).match(/\d{1,3}(?: \d{3})+(?:,\d+)?|\d+,\d+ ?%/g) ?? [])) factCount[x] = (factCount[x] ?? 0) + 1;
-for (const [x, c] of Object.entries(factCount)) if (c >= 4) warn.push(`"${x}" is in ${c} cards: say a fact in one card, the others name what follows from it`);
-done.forEach((d) => { lint(`done #${d.n}`, d.text); list(d.more).forEach((m) => lint(`done #${d.n} more`, m)); });
-// One shipped change is one done row: a card sharing a version, or two ids, with a done row repeats it.
-const ticks = (s) => (String(s ?? '').match(/`[^`]+`/g) ?? []).map((x) => x.slice(1, -1));
-const cardIds = (it) => new Set([...[it.title, it.text, it.src].flatMap(ticks), ...(it.tags ?? []).filter(Array.isArray).map((t) => String(t[0]).replace(/`/g, ''))]);
-for (const it of items.filter((x) => x.stop !== doneStop)) {
-  const mine = cardIds(it);
-  for (const d of done) {
-    const shared = ticks(d.text).filter((t) => mine.has(t));
-    if (shared.some((t) => /^\d+\.\d+\.\d+$/.test(t)) || shared.length >= 2) { warn.push(`#${it.n} repeats done #${d.n} (${shared.join(', ')}): a shipped change is one done row; put what the reader should know in its "more"`); break; }
-  }
-}
-if (items.filter((it) => it.effect).length > Math.max(1, items.length / 2)) warn.push('more than half the items carry "effect": keep it only where a change has a real effect on the reader not already in the title or text');
-// The source is named once: in meta when there is one, else on the cards.
-const firstWord = (s) => plain(s).trim().split(/[\s:,]+/)[0]?.toLowerCase();
-const sources = (s) => new Set([...ticks(s), ...(String(s ?? '').match(/\b[\w.-]+\.(?:md|json|html)\b|changelog|git log/gi) ?? [])].map((x) => x.toLowerCase()));
-const metaSrc = sources(r.meta), footSrc = sources(r.footer);
-const both = [...metaSrc].filter((x) => footSrc.has(x) && !/^\d/.test(x));
-if (both.length) warn.push(`meta and footer both name ${both.join(', ')}: say the source once`);
-const cardSrc = items.filter((it) => it.src && [...sources(it.src)].some((x) => metaSrc.has(x) || footSrc.has(x)));
-if (cardSrc.length >= 2) warn.push(`cards ${cardSrc.map((it) => '#' + it.n).join(', ')} repeat the source from meta or footer: say it once`);
-const srcCount = {};
-for (const it of items) for (const x of sources(it.src)) srcCount[x] = (srcCount[x] ?? 0) + 1;
-const common = Object.entries(srcCount).find(([, c]) => c >= 3 && c >= 0.6 * items.length);
-if (common) warn.push(`${common[1]} cards name ${common[0]} as their source: say it once in meta or the footer`);
-if ((r.meta ?? '').length > 80) warn.push(`meta is ${r.meta.length} chars: keep it under 80, the rest goes to the footer`);
-if (r.headline.length > 100) warn.push(`headline is ${r.headline.length} chars: keep it under 100, the rest goes to "sub" or a card`);
-// Done rows that carry versions read newest first (or oldest first) within one product.
-const byProduct = {};
-for (const d of done) { const m = String(d.text).match(/^(.*?)`(\d+)\.(\d+)\.(\d+)`/); if (m) (byProduct[m[1].trim()] ??= []).push(+m[2] * 1e6 + +m[3] * 1e3 + +m[4]); }
-for (const [prod, vs] of Object.entries(byProduct)) if (vs.length > 2 && !vs.every((v, i) => !i || v < vs[i - 1]) && !vs.every((v, i) => !i || v > vs[i - 1])) warn.push(`done rows of ${prod || 'the product'} are out of version order: sort them`);
-const inStop = (s) => items.filter((i) => i.stop === s.id);
-const lead = items.filter((i) => i.stop === stops[0].id && needs(i)).length;
-// Only the highlighted count is checked: "[[3 пункта]]" must match the items at the first stop that need the reader.
-const WORDS = { один: 1, одна: 1, одно: 1, два: 2, две: 2, три: 3, четыре: 4, пять: 5, шесть: 6, семь: 7, восемь: 8, девять: 9, десять: 10 };
-const first = (r.headline.match(/\[\[([^\s\]]+)/) ?? [])[1]?.toLowerCase();
-const saidN = first && (/^\d+$/.test(first) ? first : WORDS[first]);
-// The sub may state the same count: "[[4 решения]]", "[[2 вопроса]]".
-const subN = (r.sub ?? '').match(/\[\[(\d+|\p{L}+) (?:пункт|решени|вопрос|задач|дел)/u);
-const subSaid = subN && (/^\d+$/.test(subN[1]) ? subN[1] : WORDS[subN[1].toLowerCase()]);
-if (subSaid && Number(subSaid) !== lead) fail(`sub says ${subSaid}, but the first stop has ${lead} items that need "${owners[0][1]}"`);
-if (saidN && Number(saidN) !== lead) fail(`headline says ${saidN}, but the first stop has ${lead} items that need "${owners[0][1]}": fix the headline or the items`);
-for (const s of stops) if (!inStop(s).length && !(s.id === doneStop && done.length)) warn.push(`stop "${s.id}" is empty: drop it or move items there`);
-if (r.project && r.meta && plain(r.meta).toLowerCase().startsWith(String(r.project).toLowerCase())) warn.push('meta starts with the project name, which the top bar already shows: drop it from meta');
-// Quoted text keeps its own dashes: code spans, commands and figures are not checked.
-const prose = JSON.stringify({ ...r, items: r.items.map(({ cmd, figure, ...it }) => it) }).replace(/`[^`]*`/g, '');
-if (prose.includes('—')) warn.push('em dash found: use a colon, a comma or a full stop');
-if (warn.length && !r.allowWarnings) {
-  for (const m of warn) console.error('ERROR ' + m);
-  fail(`${warn.length} problem(s) above. Fix the content; never rename or reword just to pass a check. If a check is wrong for this report, set "allowWarnings": true and say which one`);
-}
+  const prose = lines.filter((l, i) => !inFence[i]).join('\n').replace(/`[^`]*`/g, '');
+  const h1 = lines.map((l, i) => (!inFence[i] && /^# /.test(l) ? i : -1)).filter((i) => i >= 0);
+  if (h1.length !== 1) errors.push(`${h1.length} "# " titles: write exactly one, the main news in one plain sentence`);
+  const title = h1.length ? lines[h1[0]].slice(2).trim() : '';
+  const firstText = lines.slice((h1[0] ?? 0) + 1).find((l) => l.trim());
+  if (h1.length === 1 && (!firstText || /^(#|```|~~~|\||!\[|>|\s*(?:[-*+]|\d+[.)]) )/.test(firstText))) errors.push('the title must be followed by a plain paragraph: the whole story in a few sentences for someone who knows nothing');
+  // Common live-key shapes, code included; a report is read by others and kept on the Desktop.
+  const secret = /\b(?:sk-(?:ant-)?[A-Za-z0-9_-]{20,}|[sr]k_live_[A-Za-z0-9]{16,}|gh[pousr]_[A-Za-z0-9]{30,}|github_pat_\w{20,}|AKIA[0-9A-Z]{16}|xox[abprs]-[\w-]{10,}|AIza[\w-]{30,}|\d{8,10}:AA[\w-]{30,}|eyJ[\w-]{10,}\.eyJ[\w-]{10,}\.[\w-]{10,})\b|-----BEGIN [A-Z ]*PRIVATE KEY-----|\b[a-z][a-z0-9+]*:\/\/[^\s:/@]+:(?!\*+@)[^\s@/]{3,}@|\bBearer\s+[A-Za-z0-9._~+/-]{20,}|\b(?:password|passwd|pwd)\s*[=:]\s*['"]?(?=[^\s'"]*[\d!@#$%^&_])[\x21-\x7e]{6,}/i.test(md);
+  if (secret) errors.push('the text holds what looks like a key, token or password: remove it, the page must never carry a secret');
+  if (/\[\[|\{\{|\bTODO\b|\bTBD\b|<placeholder>/.test(prose)) errors.push('a template leftover ([[, {{, TODO, TBD) in the text: finish or remove it');
+  if (/<(script|style|iframe|object|embed)\b/i.test(prose)) errors.push('raw HTML in the text: write Markdown, pictures go in ```svg blocks');
 
-const body = (v) => {
-  const ps = list(v);
-  return ps.length > 1 ? `<ul>${ps.map((p) => `<li>${md(p)}</li>`).join('')}</ul>` : `<p>${md(ps[0])}</p>`;
-};
-const more = (v, n) => (list(v).length ? `<details class="more"><summary class="tog"><span class="when-shut">Подробнее</span><span class="when-open">Свернуть</span><span class="sr">, пункт ${n}</span></summary><div class="more-body">${body(v)}</div></details>` : '');
-const chip = (it) => `<a class="chip" data-o="${cls(it)}" href="#i${it.n}" aria-label="Пункт ${it.n}, ${esc(cls(it) === 'info' ? 'для сведения' : ownerName[it.owner])}">${it.n}</a>`;
-const doneRange = () => {
-  const a = done[0].n, b = done.at(-1).n, t = a === b ? `${a}` : `${a}–${b}`;
-  return `<a class="chip" data-o="done" href="#${doneStop}" aria-label="Пункты ${t}, готово">${t}</a>`;
-};
-const stopCount = (s) => inStop(s).length + (s.id === doneStop ? done.length : 0);
+  // The page speaks the text's language: Russian when Cyrillic letters outnumber Latin ones.
+  const cyr = (prose.match(/\p{Script=Cyrillic}/gu) ?? []).length;
+  const lat = (prose.match(/[A-Za-z]/g) ?? []).length;
+  const ru = cyr >= lat;
+  const ui = ru ? { lang: 'ru', copy: 'Копировать', done: 'Скопировано', sel: 'Выделено, нажми Ctrl+C' } : { lang: 'en', copy: 'Copy', done: 'Copied', sel: 'Selected, press Ctrl+C' };
 
-const overview = stops.map((s) => {
-  const chips = inStop(s).map(chip).join('') + (s.id === doneStop && done.length ? doneRange() : '');
-  const name = chips ? `<a class="stn" href="#${esc(s.id)}" aria-label="${esc(s.name)}, ${plural(stopCount(s), 'пункт', 'пункта', 'пунктов')}">${md(s.name)}</a>` : `<span class="stn">${md(s.name)}</span>`;
-  return `<li data-k="${kindOf(s)}"><span class="mark" aria-hidden="true"></span>${name}<span class="chips">${chips}</span></li>`;
-}).join('\n');
-// A stop's column grows with its chips and its name, so 7 numbers fit on one row and long names do not touch.
-const cols = stops.map((s) => `minmax(0,${Math.max(1, (inStop(s).length + (s.id === doneStop && done.length ? 2 : 0)) / 3, s.name.length / 14).toFixed(2)}fr)`).join(' ');
+  const body = blocks(lines.filter((l, i) => i !== h1[0]));
+  const words = prose.split(/\s+/).filter((w) => /\p{L}/u.test(w)).length;
+  if (words > 1500) notes.push(`${words} words: long. Fine if it explains; cut whatever the reader would skip`);
+  for (const p of body.match(/<p>[\s\S]*?<\/p>/g) ?? []) { const n = p.split(/\s+/).length; if (n > 130) notes.push(`a paragraph of ${n} words: split it where the thought turns`); }
 
-const fmt = (v, unit) => {
-  const t = typeof v === 'number' ? v.toLocaleString('ru-RU').replace(/\s/g, ' ') : String(v);
-  if (!unit) return t;
-  if (Array.isArray(unit)) return plural(Number(v) || 0, ...unit).replace(/^\S+/, t);
-  return /^[$€£]$/.test(unit) ? unit + t : `${t} ${unit}`;
-};
-const bars = (it) => {
-  const max = Math.max(...it.bars.map((b) => Number(b.value) || 0), 1);
-  const len = Math.max(...it.bars.map((b) => String(b.label).length));
-  // Short labels sit beside the bar (mono, so ch is exact); long ones go on their own line.
-  const stack = len > 12;
-  const rows = it.bars.map((b) => `<div class="bar" style="--p:${((Number(b.value) || 0) / max * 100).toFixed(1)}%;--c:var(--${b.hot ? 'o' : 'bar'})"><span>${md(b.label)}</span><i></i><b class="nw">${esc(fmt(b.value, it.barsUnit))}</b></div>`).join('');
-  const label = [it.barsNote, ...it.bars.map((b) => `${b.label} ${fmt(b.value, it.barsUnit)}`)].filter(Boolean).join(', ');
-  return `<figure class="bars${stack ? ' stack' : ''}"${stack ? '' : ` style="--lw:${len}ch"`} aria-label="${esc(label)}">${it.barsNote ? `<figcaption>${md(it.barsNote)}</figcaption>` : ''}${rows}</figure>`;
-};
-const visual = (it) => {
-  const o = [];
-  // Many steps, or 5+ steps holding a long code name, go in two rows so the name fits on one line.
-  const longCode = it.steps?.some((s) => ticks(s.text).some((c) => c.length > 20));
-  const wrapSteps = it.steps && (it.steps.length > 6 || (it.steps.length >= 5 && longCode));
-  if (it.steps) o.push(`<ol class="pipe${wrapSteps ? ' wrap' : ''}" style="--n:${wrapSteps ? Math.ceil(it.steps.length / 2) : it.steps.length}">${it.steps.map((s) => `<li${s.must || s.main ? ` class="${[s.must && 'must', s.main && 'go'].filter(Boolean).join(' ')}"` : ''}>${s.must ? '<span class="req">обязательно</span>' : ''}<b>${md(s.title)}</b><span>${md(s.text ?? '')}</span></li>`).join('')}</ol>`);
-  if (it.big) o.push(`<p class="big"><span class="bv">${md(it.big.value)}</span>${it.big.note ? `<small>${md(it.big.note)}</small>` : ''}</p>`);
-  if (it.bars) o.push(bars(it));
-  if (it.tags) o.push(`<ul class="tags">${it.tags.map((t) => Array.isArray(t) ? `<li><code class="id">${esc(String(t[0]).replace(/^`(.*)`$/, '$1'))}</code>${t[1] ? `<span>${md(t[1])}</span>` : ''}</li>` : `<li>${md(t)}</li>`).join('')}</ul>`);
-  // figure is trusted raw SVG/HTML from the report author, kept in a scroll box so it never widens the page.
-  if (it.figure) o.push(`<div class="figure" tabindex="0" role="group" aria-label="Рисунок к пункту ${it.n}">${it.figure}</div>`);
-  return o.join('\n');
-};
-// A command gets a full-width block with a copy button; <wbr> after each separator lets long paths wrap there.
-// A flag sticks to its value ("--channel telegram"); a path breaks only after its separators.
-const cmdHtml = (c) => c.split(' ').reduce((acc, tok) => (/^-/.test(acc.at(-1) ?? '') && !/ /.test(acc.at(-1)) && !/^-/.test(tok) ? [...acc.slice(0, -1), `${acc.at(-1)} ${tok}`] : [...acc, tok]), [])
-  .map((tok) => (/[\\/]/.test(tok) ? esc(tok).replace(/([\\/])/g, '$1<wbr>') : `<span class="nw">${esc(tok)}</span>`)).join(' ');
-const cmd = (it) => list(it.cmd).map((c) => `<div class="cmd"><pre><code>${cmdHtml(c)}</code></pre><button type="button" class="btn copy">Копировать</button></div>`).join('\n');
-// The owner is shown by colour, tick shape and legend; a badge appears only for a hand-off ("Аня → ты").
-const who = (it) => (it.who ? `<span class="who" title="${esc(it.who)}">${esc(it.who)}</span>` : '');
-const card = (it) => `<article class="card" id="i${it.n}" data-o="${cls(it)}">
-<header class="card-h"><span class="num">${it.n}</span><h3>${md(it.title)}</h3>${who(it)}</header>
-${it.text ? `<p class="body">${md(it.text)}</p>` : ''}
-${it.warn ? `<p class="warn">${md(it.warn)}</p>` : ''}
-${visual(it)}
-${cmd(it)}
-${it.how ? `<p class="act"><span class="lbl">Как</span><span>${md(it.how)}</span></p>` : ''}
-${(it.answers ?? []).filter((a) => Array.isArray(a) && a.length === 2).map(([say, then]) => `<p class="act"><span class="lbl">${md(say)}</span><span>${md(then)}</span></p>`).join('\n')}
-${it.checked ? `<p class="act"><span class="lbl">Сверено</span><span>${md(it.checked)}</span></p>` : ''}
-${it.effect ? `<div class="effect" data-b="${it.effect.basis === 'measured' ? 'measured' : 'forecast'}"><span class="eb">${it.effect.basis === 'measured' ? 'измерено' : 'прогноз'}</span><p>${md(it.effect.text)}</p>${it.effect.how ? `<p class="how">${md(it.effect.how)}</p>` : ''}</div>` : ''}
-${it.flag ? `<span class="flag${it.flag.length > 40 ? ' long' : ''}">${md(it.flag)}</span>` : ''}
-${it.src ? `<p class="src">${md(it.src)}</p>` : ''}
-${more(it.more, it.n)}
-</article>`;
-
-// A done row with "more" is itself the disclosure. Dates are group headers, printed where they change;
-// when every row shares one date it goes into the stop note instead.
-const dates = [...new Set(done.map((d) => d.date ?? ''))];
-const oneDate = dates.length === 1 ? dates[0] : '';
-const doneRow = (d) => {
-  const line = `<span class="num">${d.n}</span><span>${md(d.text)}</span>`;
-  return list(d.more).length
-    ? `<li><details class="more row"><summary class="line">${line}</summary><div class="more-body">${body(d.more)}</div></details></li>`
-    : `<li><div class="line">${line}</div></li>`;
-};
-const doneList = () => `<ol class="done" data-o="done">${done.map((d, i) => `${!oneDate && (i === 0 || d.date !== done[i - 1].date) ? `<li class="dh">${md(d.date ?? '')}</li>` : ''}${doneRow(d)}`).join('\n')}</ol>`;
-
-const route = stops.map((s) => {
-  const its = inStop(s);
-  const hasDone = s.id === doneStop && done.length > 0;
-  if (!its.length && !hasDone) return '';
-  const count = stopCount(s);
-  // A note starting with the count's own number ("4 пункта · 4 вопроса") only repeats it.
-  const dup = s.note && Number.parseInt(s.note, 10) === count;
-  const note = [plural(count, 'пункт', 'пункта', 'пунктов'), hasDone && oneDate, !dup && s.note && lowerFirst(s.note)].filter(Boolean).join(' · ');
-  return `<li class="station" id="${esc(s.id)}" data-k="${kindOf(s)}"><span class="mark" aria-hidden="true"></span>
-<div class="st-h"><h2>${md(s.name)}</h2><p>${md(note)}</p></div>
-<div class="cards">
-${its.map(card).join('\n')}${hasDone ? doneList() : ''}
-</div>
-</li>`;
-}).filter(Boolean).join('\n');
-
-const infoUsed = items.some((it) => cls(it) === 'info');
-const legend = owners.length > 1 || infoUsed
-  ? `<ul class="legend">${owners.map(([id, label]) => `<li data-o="${ownerCls[id]}">${esc(label)}</li>`).join('')}${infoUsed ? '<li data-o="info">Для сведения</li>' : ''}</ul>`
-  : '';
-const css = readFileSync(new URL('./report.css', import.meta.url), 'utf8');
-const html = `<!doctype html>
-<html lang="ru">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${esc(r.title)}</title>
-<script>try{var t=localStorage.getItem('report-theme');if(t==='light'||t==='dark')document.documentElement.dataset.theme=t}catch(e){}</script>
-<style>${css}</style>
-</head>
-<body>
-<div class="wrap">
-<header class="top${String(r.project ?? '').length > 12 ? ' long' : ''}"><b>${esc(r.project ?? '')}</b><span>${md(r.meta ?? '')}</span>
-<div class="tools"><button type="button" class="btn" id="all">Раскрыть всё</button><button type="button" class="btn" id="theme">Тема: авто</button></div></header>
-<section class="hero">
-<h1${r.headline.length > 90 ? ' class="long"' : ''}>${md(r.headline)}</h1>
-${r.sub ? `<p class="sub">${md(r.sub)}</p>` : ''}
-<nav class="overview" aria-label="Пункты по времени"><ol style="--cols:${cols}">
-${overview}
-</ol></nav>
-${legend}
-</section>
-<ol class="route">
-${route}
-</ol>
-${r.footer ? `<footer>${md(r.footer)}</footer>` : ''}
-</div>
-<script>
-(function(){var h=document.documentElement,b=document.getElementById('theme'),order=['auto','light','dark'],label={auto:'Тема: авто',light:'Тема: светлая',dark:'Тема: тёмная'};
-function cur(){return h.dataset.theme||'auto'}function show(){b.textContent=label[cur()]}
-b.onclick=function(){var n=order[(order.indexOf(cur())+1)%3];if(n==='auto')delete h.dataset.theme;else h.dataset.theme=n;try{n==='auto'?localStorage.removeItem('report-theme'):localStorage.setItem('report-theme',n)}catch(e){}show()};show();
-var all=document.getElementById('all'),more=[].slice.call(document.querySelectorAll('details.more')),saved=null;
-if(!more.length)all.hidden=true;
-function sync(){var open=more.length&&more.every(function(d){return d.open});all.textContent=open?'Свернуть всё':'Раскрыть всё'}
-all.onclick=function(){var open=!more.every(function(d){return d.open});more.forEach(function(d){d.open=open});sync()};
-more.forEach(function(d){d.addEventListener('toggle',sync)});
-addEventListener('beforeprint',function(){saved=more.map(function(d){return d.open});more.forEach(function(d){d.open=true})});
-addEventListener('afterprint',function(){if(saved)more.forEach(function(d,i){d.open=saved[i]});saved=null});
-[].forEach.call(document.querySelectorAll('.copy'),function(btn){btn.onclick=function(){
-var code=btn.parentNode.querySelector('code'),text=code.textContent;
-function done(ok){btn.textContent=ok?'Скопировано':'Выделено, нажми Ctrl+C';setTimeout(function(){btn.textContent='Копировать'},2000)}
-function select(){var s=getSelection(),rg=document.createRange();rg.selectNodeContents(code);s.removeAllRanges();s.addRange(rg);var ok=false;try{ok=document.execCommand('copy')}catch(e){}done(ok)}
-try{navigator.clipboard.writeText(text).then(function(){done(true)},select)}catch(e){select()}}})})();
-</script>
-</body>
-</html>
+  const css = readFileSync(new URL('./report.css', import.meta.url), 'utf8');
+  // A page opened from disk may have no clipboard API: then select the code so Ctrl+C works.
+  const copy = `document.addEventListener('click',e=>{const b=e.target.closest('pre button');if(!b)return;const c=b.nextElementSibling,say=t=>{b.textContent=t;setTimeout(()=>b.textContent=${JSON.stringify(ui.copy)},2000)},sel=()=>{const r=document.createRange();r.selectNodeContents(c);getSelection().removeAllRanges();getSelection().addRange(r);say(${JSON.stringify(ui.sel)})};try{navigator.clipboard.writeText(c.textContent).then(()=>say(${JSON.stringify(ui.done)}),sel)}catch(x){sel()}})`;
+  const html = `<!doctype html>
+<html lang="${ui.lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${esc(title.replace(/`/g, ''))}</title><style>${css}</style></head>
+<body><main>
+<h1>${inline(title)}</h1>
+${body}
+</main><script>${copy}</script></body></html>
 `;
-mkdirSync(dirname(out), { recursive: true });
-writeFileSync(out, html);
-for (const m of warn) console.log('WARN (allowed) ' + m);
-console.log(`ok ${out} (${items.length} items, ${done.length} done, ${(html.length / 1024).toFixed(1)} KB)`);
+  return { html, errors, notes, words, title };
+}
+
+// Windows refuses <>:"/\|?* in a file name, and a ":" silently makes an empty file with a hidden stream instead.
+export const safeName = (name) => name.replace(/[<>:"/\\|?*\u0000-\u001f]+/g, ' - ').replace(/\s+/g, ' ').replace(/^[\s.-]+|[\s.-]+$/g, '').slice(0, 120) || 'report';
+
+const real = (p) => { try { return realpathSync(p); } catch { return resolve(p); } };
+if (process.argv[1] && import.meta.url === pathToFileURL(real(process.argv[1])).href) {
+  const [src, out] = process.argv.slice(2);
+  if (!src || !out) { console.error('usage: node report.mjs <explain.md> <out.html>'); process.exit(2); }
+  const text = readFileSync(src, 'utf8');
+  if (/\.json$/i.test(src) || /^\s*\{\s*"/.test(text)) { console.error('ERROR the report skill changed: it now takes a Markdown explanation, not JSON. Re-read the skill\'s SKILL.md and write the text again from the facts.'); process.exit(1); }
+  const r = build(text, dirname(resolve(src)));
+  for (const n of r.notes) console.error('NOTE ' + n);
+  if (r.errors.length) { for (const e of r.errors) console.error('ERROR ' + e); process.exit(1); }
+  const dir = dirname(resolve(out));
+  const ext = extname(out) || '.html';
+  const file = join(dir, safeName(basename(out, extname(out))) + ext);
+  mkdirSync(dir, { recursive: true });
+  // Write beside and rename, so a reader never opens a half-written page.
+  const tmp = `${file}.${process.pid}.tmp`;
+  writeFileSync(tmp, r.html);
+  renameSync(tmp, file);
+  console.log(`wrote ${file} (${r.words} words, about ${Math.max(1, Math.round(r.words / 180))} min to read)`);
+}

@@ -1,5 +1,26 @@
 # Changelog
 
+## makarasty-tools 1.20.23 — 2026-11-20
+
+- **`report` explains instead of listing cards** (M84). The card page ("Маршрут": a route of numbered stations,
+  owner colours, badges, collapsed «Подробнее») read harder than chat text, cut pictures and examples, and was
+  written as if the reader had the author's context. Now the chat writes a Markdown explanation: the title is the
+  news, an opening paragraph tells the whole story to someone who knows nothing, a picture shows the mechanism
+  or the numbers (`flow` and `bars` blocks drawn as HTML, `svg`, tables, embedded screenshots), questions are
+  numbered with every option and what it changes, «Чем проверено» says what was checked and what was not.
+  `report.mjs` renders a calm article page (both themes, phone width, copy buttons) and refuses a page with no
+  title or opening paragraph, a secret, a template leftover, raw HTML or an unsafe `svg`; an old JSON input gets a
+  pointer to the new SKILL.md. Chat text is the default; a page only when asked or when a picture, a wide table or
+  a reread needs it, one file per topic. Acceptance is a blind reader agent that retells the page and quotes every
+  guess, plus a source-vs-page agent when a page retells a longer source ("complete before short": every action,
+  decision, risk, way back and flag stays, detail goes to «Подробности», never collapsed). File names are cleaned of
+  characters Windows rejects (a ":" made an empty file with a hidden stream) and written via a temp file. Registry
+  rules R140, R141, R146 now live in the skill text (R113 still checks the builder); complaint T14.
+- Checked: two real reports of 2026-11-20 rebuilt from the same facts, two blind readers per page per round, no
+  reader saw both versions: understanding 5,75 to 7,25 (no context card) and 6,75 to 7,25 (with one), ease 3,75 to
+  5,5 and 4,25 to 6,0; a red team of four (renderer, skill text, integration, faithfulness) with fixes re-checked;
+  `node tools/skills/report/selftest.mjs` 49/49.
+
 ## makarasty-tools 1.20.22 — 2026-11-20
 
 - **`review` section 10 rewritten after a red team of 1.20.21** (5 attackers: convergence, will a chat follow it,
