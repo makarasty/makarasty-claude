@@ -45,10 +45,12 @@ Order:
 7. **Чем проверено**, always: what you checked yourself now (a command and its result, a file read, a page looked
    at), what you took from someone else's report, and what nobody checked. This is the one place for your process.
 
-Complete before short. Before writing, list every action (with who does it and how), decision, open question,
+Complete, then short. Before writing, list every action (with who does it and how), decision, open question,
 risk, way back and "not checked" flag in your facts; each one is on the page, on top or in Подробности, with its
 exact steps and its flag. Shortening drops words, never one of these, and never turns "checked two of nine" into
-"checked all" or adds a recommendation the facts do not make.
+"checked all" or adds a recommendation the facts do not make. Then cut words: the top part (title to «Что от тебя
+нужно») reads in about a minute; Подробности are numbered steps, tables and one-line items, not paragraphs; a
+sentence that only repeats, introduces or softens goes. A full page in long prose reads as "too much text".
 
 Plain words:
 - Every name, product, abbreviation, id or term on first use gets a plain explanation, in the same sentence or the

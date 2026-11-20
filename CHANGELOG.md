@@ -45,7 +45,9 @@
 - Checked: two real reports of 2026-11-20 rebuilt from the same facts, two blind readers per page per round, no
   reader saw both versions: understanding 5,75 to 7,25 (no context card) and 6,75 to 7,25 (with one), ease 3,75 to
   5,5 and 4,25 to 6,0; a red team of four (renderer, skill text, integration, faithfulness) with fixes re-checked;
-  `node tools/skills/report/selftest.mjs` 49/49.
+  `node tools/skills/report/selftest.mjs` 49/49. The owner read the Stedi page: «мноого текста»; the skill now
+  cuts words after completeness (the top in about a minute, details as steps and tables) and the page went from 929
+  to 588 words with every action kept. Reports default to chat text (his pick).
 
 ## makarasty-tools 1.20.22 — 2026-11-20
 

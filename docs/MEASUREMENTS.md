@@ -1728,7 +1728,12 @@ understanding and ease 1-10. Two readers per page (Sonnet high, Haiku high).
   retells a longer source. With everything restored (Stedi 569 to 929 words, weekend 973 to 1 444), the final
   readers scored 6/5 and 7/5: still every key fact and option retold right, ease lower than the short pages' 7/7
   and 7/6. Completeness costs ease; the skill keeps it and moves detail into «Подробности» below the top.
-- **Not measured:** the owner's own reading (one page shown to him), real chats writing with the new skill (the
+- **The owner's reading** (2026-11-20, the full 929-word Stedi page): «Лучше, но есть замечания: мноого текста»;
+  default «Чат, файл по делу». The page was cut to 588 words with every action kept (steps, a table, one-line items
+  instead of prose; a source-vs-page agent found 5 small losses in the cut, all restored); one Sonnet reader on the
+  cut page retold every action right (6/4). The skill now says: complete, then short; the top reads in about a
+  minute, details are steps and tables.
+- **Not measured:** real chats writing with the new skill (the
   two pages were written by the skill's author), the cost of the blind-reader step in a chat (each reader here took
   50-70 thousand tokens and 20-80 s, mostly the page text and the brief).
 **Status:** 2 reports, 2 readers per cell per round, self-scored by the readers; the key-fact check was done by the
