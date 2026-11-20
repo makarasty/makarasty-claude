@@ -1,5 +1,16 @@
 # Changelog
 
+## makarasty-tools 1.20.17 — 2026-11-20
+
+- **The chat a handoff leaves behind is compacted, not cleared** (owner, 2026-11-20, «очень сильно нравится именно
+  второй вариант»). After its readback the receiving chat runs `compact-old.mjs check <old id>`, archives the old
+  chat, runs `compact-old.mjs run <old id>` (`claude -p "/compact" --resume <cli id> --safe-mode` in its folder, its
+  own model) and unarchives it, so the old chat keeps a summary and its full transcript and later wakes read ~20K
+  instead of ~700K. A live app process ignores a compaction written under it, so `run` refuses an unarchived chat;
+  `check` skips worktree chats (archiving cleans the worktree) and chats with attached side sessions. Proven on a
+  test chat: 112K -> 4K in 10 s, the summary is its first message and a marker word survived. Measurements in M82;
+  `compact-old-selftest.mjs` 7/7. Not yet run on a real 700K Opus chat.
+
 ## makarasty-tools 1.20.16, makarasty 1.18.17 — 2026-11-20
 
 - **Two unused skills stop riding in every session; `ship` reviews before it merges; the design eye runs six states**

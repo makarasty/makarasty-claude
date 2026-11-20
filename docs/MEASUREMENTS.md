@@ -1604,3 +1604,25 @@ weights input 1, 5-minute cache write 1.25, 1-hour write 2, cache read 0.1, outp
 unless `wake_when_done: true`, and a card the person clicked when its note arrives; `MAKARASTY_DETACH=off` drops it.
 **Status:** weights approximate plan-limit use by API prices, not the app's own meter; the clicked-card path and
 `$.tool.call` of a deferred MCP tool were checked in hook tests only, not live.
+
+## M82 — Compacting the chat a handoff left behind, and what the old chats cost (2026-11-20)
+**2026-11-20**, app 5.1231.2, bundled CLI 2.1.321, test chat `test compact probe` (Haiku) and four Sonnet passes over
+the owner's transcripts (30 days for old chats, 25 days for context size).
+- **Old chats after a handoff:** 15 of 29 handed-off chats (median 716K) got 56 more turns: about 19M Opus-input
+  equivalent against about 2.9M in a fresh chat; half of it from a cold cache after hours. Since the 700K relaunch
+  (11-12), 5 chats and 77 calls went above 745K, mostly old chats after a handoff.
+- **What does not compact a live app chat:** `/compact` sent by `send_message` or `SendMessage` (arrives as text);
+  `claude -p "/compact" --resume` while the app process runs (writes a boundary, the chat keeps its in-memory
+  history); a cron or hook prompt (text); `clear_session` was denied twice by the auto-mode classifier.
+- **What does:** archive the chat (its process stops), `claude -p "/compact" --resume <cli id> --safe-mode` from its
+  folder, unarchive: the chat's first message is the summary and a marker word survives (three runs, two restarts).
+  `--safe-mode` skips plugin hooks. 112K -> 4K in 10 s on the test chat.
+- **Also seen:** `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` sets the threshold as a share of the effective window
+  (3% of 980K = 29,400); `autoCompactWindow` has a 100K floor and an effective window 20K below it; the CLI's own idle
+  compaction fired on 4 of 27 qualifying idles.
+- **Quality check, same day:** correction rates by context show no rise up to 800K (0 of 56 prompts at 700-800K);
+  continuation chats' prompts 2-11: 2.4% (n 41), so M49's handoff penalty did not repeat (small n).
+**Rule:** the handoff receiver compacts the old chat after its readback (`tools/skills/handoff/compact-old.mjs`);
+worktree chats and chats with attached side sessions are skipped, since archiving cleans the worktree and archives
+finished side sessions. **Status:** not yet run on a real 700K Opus chat; its cost (a new process likely misses the
+cache) is not measured.
