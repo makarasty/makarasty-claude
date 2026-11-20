@@ -1,5 +1,20 @@
 # Changelog
 
+## makarasty-tools 1.20.18 — 2026-11-20
+
+- **A report reads without the research behind it** (owner, 2026-11-20, on a 52-item research report: «Trail of
+  Bits, context7», «`/focus`» meant nothing to him, Spotify at minimum priority led two pages). `report.mjs` now
+  refuses a page where a Latin name or code in a title, or a Latin name in visible card text or tag words, is not
+  explained in plain words in parentheses at its first use (`known` lists names the reader uses himself; «quoted»
+  menu labels pass); a question (`?`, «Решить», «Выбрать») without `answers`, the new field of
+  [answer, what it changes] pairs drawn as rows on the card; a question inside a tag; pointers into unseen context
+  («агент 3», «первая волна», «из повтора», «вариант B», «[4]»); research working files in `src`; a `minor` topic
+  in more than one item or leading the page; one number in 4+ cards; `more` over 1200 characters. SKILL.md: a
+  section "Write for a reader who was not there", item count follows the reader's priority, a cold-read step (a
+  fresh agent gets only the JSON) for research reports or 10+ items, and the example path fixed (`example.json`,
+  was `example-summary.json`). New `selftest.mjs`: 21 cases pass. On the four 2026-11-20 research reports the new
+  checks stop 22–46 problems each (12–28 unexplained names, 2–6 questions without consequences). Rule R146.
+
 ## makarasty-tools 1.20.17 — 2026-11-20
 
 - **The chat a handoff leaves behind is compacted, not cleared** (owner, 2026-11-20, «очень сильно нравится именно
@@ -19,7 +34,7 @@
   and `/makarasty-tools:selfreview` still work; their 12 phrases left `route-cases.json` (259 now). `fleet` and
   `fleet-call` already had the flag; `grill` stays listed. P01: `ship` states what each incoming branch did, runs `review`
   on `git diff HEAD...<b>` and merges none that has a finding without a destination (fixed, asked, recorded, handed);
-  both sides' changes are kept; a branch of only the user's own commits skips it. P02: `fleet-design-eye` re-runs
+  both sides' changes are kept; the user's own name on the commits is no reason to skip it (every chat commits as the user). P02: `fleet-design-eye` re-runs
   both probes in six states (many rows, few rows, longest value, empty, narrow window, slow network) and files at most
   one geometry defect per state. COMPLAINTS: P01, P02 are now T12, T13.
 

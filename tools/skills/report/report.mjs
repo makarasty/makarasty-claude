@@ -3,6 +3,7 @@
 // Usage: node report.mjs <report.json> <out.html>
 // Strict: any WARN fails the build (exit 1, no file) unless the JSON sets "allowWarnings": true.
 // A weak writer ships a page that looks right but says wrong things; these checks are the only reviewer it gets.
+// After changing a check: node selftest.mjs (the example builds, each broken copy fails with its message).
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 
@@ -136,7 +137,8 @@ const SYMBOLS = new Set(['$', '€', '₽', '%', 'KB', 'MB', 'GB', 'КБ', 'МБ
 for (const it of items) {
   const w = (m) => warn.push(`#${it.n} ${m}`);
   const texts = [it.title, it.text, it.warn, it.how, it.checked, it.flag, it.src, it.barsNote, it.big?.note, it.effect?.text, it.effect?.how,
-    ...(it.steps ?? []).flatMap((s) => [s.title, s.text]), ...list(it.more), ...(it.tags ?? []).map((t) => (Array.isArray(t) ? t[1] : t))];
+    ...(it.steps ?? []).flatMap((s) => [s.title, s.text]), ...list(it.more), ...(it.tags ?? []).map((t) => (Array.isArray(t) ? t[1] : t)),
+    ...(it.answers ?? []).flat()];
   for (const s of texts) if (s) lint(`#${it.n}`, s);
   if ((it.title ?? '').length > 60) w('title over 60 chars: shorten, move the rest to "text"');
   if ((it.text ?? '').length > 220) w('text over 220 chars: keep 1-2 sentences, move the rest to "more"');
@@ -144,7 +146,17 @@ for (const it of items) {
   if (it.who && ![...words(it.who)].some((x) => words(ownerName[it.owner]).has(x))) w(`"who" (${it.who}) names someone other than owner "${ownerName[it.owner]}": add that person to "owners" and use them as owner`);
   if (it.steps?.length > 1 && it.steps.every((s) => s.must)) w('every step is "must": mark only the steps people skip at a cost');
   // Something the reader must act on says how: a command, steps, or one line on where to click or what to answer.
-  if (needs(it) && !it.cmd && !it.steps && !it.how) w('needs the reader but says not how: add "how" (where to click or what to answer), "steps" or "cmd"');
+  if (needs(it) && !it.cmd && !it.steps && !it.how && !it.answers) w('needs the reader but says not how: add "how" (where to click or what to answer), "steps", "cmd" or "answers"');
+  // A question to the reader says what each answer changes, so he can answer without the research behind it (owner, 2026-11-20).
+  if (needs(it) && (/\?/.test(plain(`${it.title} ${it.text ?? ''}`)) || /^(?:решить|выбрать)(?![\p{L}])/iu.test(it.title ?? ''))
+    && !(Array.isArray(it.answers) && it.answers.length >= 2)) w('asks the reader a question but has no "answers": list each answer with what it changes, [["да", "что будет"], ["нет", "что будет"]]');
+  // Seven questions packed into one card's tags reached the owner with no context and no consequences (2026-11-20).
+  if ((it.tags ?? []).some((t) => /\?/.test(plain(Array.isArray(t) ? t[1] : t)))) w('a question inside a tag: each question to the reader is its own item with "answers"');
+  if (list(it.more).join(' ').length > 1200) w('"more" over 1200 chars: keep what the reader can use, drop file lists and research notes');
+  for (const a of it.answers ?? []) {
+    if (!Array.isArray(a) || a.length !== 2 || !a[0] || !a[1]) { w('"answers" holds pairs: [["да", "что будет"], ["нет", "что будет"]]'); break; }
+    if (String(a[0]).length > 24) w(`answer "${a[0]}" over 24 chars: the answer is a word or two, what it changes goes second`);
+  }
   const stop = stops.find((s) => s.id === it.stop);
   if (needs(it) && /(?:^|[^\p{L}])(?:ничего не (?:нужно|надо)|ничего делать не надо|для сведения|факты)(?:[^\p{L}]|$)/iu.test(stop.note ?? '')) w(`stop "${stop.id}" says nothing is needed, yet this item needs the reader: set "info": true on the stop or "ask": false on the item`);
   if (it.figure && /(?:src|href)\s*=\s*["']?\s*(?:https?:)?\/\/|url\(\s*["']?\s*(?:https?:)?\/\//i.test(it.figure)) w('figure loads an external URL: inline it, the file must work offline');
@@ -183,6 +195,48 @@ for (const it of items) {
   if (!it.effect && !it.costIsGoal && it.stop !== doneStop && !infoStop.has(it.stop) && SIZE.test(sizeText) && SHRINK.test(sizeText)) w('talks about size (lines, files, KB, tokens): give "effect" (what changes for the reader), or set "costIsGoal": true when the item is about cost');
   if (it.costIsGoal && !(SIZE.test(sizeText) && SHRINK.test(sizeText))) w('"costIsGoal" changes nothing here: drop it');
 }
+// The reader saw none of the research (owner, 2026-11-20: «Trail of Bits, context7», «`/focus`» meant nothing to him).
+// A Latin name or a code in a title, or a Latin name in the card's visible text, is said in plain words in parentheses
+// at its first use on the page: «context7 (сервис со свежей документацией библиотек)» or «сервис документации (context7)».
+// "known" lists what the reader uses daily; units are not names, and a «quoted» button or menu label is read off the screen.
+const LATIN = String.raw`[A-Za-z][\w.+#/-]*(?: [A-Za-z][\w.+#/-]*)*`;
+const UNITS = new Set(['kb', 'mb', 'gb', 'tb', 'ms', 's', 'px']);
+const termKey = (t) => t.replace(/^`|`$/g, '').replace(/[./-]+$/, '').toLowerCase();
+const known = new Set((r.known ?? []).flatMap((k) => [termKey(k), ...termKey(k).split(' ')]));
+const explained = new Set();
+const TERM = '(`[^`]+`|' + LATIN + ')';
+const NAME_FIRST = new RegExp(TERM + String.raw` ?\([^()]*\p{Script=Cyrillic}[^()]*\)`, 'gu');
+const WORDS_FIRST = new RegExp(String.raw`\p{Script=Cyrillic}[^()]* \(` + TERM + String.raw`\)`, 'gu');
+const explain = (s) => { for (const re of [NAME_FIRST, WORDS_FIRST]) for (const m of String(s ?? '').matchAll(re)) explained.add(termKey(m[1])); };
+const clear = (t) => { const k = termKey(t); return UNITS.has(k) || !/\p{L}/u.test(k) || known.has(k) || explained.has(k) || k.split(' ').every((x) => known.has(x) || explained.has(x)); };
+for (const it of items) {
+  const seen = [it.title, it.text, it.warn, it.how, ...(it.steps ?? []).flatMap((s) => [s.title, s.text]), ...(it.answers ?? []).flat(),
+    ...(it.tags ?? []).map((t) => (Array.isArray(t) ? t[1] : null))];
+  seen.forEach(explain);
+  for (const t of it.tags ?? []) if (Array.isArray(t) && t[1]) explained.add(termKey(String(t[0])));
+  const terms = [...String(it.title ?? '').match(/`[^`]+`/g) ?? [], ...seen.flatMap((s) => plain(s).replace(/«[^»]*»/g, ' ').match(new RegExp(LATIN, 'g')) ?? [])];
+  const bad = [...new Map(terms.filter((t) => !clear(t)).map((t) => [termKey(t), t.replace(/[./-]+$/, '')])).values()];
+  if (bad.length) warn.push(`#${it.n} names ${bad.map((t) => `"${t}"`).join(', ')} without saying what it is: plain words in parentheses at the first use on the page, or "known" if the reader uses it daily`);
+  bad.forEach((t) => explained.add(termKey(t)));
+  // Cards open from the overview, out of order, and the research itself is never on the page.
+  const prose = plain([...seen, ...list(it.more)].filter(Boolean).join(' \n '));
+  const ref = prose.match(/(?<![\p{L}])(?:агент(?:а|ом|у)? ?№? ?\d+(?!\d| ?(?:сек|мин|час|дн|раз|шаг))|источник(?:а|е|у|ом)? ?№? ?\d+|см\.? (?:выше|ниже)|как (?:выше|ниже)|по данным исследования|(?:перв|втор|трет)\p{L}* волн\p{L}*|волн(?:а|ы|е|у|ой) \d|из повтора|в повторе|файле? проверки|папке исследования)|\[\d+\]/iu)
+    ?? prose.match(/(?<![\p{L}])(?:вариант|случа[йяеюи]|случаи)(?:а|е|у|ом)? [A-ZА-Г](?![\p{L}\d]| ?\()/u);
+  if (ref) warn.push(`#${it.n} points into context the reader never saw ("${ref[0]}"): say the thing itself`);
+}
+// Item count follows the reader's priority: a topic he called minor gets one item, its details go in that item's "more".
+for (const name of r.minor ?? []) {
+  const hits = items.filter((it) => JSON.stringify(it).toLowerCase().includes(String(name).toLowerCase()));
+  if (hits.length > 1) warn.push(`minor topic "${name}" is in ${hits.length} items (${hits.map((it) => '#' + it.n).join(', ')}): collapse it into one item, the rest goes in its "more"`);
+  if (`${r.headline} ${r.sub ?? ''}`.toLowerCase().includes(String(name).toLowerCase()) || hits[0]?.n === 1) warn.push(`minor topic "${name}" leads the page (headline, sub or item 1): the reader's main topics go first`);
+}
+// A source chip is for the reader to open; research working files ("12-verification.md") he never saw are noise.
+const workSrc = items.filter((it) => /\b\d{2}-[\w-]+\.md\b/.test(it.src ?? ''));
+if (workSrc.length) warn.push(`${workSrc.length} cards (${workSrc.slice(0, 5).map((it) => '#' + it.n).join(', ')}${workSrc.length > 5 ? '...' : ''}) cite research working files in "src": name a source the reader can open or knows, or drop "src"`);
+// One fact lives in one card: a number repeated across many cards means the cards retell each other.
+const factCount = {};
+for (const it of items) for (const x of new Set(plain(JSON.stringify(it)).match(/\d{1,3}(?: \d{3})+(?:,\d+)?|\d+,\d+ ?%/g) ?? [])) factCount[x] = (factCount[x] ?? 0) + 1;
+for (const [x, c] of Object.entries(factCount)) if (c >= 4) warn.push(`"${x}" is in ${c} cards: say a fact in one card, the others name what follows from it`);
 done.forEach((d) => { lint(`done #${d.n}`, d.text); list(d.more).forEach((m) => lint(`done #${d.n} more`, m)); });
 // One shipped change is one done row: a card sharing a version, or two ids, with a done row repeats it.
 const ticks = (s) => (String(s ?? '').match(/`[^`]+`/g) ?? []).map((x) => x.slice(1, -1));
@@ -296,6 +350,7 @@ ${it.warn ? `<p class="warn">${md(it.warn)}</p>` : ''}
 ${visual(it)}
 ${cmd(it)}
 ${it.how ? `<p class="act"><span class="lbl">Как</span><span>${md(it.how)}</span></p>` : ''}
+${(it.answers ?? []).map(([say, then]) => `<p class="act"><span class="lbl">${md(say)}</span><span>${md(then)}</span></p>`).join('\n')}
 ${it.checked ? `<p class="act"><span class="lbl">Сверено</span><span>${md(it.checked)}</span></p>` : ''}
 ${it.effect ? `<div class="effect" data-b="${it.effect.basis === 'measured' ? 'measured' : 'forecast'}"><span class="eb">${it.effect.basis === 'measured' ? 'измерено' : 'прогноз'}</span><p>${md(it.effect.text)}</p>${it.effect.how ? `<p class="how">${md(it.effect.how)}</p>` : ''}</div>` : ''}
 ${it.flag ? `<span class="flag${it.flag.length > 40 ? ' long' : ''}">${md(it.flag)}</span>` : ''}

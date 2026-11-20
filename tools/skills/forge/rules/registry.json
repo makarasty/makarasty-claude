@@ -3501,6 +3501,34 @@
      "has": "never about the rows of a list or export"
     }
    ]
+  },
+  {
+   "id": "R146",
+   "rule": "A report is readable without the research behind it: every name, abbreviation or id is explained in plain words at its first use, a question lists each answer with what it changes, no pointers into unseen context, and a minor topic gets one item.",
+   "ru": "Отчёт понятен без контекста исследования: каждое название объяснено простыми словами, у вопроса написано, что меняет каждый ответ, мелкая тема получает один пункт.",
+   "layer": "plugin",
+   "enforced": "test",
+   "enforcer": "tools/skills/report/report.mjs term, answers, context and minor checks; selftest.mjs",
+   "complaints": [
+    "owner 2026-11-20, 52-item research report: «Trail of Bits, context7», «/focus» unexplained; Spotify (minimum priority) in dozens of items"
+   ],
+   "complaintChats": 1,
+   "conflicts": [],
+   "status": "active",
+   "sources": [
+    {
+     "file": "tools/skills/report/SKILL.md",
+     "anchor": "Write for a reader who was not there",
+     "date": "2026-11-20"
+    }
+   ],
+   "inForce": [
+    {
+     "text": "tools:skills/report/report.mjs",
+     "has": "without saying what it is"
+    }
+   ],
+   "gap": "why an item matters to the reader is not checkable by a script: the SKILL cold-read step covers it"
   }
  ],
  "industry": [
