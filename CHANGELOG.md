@@ -1,5 +1,11 @@
 # Changelog
 
+## makarasty-tools 1.20.19 — 2026-11-20
+
+- **A malformed `answers` entry no longer crashes a report built with `allowWarnings`** (found in the P01 review of
+  the 1.20.18 merge). The page draws only well-formed [answer, what it changes] pairs; the pair check still warns.
+  `selftest.mjs`: 22 cases pass.
+
 ## makarasty-tools 1.20.18 — 2026-11-20
 
 - **A report reads without the research behind it** (owner, 2026-11-20, on a 52-item research report: «Trail of

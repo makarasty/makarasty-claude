@@ -350,7 +350,7 @@ ${it.warn ? `<p class="warn">${md(it.warn)}</p>` : ''}
 ${visual(it)}
 ${cmd(it)}
 ${it.how ? `<p class="act"><span class="lbl">Как</span><span>${md(it.how)}</span></p>` : ''}
-${(it.answers ?? []).map(([say, then]) => `<p class="act"><span class="lbl">${md(say)}</span><span>${md(then)}</span></p>`).join('\n')}
+${(it.answers ?? []).filter((a) => Array.isArray(a) && a.length === 2).map(([say, then]) => `<p class="act"><span class="lbl">${md(say)}</span><span>${md(then)}</span></p>`).join('\n')}
 ${it.checked ? `<p class="act"><span class="lbl">Сверено</span><span>${md(it.checked)}</span></p>` : ''}
 ${it.effect ? `<div class="effect" data-b="${it.effect.basis === 'measured' ? 'measured' : 'forecast'}"><span class="eb">${it.effect.basis === 'measured' ? 'измерено' : 'прогноз'}</span><p>${md(it.effect.text)}</p>${it.effect.how ? `<p class="how">${md(it.effect.how)}</p>` : ''}</div>` : ''}
 ${it.flag ? `<span class="flag${it.flag.length > 40 ? ' long' : ''}">${md(it.flag)}</span>` : ''}

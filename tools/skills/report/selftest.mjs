@@ -40,6 +40,7 @@ const cases = [
   ['a minor topic in the headline', { ...structuredClone(example), headline: example.headline + ' Алерты тоже.' }, /leads the page/],
   ['one number in four cards', { ...structuredClone(example), items: [...example.items, ...[1, 2, 3, 4].map((i) => item({ title: `Проверить узел ${i}`, text: 'Всего 6 429 вызовов.' }))] }, /"6 429" is in 4 cards/],
   ['a long "more"', withItem({ more: 'Слово '.repeat(250) }), /over 1200 chars/],
+  ['a malformed "answers" entry under allowWarnings still builds', withItem({ answers: [{ да: 'ставим' }, ['нет', 'не ставим']] }, { allowWarnings: true }), null],
 ];
 let bad = 0;
 for (const [name, data, expectErr] of cases) {
