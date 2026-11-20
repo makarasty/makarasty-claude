@@ -16,7 +16,9 @@ contrast are already solved there.
    reader to do something, look at the current state (a file, a command, a status) and write what you looked at
    and when in `checked` (it is shown on the card). Never write «проверено» in `src`: it only names the source.
    If you cannot check, the title starts with «Проверить».
-2. Cut the facts into items: one item = one thing someone does or decides. Answer for each: who holds it
+2. Cut the facts into items: one item = one thing someone does or decides. Item count follows the reader's
+   priority, not how much you found: his main topics get the items, a topic he called minor gets ONE item with
+   everything else about it in that item's `more`, and goes in `minor` (the build counts its mentions). Answer for each: who holds it
    (`owner`) and when it matters (`stop`). A shipped change is ONE done row; what the reader should know about
    it goes in that row's `more`. A card only when the reader must do or decide something; an info card only for what is
    not in done: a risk, a behaviour the reader will notice, a number they need.
@@ -29,7 +31,31 @@ contrast are already solved there.
    say which one in your reply.
    Before building, re-read every number and every "what switches what" against the source: a weak draft
    inverts numbers (30 instead of 139) and pins a switch to the wrong feature.
-5. Reply with the exact path and one line on what is inside.
+5. Cold read, for a report built from research or with more than 10 items: give one fresh agent (Sonnet) ONLY the
+   JSON, nothing of your research, and ask for each item: what is this, why does it matter to the reader, what
+   does he do, what changes with each answer. Rewrite every item it cannot answer or answers wrong, then build again.
+6. Reply with the exact path and one line on what is inside.
+
+## Write for a reader who was not there
+
+The reader saw none of your research: no sources, agents, tabs or chats. Each card stands on its own.
+- First use of a tool, product, service, command, skill, abbreviation or internal id on the page: say in plain
+  words what it is, in parentheses: «context7 (сервис, который подсовывает модели свежую документацию библиотек)»,
+  or «сервис документации (context7)». `known` lists only names the reader used himself (his messages, his
+  profile), never one you met in research. A «quoted» button or menu label needs no explanation. Words you
+  coined while working («повтор», «флот», «строка», «книга жалоб») are explained the same way.
+- A title says the thing in plain words: no unexplained names, abbreviations, internal ids (task, rule, agent,
+  source numbers) or code. «Чужое (Trail of Bits, context7): ставить или своё?» fails; «Взять чужие проверки
+  кода или написать свои?» with the names explained in `text` passes.
+- `text` says why it matters to the reader: what he gains, loses or risks (time, money, safety, comfort).
+- A question to the reader (a `?` or a title starting «Решить», «Выбрать») has `answers`: each answer and
+  what it changes, [["да", "ночью идут тесты, утром сводка"], ["нет", "всё как сейчас"]]. Never «Ответь да или нет» alone.
+  Each question is its own item: never several questions packed into one card's `tags`.
+- No pointers into context he never saw: «вариант B» or «случай A» without what it is, «как нашёл агент 3»,
+  «первая волна», «из повтора», «источник [4]», «см. выше» (cards open from the overview, out of order).
+  `src` names a source he can open or knows, never your working files (`12-verification.md`).
+- One fact in one card; others name what follows from it. A set of reports from one research: each item lives
+  in one report, the others say where it is. A minor topic never leads the page (headline, item 1).
 
 ## Writing an item
 
@@ -41,7 +67,7 @@ contrast are already solved there.
 - The reader's colour means "needs you". The reader's items need them unless the stop has `"info": true` or
   the item `"ask": false` (for facts and things they only should know). The `[[N]]` count in `headline` equals the
   items at the first stop that need the reader.
-- An item that needs the reader says how: `steps`, `cmd`, or a `how` line («Ответь номером: "2 забыть"»).
+- An item that needs the reader says how: `steps`, `cmd`, `answers`, or a `how` line («Ответь номером: "2 забыть"»).
 - `cmd`: a command or chat phrase the reader runs, exactly, with an absolute path; it gets a copy button. Find the path
   first; never pin a cache version that the next update removes. Step text then names it in a few words.
 - A count in `text` or a step title equals what it counts ("3 шага" next to 3 steps). A `big` total equals its bars.
@@ -54,7 +80,7 @@ contrast are already solved there.
   card. It has `text`, `basis`, `how`. "measured" = a number you or a named check produced, with the sample in
   `how`; a changelog claim or anything unchecked is "forecast". An item about cost itself: `"costIsGoal": true`.
 - `warn` only for a real consequence. `more`: the text behind "Подробнее" (string or list; done rows too),
-  only what the reader can use: a file or folder name, not a full path, unless the reader must open it.
+  at most 1200 characters, only what the reader can use: a file or folder name, not a full path, unless the reader must open it.
 - `flag`: 1–4 words naming what is unverified («чаты не проверены») or your suggestion, at most 40 characters;
   the reason goes in `text`. The card says it once: a flag, not also the text.
 - Stops are time. A milestone stop holds the event itself; category stops ("Риски", "Не проверено") go after the
@@ -76,6 +102,8 @@ contrast are already solved there.
   "headline": "Сейчас на тебе [[3 пункта]]. Деплой ведёт Аня.",   // the one sentence that matters
   "sub": "optional second line",
   "owners": { "you": "Ты", "anya": "Аня" },      // first is always the reader; colour and shape follow this order
+  "known": ["Telegram", "API"],                  // names the reader uses himself: no explanation needed
+  "minor": ["Spotify"],                          // topics he called minor: at most one item each
   "stops": [ { "id": "now", "name": "Сейчас", "note": "Нужен ты", "kind": "now" },
              { "id": "deploy", "name": "Деплой", "kind": "milestone" },
              { "id": "later", "name": "Без срока", "kind": "nodate" },
@@ -84,6 +112,7 @@ contrast are already solved there.
   "items": [ { "stop": "now", "owner": "you", "who": "Аня → ты", "ask": true, "title": "...", "text": "...",
                "steps": [ { "title": "Колонки рассылок", "text": "джоба `add-automation-send-columns`", "must": true }, { "title": "Деплой кода", "main": true } ],
                "cmd": "node \"C:\\full\\path\\tool.mjs\" setup", "how": "Ответь номером: «1 да» или «1 нет».",
+               "answers": [ ["да", "что изменится"], ["нет", "что изменится"] ],
                "bars": [ { "label": "main", "value": 1149, "hot": true } ], "barsNote": "what the bars count", "barsUnit": "KB",
                "big": { "value": "$36,6 тыс.", "note": "..." }, "figure": "<svg viewBox=...>...</svg>",
                "tags": [ ["SH-5", "аудио как рабочее время"] ], "warn": "...",
@@ -95,6 +124,6 @@ contrast are already solved there.
 }
 ```
 
-Example: `${CLAUDE_SKILL_DIR}/example-summary.json`. Stops are yours to name: for a review use
+Example: `${CLAUDE_SKILL_DIR}/example.json`. Stops are yours to name: for a review use
 "Блокеры / Исправить / Потом / Готово", for research "Вывод / Варианты / Риски".
 Numbers run down the page in stop order. Write plain spaces: the page keeps numbers and ids together itself.
