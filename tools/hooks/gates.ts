@@ -165,7 +165,7 @@ export const habits =
   'once, and name the other places it changed. Name this chat once at the start, with the session-title tool when it is listed: English, ' +
   'purpose first, under 50 characters, the area before a colon ("Pulse: spec-check fix"); a chat that coordinates other chats starts with "Hub:". ' +
   "Other chats may share this checkout: edit and commit only your own files, name another chat's file, never touch or " +
-  'discard it. A check that runs out of memory is too broad: narrow it, never raise --max-old-space-size or drop a worker cap someone set. ' +
+  'discard it. Run git commit and git push bare, never piped into tail or head: a pipe hides the exit code and the guard refuses it. A check that runs out of memory is too broad: narrow it, never raise --max-old-space-size or drop a worker cap someone set. ' +
   'New errors after a tool update: find the culprit before any rollback or pin. The code is wrong (fix it), another checker misses ' +
   'it (report the gap), or the new version has a bug (cite its issue, then pin with a comment linking it).'
 

@@ -26,6 +26,7 @@
 //                                           the brief to <name>. Refused (2) when <config>/makarasty/dispatch.off exists or --said
 //                                           (15+ chars, 3+ words) is not in the person's own prompts of the last 24 h (said.jsonl; one prompt, one
 //                                           start). Queued (4) while under 2 GiB RAM is free, or a Claude window is in front (10 min at most).
+//                                           A closed window of that profile is opened first (launch-claude.ps1), up to 60 s.
 //   node inbox.mjs start <profile> <folder> <name> --standing "<words>" --relaunch-of <local_app id>
 //                                           the other consent, for a chat relaunching itself at ~700K context: <words> (15+ chars) must be
 //                                           in a line of <config>/makarasty/answers.md about a relaunch at 700K; the old chat must be live,
@@ -138,6 +139,19 @@ function launch(/** @type {{name: string, dir: string} | undefined} */ prof, /**
   if (!argv) return false
   spawn(argv[0], argv.slice(1), { detached: true, stdio: 'ignore', windowsVerbatimArguments: true }).unref()
   return true
+}
+// The account's window is closed: open it the way its own shortcut does (launch-claude.ps1 beside the profiles) and wait
+// for it, so a start lands on the account he asked for (owner, 2026-11-20). INBOX_LAUNCHER (a node script) stands in for tests.
+async function openWindow(/** @type {{name: string, dir: string}} */ prof) {
+  const ps1 = join(profilesDir(), 'launch-claude.ps1'), fake = process.env.INBOX_LAUNCHER
+  if (!fake && !existsSync(ps1)) return false
+  const [cmd, args] = fake ? [process.execPath, [fake, '-DataDir', prof.dir]] : ['powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ps1, '-DataDir', prof.dir]]
+  try { spawn(cmd, args, { detached: true, stdio: 'ignore', windowsHide: true }).unref() } catch { return false }
+  for (let i = 0, n = Math.ceil((Number(process.env.INBOX_OPEN_WAIT) || 60e3) / 1e3); i < n; i++) {
+    await new Promise((r) => setTimeout(r, 1e3))
+    if (profileExe(prof)) { await new Promise((r) => setTimeout(r, Number(process.env.INBOX_OPEN_SETTLE ?? 8e3))); return true } // the window takes a few seconds before it handles links
+  }
+  return false
 }
 const noWindow = (/** @type {{name: string} | undefined} */ prof) => `inbox: no running app window for ${prof ? `profile ${prof.name}` : 'that chat (it is in no profile)'}; open that account from its own shortcut first`
 
@@ -359,7 +373,7 @@ const saveJournal = (/** @type {any} */ j) => { j.updated = new Date().toISOStri
 const ledgerFile = () => join(base, 'coord', 'dispatch.jsonl')
 // The standing answer: {id, line} when `standing` is in a line of answers.md that is about a relaunch at 700K, and `old` is a live
 // chat of this profile and folder that has not been relaunched yet (<root>/standing-used/<its app id>, one per old chat). Else {why}.
-function standingConsent(/** @type {string} */ standing, /** @type {string} */ old, /** @type {string} */ profile, /** @type {string} */ folder, /** @type {boolean} */ mark) {
+function standingConsent(/** @type {string} */ standing, /** @type {string} */ old, /** @type {string} */ profile, /** @type {string} */ folder, /** @type {boolean} */ mark, key = '') {
   const q = squash(standing), flat = (/** @type {string} */ s) => s.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
   const line = q.length < 15 ? '' : readOr(join(base, 'answers.md')).split(/\r?\n/).find((l) => /relaunch|перезапус/i.test(l) && /700/.test(l) && squash(l).includes(q))
   if (!line) return { why: 'no line of answers.md about a relaunch at 700K contains those words (15+ characters): offer a card' }
@@ -368,7 +382,10 @@ function standingConsent(/** @type {string} */ standing, /** @type {string} */ o
   if (chat.profile !== profile || flat(chat.cwd) !== flat(folder)) return { why: `${old} is in profile ${chat.profile}, folder ${chat.cwd}: a relaunch stays on its account and folder: offer a card` }
   const used = join(root, 'standing-used', sha1(old))
   if (mark) dir('standing-used')
-  if (mark ? !create(used, new Date().toISOString()) : existsSync(used)) return { why: `${old} was relaunched already (one standing start per chat): offer a card` }
+  // A chain that ended failed (3 attempts) gives the relaunch back: 2 of 4 relaunches lost theirs that way (2026-11-19).
+  const prev = readOr(used).split(' ')[1], dead = prev && /** @type {any} */ (readJSON(join(root, 'starts', `${prev}.json`)))
+  if (dead?.state === 'failed' && dead.attempts >= 3) rmSync(used, { force: true })
+  if (mark ? !create(used, `${new Date().toISOString()} ${key}`) : existsSync(used)) return { why: `${old} was relaunched already (one standing start per chat): offer a card` }
   return { id: `standing|${old}`, line: line.trim() }
 }
 // {id} when the words are the person's own: a substring of a composer prompt of the last 24 h (15+ chars, 3+ words) that has
@@ -463,7 +480,7 @@ async function startOne(/** @type {{profile: string, folder: string, name: strin
     }
     led.said = j.said; led.saidId = j.saidId ?? ''
   } else {
-    const c = relaunchOf ? standingConsent(a.standing ?? '', relaunchOf, profile, folder, !dry) : consent(said, !dry, name)
+    const c = relaunchOf ? standingConsent(a.standing ?? '', relaunchOf, profile, folder, !dry, key) : consent(said, !dry, name)
     if (c.why) { console.error(`inbox: ${c.why}`); return end(2, 'refused: consent') }
     led.saidId = c.id ?? ''
     led.said = (c.line ?? said).slice(0, 60)
@@ -479,9 +496,9 @@ async function startOne(/** @type {{profile: string, folder: string, name: strin
     const shown = chats().filter((c) => c.profile === profile).sort((x, y) => y.focused - x.focused)[0]
     return shown?.focused ? { host: shown.host, url: `claude://claude.ai/epitaxy/${shown.host}` } : undefined
   }
-  const argv = linkArgv(prof, urlOf())
+  let argv = linkArgv(prof, urlOf())
   if (dry) { // writes nothing: no journal, no mark, no ledger row
-    if (!argv) { console.error(noWindow(prof)); return 1 }
+    if (!argv) { say(`would open the ${profile} window first (it is closed)`); return 0 }
     say(`cd ${folder}`); say(cliArgv().join(' ')); say(argv.join(' ')); const b = backOf(); if (b) say(`back: ${b.url}`)
     return 0
   }
@@ -510,6 +527,7 @@ async function startOne(/** @type {{profile: string, folder: string, name: strin
     const due = Date.now() - (Date.parse(j.at) || Date.now()) >= START_WAIT_MS
     led.gate = gateVerdict()
     if (led.gate !== 'other' && !due) { drainStop = true; return queue(closed(led.gate)) }
+    if (!argv && await openWindow(prof)) { argv = linkArgv(prof, urlOf()); say(`inbox: opened the ${profile} window (it was closed)`) }
     if (!argv) { j.state = 'failed'; j.attempts = (j.attempts || 0) + 1; j.note = noWindow(prof); saveJournal(j); console.error(j.note); return end(1, 'failed: no window') }
     drainStop = true // from here the start works (CLI turn or import)
     if (j.state !== 'cli-done' && !j.cliDone) {

@@ -1,5 +1,17 @@
 # Changelog
 
+## makarasty-tools 1.20.15 — 2026-11-20
+
+- **A start opens the account's window when it is closed** (owner, 2026-11-20: start the chat on the account he asks
+  for). `inbox.mjs start` with no running window of that profile runs `launch-claude.ps1 -DataDir <profile>` itself and
+  waits up to 60 s, then 8 s more before the link; before, it failed with "open that account from its own shortcut".
+  Not yet seen live. Still open: 6 of 6 starts on `main` (11-18/19) got `second-instance` with a running window but no
+  import; the cause is not found (findings).
+- **A failed relaunch gives the relaunch back:** the standing mark now names its journal, and a chain that ended
+  failed after 3 attempts no longer blocks a new relaunch of that old chat (2 of 4 relaunches lost theirs).
+- **Bare git in the working rules:** "run git commit and git push bare, never piped into tail or head" (96 guard
+  refusals in 14 days). inbox selftest 195/195, tools 531/531.
+
 ## makarasty-tools 1.20.13 — 2026-11-20
 
 - **A relaunch keeps the old chat's model and effort** (owner, 2026-11-20: the parent's model must pass to the chat it
