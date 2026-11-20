@@ -1,5 +1,19 @@
 # Changelog
 
+## makarasty-tools 1.20.20 — 2026-11-20
+
+- **New chats import on the main account again:** `inbox.mjs` spawned the app window with verbatim arguments and an
+  unquoted exe path; main runs from `C:\Program Files\WindowsApps\...`, so its window split the command line and never
+  imported (6 of 6 failed, 11-18/19). The path is now quoted (`argv0`). Reproduced and checked live: unquoted, not
+  imported in 30 s; quoted, imported in 5 s. The closed-window open of 1.20.15 checked live too: main opened in 1 s.
+- **push-guard counts a picked option that says the push** («Да, пушь») under a question worded without the verb
+  («Отправить на GitHub?»); a bare «Да» there still does not. Refused twice that way today.
+- **Effort step for more starts:** a start on the account of the chat running it (not only a relaunch) prints the
+  `set_session_effort` step, and the journal keeps it so `inbox.mjs starts` shows it for a start the timer drained.
+- **compact-old.mjs reports the real cost** of the compaction (the session's `cost-state` before and after; the
+  CLI's `total_cost_usd` is the session total). First real run: an Opus chat 753K -> 13K in 52 s, $2.90 at API
+  prices; its next wake read 114K. M82 updated. Tests: tools 533/533, inbox 196/196, compact-old 7/7.
+
 ## makarasty-tools 1.20.19 — 2026-11-20
 
 - **A malformed `answers` entry no longer crashes a report built with `allowWarnings`** (found in the P01 review of

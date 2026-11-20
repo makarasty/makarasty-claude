@@ -16,13 +16,13 @@ const check = (/** @type {string} */ name, /** @type {boolean} */ ok, detail = '
 const id = (/** @type {number} */ n) => `local_aaaaaaaa-0000-0000-0000-00000000000${n}`, cliId = (/** @type {number} */ n) => `cccccccc-0000-0000-0000-00000000000${n}`
 const chat = (/** @type {number} */ n, extra = {}) => {
   writeFileSync(join(recs, `${id(n)}.json`), JSON.stringify({ sessionId: id(n), cliSessionId: cliId(n), cwd: work, model: 'claude-opus-5-5', title: `chat ${n}`, isArchived: false, ...extra }))
-  writeFileSync(join(proj, `${cliId(n)}.jsonl`), '{"type":"user"}\n')
+  writeFileSync(join(proj, `${cliId(n)}.jsonl`), '{"type":"user"}\n{"type":"cost-state","totalCostUSD":100.5}\n')
 }
 const fake = join(tmp, 'fake-claude.mjs'), log = join(tmp, 'fake.log')
 writeFileSync(fake, `import { appendFileSync } from 'node:fs'
 const a = process.argv.slice(2), f = ${JSON.stringify(proj)} + '/' + a[a.indexOf('--resume') + 1] + '.jsonl'
 appendFileSync(${JSON.stringify(log)}, JSON.stringify({ a, cwd: process.cwd() }) + '\\n')
-if (!process.env.FAKE_NO_BOUNDARY) appendFileSync(f, JSON.stringify({ type: 'system', subtype: 'compact_boundary', compactMetadata: { preTokens: 712345, postTokens: 23456 } }) + '\\n')`)
+if (!process.env.FAKE_NO_BOUNDARY) appendFileSync(f, JSON.stringify({ type: 'system', subtype: 'compact_boundary', compactMetadata: { preTokens: 712345, postTokens: 23456 } }) + '\\n' + JSON.stringify({ type: 'cost-state', totalCostUSD: 103.5 }) + '\\n')`)
 const env = { ...process.env, INBOX_PROFILES_DIR: prof, INBOX_CLAUDE: fake, CLAUDE_CONFIG_DIR: cfg }
 const C = (/** @type {string[]} */ a, x = {}) => spawnSync(process.execPath, [script, ...a], { env: { ...env, ...x }, encoding: 'utf8' })
 
@@ -38,7 +38,7 @@ const r1 = C(['run', id(1)])
 check('run: refused while the chat is not archived, the CLI is not called', r1.status === 2 && /archive it first/.test(r1.stdout) && !existsSync(log), r1.stdout)
 chat(1, { isArchived: true })
 const r2 = C(['run', id(1)]), call = existsSync(log) ? JSON.parse(readFileSync(log, 'utf8').trim().split('\n').at(-1) ?? '{}') : {}
-check('run: an archived chat is compacted with its own model, safe mode, in its folder; the sizes are reported', r2.status === 0 && /compacted 712K -> 23K/.test(r2.stdout) && call.a?.join(' ') === `-p /compact --resume ${cliId(1)} --model claude-opus-5-5 --safe-mode --output-format json` && call.cwd === work, r2.stdout + JSON.stringify(call))
+check('run: an archived chat is compacted with its own model, safe mode, in its folder; the sizes are reported', r2.status === 0 && /compacted 712K -> 23K in \d+ s; cost \$3\.00 at API prices/.test(r2.stdout) && call.a?.join(' ') === `-p /compact --resume ${cliId(1)} --model claude-opus-5-5 --safe-mode --output-format json` && call.cwd === work, r2.stdout + JSON.stringify(call))
 const r3 = C(['run', id(1)], { FAKE_NO_BOUNDARY: '1' })
 check('run: a CLI turn that writes no new boundary is a failure', r3.status === 1 && /boundaries (\d+) -> \1\b/.test(r3.stdout), r3.stdout)
 rmSync(tmp, { recursive: true, force: true })

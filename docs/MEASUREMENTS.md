@@ -1624,5 +1624,12 @@ the owner's transcripts (30 days for old chats, 25 days for context size).
   continuation chats' prompts 2-11: 2.4% (n 41), so M49's handoff penalty did not repeat (small n).
 **Rule:** the handoff receiver compacts the old chat after its readback (`tools/skills/handoff/compact-old.mjs`);
 worktree chats and chats with attached side sessions are skipped, since archiving cleans the worktree and archives
-finished side sessions. **Status:** not yet run on a real 700K Opus chat; its cost (a new process likely misses the
-cache) is not measured.
+finished side sessions.
+- **Real chat, same day:** "Board: six UI tasks" (Opus 5.5, handed off 11-19): 753K -> 13K in 52 s, $2.90 at API
+  prices (the session's `cost-state` before and after; the CLI's `total_cost_usd` is the session total, $107.57). Its
+  next wake read 114K (56K cache write) instead of 753K; it saw the summary and named its task and successor. One
+  compaction costs about one cold wake of the old chat, so it pays from the second wake on.
+- **Main imports:** `inbox.mjs` spawned the window with `windowsVerbatimArguments` and an unquoted exe path; main runs
+  from `C:\Program Files\WindowsApps\...`, so the window split the line: node spawn not imported in 30 s, PowerShell
+  `Start-Process` and node with a quoted `argv0` imported in 5 s. Dev's copy has no space in its path (4 of 4 worked).
+**Status:** current for app 5.1231.2.

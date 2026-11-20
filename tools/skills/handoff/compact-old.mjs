@@ -41,6 +41,8 @@ function transcript(/** @type {string} */ cli) {
 }
 
 const boundaries = (/** @type {string} */ f) => readFileSync(f, 'utf8').split('\n').filter((l) => l.includes('"compact_boundary"'))
+// The session's running total (the CLI's own `total_cost_usd` is that total, not this turn's): the last cost-state line.
+const spent = (/** @type {string} */ f) => { const l = readFileSync(f, 'utf8').split('\n').filter((x) => x.includes('"cost-state"')).at(-1); try { return Number(JSON.parse(l ?? '').totalCostUSD) || 0 } catch { return 0 } }
 
 function find(/** @type {string} */ id) {
   const host = id.startsWith('local_') ? id : `local_${id}`, all = records()
@@ -64,7 +66,7 @@ function run(/** @type {string} */ id) {
   if (code) return [code, why]
   const { prof, rec } = /** @type {NonNullable<ReturnType<typeof find>['hit']>} */ (find(id).hit)
   if (!rec.isArchived) return [2, 'refused: archive it first; a running chat keeps its old history in memory and writes past the summary']
-  const f = /** @type {string} */ (transcript(rec.cliSessionId)), before = boundaries(f).length, exe = bundledCli(prof), t0 = Date.now()
+  const f = /** @type {string} */ (transcript(rec.cliSessionId)), before = boundaries(f).length, usd0 = spent(f), exe = bundledCli(prof), t0 = Date.now()
   // --safe-mode: no plugin hooks (no phone message, no reminders) in this one-off turn; the summary itself needs none.
   const args = ['-p', '/compact', '--resume', rec.cliSessionId, ...(rec.model ? ['--model', rec.model] : []), '--safe-mode', '--output-format', 'json']
   const [cmd, argv] = exe.endsWith('.mjs') ? [process.execPath, [exe, ...args]] : [exe, args]
@@ -74,7 +76,8 @@ function run(/** @type {string} */ id) {
   let m = {}
   try { m = JSON.parse(/** @type {string} */ (after.at(-1))).compactMetadata ?? {} } catch { /* the size is only for the report */ }
   const k = (/** @type {unknown} */ n) => (typeof n === 'number' ? `${Math.round(n / 1000)}K` : '?')
-  return [0, `ok: compacted ${k(/** @type {any} */ (m).preTokens)} -> ${k(/** @type {any} */ (m).postTokens)} in ${Math.round((Date.now() - t0) / 1000)} s; next unarchive_session ${rec.sessionId}`]
+  const usd = spent(f) - usd0, cost = usd > 0 ? `; cost $${usd.toFixed(2)} at API prices` : ''
+  return [0, `ok: compacted ${k(/** @type {any} */ (m).preTokens)} -> ${k(/** @type {any} */ (m).postTokens)} in ${Math.round((Date.now() - t0) / 1000)} s${cost}; next unarchive_session ${rec.sessionId}`]
 }
 
 const [verb, id] = process.argv.slice(2)

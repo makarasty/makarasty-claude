@@ -228,6 +228,13 @@ try {
   check('cli-done: no CLI turn, the import is seen, finish reports switched on, state done, flip-back sent', imp.status === 0 && imp.out.includes(`started local_${sid3}`) && imp.out.includes(`window sent back to ${backHost}`) && imp.out.includes('next: SendMessage') && jstate('imp') === 'done' && existsSync(join(root, 'reports', 'on', `local_${sid3}`)) && ledger().at(-1)?.result === 'done', imp.out)
   const imp2 = await SA(['start', 'acct2', tmp, 'imp2', '--said', 'anything at all'], { ...OPEN, ...win, INBOX_FG: 'other,other,claude' }, join(seen, `local_${sid4}.json`))
   check('the flip-back runs whatever the foreground reads after the import', imp2.status === 0 && imp2.out.includes(`window sent back to ${backHost}`) && jstate('imp2') === 'done', imp2.out)
+  // The effort step: printed and kept for `starts` when the start is on the account of the chat running it, not on another one.
+  const sid8 = 'eeeeeeee-0000-0000-0000-000000000008', sid9 = 'eeeeeeee-0000-0000-0000-000000000009'
+  jw('eff', { state: 'cli-done', sid: sid8, effort: 'high' }); writeFileSync(join(seen, `local_${sid8}.json`), '{}')
+  jw('eff2', { state: 'cli-done', sid: sid9, effort: 'high' }); writeFileSync(join(seen, `local_${sid9}.json`), '{}')
+  const ef = S(['start', 'acct2', tmp, 'eff', '--said', 'anything at all', '--effort', 'high'], { ...OPEN, INBOX_FG: 'claude', CLAUDE_CODE_HOST_SESSION_ID: backHost })
+  const ef2 = S(['start', 'acct2', tmp, 'eff2', '--said', 'anything at all', '--effort', 'high'], { ...OPEN, INBOX_FG: 'claude', CLAUDE_CODE_HOST_SESSION_ID: '' })
+  check('a done start on this chat\'s own account prints the effort step and starts keeps it; on another account there is none', ef.status === 0 && ef.stdout.includes(`next: mcp__ccd_session_mgmt__set_session_effort local_${sid8} high`) && S(['starts']).stdout.includes(`next: mcp__ccd_session_mgmt__set_session_effort local_${sid8} high`) && ef2.status === 0 && !ef2.stdout.includes('set_session_effort'), ef.stdout + ef2.stdout)
   const sid5 = 'eeeeeeee-0000-0000-0000-000000000005'
   jr('imp3', 'cli-done', sid5)
   const imp3 = S(['start', 'acct2', tmp, 'imp3', '--said', 'anything at all'], { ...OPEN, ...win, INBOX_FG: 'other,claude' })

@@ -137,7 +137,9 @@ function linkArgv(/** @type {{name: string, dir: string} | undefined} */ prof, /
 function launch(/** @type {{name: string, dir: string} | undefined} */ prof, /** @type {string} */ url) {
   const argv = linkArgv(prof, url)
   if (!argv) return false
-  spawn(argv[0], argv.slice(1), { detached: true, stdio: 'ignore', windowsVerbatimArguments: true }).unref()
+  // Verbatim arguments leave the exe path unquoted too: main runs from C:\Program Files\WindowsApps\..., so its window
+  // split the line and never imported (6 of 6 failed, 2026-11-18/19; quoted, imported in 5 s, 2026-11-20).
+  spawn(argv[0], argv.slice(1), { argv0: `"${argv[0]}"`, detached: true, stdio: 'ignore', windowsVerbatimArguments: true }).unref()
   return true
 }
 // The account's window is closed: open it the way its own shortcut does (launch-claude.ps1 beside the profiles) and wait
@@ -508,9 +510,14 @@ async function startOne(/** @type {{profile: string, folder: string, name: strin
   try {
     const host = () => `local_${j.sid}`, doneLine = (/** @type {string} */ flip) => {
       say(`inbox: started ${host()} in profile ${profile}, folder ${folder}${flip}`)
-      // The app keeps the CLI turn's model but writes no effort [M71]; set_session_effort applies from the next turn. Only
-      // a relaunch: it stays on this account, and another account's chat answers "not found" by app id [M70].
-      if (j.effort && relaunchOf) say(`next: mcp__ccd_session_mgmt__set_session_effort ${host()} ${j.effort} (before the brief; denied once by auto mode: send it again)`)
+      // The app keeps the CLI turn's model but writes no effort [M71]; set_session_effort applies from the next turn. Only on
+      // the account of the chat running this (a relaunch always is): another account's chat answers "not found" by app id
+      // [M70]. Kept in the journal too: a start the hook's timer drained prints to nobody, `starts` shows it again.
+      const mine = profileOf(process.env.CLAUDE_CODE_HOST_SESSION_ID || '')?.name
+      if (j.effort && (relaunchOf || mine === profile)) {
+        j.effortTodo = `mcp__ccd_session_mgmt__set_session_effort ${host()} ${j.effort}`; saveJournal(j)
+        say(`next: ${j.effortTodo} (before the brief; denied once by auto mode: send it again)`)
+      }
       nextLine(name, profile)
     }
     const imported = () => { j.state = 'imported'; saveJournal(j); writeFileSync(join(dir(join('reports', 'on')), host()), `started ${new Date().toISOString()}`) } // its finish reports come
@@ -864,7 +871,7 @@ async function main() {
     // queued starts and the ones of the last day
     const all = journals().filter((j) => j.state === 'queued' || j.state === 'cli-done' || Date.now() - Date.parse(j.updated) < 24 * 3600e3)
     if (!all.length) say('inbox: no starts')
-    for (const j of all.sort((a, b) => Date.parse(b.updated) - Date.parse(a.updated))) say(`${j.state}	${j.profile}	${j.name}	${j.folder}	${j.updated}	${j.note}`)
+    for (const j of all.sort((a, b) => Date.parse(b.updated) - Date.parse(a.updated))) say(`${j.state}	${j.profile}	${j.name}	${j.folder}	${j.updated}	${j.note}${j.effortTodo && j.state === 'done' ? `	next: ${j.effortTodo}` : ''}`)
     return 0
   }
   if (cmd === 'watchdog') {

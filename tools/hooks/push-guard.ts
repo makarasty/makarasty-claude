@@ -60,7 +60,7 @@ export function deliveredYes(text: string): boolean {
 // His answer on record (consent.ts Heard) says yes to this chat's push `question`. A typed one must tell the push itself
 // («да, пушь»): a bare «да» typed in the inbox chat may answer something else the inbox showed him.
 export function heardYes(question: string, heard: Heard | undefined): boolean {
-  return !!heard && pushQ(question) && heard.pairs.some((p) => pushQ(p.question) && (heard.via === 'typed' ? asksPush(p.answer) : yes(p.answer)))
+  return !!heard && heard.pairs.some((p) => tells(p.answer) || (pushQ(question) && pushQ(p.question) && (heard.via === 'typed' ? asksPush(p.answer) : yes(p.answer))))
 }
 
 export function pushes(cmd: string, tool: string): boolean {
@@ -132,7 +132,9 @@ export const register: Register = (on) => {
     // Only the result the dialog (or the inbox, core.mjs toResult) returns: the input's answers are the model's own text.
     if ('deny' in (r as object)) return r
     const answers = (r as { result?: { answers?: Record<string, unknown> } })?.result?.answers ?? {}
-    const hits = Object.entries(answers).filter(([q, a]) => pushQ(q) && typeof a === 'string' && yes(a)).map(([q]) => q)
+    // The option he picked may say the push itself («Да, пушь») under a question worded without the verb («Отправить на
+    // GitHub?»): refused twice that way on 2026-11-20.
+    const hits = Object.entries(answers).filter(([q, a]) => typeof a === 'string' && ((pushQ(q) && yes(a)) || tells(a))).map(([q]) => q)
     if (!hits.length) return r
     // Answered from the inbox (its answer file): the result is the inbox's, so his act must be on record too.
     const toolUseId = (e as unknown as { tool_use_id?: string }).tool_use_id

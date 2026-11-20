@@ -76,6 +76,22 @@ test('hook: an inbox answer\'s text alone is not his word, from another session 
   expect(ran).toEqual([])
 })
 
+test('hook: an option that says the push («Да, пушь») counts under a question worded without the verb; a bare «Да» there does not', async ($, on) => {
+  const q = 'Отправить на GitHub два коммита в master?', ran = world(on, { answers: { [q]: 'Да, пушь' } })
+  await $.prompt.submit(typed('доделай'))
+  await $.tool.call(ask(q))
+  expect(await $.tool.call(bash('git push origin master'))).not.toEqual({ deny: MESSAGE })
+  expect(ran).toEqual(['git push origin master'])
+})
+
+test('hook: a bare «Да» to a question worded without the verb is no word for a push', async ($, on) => {
+  const q = 'Отправить на GitHub два коммита в master?', ran = world(on, { answers: { [q]: 'Да' } })
+  await $.prompt.submit(typed('доделай'))
+  await $.tool.call(ask(q))
+  expect(await $.tool.call(bash('git push origin master'))).toEqual({ deny: MESSAGE })
+  expect(ran).toEqual([])
+})
+
 test('hook: a chat cannot write the record of his answers itself', async ($, on) => {
   world(on)
   expect(await $.tool.call({ tool: 'Write', file_path: 'C:/Users/x/.claude/makarasty/inbox/heard-answers/s1~t.json', content: '{}' } as never)).toEqual({ deny: HEARD_MESSAGE })
