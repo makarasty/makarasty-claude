@@ -1,5 +1,17 @@
 # Changelog
 
+## makarasty-tools 1.20.16, makarasty 1.18.17 — 2026-11-20
+
+- **Two unused skills stop riding in every session; `ship` reviews before it merges; the design eye runs six states**
+  (owner, 2026-11-20). `craft` and `selfreview` (never called in any transcript, measured 2026-11-19) now carry
+  `disable-model-invocation: true` like `tune` and `update`: their descriptions leave the listing, `/makarasty-tools:craft`
+  and `/makarasty-tools:selfreview` still work; their 12 phrases left `route-cases.json` (259 now). `fleet` and
+  `fleet-call` already had the flag; `grill` stays listed. P01: `ship` states what each incoming branch did, runs `review`
+  on `git diff HEAD...<b>` and merges none that has a finding without a destination (fixed, asked, recorded, handed);
+  both sides' changes are kept; a branch of only the user's own commits skips it. P02: `fleet-design-eye` re-runs
+  both probes in six states (many rows, few rows, longest value, empty, narrow window, slow network) and files at most
+  one geometry defect per state. COMPLAINTS: P01, P02 are now T12, T13.
+
 ## makarasty-tools 1.20.15 — 2026-11-20
 
 - **A start opens the account's window when it is closed** (owner, 2026-11-20: start the chat on the account he asks

@@ -54,15 +54,15 @@ Hooks live in `tools/hooks/` (registered in `index.ts`), the inbox in `tools/ski
 | T09 | «хватит нажимать на правый шифт» 11-09 5f4a02f7 | no key presses on his desktop unasked | computer-use rules (outside this plugin) |
 | T10 | «Сам всё обнови, сам всё закоммить, не надо меня спрашивать тупые вопросы» 11-11 97bee9eb | a local commit of own files is no question (push stays one, C13); a `Commit: ask` profile line brings the question back | `habits`; `commit` skill; inbox SKILL; no hook reads `Commit: ask` yet |
 | T11 | «Это неправда: ты их не отправлял» (coordinator 41bab975, 11-17) after «отправляем» became "Sent by the owner" | sent, deleted, decided about him or outside state only with his quoted words and date or a check's output, else "не подтверждено"; `unfinished` checks waiting items on outside state | `claims` in `gates.ts`; `unfinished` SKILL §2; a write-time hook was measured and not built [M76] |
+| T12 | «мы пока не можем ... слепую это мержить. Нам нужно анализировать» 11-16 5c818b10; also 10-09 69bb6a43, 10-21 677b2976, 11-06 919e5e05, 11-13 bdac0407 | before merging another chat's or branch's work: what it did, whether it is needed, review, red team, fix its bugs; keep both sides' changes | `ship` SKILL step 2: each merged branch is reviewed first and not merged while a finding has no destination |
+| T13 | «Почему UI не готова к edge-кейсам?» 11-08 oxi e637a260; edge cases asked in 22 messages over 60 days (ll, oy, dk, mk) | before showing UI: many and few rows, the longest value, empty, narrow window, slow network; nothing jumps or overflows | `fleet-design-eye` agent, "Fourth call": the six states, one geometry defect per state |
 
 ## Proposed checks (repeated in chat, written nowhere as code; not built)
 
 From his own messages 2026-09-18..11-17 (733 chats), each said at least twice or with harm, checked against
-this repo, his memory and the project docs on 2026-11-17. He picked all four to become checks.
+this repo, his memory and the project docs on 2026-11-17. He picked all four to become checks; P01 and P02 are built (T12, T13).
 
 | id | his words | rule | proposed check |
 |---|---|---|---|
-| P01 | «мы пока не можем ... слепую это мержить. Нам нужно анализировать» 11-16 5c818b10; also 10-09 69bb6a43, 10-21 677b2976, 11-06 919e5e05, 11-13 bdac0407 | before merging another chat's or branch's work: what it did, whether it is needed, review, red team, fix its bugs; keep both sides' changes | `ship`: merging a named branch first runs `review` on the incoming diff and refuses to merge while it has findings without a destination |
-| P02 | «Почему UI не готова к edge-кейсам?» 11-08 oxi e637a260; edge cases asked in 22 messages over 60 days (ll, oy, dk, mk) | before showing UI: many and few rows, the longest value, empty, narrow window, slow network; nothing jumps or overflows | `fleet-design-eye` and the project's build probe run these six states and report a geometry defect per state |
 | P03 | «не упоминать ИИ в таких текстах, запомнить это правило» 10-29 MYCRYUP 7f434155; «без кодика и кодекса» 11-15 dk 74acbc41; 09-28 ll 65bdfd99 | text written in his name or for the public never mentions AI, Claude, Codex or tools (today only `commit` says so) | `unslop` and `say` scan their output for AI/Claude/Codex/ИИ/нейросет and rewrite before returning |
 | P04 | «Можешь переписать ... историю коммитов» 10-02 mk 66bb2aef (24 commits held employer name, NPI, work email); «не используй имена полностью этого железа» 10-05 Avielix 490a654c | no employer name, NPI, work email, hardware names or personal paths in his personal or public repos | `secret-guard`: a list of these words in the person's profile, refused in staged files of repos outside that employer's |

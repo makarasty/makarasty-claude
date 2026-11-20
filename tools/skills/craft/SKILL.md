@@ -1,5 +1,6 @@
 ---
 description: "Refactors, removes duplication and adds tests to existing code, pinning behaviour first. refactor, add unit tests / отрефактори, покрой тестами, сделай DRY, закрой тестом. Not a bug hunt (review) or a new feature."
+disable-model-invocation: true
 ---
 
 These are the points where a capable model still slips on this kind of work. Everything else, use your

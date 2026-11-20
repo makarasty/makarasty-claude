@@ -1,5 +1,6 @@
 ---
 description: "Monthly review of how you work with Claude from your chat history, or a developer's history turned into plugin changes. analyze my chats / проанализируй мои чаты, разбор истории. Not one fleet (fleet-analyze), not open work (unfinished)."
+disable-model-invocation: true
 argument-hint: [--since YYYY-MM-DD] [--until YYYY-MM-DD] | developer [<config dir>]
 ---
 

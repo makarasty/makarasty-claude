@@ -9,7 +9,7 @@
 //
 // arms.json: { "A": { "plugins": ["C:/path/plugin"], "env": { "MAKARASTY_SKILL_ROUTER": "off" } }, "B": { ... } }
 // cases.json: [ { "id": "commit-ru-1", "text": "закоммить", "gold": "makarasty-tools:commit", "lang": "ru" } ]
-// route-cases.json beside this file: 204 phrases written from each skill's purpose (3 EN, 3 RU per skill), 60
+// route-cases.json beside this file: 192 phrases written from each skill's purpose (3 EN, 3 RU per skill), 60
 // near-miss negatives and 7 regression cases [M80]. A row says `hinted` when the skill router's hint reached the
 // model, so an arm meant to have the router shows whether it ran. A run that never reached the model is printed and
 // left out of --out, so a rerun with the same --out retries it. About $0.07 a run on Sonnet: the listing rides in the

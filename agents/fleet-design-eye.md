@@ -65,6 +65,30 @@ window.__fleetScale = { spacing: [4, 8, 12, 16, 24, 32], fontSizes: [12, 14, 16,
 Take the numbers from the token file the brief names; never from memory of what a design system usually
 has.
 
+## Fourth call: the six states
+
+A screen that is right with the data it happened to have is not checked. After the probes on the screen as
+it loaded, run both probes again in each of six states, and for each state report at most one finding: the
+worst geometry defect it shows (content clipped or escaping its box, a horizontal scrollbar, a control pushed
+off screen, a neighbour that moved when it should not, text over text). A state with none is clean; say so in
+`notes`, not as a finding. Every change below is made in the page only, by script, so nothing is saved or
+sent and a reload undoes it; never submit a form or press a save, send or delete control to get a state.
+
+| state | how | what a defect is |
+|---|---|---|
+| many rows | clone the first row of the main list or table 50 times in the DOM, or use the data the brief names | the header, toolbar or footer moves, the list stops scrolling inside its box, the page grows sideways |
+| few rows | hide all rows but one | the layout collapses, a panel shrinks to nothing, a footer floats up under the one row |
+| longest value | in the first row and the heading set each text field to 80 words and to one 120-character word with no spaces | text paints outside its box or over a neighbour, a button is pushed out of its row, the row height jumps with no ellipsis or wrap |
+| empty | remove every row, or empty the list with the screen's own filter when it has one | the empty area has no height, the toolbar jumps, the message is clipped |
+| narrow window | `resize_window` to 360 by 640, then 768 wide | `scrollWidth` over `innerWidth`, a control under 24 px or off screen, a column cut off |
+| slow network | wrap `fetch` and `XMLHttpRequest` to answer 3 s late, start a `layout-shift` PerformanceObserver, trigger the screen's own refresh, read the shift value and each landmark's rectangle before and after the data lands | a landmark moved 2 px or more when the data arrived, a placeholder a different height from its content, a shift score over 0.1 |
+
+Measure a jump as the same landmark's rectangle in two states (from the design probe's landmarks), and file it
+with `rects.a` the rectangle after and `rects.b` the one before, which must intersect. A screen that loads
+only on a full navigation cannot be slowed this way: file `{"unreached": "slow network", "reason": "..."}` and say
+why. Tag these findings `"probe": "state"` and put the state's name first in `area` (`orders / narrow window`).
+Put the viewport in `conditions`, and reload the tab between states so one state's edits never leak into the next.
+
 ## Working rules
 
 - Use the `tabId` you were given, in the pane you were given. Read the viewport and zoom the probe
@@ -88,7 +112,7 @@ has.
   same account.
 - Batch. `browser_batch` runs a sequence in one round trip, and one probe expression returns every number
   a screen needs. Your wall clock goes on round trips, not on the page.
-- Reset the tab to `desktop` before you finish if you emulated a viewport. An emulated size persists
+- Reset the tab to `desktop` before you finish if you emulated a viewport (the narrow-window state does). An emulated size persists
   across reloads and would reshape everything measured after you.
 - Work every screen and every step before reporting. Stopping at the first interesting thing wastes the
   spawn.

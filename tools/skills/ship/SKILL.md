@@ -90,6 +90,16 @@ named, or `all` covered, go ahead. Ask once, all together, only about a branch f
 another author's commits (`--no-merged` also lists other developers' work in progress), and about any
 branch that would conflict in more than ten files.
 
+**Review the incoming work first.** Merging another chat's or branch's work blind is how its bugs land in
+this branch. For each branch that passed the preview, in one line say what it did (`git log --oneline HEAD..<b>`)
+and whether this branch needs it, then Read `${CLAUDE_PLUGIN_ROOT}/skills/review/SKILL.md` and review the
+incoming diff `git diff HEAD...<b>` as for a branch (files read with `git show <b>:<path>`). Every
+finding gets one destination before the merge: fixed (in the conflict resolution or a separate commit right after
+the merge, never by dropping the branch's side), asked (the one question), recorded (the project's findings file,
+else `~/.claude/makarasty/findings/<project>.md`) or handed (which chat, card or person). A branch with a finding
+that has none is not merged: name the finding, merge the branches that are clean, report it. Both sides' changes
+stay either way. A branch whose commits are all this user's own (`git shortlog -sne HEAD..<b>`) skips the review.
+
 **Before each merge** `git diff --cached --name-only` must print nothing, and no dirty file may be one
 the branch changes (`git diff --name-only HEAD...<b>` against `git status --short`); git refuses the
 merge otherwise. Those files are another chat's: stop and name them. Do not stash or commit them.
@@ -139,7 +149,7 @@ first push to the default branch (commit/SKILL.md says how to find it). Then `gi
 <branch>` when there is no upstream. Read the output:
 
 - `! [rejected] ... (fetch first)` or `(non-fast-forward)`: the remote moved. `git fetch`, step 2's
-  check with `@{u}` as the branch, `git merge --no-edit @{u}`, resolve as in step 2, push again. Twice at
+  preview and review with `@{u}` as the branch, `git merge --no-edit @{u}`, resolve as in step 2, push again. Twice at
   most; a third rejection: stop and report.
 - `! [remote rejected]`, `pre-receive hook declined`, `GH006` or "protected branch": the server will not
   take this branch, and pulling changes nothing. Stop and offer to push a branch and open a PR

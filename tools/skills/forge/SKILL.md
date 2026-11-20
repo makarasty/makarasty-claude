@@ -83,7 +83,7 @@ PowerShell 5.1, LF line endings pinned, paths with spaces quoted, `node` over `s
   the tool; a line whose removal changes nothing is a line to delete. Include prompts that must not
   trigger it.
 - **Triggering**: `node "${CLAUDE_SKILL_DIR}/route.mjs" <arms.json> <cases.json>` runs each request headless and
-  reads which skill the model called first; `route-cases.json` beside it holds 271 phrases, near-miss negatives and
+  reads which skill the model called first; `route-cases.json` beside it holds 259 phrases, near-miss negatives and
   regression cases for this repo's skills. Usage is in the script's header; about $0.07 a run on Sonnet.
 - `claude plugin eval` for graded cases with tool-call checks. On native Windows only cases that grant no
   Bash or PowerShell run, and it needs `ANTHROPIC_API_KEY` set; suites that grant a shell need WSL2.
