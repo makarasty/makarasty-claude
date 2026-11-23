@@ -1823,3 +1823,33 @@ against the raw transcripts.
   triggers or wrong skills on 11 cases.
 **Status:** one app with a router and one site without; the link crawl ran only in the end-to-end test and the sitemap
 source in no run.
+
+## M88 — Report files nobody asked for: the field, the cause, an A/B of the delivery text (2026-11-23)
+- **Complaint:** the owner, 2026-11-23: chats keep making HTML reports he did not ask for; asked to analyse one file on his
+  Desktop, a chat searched every folder and made a PDF, when a chat table was plenty; links to the files and chats used
+  would have been better still. Earlier, 2026-11-20 (chat d592244e): «зачем-то генерирует кучу мне HTML-файлов на рабочий
+  стол». 2 distinct chats with the complaint; the PDF example chat itself is not in `~/.claude/projects` (searched by
+  prompt words and by PDF-making commands over the last four days).
+- **Field:** 1,807 main chats since 2026-06-01 (clones merged, fleet workers, handed-off and test chats left out). 37 put
+  a report file (HTML, PDF, docx) on the Desktop root: 18 from June to 2026-11-16, each after a prompt asking for a
+  file or document; 19 from 2026-11-17 to 2026-11-23, 10 of them with no prompt in the chat asking for a file, page,
+  report or document (a loose regex, so "asked" is generous). 2026-11-17 is the day «если ты хочешь со мной общаться
+  файлами, то это должен быть 100% файл HTML у меня на рабочем столе» became a project-memory line («Any file for him to
+  read: /makarasty-tools:report HTML on his Desktop», loaded in every LifeLines session) and the report skill gained its
+  page builder; the skill's own section 1 also sent "will be reread on another day (a plan, an instruction)" to a page.
+  No plugin session text said where an answer goes, how to link its sources, or to keep to a named file.
+- **A/B, `rules.mjs --evals`, Sonnet, 3 runs a prompt, both arms with makarasty-tools loaded (`MAKARASTY_ECONOMY=off`,
+  habits, asking, the global "How to answer me" and the old memory line appended), on = plus the `delivery` text;
+  fixture desktop-file (a CSV on ./Desktop, decoy CSVs in ./Documents and ./LiveProjects/app):** «Проанализируй файл
+  claude-usage.csv у меня на рабочем столе»: link to the CSV 3/3 vs 0/3, a file made 0/3 vs 0/3 (ceiling once the
+  plugin is loaded), a `**/claude-usage.csv` sweep 0/3 vs 1/3. «Сделай отчёт по файлу ...»: the page made with
+  report.mjs 3/3 vs 3/3, the CSV and the page linked 3/3 vs 0/3, a sweep 1/3 vs 2/3. Total 5/6 vs 1/6, blind judge 6:0.
+  The run before (same arms, the text without "the one they named included"): source-file link 1/3 on, sweeps 0/6 vs
+  3/6, judge 6:0. A first run with no plugin loaded could not test the report ask (no skill; one on-arm run answered
+  "сделай отчёт" in chat), which led to "then the file is made, with the chat answer beside it".
+- **Routing (`route.mjs`, Sonnet, makarasty-tools at HEAD vs with the change):** proof 6/6 vs 6/6; report 9/24 vs 9/24
+  over four runs (the same low rate in both arms, mostly "one nice page"-style phrases going to no skill); no false
+  triggers on 5 negatives; "analyse the file on my Desktop" (2 phrases) went to no skill in both arms.
+- **Cold read:** a fresh Sonnet given only the text handled 6 of 7 sample requests as meant; it guessed on work for
+  another reader (now: offer a file in one line) and the shape of a chat link (now: `[title](#local_<id>)`).
+**Status:** one small fixture; whether unasked Desktop files drop in real chats is left to the field count (R148 `field`).

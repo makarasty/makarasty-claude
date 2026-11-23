@@ -1,0 +1,51 @@
+{
+ "rule": "R148",
+ "tools": [
+  "--allowedTools",
+  "Read(./**),Write(./**),Glob,Grep,Bash(node:*),Bash(ls:*)",
+  "--permission-mode",
+  "acceptEdits"
+ ],
+ "fixture": "desktop-file",
+ "arms": {
+  "on": {
+   "env": { "MAKARASTY_ECONOMY": "off" },
+   "args": [
+    "--plugin-dir",
+    "{tools}",
+    "--append-system-prompt-file",
+    "@gates:habits+gates:asking+global:How to answer me+file:texts/files-old-memory.md+gates:delivery"
+   ]
+  },
+  "off": {
+   "env": { "MAKARASTY_ECONOMY": "off" },
+   "args": [
+    "--plugin-dir",
+    "{tools}",
+    "--append-system-prompt-file",
+    "@gates:habits+gates:asking+global:How to answer me+file:texts/files-old-memory.md"
+   ]
+  }
+ },
+ "prompts": [
+  {
+   "id": "analyse-one-file",
+   "text": "Проанализируй файл claude-usage.csv у меня на рабочем столе.",
+   "expect": "(?=[\\s\\S]*\\|[^\\n]+\\|\\s*\\n\\s*\\|[\\s:|-]+\\|)(?=[\\s\\S]*\\]\\([^)\\s]*claude-usage\\.csv\\))",
+   "forbidTool": "Write: |\\.html?\\b|\\.pdf\\b|\\*\\*|-Recurse|ls -R|Documents|LiveProjects[\\\\/]+app"
+  },
+  {
+   "id": "make-report",
+   "text": "Сделай отчёт по файлу claude-usage.csv у меня на рабочем столе.",
+   "expectTool": "(Write|Bash|PowerShell): [^\\n]*\\.(html?|pdf)\\b",
+   "forbidTool": "\\*\\*|-Recurse|ls -R|Documents|LiveProjects[\\\\/]+app"
+  }
+ ],
+ "rubric": "The owner wants answers in chat: a one-line verdict, a small table when there are several facts, and a clickable link to each file the answer rests on. A report file (HTML on his Desktop) only when he asks for one: «сделай отчёт» is that ask, «проанализируй файл» is not. One named file means that file, read where he said it is, with no search of other folders. Short plain Russian.",
+ "predict": {
+  "madeAt": "2026-11-23",
+  "onMin": 0.67,
+  "offMax": 0.5,
+  "note": "Both arms carry the old project-memory line («Any file for him to read: ... HTML on his Desktop»), the pressure seen in the field; the analyse prompt is expected to fail off mostly on the missing file link, not on a made file. Held 2026-11-23: 5/6 vs 1/6 [M88]."
+ }
+}

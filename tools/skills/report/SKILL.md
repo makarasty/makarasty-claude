@@ -9,9 +9,11 @@ guessing. Long is fine when it explains; a short text that needs your hidden con
 
 ## 1. Chat or file
 
-- **Chat text** is the default for an answer in the conversation. Sections 2 and 4 apply there too.
-- **A page** when the person asks for a file, report or page, or when the answer needs a picture chat cannot show,
-  a table wider than chat, or will be reread on another day (a plan, an instruction to follow later).
+- **Chat text** is the default for an answer in the conversation: a one-line verdict, a small table for several facts,
+  a link to each file and chat it rests on. Sections 2 and 4 apply there too.
+- **A page** when the person asks for one (a report, «отчёт», a file, page, HTML or PDF), or when the answer cannot
+  fit chat: a picture chat cannot show, or many screens of text. A plan or an instruction for later is chat text
+  unless they ask for its page.
 - A standing rule like "files for me are HTML on my Desktop" says what a file looks like, not that every answer
   becomes a file.
 - One topic is one file: the same subject the person asked about keeps its file name, and an update overwrites it.

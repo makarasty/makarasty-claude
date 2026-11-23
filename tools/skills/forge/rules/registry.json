@@ -3590,6 +3590,53 @@
    },
    "eval": "evals/R147-parallel.json",
    "measured": "2026-11-23 [M86]: at ceiling on both small fixtures (0/3 vs 0/3, 0/4 vs 0/4 subagent fan-out; both arms already batch reads and edits); kept for long many-step work, judged by the field count. Rewrite 2026-11-23 (owner: pick size and shape automatically, keep long parts on one agent): cold read by a fresh Sonnet sized five sample requests as meant; its ambiguity notes (order of reading and choosing, ask scope, resumed agents, re-plan) fixed in the text. No A/B of the rewrite."
+  },
+  {
+   "id": "R148",
+   "rule": "Answers go in chat: a one-line verdict, a small table for several facts, a clickable link to each file and chat the answer rests on. A file (HTML, PDF, document, artifact) only when he asks for one or the content cannot fit chat; a standing 'files are HTML on my Desktop' says what a file looks like, not that one is made. One named file is that file: no sweep of other folders.",
+   "ru": "Ответ в чате: вердикт одной строкой, маленькая таблица, если фактов несколько, ссылки на файлы и чаты, на которых он стоит. Файл (HTML, PDF, документ) только по моей просьбе или если в чат не влезает. Назвал один файл: это тот файл, без обхода всех папок.",
+   "layer": "plugin",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [
+    "owner 2026-11-23: «Чаты очень часто делают HTML-отчеты, когда я не просил ... он полез во все папки ... сделал отчет в PDF ... простого ответа в чате таблички хватило бы с головой ... Еще бы предоставил ссылки на файлы и на чаты»",
+    "owner 2026-11-20 (d592244e): «зачем-то генерирует кучу мне HTML-файлов на рабочий стол»"
+   ],
+   "complaintChats": 2,
+   "complaintNote": "2026-11-23 scan of 1,807 main chats since 2026-06-01: 37 put a report file on the Desktop root; 18 before 2026-11-17 (all after an ask), 19 from 2026-11-17 to 2026-11-23, 10 of them with no word asking for a file or report [M88]; the PDF example chat itself was not found in ~/.claude/projects",
+   "conflicts": [
+    "R113"
+   ],
+   "status": "active",
+   "sources": [
+    {
+     "file": "tools/hooks/gates.ts",
+     "anchor": "delivery",
+     "date": "2026-11-23"
+    },
+    {
+     "file": "tools/skills/report/SKILL.md",
+     "anchor": "1. Chat or file",
+     "date": "2026-11-23"
+    },
+    {
+     "file": "<project memory>/MEMORY.md",
+     "anchor": "files to owner are html on desktop",
+     "date": "2026-11-23"
+    }
+   ],
+   "inForce": [
+    {
+     "text": "gates:delivery",
+     "has": "Answers go in the chat"
+    }
+   ],
+   "field": {
+    "regex": "(не просил|зачем|лишн|не нужн|не надо|кучу)[^.!?\\n]{0,60}(html|pdf|отч[её]т|файл(ов|ы)? на рабоч)|(html|pdf|отч[её]т)[^.!?\\n]{0,60}(не просил|зачем|лишн|не нужн)",
+    "since": "2026-11-23"
+   },
+   "eval": "evals/R148-delivery.json",
+   "measured": "2026-11-23 [M88]: 5/6 vs 1/6, judge 6:0 (Sonnet, 3 runs, plugin loaded in both arms): source-file link 6/6 vs 0/6, report page on «сделай отчёт» 3/3 vs 3/3, no file on «проанализируй» 3/3 vs 3/3 (ceiling), folder sweeps 1/6 vs 3/6; routing for report and proof unchanged"
   }
  ],
  "industry": [

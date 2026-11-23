@@ -1,5 +1,21 @@
 # Changelog
 
+## makarasty-tools 1.20.27 — 2026-11-23
+
+- **Answers in chat, with links; a file only when asked** (M88, R148). The owner said chats keep making HTML and PDF
+  reports he did not ask for, and one asked to analyse a single Desktop file searched every folder first. Field: Desktop
+  report files went from 18 chats in five months, all asked, to 19 in the week after "files for me are HTML on my
+  Desktop" became a memory line, 10 of them unasked. New session text `delivery` (main sessions, with the economy
+  texts): a one-line verdict, a small table for several facts, every file the answer rests on (the named one included)
+  as a clickable link, each chat used as its session link; a file only on an ask («сделай отчёт», a page, a PDF) or
+  when the content cannot fit chat, otherwise offered in one line; a standing "HTML on my Desktop" says what a file
+  looks like, not that one is made; one named file is that file, no sweep of other folders.
+- `report` section 1: chat is the default with verdict, table and links; a page on an ask or when it cannot fit; a plan
+  or a later reread is no longer a reason for a page. Routing unchanged.
+- The owner's LifeLines memory line now says the same (outside this repo).
+- Checked: A/B 5/6 vs 1/6, judge 6:0 (eval R148, fixture desktop-file); route.mjs report 9/24 vs 9/24, proof 6/6 vs 6/6;
+  `claude plugin test tools` 548 pass.
+
 ## makarasty-tools 1.20.26 — 2026-11-23
 
 - **New skill `walk`** (M87): a parallel visual walk of any web app, and UI complaints turned into detectors. The owner asked

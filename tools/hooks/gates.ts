@@ -161,6 +161,20 @@ export const parallel =
   'browser pane or a whole-repo check stay in order. While a long run goes in the background, do the next step that ' +
   "does not wait on it. When the work turns out bigger, re-plan the steps left. The person's time costs more than tokens."
 
+// The owner, 2026-11-23: chats make HTML or PDF reports he did not ask for, and one asked to analyse a file on his Desktop
+// searched every folder first. Desktop report files went from 18 chats in five months (all asked) to 19 in the week after a
+// "files for me are HTML on my Desktop" rule, half of them unasked [M88]. Main sessions only.
+export const delivery =
+  'Answers go in the chat: a one-line verdict, then a small table when there are several facts, and every file the answer ' +
+  'rests on, the one they named included, written as a markdown link [name](path) they can click, as is each chat it used ' +
+  '(its session link, [title](#local_<id>), else its transcript path). A file (HTML, PDF, document, artifact) is made only ' +
+  'when the person asks for one («сделай отчёт», a page, a PDF: then the file is made, with the chat answer beside it) or ' +
+  'the content cannot fit a chat answer (a picture chat cannot show, many screens of text); otherwise, when a file would ' +
+  'help someone else read it, offer it in one line; a standing "files for me are HTML on my ' +
+  'Desktop" says what a file looks like, not that one is made, and this holds over a tool\'s advice to publish a page. ' +
+  'Work stays in the scope they named: one named file is that file, read where they said it is, not a search of every ' +
+  'folder; widen only when it is not there, and say so in one line.'
+
 const findingsOn = async ($: Dollar) => (await $.env.get('MAKARASTY_FINDINGS')) !== 'off'
 
 // Habits that each cost hours in measured runs (Edit failures [M25] [M31], polling and waiting on questions [M52],
@@ -220,7 +234,7 @@ async function profile($: Dollar): Promise<string[]> {
 }
 
 const withEconomy = async ($: Dollar, out: { additionalContext?: string[] }, more: string[] = []) => {
-  const rules = [...((await $.env.get('MAKARASTY_ECONOMY')) === 'off' ? [] : [economy, habits, asking, plans, parallel]), ...((await findingsOn($)) ? [findings, claims, literal] : [])]
+  const rules = [...((await $.env.get('MAKARASTY_ECONOMY')) === 'off' ? [] : [economy, habits, asking, plans, parallel, delivery]), ...((await findingsOn($)) ? [findings, claims, literal] : [])]
   const all = [...(out.additionalContext ?? []), ...more, ...rules, ...(await profile($).catch(() => []))]
   return all.length ? { ...out, additionalContext: all } : out
 }
