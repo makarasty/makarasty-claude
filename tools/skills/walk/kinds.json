@@ -1,0 +1,1061 @@
+{
+  "version": 1,
+  "kinds": [
+    {
+      "id": "V01",
+      "title": "Skeleton does not mirror the content that replaces it (size, position, row structure)",
+      "category": "skeleton",
+      "detector": {
+        "kind": "FILM",
+        "spec": "When a skeleton leaves, compare its rect with the content now in its parent. Fail if height differs > 8px, width > 16px, top > 4px, or the row/card count differs by more than 1. Also fail if corner radius or border presence differs. Run in light and dark.",
+        "cost": "med"
+      },
+      "impl": null,
+      "judge": "A loading placeholder that is visibly smaller, taller, shorter, differently rounded or with a different row count than the content that replaces it."
+    },
+    {
+      "id": "V02",
+      "title": "Hand-made controls instead of the project's own kit (buttons, selects, cards, cells, toggles, popup shells)",
+      "category": "other",
+      "detector": {
+        "kind": "PROBE",
+        "spec": "Every visible button, select, card and table cell must carry a class from kit.controlClasses or sit inside a kit component root. Anything hand-built with plain markup and local styles fails.",
+        "cost": "med"
+      },
+      "impl": "probes.handmade",
+      "judge": null
+    },
+    {
+      "id": "V03",
+      "title": "Unclear copy: bare numbers, two-letter codes, sentence-long option names, no hint, plain text instead of badges",
+      "category": "text",
+      "detector": {
+        "kind": "JUDGE",
+        "spec": "Judge flags: a number alone or in parentheses with no unit or label; a two-letter code with no expansion; a menu option that is a sentence (> 8 words); a card with no one-line description; helper text naming a control not on screen; a status word as plain text where the app uses badges. Pre-filter: option label > 60 chars.",
+        "cost": "med"
+      },
+      "impl": null,
+      "judge": "A number shown alone with no unit or label, an unexplained short code, a long sentence used as an option name, or a status word that is plain text where other screens use a badge."
+    },
+    {
+      "id": "V04",
+      "title": "Content and blocks jump when data arrives, including late reflows after the page looks done",
+      "category": "layout-shift",
+      "detector": {
+        "kind": "FILM",
+        "spec": "Film the route load: fail on cumulative layout shift above threshold or a container height change > 8px at a skeleton swap. Also fail any layout shift later than settle time + 100 ms with value > 0.005, or a post-skeleton sum > 0.01.",
+        "cost": "low"
+      },
+      "impl": "film.cls",
+      "judge": null
+    },
+    {
+      "id": "V05",
+      "title": "Uneven gaps between stacked blocks, cards or messages",
+      "category": "spacing",
+      "detector": {
+        "kind": "PROBE",
+        "spec": "For each parent with >= 3 visible block children stacked vertically: gaps between consecutive children differing by > 4px fail; a gap between cards > 24px fails; the space above the first and below the last card compared across routes spreading > 4px fails. Same for horizontal control rows.",
+        "cost": "low"
+      },
+      "impl": "probes.unevenGaps",
+      "judge": null
+    },
+    {
+      "id": "V06",
+      "title": "Failure invisible or raw: error only in console, raw error JSON on screen, failed item not shown as failed",
+      "category": "other",
+      "detector": {
+        "kind": "PROBE",
+        "spec": "Fail: visible text matching /^\\s*\\{.*\"(error|message|status)\"/ or /\\b(403|500)\\b.*(Forbidden|Internal)/; a console error or failed request (status >= 400) on the route with no visible error element (notice, empty state, toast) within 2 s.",
+        "cost": "low"
+      },
+      "impl": null,
+      "judge": "Raw error JSON or status codes shown to the user, a failed action or item that looks normal, or an error message that does not say what went wrong or how to retry."
+    },
+    {
+      "id": "V07",
+      "title": "Opening, choosing or toggling something moves the surrounding layout (menu, mode switch, expanding block)",
+      "category": "layout-shift",
+      "detector": {
+        "kind": "CLICK",
+        "spec": "Before each safe click record rects of up to 40 visible elements outside the clicked control and any layer it opens; after the layer opens and after Escape, any moved > 1px fails (menus and popups float, they must not push). A clicked control whose own height changes > 1px between idle and selected fails.",
+        "cost": "med"
+      },
+      "impl": "clicks.moved",
+      "judge": null
+    },
+    {
+      "id": "V08",
+      "title": "Visible control does nothing when clicked, or a link leads nowhere",
+      "category": "other",
+      "detector": {
+        "kind": "CLICK",
+        "spec": "After a safe click: no DOM mutation, no navigation, no network request, no new layer and no focus change within 800 ms marks a dead-control candidate. PROBE companion: a[href=\"#\"], a[href=\"\"] or a link whose text is \"-\" fails.",
+        "cost": "low"
+      },
+      "impl": "clicks.dead",
+      "judge": null
+    },
+    {
+      "id": "V09",
+      "title": "Bad composition: control in the wrong block, scattered side area, blocks that should merge, misplaced empty-state control",
+      "category": "alignment",
+      "detector": {
+        "kind": "JUDGE",
+        "spec": "Judge compares with the same control on other pages of the same kind: flag a notice or picker placed far from what it explains, several small blocks saying one thing, actions that blend into body text, an empty-state control centred where the page aligns left.",
+        "cost": "med"
+      },
+      "impl": null,
+      "judge": "A control, notice or action that sits away from what it relates to, several tiny blocks that should be one, actions that look like body text, or an empty-state button out of line with the page."
+    },
+    {
+      "id": "V10",
+      "title": "Page loads with no loader or skeleton: blank column or white page while data or code loads",
+      "category": "loading-sequence",
+      "detector": {
+        "kind": "FILM",
+        "spec": "From navigation start sample the page content box (pageSelector) every 50 ms: fail on a run of >= 6 samples (300 ms) with no visible text, skeleton or loader inside it, or if the first content or skeleton appears later than 1500 ms after DOMContentLoaded.",
+        "cost": "med"
+      },
+      "impl": "film.blankMs",
+      "judge": null
+    },
+    {
+      "id": "V11",
+      "title": "Data on screen is stale after a filter, context switch or state change (counts, rows, banners not live)",
+      "category": "loading-sequence",
+      "detector": {
+        "kind": "NO",
+        "spec": "Needs a second writer or a role/context switch with known expected data; a walker with one shared account and no writes cannot see it. Upgrade path: a seeded local environment and a two-tab film.",
+        "cost": "high"
+      },
+      "impl": null,
+      "judge": null
+    },
+    {
+      "id": "V12",
+      "title": "One skeleton is replaced by a different skeleton or loader before content: the page seems to load twice",
+      "category": "loading-sequence",
+      "detector": {
+        "kind": "FILM",
+        "spec": "Fail when a skeleton overlapping a gone one by > 50% with a different class appears within 1500 ms, or there is more than one loading wave. The first skeleton frame after reload must sit inside the target route's content box (pageSelector).",
+        "cost": "low"
+      },
+      "impl": "film.cascades",
+      "judge": null
+    },
+    {
+      "id": "V13",
+      "title": "Screen looks crooked or ugly overall",
+      "category": "other",
+      "detector": {
+        "kind": "JUDGE",
+        "spec": "Judge gives the screen a 1-10 polish score against a well-built page of the same kind and lists the three worst spots with their rectangles.",
+        "cost": "med"
+      },
+      "impl": null,
+      "judge": "Overall polish: crooked alignment, cramped or stretched areas, redundant buttons next to an existing close icon, anything unfinished. Report the worst spots as findings."
+    },
+    {
+      "id": "V14",
+      "title": "The same control or information shown twice (two Refresh buttons, duplicate columns, repeated steps)",
+      "category": "other",
+      "detector": {
+        "kind": "PROBE",
+        "spec": "Two visible buttons with the same text and icon outside repeated rows fail; two th in one table with the same text fail; two lists with the same row texts on one screen fail; consecutive items in a message or step list with identical normalised text fail.",
+        "cost": "low"
+      },
+      "impl": "probes.duplicates",
+      "judge": null
+    },
+    {
+      "id": "V15",
+      "title": "The same kind of item has different sizes across rows or pages (avatars, ID boxes, row heights, Back button)",
+      "category": "sizing",
+      "detector": {
+        "kind": "PROBE",
+        "spec": "Within one list, sibling rows of the same component class whose heights differ by > 2px fail. Across routes, aggregate rect sizes per component class (avatar, id chip, back button) and fail if the spread is > 2px.",
+        "cost": "med"
+      },
+      "impl": null,
+      "judge": "The same kind of element (avatar, id chip, back button, table row) drawn at visibly different sizes in different rows or on different pages."
+    },
+    {
+      "id": "V16",
+      "title": "A container cuts its content or cannot be scrolled to the end (max-height clip, hidden rows, overflow past the edge)",
+      "category": "scroll",
+      "detector": {
+        "kind": "PROBE",
+        "spec": "Fail: element with max-height and overflow-y visible whose scrollHeight > clientHeight + 2; a non-text child extending > 2px past an overflow-hidden ancestor that is not a scroller; a flex scroller with min-height not 0 clipped by its parent; a list scrolled to the end showing fewer rows than its total with no next-page control.",
+        "cost": "med"
+      },
+      "impl": null,
+      "judge": "A list, menu or panel whose last items are cut off or unreachable, content painted past a container edge, or a scroller that stops before its end."
+    },
+    {
+      "id": "V17",
+      "title": "Colour carries no meaning: alert red on ordinary totals, loud colours, selected and history states look the same",
+      "category": "other",
+      "detector": {
+        "kind": "JUDGE",
+        "spec": "Pre-filter: badges or counts with an error or warning background whose text is a plain total. Judge flags red or orange on values needing no action, heavy borders or saturated fills that shout, and list items whose states (selected, history, available) share one colour.",
+        "cost": "med"
+      },
+      "impl": null,
+      "judge": "Alert colours on values that need no action, loud heavy borders or fills, or list items in different states that look identical."
+    },
+    {
+      "id": "V18",
+      "title": "Loader or spinner never ends (endless loader, infinite animation on a settled page, unchanging status text)",
+      "category": "loading-sequence",
+      "detector": {
+        "kind": "FILM",
+        "spec": "Fail when a skeleton or loader is still present at the end of the film and older than 5 s. Also, after settle, a visible spinner with an infinite animation fails, as does a status text unchanged for > 20 s beside a running spinner.",
+        "cost": "low"
+      },
+      "impl": "film.lingering",
+      "judge": null
+    },
+    {
+      "id": "V19",
+      "title": "Fixed UI (floating launcher, save bar, side panel, chips) covers buttons or fields",
+      "category": "layers",
+      "detector": {
+        "kind": "PROBE",
+        "spec": "Control covered by another element at its centre point, at wide and narrow widths. Also run it with a floating save bar open after a safe click, and check any fixed launcher rect does not intersect a primary button.",
+        "cost": "low"
+      },
+      "impl": "probes.overlaps",
+      "judge": null
+    },
+    {
+      "id": "V20",
+      "title": "A menu, tooltip, date picker or popup is cut by its container or the window, or opens downward off-screen",
+      "category": "layers",
+      "detector": {
+        "kind": "CLICK",
+        "spec": "After each safe click and on hover, an open layer cut or covered by its container or the window fails. A menu whose bottom exceeds the window height while more room exists above its trigger fails (it must flip upward).",
+        "cost": "low"
+      },
+      "impl": "clicks.layers",
+      "judge": null
+    },
+    {
+      "id": "V21",
+      "title": "A scrollbar appearing (or scroll lock on a popup) shifts the page sideways or changes content width",
+      "category": "layout-shift",
+      "detector": {
+        "kind": "CLICK",
+        "spec": "Record the document client width and the main content box x/width before a safe click and with the layer open: a change over 1px fails. Companion probe: each page-level scroller should reserve its gutter (scrollbar-gutter stable or overflow-y scroll).",
+        "cost": "low"
+      },
+      "impl": "clicks.moved",
+      "judge": null
+    },
+    {
+      "id": "V22",
+      "title": "Buttons, popups, panels and sidebars open or close abruptly (teleport, blink) with no smooth animation",
+      "category": "motion",
+      "detector": {
+        "kind": "CLICK",
+        "spec": "After each safe click the new layer (dialog, menu, panel) must animate: no running animation, 0s opacity/transform transition, or an animation under 120 ms fails; same for closing via Escape. A gap over 1px between sidebar and sub-sidebar during a toggle fails.",
+        "cost": "med"
+      },
+      "impl": "clicks.opening",
+      "judge": null
+    },
+    {
+      "id": "V23",
+      "title": "Two header strips where one fits (title row plus a toolbar row, huge always-open search)",
+      "category": "alignment",
+      "detector": {
+        "kind": "JUDGE",
+        "spec": "Pre-filter: two stacked bars above the content, each under 80px tall with 3 or fewer controls, or an unfocused toolbar search wider than 320px. Judge asks whether a second header strip repeats or could join the page bar.",
+        "cost": "low"
+      },
+      "impl": null,
+      "judge": "Two stacked header strips above the content where one bar would hold both, or an oversized always-open search field"
+    },
+    {
+      "id": "V24",
+      "title": "Screen breaks at extreme volume (hundreds of rows) or near-empty data",
+      "category": "layout-shift",
+      "detector": {
+        "kind": "NO",
+        "spec": "Needs seeded large and empty datasets; one shared account shows one volume. Upgrade path: local seeds at 0, 1 and 500 rows, then the same probes.",
+        "cost": "high"
+      },
+      "impl": null,
+      "judge": null
+    },
+    {
+      "id": "V25",
+      "title": "Popup not built from the kit: black backdrop, close X outside the card, text Close or chevron-only close",
+      "category": "popups",
+      "detector": {
+        "kind": "CLICK",
+        "spec": "After a safe click that opens a dialog: the close control must be an icon button inside the dialog rect (fail if outside, if its text is Close, or if none exists); the scrim must cover the full window and use the theme scrim colour, not pure black.",
+        "cost": "low"
+      },
+      "impl": "clicks.dialog",
+      "judge": null
+    },
+    {
+      "id": "V26",
+      "title": "Shell and page body load out of step: skeleton overlaps sidebar or header, nav icons jump, filters cut",
+      "category": "layout-shift",
+      "detector": {
+        "kind": "FILM",
+        "spec": "Per film sample: a skeleton (skeletonSelector) rect overlapping the sidebar or app header by over 4px fails; a layout shift whose source node is inside the sidebar or header fails; run the clipped probe at 50% of settle time: a clipped item in the filter toolbar fails.",
+        "cost": "med"
+      },
+      "impl": null,
+      "judge": "During loading, a skeleton overlapping the sidebar or header, shell icons jumping, or a filter/toolbar area cut off"
+    },
+    {
+      "id": "V27",
+      "title": "False empty state while data is still loading (\"No results\", \"No options\", tiles reading 0)",
+      "category": "loading-sequence",
+      "detector": {
+        "kind": "FILM",
+        "spec": "Sample visible empty-state nodes (text like No ... found, No options, No data) and numeric tiles (tileSelector) during load. Fail if an empty state shows and later the same container fills with rows, or a tile reads 0 and later a non-zero number..",
+        "cost": "med"
+      },
+      "impl": null,
+      "judge": "An empty-state message or a zero count shown while content is still loading and then replaced by real data"
+    },
+    {
+      "id": "V28",
+      "title": "Empty, purposeless boxes or rows (blank row before typing, upload button when a file exists)",
+      "category": "other",
+      "detector": {
+        "kind": "PROBE",
+        "spec": "A visible element with a border or background, area over 400px squared, no text, no img/svg/canvas/input descendants and not a skeleton (skeletonSelector) fails. Whether an empty-state control should show over existing data stays for the judge.",
+        "cost": "low"
+      },
+      "impl": null,
+      "judge": "An empty bordered or filled box or row with no content or purpose, or a big upload/empty-state control shown although data already exists"
+    },
+    {
+      "id": "V29",
+      "title": "Page padding missing, doubled or crooked (page adds its own on top of the app gutter)",
+      "category": "spacing",
+      "detector": {
+        "kind": "PROBE",
+        "spec": "Inside the app layout, the distance from the page content box (pageSelector) edge to the first visible content must equal the app gutter within 2px on left, right and top. Two nested ancestors both with padding-left of 12px or more and no border or background between them fail.",
+        "cost": "low"
+      },
+      "impl": null,
+      "judge": "Double or uneven page padding: content set in from the edge by two stacked gutters, or flush to one side"
+    },
+    {
+      "id": "V30",
+      "title": "Table row end caps or hover colour differ from the page background in some theme",
+      "category": "tables",
+      "detector": {
+        "kind": "PIXEL",
+        "spec": "In every theme the app offers: sample the pixel 2px inside each row cap (left and right end) and the page background 4px outside the table; deltaE over 3 fails. A hover colour in the wrong luminance range or hue (deltaE over 6 from the hover token) fails. Square cap corners on a rounded row fail.",
+        "cost": "med"
+      },
+      "impl": null,
+      "judge": "Dark or mismatched end caps or brackets around table rows, or a row hover colour that clashes with the theme"
+    },
+    {
+      "id": "V31",
+      "title": "Buttons that stand together differ in size or one is miniature",
+      "category": "sizing",
+      "detector": {
+        "kind": "PROBE",
+        "spec": "Buttons in one row with heights differing by over 2px fail. Also compare button heights and border radius against the button size ladder of the project (kit.controlClasses): a text button off the ladder fails.",
+        "cost": "low"
+      },
+      "impl": "probes.rowHeights",
+      "judge": null
+    },
+    {
+      "id": "V32",
+      "title": "Icons of one family differ in colour",
+      "category": "icons",
+      "detector": {
+        "kind": "PROBE",
+        "spec": "In one nav, menu or list: icons at the same position in sibling rows with more than 2 distinct computed colours fail, excluding status icons with a semantic class.",
+        "cost": "low"
+      },
+      "impl": null,
+      "judge": "Sibling icons in one list or nav in clashing or unexpectedly dull colours where one family colour is expected"
+    },
+    {
+      "id": "V33",
+      "title": "Stray 1px line or sliver at the edge of tables, lists or headers",
+      "category": "tables",
+      "detector": {
+        "kind": "PIXEL",
+        "spec": "On the screenshot, scan the 3px band at the left, top and right edges of each table/list container: a 1px column or row differing from both neighbours by deltaE over 10 and not the border colour fails. For virtual lists scroll 200px and repeat (scrolled rows peeking above the header).",
+        "cost": "med"
+      },
+      "impl": null,
+      "judge": "A thin 1px line or sliver of a row or background at the edge of a table, list or header"
+    },
+    {
+      "id": "V34",
+      "title": "Chart squeezed small or cramped in its card",
+      "category": "sizing",
+      "detector": {
+        "kind": "PROBE",
+        "spec": "For each chart svg/canvas: plot area under 40% of its card content box, or height under 120px, or a donut whose labels are clipped (clipped probe hit inside the chart) fails.",
+        "cost": "low"
+      },
+      "impl": null,
+      "judge": "A chart drawn small or cramped inside a large card, or with clipped labels"
+    },
+    {
+      "id": "V35",
+      "title": "A second or needless scrollbar (scroll inside a card with nothing to scroll, scroller inside a scroller)",
+      "category": "scroll",
+      "detector": {
+        "kind": "PROBE",
+        "spec": "For each visible element with overflow-y auto/scroll: scrollHeight minus clientHeight between 1 and 8px fails (scroll for nothing). A scrollable element whose ancestor on the same axis is also scrollable and visible fails, unless one is a table body or popup body.",
+        "cost": "low"
+      },
+      "impl": null,
+      "judge": "A scrollbar on a card or panel that has nothing to scroll, or two nested scrollbars on one axis"
+    },
+    {
+      "id": "V36",
+      "title": "A container or popup does not hug its content (reserved empty area, frame visible around an embed)",
+      "category": "sizing",
+      "detector": {
+        "kind": "PROBE",
+        "spec": "Fail: an element with a background or border whose only child (iframe, image, widget) is smaller by over 2px on any side; in an open dialog, a child block over 80px tall with no text, control, image or svg descendants.",
+        "cost": "low"
+      },
+      "impl": null,
+      "judge": "A box or popup with empty reserved space, or a visible frame around an embedded widget that should fit snugly"
+    },
+    {
+      "id": "V37",
+      "title": "Icons, cards or connectors not vertically centred against their text or row",
+      "category": "alignment",
+      "detector": {
+        "kind": "PROBE",
+        "spec": "In a flex row: |centreY(icon) - centreY(first text line next to it)| > 1.5px fails; a child whose centreY differs from the row centreY by > 2px while heights differ fails; a step connector whose centre x differs from its step dot by > 1px, or ends > 1px from the dot edge, fails.",
+        "cost": "low"
+      },
+      "impl": null,
+      "judge": "Icons, cards or step connectors sitting visibly higher or lower than the text or neighbour beside them, or a connector line that does not meet its dot."
+    },
+    {
+      "id": "V38",
+      "title": "Long text is shown in full and stretches rows or breaks the layout",
+      "category": "text",
+      "detector": {
+        "kind": "PROBE",
+        "spec": "Fail: a table row taller than 2x the median row height of its tbody; a cell or list item with > 200 characters and no line-clamp, ellipsis or expand control; one unbroken text run wider than its column pushing the table past its card.",
+        "cost": "low"
+      },
+      "impl": null,
+      "judge": "One very long text value (message, error, note) shown whole, making one row far taller than the rest or pushing the table wider than its card."
+    },
+    {
+      "id": "V39",
+      "title": "Action buttons in an odd order or the main action looks like a plain link",
+      "category": "alignment",
+      "detector": {
+        "kind": "PROBE",
+        "spec": "In a dialog footer or form action row: the primary button (from kit.controlClasses) not the right-most fails; Next placed left of Back fails; a link-styled element carrying the main verb of the page or dialog while no primary button exists fails.",
+        "cost": "low"
+      },
+      "impl": null,
+      "judge": "A dialog or form footer where the main action is not the right-most and most prominent button, or is drawn as a plain text link."
+    },
+    {
+      "id": "V40",
+      "title": "Table column widths wrong or unstable (clipped, wasteful, different depending on how the page was reached)",
+      "category": "tables",
+      "detector": {
+        "kind": "PROBE",
+        "spec": "Fail: a th wider than 3x its widest cell content plus 48px; a th whose label is clipped; th widths on first visit vs after navigating away and back (or opening and closing a column-chooser panel) differing by > 2px.",
+        "cost": "med"
+      },
+      "impl": null,
+      "judge": "A table column far wider than its content or with a clipped header label, while another column is cramped."
+    },
+    {
+      "id": "V41",
+      "title": "Loading spinner inside a button is off centre or the label stays visible",
+      "category": "alignment",
+      "detector": {
+        "kind": "FILM",
+        "spec": "Whenever a sample finds a button with aria-busy=true or a spinner child: |spinner centre - button centre| > 1px on either axis fails; the label still visible (opacity > 0) or the button width changing by > 1px versus idle fails.",
+        "cost": "low"
+      },
+      "impl": null,
+      "judge": "A busy button whose spinner is not centred in it, or where the label text is still visible next to or under the spinner."
+    },
+    {
+      "id": "V42",
+      "title": "Count badges inconsistent: missing on tabs, placed oddly, clipped, ring unlike the background",
+      "category": "icons",
+      "detector": {
+        "kind": "PROBE",
+        "spec": "Badge elements (class containing badge or count): rect > 1px past an overflow-hidden ancestor fails; offset to its icon differing by > 2px between two places showing the same nav item fails; ring colour unlike the background behind it (deltaE > 3) fails; a nav item with a count whose tab has none.",
+        "cost": "med"
+      },
+      "impl": null,
+      "judge": "Count badges that are clipped, sit at a different offset on similar icons, have a ring colour unlike the surface behind, or are missing where a sibling has one."
+    },
+    {
+      "id": "V43",
+      "title": "Wrong colours in dark themes: light-only surfaces, black stripes or borders, black buttons on notices",
+      "category": "dark-theme",
+      "detector": {
+        "kind": "PROBE",
+        "spec": "In each dark theme: an element with background luminance > 0.75 and area > 2000px2 (not img, video, canvas, logo) fails; a divider or border (<= 2px) whose colour equals the page background while sitting on a different surface fails; a button with background luminance < 0.02 in any theme fails.",
+        "cost": "low"
+      },
+      "impl": null,
+      "judge": "In a dark theme: a bright white panel, hard black stripes or borders between surfaces, or a pitch-black button on a notice."
+    },
+    {
+      "id": "V44",
+      "title": "Dropdown and select panels jump or scale on open and close (max-height animation, differing animations)",
+      "category": "motion",
+      "detector": {
+        "kind": "CLICK",
+        "spec": "After a safe click on a select or menu trigger, read getAnimations() and transition-property of the layer: animating height or max-height fails; layer rect sampled every 16 ms for 300 ms with top moving > 4px or scale above 1 fails; menus on one route with different keyframes or durations fail.",
+        "cost": "low"
+      },
+      "impl": null,
+      "judge": "A dropdown panel that jumps, flies up, grows past its size or clips content while opening or closing, or opens differently from other menus on the page."
+    },
+    {
+      "id": "V45",
+      "title": "Several fixed bars or pills stack up and repeat the same statement",
+      "category": "layers",
+      "detector": {
+        "kind": "PROBE",
+        "spec": "Collect visible position fixed or sticky elements with height < 120px and width > 120px: two whose rects intersect fail; more than one fixed bar along the bottom edge fails; two pills or strips with the same normalised text fail.",
+        "cost": "low"
+      },
+      "impl": null,
+      "judge": "Two or more floating bars, banners or pills stacked or overlapping at an edge, or saying the same thing twice."
+    },
+    {
+      "id": "V46",
+      "title": "Long lists are not virtualised and the screen lags",
+      "category": "scroll",
+      "detector": {
+        "kind": "PROBE",
+        "spec": "Fail: a scroller holding > 300 row elements (tr, role=row, list item children) in the DOM; with a PerformanceObserver longtask during the film, total long-task time > 500 ms after settle, or a single long task > 200 ms while scrolling the main list.",
+        "cost": "low"
+      },
+      "impl": null,
+      "judge": "A very long list or table that renders every row at once and looks heavy or stutters on scroll."
+    },
+    {
+      "id": "V47",
+      "title": "Two pages painted at once during navigation (old page stays under or over the new one)",
+      "category": "loading-sequence",
+      "detector": {
+        "kind": "FILM",
+        "spec": "During an SPA navigation sample every 50 ms: more than one visible element matching pageSelector in any sample fails; any element of the previous route (tagged before the push) still visible > 100 ms after the new route root mounted fails.",
+        "cost": "low"
+      },
+      "impl": null,
+      "judge": "Two pages painted at once: parts of the previous screen still visible beside or under the new one."
+    },
+    {
+      "id": "V48",
+      "title": "Hover lets a few pixels of the element underneath show through",
+      "category": "hover",
+      "detector": {
+        "kind": "HOVER",
+        "spec": "Screenshot the hovered element box expanded by 4px before and during hover; changed pixels outside the hovered element and outside any tooltip rect (more than 2 px2) fail.",
+        "cost": "med"
+      },
+      "impl": null,
+      "judge": "On hover, a thin sliver of another element peeking out at the edge or corner of the hovered one."
+    },
+    {
+      "id": "V49",
+      "title": "A field is clickable only on its text line, not the whole box",
+      "category": "sizing",
+      "detector": {
+        "kind": "PROBE",
+        "spec": "For each field root (kit.controlClasses) containing an input or textarea: input rect covering < 80% of the root padding box, with no label wrapping it and no click handler on the root (cursor not text over the padding), fails.",
+        "cost": "low"
+      },
+      "impl": null,
+      "judge": "A bordered field whose visible box is much larger than the area that takes a click or shows the text cursor."
+    },
+    {
+      "id": "V50",
+      "title": "Header items collapse into the overflow menu too early",
+      "category": "resize",
+      "detector": {
+        "kind": "PROBE",
+        "spec": "At 1024 and 1280 wide: if the page bar overflow menu holds items while the bar has free width >= the smallest hidden item width + 8px (measure by opening the menu with a safe click), fail.",
+        "cost": "med"
+      },
+      "impl": null,
+      "judge": "A page bar with visible empty space that still hides actions behind a three-dot overflow menu."
+    },
+    {
+      "id": "V51",
+      "title": "A control inside a clickable row cannot be used on its own",
+      "category": "tables",
+      "detector": {
+        "kind": "NO",
+        "spec": "The walker never clicks table rows (safe-click rule). Upgrade path: in a local seeded environment click a row-embedded select or toggle and check the row action did not fire.",
+        "cost": "med"
+      },
+      "impl": null,
+      "judge": null
+    },
+    {
+      "id": "V52",
+      "title": "Scroll-edge shadow on lists and tables appears abruptly",
+      "category": "scroll",
+      "detector": {
+        "kind": "PROBE",
+        "spec": "Find edge-shadow or fade elements of scrollers (class matching shadow, fade or edge, positioned in the scroller wrapper): a computed transition on opacity (or the animated property) shorter than 120 ms, or none, fails.",
+        "cost": "low"
+      },
+      "impl": null,
+      "judge": "A scroll-edge shadow or fade that snaps on or off instead of fading in smoothly."
+    },
+    {
+      "id": "V53",
+      "title": "No mobile adaptation (fixed desktop viewport, broken padding on phones)",
+      "category": "resize",
+      "detector": {
+        "kind": "PROBE",
+        "spec": "meta viewport content with a numeric width= fails; at 390x844 run the page probes: horizontal scroll or offscreen controls fail; page gutter (pageSelector side padding) < 12px or > 24px fails.",
+        "cost": "low"
+      },
+      "impl": null,
+      "judge": "On a phone-sized screen: content cut off at the side, missing or uneven side padding, or desktop layout merely shrunk."
+    },
+    {
+      "id": "V54",
+      "title": "Loading drawn with a non-kit placeholder (bare Loading text, hand-rolled pulse blocks, mixed pulse and sweep)",
+      "category": "skeleton",
+      "detector": {
+        "kind": "FILM",
+        "spec": "During film samples: a visible pulsing block (animation name containing pulse) outside skeletonSelector fails; a skeleton whose animation differs from the other skeletons on the page (pulse vs sweep) fails; a text node that is only Loading, with optional dots, for > 300 ms fails.",
+        "cost": "low"
+      },
+      "impl": null,
+      "judge": "A bare Loading word, a hand-made grey pulsing block, or a skeleton animated differently from the others, instead of the project's standard placeholder."
+    },
+    {
+      "id": "V55",
+      "title": "Chart labels or colours inconsistent: a hole in the date axis, a line colour unlike its area fill",
+      "category": "text",
+      "detector": {
+        "kind": "PROBE",
+        "spec": "X-axis tick labels: a gap between consecutive tick centres over 2x the median gap fails; a line series stroke hue differing from its area-fill hue by more than 15 degrees fails.",
+        "cost": "low"
+      },
+      "impl": null,
+      "judge": "A chart axis with a missing or misplaced label, or a line whose colour does not match its filled area."
+    },
+    {
+      "id": "V56",
+      "title": "Content animates in with a jump or flies in when a skeleton gives way",
+      "category": "motion",
+      "detector": {
+        "kind": "FILM",
+        "spec": "For 1 s after each skeleton swap (skeletonSelector), sample getAnimations() on the new content: a transform animation with a translate over 4px, or any entrance animation starting at or after the skeleton removal, fails. Content should appear instantly in the held place.",
+        "cost": "low"
+      },
+      "impl": null,
+      "judge": "Content that slides, bounces or flies in when a loading placeholder is replaced."
+    },
+    {
+      "id": "V57",
+      "title": "A component overrides the one global scrollbar style",
+      "category": "scroll",
+      "detector": {
+        "kind": "PROBE",
+        "spec": "For every scrollable element: computed scrollbar-width or scrollbar-color other than auto fails; a scrollbar thickness (offsetWidth - clientWidth - borders) differing from the page scrollbar thickness by more than 1px fails.",
+        "cost": "low"
+      },
+      "impl": null,
+      "judge": "A scrollbar that looks different (thickness, colour, track) from the other scrollbars on the page."
+    },
+    {
+      "id": "V58",
+      "title": "Hover changes a card or tooltip: lift, scale, shadow, blur or swimming text",
+      "category": "hover",
+      "detector": {
+        "kind": "HOVER",
+        "spec": "Hover each card, tile (tileSelector), tooltip host (hover.hostSelector) and chart for 400 ms: a transform differing from rest (translate over 0.5px or scale other than 1), a filter with blur, a box-shadow going from none to a value, or an inner text rect moving over 0.5px fails.",
+        "cost": "low"
+      },
+      "impl": null,
+      "judge": "A card or tooltip that lifts, grows, gains a shadow or blur, or whose text drifts on hover."
+    },
+    {
+      "id": "V59",
+      "title": "A control flips state by itself: a toggle blinks on and off, a selection outline shows and hides",
+      "category": "motion",
+      "detector": {
+        "kind": "FILM",
+        "spec": "Sample [role=switch][aria-checked], input[type=checkbox].checked and [aria-selected] every 50 ms with no input: a value changing 2+ times during load or after settle fails. After a safe click on an option, its outline-width or box-shadow toggling more than once in 600 ms fails.",
+        "cost": "low"
+      },
+      "impl": null,
+      "judge": "A switch, checkbox or selected option that changes state or outline on its own between frames."
+    },
+    {
+      "id": "V60",
+      "title": "Text cut off without an ellipsis (badges at four digits, field text cut at the top)",
+      "category": "text",
+      "detector": {
+        "kind": "PROBE",
+        "spec": "Elements with overflow hidden or clip whose scrollWidth or scrollHeight exceeds the box and which show no ellipsis fail.",
+        "cost": "low"
+      },
+      "impl": "probes.clipped",
+      "judge": null
+    },
+    {
+      "id": "V61",
+      "title": "Page breaks at 1024-1366px: controls cut, overflow, cards wider than their box",
+      "category": "resize",
+      "detector": {
+        "kind": "PROBE",
+        "spec": "Run the page probes at 1024x768 and 1280x720: horizontal scroll, off-screen elements, clipped text and overlaps fail. Also fail a non-text child extending past an overflow-hidden card by more than 2px.",
+        "cost": "low"
+      },
+      "impl": "probes.hscroll",
+      "judge": null
+    },
+    {
+      "id": "V62",
+      "title": "Placeholder or select renders blank",
+      "category": "text",
+      "detector": {
+        "kind": "PROBE",
+        "spec": "An input or textarea whose placeholder attribute is empty after trim fails; a closed select trigger with no visible text and no placeholder fails.",
+        "cost": "low"
+      },
+      "impl": null,
+      "judge": "An input or select that shows nothing at all, with no value and no hint text."
+    },
+    {
+      "id": "V63",
+      "title": "A block stays blank after load (403 or data discarded) with no empty or no-access state",
+      "category": "other",
+      "detector": {
+        "kind": "PROBE",
+        "spec": "After settle: a card or section with a heading but no text, rows, chart or empty-state inside fails; a route whose GETs returned 200 with non-empty arrays while its list shows zero rows fails.",
+        "cost": "low"
+      },
+      "impl": null,
+      "judge": "A titled block with nothing in it and no message saying it is empty or not allowed."
+    },
+    {
+      "id": "V64",
+      "title": "An unexpected 1px outline or border appears on controls",
+      "category": "spacing",
+      "detector": {
+        "kind": "PROBE",
+        "spec": "With document.activeElement = body (no focus): an input, button or field root with computed outline-style other than none and outline-width of 1px or more fails; a bottom-only border on a kit input (kit.controlClasses) that other kit inputs lack fails.",
+        "cost": "low"
+      },
+      "impl": null,
+      "judge": "A control with an extra thin outline or one-sided border that its siblings do not have."
+    },
+    {
+      "id": "V65",
+      "title": "Wheel or form input scrolls the page to the top (teleport) instead of the list",
+      "category": "scroll",
+      "detector": {
+        "kind": "CLICK",
+        "spec": "After a safe click opens a select or dropdown list, dispatch 3 wheel events (deltaY 120) over the list: the page scroller scrollTop changing while the list scrollTop does not fails; any scroller jumping to 0 from over 100 fails.",
+        "cost": "low"
+      },
+      "impl": null,
+      "judge": "The page jumping to its top while the user scrolls a list or fills a form."
+    },
+    {
+      "id": "V66",
+      "title": "Action gives no progress feedback (no spinner on the button, a long check looks frozen)",
+      "category": "loading-sequence",
+      "detector": {
+        "kind": "NO",
+        "spec": "The walker never presses write actions. Upgrade path: route-intercept non-GET requests with a 2 s delay in a local environment and check the clicked button gets aria-busy within 100 ms.",
+        "cost": "high"
+      },
+      "impl": null,
+      "judge": null
+    },
+    {
+      "id": "V67",
+      "title": "Text truncated with an ellipsis although there is room",
+      "category": "text",
+      "detector": {
+        "kind": "PROBE",
+        "spec": "An element with text-overflow ellipsis and scrollWidth > clientWidth whose flex or grid row has free space of at least (scrollWidth - clientWidth) + 8px (parent clientWidth minus the children widths and gaps) fails.",
+        "cost": "low"
+      },
+      "impl": null,
+      "judge": "A label cut with an ellipsis while empty space is visible next to it."
+    },
+    {
+      "id": "V68",
+      "title": "White flash on first paint regardless of the chosen theme",
+      "category": "dark-theme",
+      "detector": {
+        "kind": "FILM",
+        "spec": "With the dark theme saved in storage, the first film sample (and a screencast frame at first paint) with html or body computed background luminance above 0.5 fails.",
+        "cost": "low"
+      },
+      "impl": null,
+      "judge": "A bright white frame before the dark page appears."
+    },
+    {
+      "id": "V69",
+      "title": "A stray panel or element appears on a settled page without any click",
+      "category": "layers",
+      "detector": {
+        "kind": "PROBE",
+        "spec": "On settle, before any interaction: a visible [role=dialog], drawer or side panel (position fixed, height over 50% of the window, width over 200px), or any element outside the page shell (pageSelector), fails.",
+        "cost": "low"
+      },
+      "impl": null,
+      "judge": "A panel, drawer or box showing on a page nobody interacted with."
+    },
+    {
+      "id": "V70",
+      "title": "Icons do not render (blank box or ligature text)",
+      "category": "icons",
+      "detector": {
+        "kind": "PROBE",
+        "spec": "An icon-font element whose rendered width exceeds 1.5x its font-size (ligature name shown as text) fails; document.fonts.check for the icon font returning false after settle fails.",
+        "cost": "low"
+      },
+      "impl": null,
+      "judge": "An icon shown as a plain word, an empty square or nothing."
+    },
+    {
+      "id": "V71",
+      "title": "Table cells overlap or squeeze their action buttons out of sight",
+      "category": "tables",
+      "detector": {
+        "kind": "PROBE",
+        "spec": "Per table row: content rects of adjacent cells (first element child) overlapping horizontally by more than 1px fail; a button in a cell with width under 24px, clientWidth < scrollWidth, or covered at its centre by a neighbour cell fails.",
+        "cost": "low"
+      },
+      "impl": null,
+      "judge": "One table column running over the next, or row action buttons squeezed thin or hidden."
+    },
+    {
+      "id": "V72",
+      "title": "Table column without a header",
+      "category": "tables",
+      "detector": {
+        "kind": "PROBE",
+        "spec": "A th with empty text and no aria-label above a column whose cells hold text (not a checkbox, menu or icon column) fails. A thead th count different from the first tbody row's cell count fails.",
+        "cost": "low"
+      },
+      "impl": null,
+      "judge": "A table column of text values whose header cell is empty or missing"
+    },
+    {
+      "id": "V73",
+      "title": "A control appears only on hover, making the block look unstable",
+      "category": "hover",
+      "detector": {
+        "kind": "HOVER",
+        "spec": "Before hover record children with opacity 0 or visibility hidden. During hover, a child that becomes visible and is a button outside a table or list row fails. A hovered block whose height changes by more than 1px fails.",
+        "cost": "low"
+      },
+      "impl": null,
+      "judge": "A button that is invisible until the pointer is over its block, or a block that grows when hovered"
+    },
+    {
+      "id": "V74",
+      "title": "Page shows half old content and half skeleton on refresh or context switch",
+      "category": "loading-sequence",
+      "detector": {
+        "kind": "FILM",
+        "spec": "Fail if, in any sample, a skeleton element and real data rows are both visible in the same list container and the skeleton covers less than 90% of its height. Run a second film pass by triggering the page's refresh action after it settles.",
+        "cost": "med"
+      },
+      "impl": null,
+      "judge": "A list where part is placeholder skeleton and part is real rows at the same moment"
+    },
+    {
+      "id": "V75",
+      "title": "Popup squeezed so its body scrolls while the window has room",
+      "category": "popups",
+      "detector": {
+        "kind": "CLICK",
+        "spec": "Opened dialog: body scrollHeight greater than clientHeight + 2 while the dialog height is under 75% of window innerHeight fails.",
+        "cost": "low"
+      },
+      "impl": null,
+      "judge": "A dialog with an inner scrollbar although the window has plenty of free height"
+    },
+    {
+      "id": "V76",
+      "title": "Scrollbar sits flush against the content with no gap",
+      "category": "scroll",
+      "detector": {
+        "kind": "PROBE",
+        "spec": "For a scroller with a visible vertical bar: computed padding-inline-end under 4px, and a child with a background or border whose right edge is within 2px of clientWidth, fails.",
+        "cost": "low"
+      },
+      "impl": null,
+      "judge": "Content, cards or borders touching the scrollbar with no breathing space"
+    },
+    {
+      "id": "V77",
+      "title": "Text blocks have ragged left edges",
+      "category": "alignment",
+      "detector": {
+        "kind": "PROBE",
+        "spec": "In a vertical stack of text siblings, left edges that differ by 1-6px (a near miss, not an intended indent) fail.",
+        "cost": "low"
+      },
+      "impl": null,
+      "judge": "Lines or blocks in one column whose left edges are a few pixels out of line"
+    },
+    {
+      "id": "V78",
+      "title": "Some charts give no hover feedback while others do",
+      "category": "hover",
+      "detector": {
+        "kind": "HOVER",
+        "spec": "Hover the centre and 3 points along each chart svg or canvas: no tooltip layer and no highlight of the hovered element within 600 ms fails.",
+        "cost": "low"
+      },
+      "impl": null,
+      "judge": "A chart that shows nothing on hover while sibling charts show a tooltip or highlight"
+    },
+    {
+      "id": "V79",
+      "title": "A card takes no space and sits on top of other cards",
+      "category": "layers",
+      "detector": {
+        "kind": "PROBE",
+        "spec": "Among sibling cards (kit.controlClasses card class) in one grid or stack: any two rects intersecting by more than 4px in both axes fail.",
+        "cost": "low"
+      },
+      "impl": null,
+      "judge": "A card or panel that sits on top of other cards instead of beside them."
+    },
+    {
+      "id": "V80",
+      "title": "Dropdown chevron on a different side than in the project's other selects",
+      "category": "icons",
+      "detector": {
+        "kind": "PROBE",
+        "spec": "For every combobox or select trigger: the chevron icon's centre x, compared with the trigger centre, is on the opposite side from the majority of the page's other selects (or the kit select) and fails.",
+        "cost": "low"
+      },
+      "impl": null,
+      "judge": "A select whose arrow icon is on the other side from the other selects on the page"
+    },
+    {
+      "id": "V81",
+      "title": "A scrollbar flashes for a moment when a hint, popover or animation appears",
+      "category": "scroll",
+      "detector": {
+        "kind": "HOVER",
+        "spec": "For 600 ms after each hover or click, sample every 50 ms all overflow auto/scroll ancestors of the new layer: one whose scrollHeight exceeds clientHeight (or scrollWidth exceeds clientWidth) in some sample but not before and not at the end fails.",
+        "cost": "low"
+      },
+      "impl": null,
+      "judge": "A scrollbar that blinks into view and away when a tooltip, popover or animation shows"
+    },
+    {
+      "id": "V82",
+      "title": "Overlapping badges do not raise the hovered one",
+      "category": "layers",
+      "detector": {
+        "kind": "HOVER",
+        "spec": "For sibling badges whose rects intersect: hover each; elementFromPoint at the hovered badge's centre not inside that badge fails.",
+        "cost": "low"
+      },
+      "impl": null,
+      "judge": "Partly overlapping badges where the hovered one stays underneath its neighbour"
+    },
+    {
+      "id": "V83",
+      "title": "Raw values in text: undefined, null, NaN, value glued to its unit",
+      "category": "text",
+      "detector": {
+        "kind": "PROBE",
+        "spec": "Visible text containing undefined, null, NaN, Invalid Date or raw keys fails; extend the pattern with a number or N/A glued to a unit word, e.g. /\\b(N\\/A|\\d+)(days?|hrs?|mins?)\\b/.",
+        "cost": "low"
+      },
+      "impl": "probes.badText",
+      "judge": null
+    },
+    {
+      "id": "V84",
+      "title": "Clickable icons are bare spans: not focusable, no name",
+      "category": "icons",
+      "detector": {
+        "kind": "PROBE",
+        "spec": "An icon element with cursor:pointer or a click handler that is not a button or link, has no tabindex and no aria-label fails.",
+        "cost": "low"
+      },
+      "impl": null,
+      "judge": "A clickable icon that is not a real button, so keyboard and screen reader users cannot reach it"
+    },
+    {
+      "id": "V85",
+      "title": "Skeleton flashes for loads faster than about 250 ms",
+      "category": "skeleton",
+      "detector": {
+        "kind": "FILM",
+        "spec": "From the film life map: a skeleton whose lifetime (last seen minus first seen) is under 250 ms and which appeared after first paint fails, since it should not have shown. Count per route.",
+        "cost": "low"
+      },
+      "impl": "film.flashes",
+      "judge": null
+    },
+    {
+      "id": "V86",
+      "title": "Controls render in the browser default font and styles",
+      "category": "text",
+      "detector": {
+        "kind": "PROBE",
+        "spec": "A visible button, input, select or textarea whose computed font-family does not start with the body's font fails.",
+        "cost": "low"
+      },
+      "impl": null,
+      "judge": "Form controls in a visibly different default font from the surrounding text"
+    },
+    {
+      "id": "V87",
+      "title": "Clicking a section rebuilds the whole record shell instead of swapping the content pane",
+      "category": "loading-sequence",
+      "detector": {
+        "kind": "CLICK",
+        "spec": "Before a safe navigation click on a record's section list, tag the record header and side list elements with a data attribute. After the click, if either is no longer connected or a skeleton appeared inside the header, fail.",
+        "cost": "low"
+      },
+      "impl": null,
+      "judge": "The record header or side list flickering or reloading when only the content area should change"
+    },
+    {
+      "id": "V88",
+      "title": "Element height wrong because a root zoom or scale is applied twice to vh limits",
+      "category": "sizing",
+      "detector": {
+        "kind": "PROBE",
+        "spec": "For elements whose computed max-height comes from a vh value: rendered height divided by the expected (vh share of innerHeight) equal to the root zoom factor (e.g. 0.8) within 0.02 fails.",
+        "cost": "low"
+      },
+      "impl": null,
+      "judge": "A tall panel or popup noticeably shorter than its viewport-height limit should allow"
+    }
+  ]
+}

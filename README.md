@@ -402,6 +402,7 @@ screenshot per candidate), `fleet-naive-user` (a first-time user with no code ac
 | `scrub` | Masks secrets pasted into this machine's transcripts; dry run first. Does not revoke a key |
 | `blindtest` | First-time-user agents try plain tasks on the live screen; fixes are re-run |
 | `proof` | Before and after screenshots in an HTML report, kept out of the model's context |
+| `walk` | Parallel visual walk of a whole web app in headless windows (shots, probes, hovers, safe clicks, load film), judged by parallel agents; a UI complaint becomes a catalogued defect kind with a detector and an app-wide sweep |
 | `report` | Explains a result, plan or decision to a reader who saw none of the work: the story first, a picture where it helps, numbered questions; chat text or a calm HTML page from Markdown; a blind reader agent is the acceptance |
 | `video` | A short vertical explainer video: local voice (ru, en, uk), a new look each time, burned-in captions, sound checked for dropouts |
 | `antislop` | A rule set against AI-looking UI, plus an audit of existing UI [M47] |

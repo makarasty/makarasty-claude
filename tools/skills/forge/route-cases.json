@@ -256,4 +256,15 @@
 {"id":"reg-commit-nopush","text":"закоммить двумя коммитами, не пушь","gold":"makarasty-tools:commit","lang":"ru","style":"regression"},
 {"id":"reg-commit-chats","text":"прочитай историю других чатов, чтобы не взять чужое, и закоммить","gold":"makarasty-tools:commit","lang":"ru","style":"regression"},
 {"id":"reg-forge-ru","text":"перепиши скиллы","gold":"makarasty-tools:forge","lang":"ru","style":"regression"},
-{"id":"reg-security-none","text":"do a security review of this PR","gold":"none","lang":"en","style":"regression"}]
+{"id":"reg-security-none","text":"do a security review of this PR","gold":"none","lang":"en","style":"regression"},
+{"id":"walk-en-1","text":"walk the whole app and find visual bugs","gold":"makarasty-tools:walk","lang":"en","style":"terse"},
+{"id":"walk-en-2","text":"Could you screenshot every page of our web app in parallel and list the UI defects you find?","gold":"makarasty-tools:walk","lang":"en","style":"polite"},
+{"id":"walk-en-3","text":"this dropdown keeps jumping when it opens, catch every place in the app that does the same and fix it at the source","gold":"makarasty-tools:walk","lang":"en","style":"goal"},
+{"id":"walk-ru-1","text":"обойди всё приложение и найди визуальные баги","gold":"makarasty-tools:walk","lang":"ru","style":"terse"},
+{"id":"walk-ru-2","text":"слушай ну тут тултип обрезается краем окна наверняка такое много где проверь всё приложение и почини глобально","gold":"makarasty-tools:walk","lang":"ru","style":"dictated"},
+{"id":"walk-ru-3","text":"прогони все страницы сайта в светлой и тёмной теме и в узком окне, собери что криво","gold":"makarasty-tools:walk","lang":"ru","style":"nokeyword"},
+{"id":"walk-en-4","text":"the skeleton flashes twice on load, find every page that does it","gold":"makarasty-tools:walk","lang":"en","style":"nokeyword"},
+{"id":"walk-ru-4","text":"тултипы где-то обрезаются краем окна, найди все такие места в приложении","gold":"makarasty-tools:walk","lang":"ru","style":"goal"},
+{"id":"walk-neg-1","text":"walk me through how the auth flow works in this code","gold":"none","lang":"en","style":"terse"},
+{"id":"walk-neg-2","text":"find UI bugs in this branch diff before I merge","gold":"makarasty-tools:review","lang":"en","style":"terse"},
+{"id":"walk-neg-3","text":"пусть новичок пройдёт оформление заказа и скажет, где запутался","gold":"makarasty-tools:blindtest","lang":"ru","style":"goal"}]

@@ -1804,3 +1804,22 @@ against the raw transcripts.
   substantive task, at any effort level since v2.1.284; the docs state it uses more tokens and reaches usage limits
   sooner. The ultracode keyword works only when typed by the person, never from `-p` or a hook.
 **Status:** fixtures small; whether the text changes long tasks is left to the field count (R147 `field`, weekly).
+
+## M87 — The walk skill on two projects: capture speed, judges, routing (2026-11-23)
+- **Capture, one project with a Vue router and a dev login:** 337 routes (255 router views plus 82 record routes filled
+  from links, 18 patterns left unfilled), 8 headless windows, `--film` with hovers and safe clicks: 1,716 s wall, about
+  12 routes a minute, on a box with about 20 other Claude chats and a slow sandbox API (routes took 15-66 s each).
+  62 routes landed elsewhere (an operator console that shows a sign-in screen on that origin), all recorded with no shots.
+  Earlier walks of the same app with the walker this skill came from: 346 routes in 27.5 min and 333 in 26.5 min.
+- **Capture, a single-page site with no router, no login, a full-window loader:** 2 listed routes, 2 windows, `--film`:
+  36 s; the first version shot the loader instead of the page, fixed by waiting for a visible loader that covers half
+  the window from anywhere in the document (73 s, both routes settled).
+- **Judge batches:** 337 routes cut by ceil(routes / 20) = 17 routes and at most 150 pictures gave 24 batches (51-150
+  pictures each); 20 judges at once, then the rest.
+- **Routing (`route.mjs`, Sonnet, makarasty-tools alone):** 24 phrases (walk plus the antislop, blindtest and proof
+  neighbours) 23/24 with the first description; the miss ("fix it at the source" complaint) went to no skill. With the
+  complaint-first description: walk 12/12 over two runs, neighbours 18/18, 0 wrong skill; with three near-miss negatives
+  added, 7/8 positives (the miss: "the skeleton flashes twice on load, find every page" went to no skill) and 0 false
+  triggers or wrong skills on 11 cases.
+**Status:** one app with a router and one site without; the link crawl ran only in the end-to-end test and the sitemap
+source in no run.

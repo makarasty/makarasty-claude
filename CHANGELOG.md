@@ -1,5 +1,32 @@
 # Changelog
 
+## makarasty-tools 1.20.26 — 2026-11-23
+
+- **New skill `walk`** (M87): a parallel visual walk of any web app, and UI complaints turned into detectors. The owner asked
+  for the one-project walker to become a tool that works in every project, plus a way to complain about a UI defect so the
+  complaint becomes a check of the whole app. `walk.mjs run` drives N headless Chromium windows on one sign-in (a dev-login
+  URL with a state check, or `walk.mjs login`: the person signs in by hand once and the session is saved); routes come
+  from the app's Vue router, else `/sitemap.xml`, else a crawl of links (one page per URL shape, `maxRoutes`). Per route:
+  light, dark and narrow shots, tooltip crops, safe clicks (tabs, menus, Filters/Columns/Layouts, Add/New popups; an
+  unsafe-label list, form-tied buttons skipped), probes (cut text, covered or tiny controls, uneven gaps, row drift,
+  spill, duplicates, raw text, hand-made controls with `kit.controlClasses`, dead controls, dialogs with the close
+  outside), `--film` (skeleton cascades, remounts, mismatches, blank, shifts), motion and tile hover. Project facts live
+  in `.claude/walk.json` or `<config dir>/makarasty/walk/<folder>.json`; the origin also comes from FLEET.md.
+- **Safety, from a red team of four over two rounds (about 50 findings, fixed or answered):** a network guard blocks every
+  POST/PUT/DELETE a click, its closing or a row open starts (GraphQL reads and `guard.allow` pass) and lists them on the
+  click; service workers blocked; crawled or listed URLs whose segment names an action (logout, delete, cancel, pay, export)
+  are never loaded; another host is never shot; local origins only without `--allow-remote`; a run takes a new empty folder.
+  Robustness: per-route watchdog, a crashed or wedged window rebuilt, a dev-server restart waited out, a lost session stops
+  the walk naming the last action, partial batches on `--max-minutes`, `walk.mjs batches`, hash and base-path routes.
+- **Judging:** batches of ceil(routes / 20) routes and at most 150 pictures, one Sonnet judge each (`judge-brief.md`), one
+  merge on the strongest model (`merge-brief.md`), majors re-read and re-shot with `--routes`; `diff.mjs` compares two runs
+  with its own PNG codec (no dependency).
+- **Complaints:** `catalogue.mjs` keeps the person's defect kinds (`init` seeds 88 generic kinds from `kinds.json`, `find`,
+  `add`, `hit`, `impl`, `judge-lines`, `sweep <walkDir> <id>` lists every route where a detector fires); locked, atomic,
+  with a `.bak`.
+- Checked: `node tools/skills/walk/selftest.mjs` 85/86 with live browser and end-to-end cases (1 optional pngjs cross-check
+  skipped); route.mjs as in M87; runs on two projects as in M87.
+
 ## makarasty-tools 1.20.25 — 2026-11-23
 
 - **Parallel by default** (R147, M86). The owner asked a chat to work in parallel in about 30-44 chats since August
