@@ -3552,13 +3552,14 @@
   },
   {
    "id": "R147",
-   "rule": "Parallel by default: a plan marks which steps need another step's result and launches every other step at once, in one message, without being asked; only steps sharing files, a result, one browser pane or a whole-repo check stay in order, with the reason in one line.",
-   "ru": "Параллельно по умолчанию: в плане отмечено, какие шаги ждут результат другого; все остальные запускаются сразу, одним сообщением, без моей просьбы; по очереди только то, что делит файлы, результат, одно окно браузера или полную проверку репо, с причиной в одну строку.",
+   "rule": "Size and shape the work without asking: size from the code the request touches (read first), not its wording; pick the shape and say it in one line (small: this chat, calls in one message; many alike pieces: short subagents at once; long independent parts: one subagent each, follow-ups to the same agent so it keeps its context); shared files, results, one pane or a whole-repo check stay in order; re-size when it grows.",
+   "ru": "Размер и форму работы выбирает сам, без вопросов: размер по коду, который задача затрагивает (сначала прочитать), а не по словам; форму называет одной строкой (мелкое: в этом чате, вызовы одним сообщением; много одинаковых кусков: короткие агенты сразу; долгие независимые части: по агенту на часть, доработки тому же агенту, чтобы не перечитывал); общие файлы, результат, одно окно браузера или полная проверка по очереди; если выросло, пересобрать план.",
    "layer": "plugin",
    "enforced": "text",
    "enforcer": null,
    "complaints": [
-    "owner 2026-11-23: «Меня очень сильно бесит, что ИИ не работает параллельно, и мне нужно каждый раз просить его работать параллельно»"
+    "owner 2026-11-23: «Меня очень сильно бесит, что ИИ не работает параллельно, и мне нужно каждый раз просить его работать параллельно»",
+    "owner 2026-11-23: «хочу, чтобы оно все делало автоматически ... человек не факт, что хорошо оценит задачу»; «агенты ... очень быстро умирают ... контекст в чате окупается»"
    ],
    "complaintChats": 37,
    "complaintNote": "2026-11-23 scan of 1,794 chats since 2026-06-10: 194 match a parallel-word regex, 15-22% of a 40-chat sample are real asks, so about 30-44 chats (about 2 a week since August); no 'every time' wording, the repeat is the evidence",
@@ -3580,7 +3581,7 @@
    "inForce": [
     {
      "text": "gates:parallel",
-     "has": "Parallel by default"
+     "has": "Size and shape the work yourself"
     }
    ],
    "field": {
@@ -3588,7 +3589,7 @@
     "since": "2026-11-23"
    },
    "eval": "evals/R147-parallel.json",
-   "measured": "2026-11-23 [M86]: at ceiling on both small fixtures (0/3 vs 0/3, 0/4 vs 0/4 subagent fan-out; both arms already batch reads and edits); kept for long many-step work, judged by the field count."
+   "measured": "2026-11-23 [M86]: at ceiling on both small fixtures (0/3 vs 0/3, 0/4 vs 0/4 subagent fan-out; both arms already batch reads and edits); kept for long many-step work, judged by the field count. Rewrite 2026-11-23 (owner: pick size and shape automatically, keep long parts on one agent): cold read by a fresh Sonnet sized five sample requests as meant; its ambiguity notes (order of reading and choosing, ask scope, resumed agents, re-plan) fixed in the text. No A/B of the rewrite."
   }
  ],
  "industry": [

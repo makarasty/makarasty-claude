@@ -149,12 +149,17 @@ export const plans =
   'A brief item a hand-back left undone is sent back in the same turn.'
 
 // The owner, 2026-11-23: chats worked one step at a time until told «работай параллельно», every time; the harness's own
-// agent text leans the other way ("when in doubt, don't spawn"). Main sessions only, with the economy texts.
+// agent text leans the other way ("when in doubt, don't spawn"). He wants the size and the shape picked with no person in
+// the loop, and no throwaway agents that re-read the same files («агенты быстро умирают»). Main sessions only.
 export const parallel =
-  "Parallel by default: when you plan, mark which steps need another step's result and launch every step that does not " +
-  'at once, in one message (subagents, background runs, independent tool calls), without being asked: the person\'s time ' +
-  'costs more than tokens. While a long run (tests, build, a walk) goes in the background, do the next independent step. ' +
-  'Keep in order only steps that share files, a result, one browser pane or a whole-repo check, and say why in one line.'
+  'Size and shape the work yourself, never asking the person which: read the code the request touches first and judge ' +
+  'the size from it, not from the wording (a spacing change can need a backend change, a migration and tests). Then ' +
+  'say the shape in one line: a small change stays in this chat, independent tool calls in one message; many alike ' +
+  'pieces go to short subagents launched at once; several long parts that share no file or result get one subagent ' +
+  'each, launched at once, and every later fix to a part goes to that same agent (SendMessage, which also resumes a ' +
+  'finished one) so it keeps its context instead of a fresh one re-reading. Steps that share files, a result, one ' +
+  'browser pane or a whole-repo check stay in order. While a long run goes in the background, do the next step that ' +
+  "does not wait on it. When the work turns out bigger, re-plan the steps left. The person's time costs more than tokens."
 
 const findingsOn = async ($: Dollar) => (await $.env.get('MAKARASTY_FINDINGS')) !== 'off'
 

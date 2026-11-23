@@ -467,9 +467,10 @@ test('plans: goal, full item list in briefs, every item walked before the report
 })
 
 // Main sessions only: the SubagentStart test above pins subagents to findings, claims, plans.
-test('parallel: independent steps launched at once in one message, unasked', () => {
-  for (const w of [/in one message/, /without being asked/, /time\s+costs more than tokens/, /background/, /say why in one line/]) expect(parallel).toMatch(w)
-  expect(parallel.length).toBeLessThan(550)
+test('parallel: size from the code, shape picked unasked, long parts keep one agent each', () => {
+  for (const w of [/never asking the person which/, /read the code the request touches first/, /not from the wording/, /say the shape in one line/, /in one message/,
+    /launched at once/, /same agent \(SendMessage/, /stay in order/, /background/, /re-plan the steps left/, /time costs more than tokens/]) expect(parallel).toMatch(w)
+  expect(parallel.length).toBeLessThan(1000)
 })
 
 test('MAKARASTY_FINDINGS=off: no line in subagents, economy alone in a main session', async ($, on) => {

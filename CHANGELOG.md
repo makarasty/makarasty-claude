@@ -3,10 +3,14 @@
 ## makarasty-tools 1.20.25 — 2026-11-23
 
 - **Parallel by default** (R147, M86). The owner asked a chat to work in parallel in about 30-44 chats since August
-  (1,794 scanned), and on 2026-11-23: "I have to ask it every time". Every main session now gets a `parallel` line
-  (`gates.ts`, with the economy texts, not in subagents): mark which steps need another step's result, launch every
-  other one at once in one message without being asked, keep working while a long run goes in the background, and
-  keep in order only steps that share files, a result, one browser pane or a whole-repo check, with the reason.
+  (1,794 scanned), and on 2026-11-23: "I have to ask it every time", then: pick it automatically, the person may
+  misjudge the size, and agents that die fast re-read the same files. Every main session now gets a `parallel` line
+  (`gates.ts`, with the economy texts, not in subagents): read the code the request touches and size the work from
+  it, not from the wording; name the shape in one line without asking (small: this chat, calls in one message; many
+  alike pieces: short subagents at once; long parts sharing no file: one subagent each, later fixes sent to that same
+  agent so it keeps its context); shared files, results, one browser pane or a whole-repo check stay in order; keep
+  working while a long run goes in the background; re-plan when the work grows. A cold read by a fresh Sonnet sized
+  five sample requests as meant; its ambiguity notes were fixed in the text.
 - `forge/rules.mjs` scores `minFanout` (subagents launched in one response, split stream events joined by
   `message.id`) and records `width` (tool calls in one response); new fixture `three-bugs`.
 - Checked: tools 547/547 (`claude plugin test tools`), `rules.mjs --selftest`; A/B on Sonnet at ceiling on both small
