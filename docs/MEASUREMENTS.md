@@ -1789,3 +1789,18 @@ against the raw transcripts.
 - **Not measured:** live chats on the new version (the replay assumes each chat would act as it did); how often the
   owner saw the re-asked dialog after the red one (the app's rendering is not in the transcript).
 **Status:** current; one window, one judge; the outcome labels re-checked against raw transcripts.
+
+## M86 — Parallel by default: the owner's asks, two A/B fixtures, the ultracode setting (2026-11-23)
+- **Field:** 1,794 chats since 2026-06-10 (clones merged); 194 match a parallel-word regex, a 40-chat sample reads 6-9
+  real asks (15-22 %), so about 30-44 chats asked a chat to work in parallel, 1.5-2.5 a week since August. The rest were
+  "учти параллельную работу" boilerplate (22 chats) or pasted briefs. No "every time" wording: the repeat is the evidence.
+  Before/after the first ask in a chat: 40 vs 74 chats with a response launching 2+ subagents (baseline 514 of 1,794).
+- **A/B, `rules.mjs --evals`, Sonnet, `parallel` text on vs off:** fixture three-asks (three read-only questions) 0/3 vs 0/3
+  subagent fan-out, judge 1:1:1, both arms batched the reads; fixture three-bugs (three failing tests in three modules)
+  0/4 vs 0/4, judge 1:0:3, both arms ran the three tests at once and made the three edits in one response (width 3-8),
+  17-20 s a run either way. At this size the bare model already works in parallel and a subagent would only add
+  start-up time: the rule is at ceiling here and is meant for long, many-step work these fixtures cannot hold.
+- **The built-in lever:** Claude Code's `ultracode` setting (settings.json) makes every session plan a workflow for each
+  substantive task, at any effort level since v2.1.284; the docs state it uses more tokens and reaches usage limits
+  sooner. The ultracode keyword works only when typed by the person, never from `-p` or a hook.
+**Status:** fixtures small; whether the text changes long tasks is left to the field count (R147 `field`, weekly).

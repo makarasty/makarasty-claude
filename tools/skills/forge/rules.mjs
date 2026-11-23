@@ -193,14 +193,21 @@ function claude(args, { cwd, env, input, timeout = 900000 }) {
 
 // stream-json lines -> final reply, the tool calls in order, cost.
 export function parseStream(text) {
-    const tools = []; let fin = {};
+    // fanout: the most subagents one model response launched; a response may stream as several events sharing message.id.
+    // width: the most tool calls of any kind in one response.
+    const tools = [], spawned = {}, calls = {}; let fin = {}, n = 0;
     for (const l of text.split('\n')) {
         if (!l.startsWith('{')) continue;
         let o; try { o = JSON.parse(l); } catch { continue; }
-        if (o.type === 'assistant') for (const b of o.message?.content ?? []) if (b.type === 'tool_use') tools.push(`${b.name}: ${typeof b.input?.command === 'string' ? b.input.command : JSON.stringify(b.input).slice(0, 200)}`);
+        if (o.type === 'assistant') for (const b of o.message?.content ?? []) if (b.type === 'tool_use') {
+            tools.push(`${b.name}: ${typeof b.input?.command === 'string' ? b.input.command : JSON.stringify(b.input).slice(0, 200)}`);
+            const id = o.message?.id ?? `#${n++}`;
+            calls[id] = (calls[id] ?? 0) + 1;
+            if (/^(Agent|Task)$/.test(b.name)) spawned[id] = (spawned[id] ?? 0) + 1;
+        }
         if (o.type === 'result') fin = o;
     }
-    return { reply: fin.result, tools, cost: fin.total_cost_usd ?? 0, error: fin.is_error ? (fin.subtype || 'error') : fin.result === undefined ? 'no result' : undefined };
+    return { reply: fin.result, tools, fanout: Math.max(0, ...Object.values(spawned)), width: Math.max(0, ...Object.values(calls)), cost: fin.total_cost_usd ?? 0, error: fin.is_error ? (fin.subtype || 'error') : fin.result === undefined ? 'no result' : undefined };
 }
 
 // Arm args may name text sources: "@gates:habits" becomes a file holding that text.
@@ -231,6 +238,7 @@ export function scoreRun(p, r, files) {
         if (c.not && s != null && new RegExp(c.not, 'im').test(s)) why.push(`${c.file} has ${c.not}`);
     }
     if (p.maxWords && t.split(/\s+/).filter(Boolean).length > p.maxWords) why.push('maxWords');
+    if (p.minFanout && (r.fanout ?? 0) < p.minFanout) why.push(`fanout ${r.fanout ?? 0} < ${p.minFanout}`);
     if (r.error) why.push(r.error);
     return { pass: why.length === 0, why };
 }
@@ -279,7 +287,7 @@ async function runOne(c, p, armName, i, o) {
         const sc = scoreRun(p, s, files);
         // The start of each checked file, so a failed file check can be read afterwards.
         const seen = Object.fromEntries(Object.entries(files).map(([k, v]) => [k, v == null ? null : v.slice(0, 300)]));
-        const row = { case: c.id, prompt: p.id, arm: armName, i, ...sc, cost: s.cost, ms: Date.now() - t0, tools: s.tools, reply: s.reply, files: seen, error: s.error };
+        const row = { case: c.id, prompt: p.id, arm: armName, i, ...sc, cost: s.cost, ms: Date.now() - t0, fanout: s.fanout, width: s.width, tools: s.tools, reply: s.reply, files: seen, error: s.error };
         console.error(`  [${c.id}/${p.id}] ${armName}#${i} ${sc.pass ? 'pass' : 'FAIL ' + sc.why.join(',')} ${Math.round(row.ms / 1000)}s`);
         return row;
     } finally { rmSync(cwd, { recursive: true, force: true }); rmSync(cwd + '-args', { recursive: true, force: true }); }
@@ -404,6 +412,10 @@ function selftest() {
     const q = { checkAfterEdit: 'node --test' };
     assert.equal(scoreRun(q, { tools: ['Bash: node --test', 'Edit: {}'], reply: '' }, {}).pass, false, 'a test before the edit is no check of it');
     assert.equal(scoreRun(q, { tools: ['Edit: {}', 'Bash: node --test'], reply: '' }, {}).pass, true, 'a test after the last edit is');
+    const ag = (id, name = 'Agent') => `{"type":"assistant","message":{"id":"${id}","content":[{"type":"tool_use","name":"${name}","input":{}}]}}`;
+    const fw = parseStream([ag('m1'), ag('m1', 'Task'), ag('m1', 'Read'), ag('m2'), '{"type":"result","result":"x"}'].join('\n'));
+    assert.deepEqual([fw.fanout, fw.width], [2, 3], 'fanout: subagents per response, width: any calls; split events joined by message.id');
+    assert.deepEqual(scoreRun({ minFanout: 2 }, { tools: [], reply: '', fanout: 1 }, {}).why, ['fanout 1 < 2'], 'one subagent at a time fails minFanout');
     const e = (on, off, j) => ({ on: { pass: on, runs: 4 }, off: { pass: off, runs: 4 }, judge: j });
     assert.equal(verdict(e(4, 1, { on: 0, off: 0, tie: 0 })).verdict, 'pays', 'script score moves');
     assert.equal(verdict(e(2, 2, { on: 3, off: 1, tie: 0 })).verdict, 'pays', 'judge prefers on');

@@ -3549,6 +3549,46 @@
     }
    ],
    "gap": "no script can tell whether a page explains; a fresh reader agent judges it (M84)"
+  },
+  {
+   "id": "R147",
+   "rule": "Parallel by default: a plan marks which steps need another step's result and launches every other step at once, in one message, without being asked; only steps sharing files, a result, one browser pane or a whole-repo check stay in order, with the reason in one line.",
+   "ru": "Параллельно по умолчанию: в плане отмечено, какие шаги ждут результат другого; все остальные запускаются сразу, одним сообщением, без моей просьбы; по очереди только то, что делит файлы, результат, одно окно браузера или полную проверку репо, с причиной в одну строку.",
+   "layer": "plugin",
+   "enforced": "text",
+   "enforcer": null,
+   "complaints": [
+    "owner 2026-11-23: «Меня очень сильно бесит, что ИИ не работает параллельно, и мне нужно каждый раз просить его работать параллельно»"
+   ],
+   "complaintChats": 37,
+   "complaintNote": "2026-11-23 scan of 1,794 chats since 2026-06-10: 194 match a parallel-word regex, 15-22% of a 40-chat sample are real asks, so about 30-44 chats (about 2 a week since August); no 'every time' wording, the repeat is the evidence",
+   "conflicts": [
+    "R009"
+   ],
+   "status": "active",
+   "sources": [
+    {
+     "file": "tools/hooks/gates.ts",
+     "anchor": "parallel",
+     "date": "2026-11-23"
+    },
+    {
+     "file": "~/.claude/makarasty/profile.md",
+     "anchor": "Never propose fewer workers, test workers or parallel chats"
+    }
+   ],
+   "inForce": [
+    {
+     "text": "gates:parallel",
+     "has": "Parallel by default"
+    }
+   ],
+   "field": {
+    "regex": "(можешь|давай|пусть|работай|запусти|запускай|делай|используй)\\s+(\\S+\\s+){0,2}(параллел|паралел)|(параллел|паралел)\\S*\\s+(запуск|расслед|агент|чат)",
+    "since": "2026-11-23"
+   },
+   "eval": "evals/R147-parallel.json",
+   "measured": "2026-11-23 [M86]: at ceiling on both small fixtures (0/3 vs 0/3, 0/4 vs 0/4 subagent fan-out; both arms already batch reads and edits); kept for long many-step work, judged by the field count."
   }
  ],
  "industry": [

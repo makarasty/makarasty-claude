@@ -1,0 +1,49 @@
+{
+ "rule": "R147",
+ "fixture": "three-bugs",
+ "tools": [
+  "--allowedTools",
+  "Agent,Task,Read(./**),Edit(./**),Write(./**),Glob,Grep,Bash(node:*),Bash(npm test:*),Bash(git:*),Bash(ls:*)",
+  "--permission-mode",
+  "acceptEdits"
+ ],
+ "arms": {
+  "on": {
+   "args": [
+    "--append-system-prompt-file",
+    "@gates:parallel"
+   ]
+  },
+  "off": {
+   "args": []
+  }
+ },
+ "prompts": [
+  {
+   "id": "three-bugs",
+   "text": "Красные три теста: test/cart.test.js, test/dates.test.js, test/text.test.js. Почини код, тесты не трогай.",
+   "minFanout": 2,
+   "files": [
+    {
+     "file": "src/cart/total.js",
+     "not": "net - off"
+    },
+    {
+     "file": "src/dates/range.js",
+     "has": "<="
+    },
+    {
+     "file": "src/text/slug.js",
+     "has": "normalize"
+    }
+   ]
+  }
+ ],
+ "rubric": "«Меня очень сильно бесит, что ИИ не работает параллельно, и мне нужно каждый раз просить»: three unrelated failing tests in three modules are worked at the same time (subagents launched in one message, or the edits for all three at once), without his asking, and all three are fixed in the code with the tests left alone. One after another is the worse reply even when the fixes are equal.",
+ "predict": {
+  "madeAt": "2026-11-23",
+  "onMin": 0.5,
+  "offMax": 0.2,
+  "note": "First pass on fixture three-asks (three read-only questions): 0/3 vs 0/3. Then three-bugs: 0/4 vs 0/4, both arms edited the three modules in one response, 17-20 s a run [M86]. At fixture size the bare model is already parallel; kept as the regression case, the field count decides."
+ }
+}

@@ -148,6 +148,14 @@ export const plans =
   'shows it, or named open with why and its next step (a question, a card, who has it). Never leave one as a footnote. ' +
   'A brief item a hand-back left undone is sent back in the same turn.'
 
+// The owner, 2026-11-23: chats worked one step at a time until told «работай параллельно», every time; the harness's own
+// agent text leans the other way ("when in doubt, don't spawn"). Main sessions only, with the economy texts.
+export const parallel =
+  "Parallel by default: when you plan, mark which steps need another step's result and launch every step that does not " +
+  'at once, in one message (subagents, background runs, independent tool calls), without being asked: the person\'s time ' +
+  'costs more than tokens. While a long run (tests, build, a walk) goes in the background, do the next independent step. ' +
+  'Keep in order only steps that share files, a result, one browser pane or a whole-repo check, and say why in one line.'
+
 const findingsOn = async ($: Dollar) => (await $.env.get('MAKARASTY_FINDINGS')) !== 'off'
 
 // Habits that each cost hours in measured runs (Edit failures [M25] [M31], polling and waiting on questions [M52],
@@ -207,7 +215,7 @@ async function profile($: Dollar): Promise<string[]> {
 }
 
 const withEconomy = async ($: Dollar, out: { additionalContext?: string[] }, more: string[] = []) => {
-  const rules = [...((await $.env.get('MAKARASTY_ECONOMY')) === 'off' ? [] : [economy, habits, asking, plans]), ...((await findingsOn($)) ? [findings, claims, literal] : [])]
+  const rules = [...((await $.env.get('MAKARASTY_ECONOMY')) === 'off' ? [] : [economy, habits, asking, plans, parallel]), ...((await findingsOn($)) ? [findings, claims, literal] : [])]
   const all = [...(out.additionalContext ?? []), ...more, ...rules, ...(await profile($).catch(() => []))]
   return all.length ? { ...out, additionalContext: all } : out
 }

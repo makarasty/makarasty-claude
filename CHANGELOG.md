@@ -1,5 +1,18 @@
 # Changelog
 
+## makarasty-tools 1.20.25 — 2026-11-23
+
+- **Parallel by default** (R147, M86). The owner asked a chat to work in parallel in about 30-44 chats since August
+  (1,794 scanned), and on 2026-11-23: "I have to ask it every time". Every main session now gets a `parallel` line
+  (`gates.ts`, with the economy texts, not in subagents): mark which steps need another step's result, launch every
+  other one at once in one message without being asked, keep working while a long run goes in the background, and
+  keep in order only steps that share files, a result, one browser pane or a whole-repo check, with the reason.
+- `forge/rules.mjs` scores `minFanout` (subagents launched in one response, split stream events joined by
+  `message.id`) and records `width` (tool calls in one response); new fixture `three-bugs`.
+- Checked: tools 547/547 (`claude plugin test tools`), `rules.mjs --selftest`; A/B on Sonnet at ceiling on both small
+  fixtures (0/3 vs 0/3 and 0/4 vs 0/4 fan-out: both arms already batch reads and edits, 17-20 s a run), so the line is
+  kept for long, many-step work and judged by the weekly field count (R147 `field`). Not measured: long tasks.
+
 ## makarasty-tools 1.20.24 — 2026-11-20
 
 - **A refused question is asked again or said in one line, never lost** (M85, C29). 95 refused dialogs and
