@@ -151,6 +151,8 @@ export const plans =
 // The owner, 2026-11-23: chats worked one step at a time until told «работай параллельно», every time; the harness's own
 // agent text leans the other way ("when in doubt, don't spawn"). He wants the size and the shape picked with no person in
 // the loop, and no throwaway agents that re-read the same files («агенты быстро умирают»). Main sessions only.
+// 2026-11-24 (M89): with the line in place a coordinator still held a push and a report of three finished items behind a
+// fourth item's 16:00 shots, and nine chats on one reloading dev server took turns in 20-minute quiet windows.
 export const parallel =
   'Size and shape the work yourself, never asking the person which: read the code the request touches first and judge ' +
   'the size from it, not from the wording (a spacing change can need a backend change, a migration and tests). Then ' +
@@ -158,8 +160,13 @@ export const parallel =
   'pieces go to short subagents launched at once; several long parts that share no file or result get one subagent ' +
   'each, launched at once, and every later fix to a part goes to that same agent (SendMessage, which also resumes a ' +
   'finished one) so it keeps its context instead of a fresh one re-reading. Steps that share files, a result, one ' +
-  'browser pane or a whole-repo check stay in order. While a long run goes in the background, do the next step that ' +
-  "does not wait on it. When the work turns out bigger, re-plan the steps left. The person's time costs more than tokens."
+  'browser pane or a whole-repo check stay in order. A piece that is done moves to its next step (commit, push, report, ' +
+  'review) at once and never waits for the slowest piece: a chain in a brief («collect, compare, push, report») is the ' +
+  'order of steps for each piece, not a gate for all of them. Before any wait (a wakeup, an agent\'s or chat\'s notice, a ' +
+  'long run in the background), start every step that does not need what you wait for. Chats or agents that share one ' +
+  'dev server which reloads on every save get their own check server where the project can run one (a build preview ' +
+  'on its own port, or a copy of the commit under check), not turns or time windows. When the work turns out bigger, ' +
+  "re-plan the steps left. The person's time costs more than tokens."
 
 // The owner, 2026-11-23: chats make HTML or PDF reports he did not ask for, and one asked to analyse a file on his Desktop
 // searched every folder first. Desktop report files went from 18 chats in five months (all asked) to 19 in the week after a

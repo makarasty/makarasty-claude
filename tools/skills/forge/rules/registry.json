@@ -3552,14 +3552,15 @@
   },
   {
    "id": "R147",
-   "rule": "Size and shape the work without asking: size from the code the request touches (read first), not its wording; pick the shape and say it in one line (small: this chat, calls in one message; many alike pieces: short subagents at once; long independent parts: one subagent each, follow-ups to the same agent so it keeps its context); shared files, results, one pane or a whole-repo check stay in order; re-size when it grows.",
-   "ru": "Размер и форму работы выбирает сам, без вопросов: размер по коду, который задача затрагивает (сначала прочитать), а не по словам; форму называет одной строкой (мелкое: в этом чате, вызовы одним сообщением; много одинаковых кусков: короткие агенты сразу; долгие независимые части: по агенту на часть, доработки тому же агенту, чтобы не перечитывал); общие файлы, результат, одно окно браузера или полная проверка по очереди; если выросло, пересобрать план.",
+   "rule": "Size and shape the work without asking: size from the code the request touches (read first), not its wording; pick the shape and say it in one line (small: this chat, calls in one message; many alike pieces: short subagents at once; long independent parts: one subagent each, follow-ups to the same agent so it keeps its context); shared files, results, one pane or a whole-repo check stay in order; re-size when it grows. A finished piece goes to its next step at once, never waiting for the slowest; before any wait, start what does not need it; chats on one reloading dev server get their own check server, not time windows (a ScheduleWakeup carries the wait note).",
+   "ru": "Размер и форму работы выбирает сам, без вопросов: размер по коду, который задача затрагивает (сначала прочитать), а не по словам; форму называет одной строкой (мелкое: в этом чате, вызовы одним сообщением; много одинаковых кусков: короткие агенты сразу; долгие независимые части: по агенту на часть, доработки тому же агенту, чтобы не перечитывал); общие файлы, результат, одно окно браузера или полная проверка по очереди; если выросло, пересобрать план. Готовый кусок сразу идёт дальше (коммит, пуш, отчёт), не ждёт самого медленного; перед ожиданием запустить всё, что от него не зависит; чатам на одном dev-сервере свой сервер для проверок, а не окна по времени.",
    "layer": "plugin",
-   "enforced": "text",
-   "enforcer": null,
+   "enforced": "hook+text",
+   "enforcer": "tools/hooks/pace.ts",
    "complaints": [
     "owner 2026-11-23: «Меня очень сильно бесит, что ИИ не работает параллельно, и мне нужно каждый раз просить его работать параллельно»",
-    "owner 2026-11-23: «хочу, чтобы оно все делало автоматически ... человек не факт, что хорошо оценит задачу»; «агенты ... очень быстро умирают ... контекст в чате окупается»"
+    "owner 2026-11-23: «хочу, чтобы оно все делало автоматически ... человек не факт, что хорошо оценит задачу»; «агенты ... очень быстро умирают ... контекст в чате окупается»",
+    "owner 2026-11-24: «опять получается не параллелить работу ... нужно опять его еще раз просить запараллелить» (case: Pulse coordinator 7a134ccf, «Предлагаю параллельно что-то делать»)"
    ],
    "complaintChats": 37,
    "complaintNote": "2026-11-23 scan of 1,794 chats since 2026-06-10: 194 match a parallel-word regex, 15-22% of a 40-chat sample are real asks, so about 30-44 chats (about 2 a week since August); no 'every time' wording, the repeat is the evidence",
@@ -3589,7 +3590,7 @@
     "since": "2026-11-23"
    },
    "eval": "evals/R147-parallel.json",
-   "measured": "2026-11-23 [M86]: at ceiling on both small fixtures (0/3 vs 0/3, 0/4 vs 0/4 subagent fan-out; both arms already batch reads and edits); kept for long many-step work, judged by the field count. Rewrite 2026-11-23 (owner: pick size and shape automatically, keep long parts on one agent): cold read by a fresh Sonnet sized five sample requests as meant; its ambiguity notes (order of reading and choosing, ask scope, resumed agents, re-plan) fixed in the text. No A/B of the rewrite."
+   "measured": "2026-11-23 [M86]: at ceiling on both small fixtures (0/3 vs 0/3, 0/4 vs 0/4 subagent fan-out; both arms already batch reads and edits); kept for long many-step work, judged by the field count. Rewrite 2026-11-23 (owner: pick size and shape automatically, keep long parts on one agent): cold read by a fresh Sonnet sized five sample requests as meant; its ambiguity notes (order of reading and choosing, ask scope, resumed agents, re-plan) fixed in the text. No A/B of the rewrite. 2026-11-24 [M89]: field case was a batch barrier and 20-minute quiet windows, not missing fan-out; pipeline text on barrier fixture 3/3 vs 1/3, judge 3:0 (Opus); three-bugs still at ceiling."
   },
   {
    "id": "R148",

@@ -1,5 +1,20 @@
 # Changelog
 
+## makarasty-tools 1.20.28 — 2026-11-24
+
+- **Finished work no longer waits for the slowest piece** (M89, R147). The owner, a day after 1.20.25: he still has to
+  ask chats to work in parallel. The field case was not missing subagents: a coordinator held the push and report of
+  three accepted items behind a fourth due at 16:00, set four wakeup timers, sat idle 15 minutes and started both five
+  seconds after «Предлагаю параллельно что-то делать». The `parallel` line now says a finished piece moves to its next
+  step (commit, push, report, review) at once, a brief's chain is the order for each piece and not a gate for all,
+  before any wait every step that does not need it starts, and chats sharing one dev server that reloads on save get
+  their own check server instead of turns or time windows (nine Pulse chats queued for 20-minute quiet windows).
+- New hook `pace.ts`: every `ScheduleWakeup` result carries the same note (start what does not need the wait, a done
+  piece moves on alone). Context only, nothing denied; `MAKARASTY_PACE=off` drops it.
+- Eval R147 gains fixture `barrier` (old vs new text). Checked: Opus A/B barrier 3/3 vs 1/3, judge 3:0; three-bugs
+  0/3 vs 0/3 (ceiling); `claude plugin test tools` 552 pass; `rules.mjs --selftest`. Not measured: the wakeup note
+  (`-p` runs have no wakeup tool) and long real runs (field count decides).
+
 ## makarasty-tools 1.20.27 — 2026-11-23
 
 - **Answers in chat, with links; a file only when asked** (M88, R148). The owner said chats keep making HTML and PDF

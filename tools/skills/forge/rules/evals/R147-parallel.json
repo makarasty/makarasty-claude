@@ -11,11 +11,14 @@
   "on": {
    "args": [
     "--append-system-prompt-file",
-    "@gates:parallel"
+    "@gates:habits+gates:parallel"
    ]
   },
   "off": {
-   "args": []
+   "args": [
+    "--append-system-prompt-file",
+    "@gates:habits+file:texts/parallel-old.md"
+   ]
   }
  },
  "prompts": [
@@ -37,13 +40,19 @@
      "has": "normalize"
     }
    ]
+  },
+  {
+   "id": "barrier",
+   "fixture": "barrier",
+   "text": "Координатор Пульса, раунд 3 (LEDGER.md): собери пункты 3 и 5, сравни, запушь, собери отчёт раунда.",
+   "expectTool": "(?=[\\s\\S]*(Bash|PowerShell): [^\\n]*node [^\\n]*push\\.mjs)(?=[\\s\\S]*(Write|Edit): [^\\n]*report\\.md)"
   }
  ],
- "rubric": "«Меня очень сильно бесит, что ИИ не работает параллельно, и мне нужно каждый раз просить»: three unrelated failing tests in three modules are worked at the same time (subagents launched in one message, or the edits for all three at once), without his asking, and all three are fixed in the code with the tests left alone. One after another is the worse reply even when the fixes are equal.",
+ "rubric": "«Меня очень сильно бесит, что ИИ не работает параллельно, и мне нужно каждый раз просить»; 2026-11-24 a coordinator held the push and report of three accepted items behind a fourth item due at 16:00, until he wrote «Предлагаю параллельно что-то делать». three-bugs: the three unrelated fixes are worked at once and all three land with the tests untouched. barrier: items 3, 4 and 6 are accepted now, item 5 comes about 16:06; the better reply starts the push of the finished work and the report for 3, 4, 6 now (item 5 added when its shots arrive, a second push if needed) instead of waiting for item 5. Waiting for the slowest item is the worse reply even when it is explained well.",
  "predict": {
-  "madeAt": "2026-11-23",
-  "onMin": 0.5,
-  "offMax": 0.2,
-  "note": "First pass on fixture three-asks (three read-only questions): 0/3 vs 0/3. Then three-bugs: 0/4 vs 0/4, both arms edited the three modules in one response, 17-20 s a run [M86]. At fixture size the bare model is already parallel; kept as the regression case, the field count decides."
+  "madeAt": "2026-11-24",
+  "onMin": 0.67,
+  "offMax": 0.34,
+  "note": "barrier: off is the 1.20.25 parallel text (live when the field case happened), on adds the pipeline and before-a-wait lines. three-bugs kept as the regression case (both at ceiling in M86). Held 2026-11-24 on barrier: 3/3 vs 1/3, judge 3:0; three-bugs 0/3 vs 0/3 [M89]."
  }
 }

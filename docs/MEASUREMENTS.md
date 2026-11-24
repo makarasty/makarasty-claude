@@ -1853,3 +1853,25 @@ source in no run.
 - **Cold read:** a fresh Sonnet given only the text handled 6 of 7 sample requests as meant; it guessed on work for
   another reader (now: offer a file in one line) and the shape of a chat link (now: `[title](#local_<id>)`).
 **Status:** one small fixture; whether unasked Desktop files drop in real chats is left to the field count (R148 `field`).
+
+## M89 — Parallel line in the field: what still made chats wait, and the pipeline text (2026-11-24)
+- **Complaint:** the owner, 2026-11-24, a day after R147: he still has to ask chats to work in parallel; he wants it
+  faster without losing quality and without a large bill. The case: the Pulse coordinator relaunch (chat 7a134ccf) had
+  items 4 and 6 accepted at 13:30 UTC and item 3 at 13:41, item 5 due from another chat's 16:00 shots; it set four
+  ScheduleWakeup timers and held the push (about 11 minutes of tests) and the report until item 5, idle 13:41-13:56,
+  about 27 minutes lost, and started both within 5 seconds of «Предлагаю параллельно что-то делать».
+- **Field, 32 main chats that received the R147 line (2026-11-23 16:00 to 2026-11-24 14:00 UTC), 78 human messages:**
+  2 parallel asks; one is the case above (BATCH-BARRIER plus IDLE-WAIT), the other a request for the browser while a push
+  ran (no loss). About 164 assistant messages in 14 Pulse chats wait for a "quiet window": nine chats share one dev server
+  that full-reloads on any save, so the coordinator set :00-:06, :20-:26 and :40-:46 for live checks, shots and pushes
+  (its ledger, `server-quiet-windows.md`). No chat refused parallel work for RAM. Fan-out: responses launching 2+
+  subagents 9 vs 30 launching one, after the line arrived (about 1 in 4). Regex counts, three cases read in full.
+- **A/B, `rules.mjs --evals`, Opus, 3 runs a prompt, both arms habits plus a parallel text; off = the 1.20.25 text, on =
+  plus "a finished piece moves on at once, a brief's chain is no gate for all, before any wait start what does not need
+  it, own check server instead of time windows":** fixture barrier (a ledger with items 3, 4, 6 accepted and 5 due at
+  16:00, `push.mjs`, `report.md`): the push of the finished items run now 3/3 vs 1/3 (one on-arm push call did not
+  complete in its sandbox), judge 3:0. three-bugs: fan-out 0/3 vs 0/3, judge 1:0:2 (ceiling, as in M86). The first
+  scoring regex was broken by shell escaping and passed nothing; the rows were rescored with the fixed regex (run
+  2026-11-24T14-08-37). The `ScheduleWakeup` note (`pace.ts`) is not in this A/B: `-p` runs have no wakeup tool.
+**Status:** one fixture of the barrier kind; the field count (R147 `field`) and the quiet-window share decide. The
+shared-dev-server cause in the Pulse project is that project's setup, recorded there, not changed here.
