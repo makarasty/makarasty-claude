@@ -10,7 +10,7 @@ import { configDir } from './consent.ts'
 // call at all, is sent back once with the hint as a fact; the main model, which sees the whole conversation, decides.
 // MAKARASTY_SKILL_ROUTER=off drops it.
 
-type D = Pick<EngineInterface, 'env' | 'fs' | 'model' | 'plugin' | 'clock' | 'session'>
+type D = Pick<EngineInterface, 'env' | 'fs' | 'model' | 'plugin' | 'clock' | 'session' | 'store'>
 export type Skill = { name: string; description: string }
 
 // One skill file's frontmatter: its description, unless the skill is only for the person to start.
@@ -138,8 +138,43 @@ export async function holding($: Pick<D, 'fs' | 'clock'>, dir: string, sid: stri
 let skills: { at: number; list: Promise<Skill[]> } | undefined
 // calls: main-loop calls this turn; settled: the one wait is over, so calls after it count toward FIRST_CALLS (calls
 // sent in parallel with the first one never do).
-type Turn = { at: number; hint?: Promise<Skill | undefined>; got?: Skill | null; done: boolean; calls: number; waited: boolean; settled: boolean; after: number }
+// lateWait: a wait for the answer ran out, so an answer that comes after it is counted as late.
+type Turn = { at: number; hint?: Promise<Skill | undefined>; got?: Skill | null; done: boolean; calls: number; waited: boolean; settled: boolean; after: number; lateWait?: boolean }
 const ENDED: Turn = { at: 0, done: true, calls: 0, waited: false, settled: false, after: 0 }
+
+// What the small model did, kept per day (the last 7 days) under one store key, shown by /router. named: a skill was
+// hinted; none: the model said no skill; failed: an error, a 429, a timeout or an empty reply; late: answered, but after
+// the one wait had run out (so no hint was sent). ms and answered give the average time of the calls that were answered.
+export type Counts = { named: number; none: number; failed: number; late: number; answered: number; ms: number }
+export type SkillStats = Record<string, Counts>
+const STATS_KEY = 'skillStats'
+const STATS_DAYS = 7
+let writes = Promise.resolve()
+
+export function tally($: Pick<D, 'store' | 'clock'>, outcome: 'named' | 'none' | 'failed' | 'late', ms?: number): Promise<void> {
+  // Concurrent prompts would each read the old record and overwrite each other: one writer at a time.
+  writes = writes.then(async () => {
+    const day = new Date(await $.clock.now()).toISOString().slice(0, 10)
+    const all = ((await $.store.get(STATS_KEY)) as SkillStats | undefined) ?? {}
+    const c = (all[day] ??= { named: 0, none: 0, failed: 0, late: 0, answered: 0, ms: 0 })
+    c[outcome]++
+    if (ms !== undefined) { c.answered++; c.ms += ms }
+    for (const d of Object.keys(all).sort().slice(0, -STATS_DAYS)) delete all[d]
+    await $.store.set(STATS_KEY, all)
+  }).catch(() => {})
+  return writes
+}
+
+// The /router lines for the skill router: today and the days kept.
+export async function skillStatsText($: Pick<D, 'store' | 'clock'>): Promise<string> {
+  const all = ((await $.store.get(STATS_KEY).catch(() => undefined)) as SkillStats | undefined) ?? {}
+  const days = Object.keys(all).sort().reverse()
+  if (!days.length) return 'Skill router: no call to the small model yet.'
+  return 'Skill router (small model calls per day):\n' + days.map((d) => {
+    const c = all[d]!
+    return `${d}: named ${c.named}, none ${c.none}, failed ${c.failed}, late ${c.late}; answered ${c.answered}, avg ${c.answered ? Math.round(c.ms / c.answered) : 0} ms`
+  }).join('\n')
+}
 let turn: Turn = { ...ENDED }
 
 function late($: Pick<D, 'clock'>, ms: number): Promise<'late'> {
@@ -162,9 +197,14 @@ export async function noteSkillPrompt($: D, e: { text: string; origin?: { kind: 
   t.hint = held.list.then(async (list) => {
     if (!list.length) { if (skills === held) skills = undefined; return undefined }
     const asked = await lastAsked($)
+    const began = await $.clock.now()
     const r = await $.model.complete({ model: 'haiku', system: [{ text: system(list), cache: true }], prompt: `${asked ? `Chat asked:\n<<<ASKED\n${asked}\nASKED>>>\n` : ''}Message:\n<<<MSG\n${ownWords(e.text)}\nMSG>>>`, maxTokens: 40, effort: 'low', timeoutMs: 8000 })
-    return r.isAnswered ? pick(r.text, list) : undefined
-  }).catch(() => undefined)
+    // The count is written in the background: the hint must not wait for the store.
+    if (!r.isAnswered) { void tally($, 'failed'); return undefined }
+    const s = pick(r.text, list)
+    void tally($, t.lateWait ? 'late' : s ? 'named' : 'none', (await $.clock.now()) - began)
+    return s
+  }).catch(() => { void tally($, 'failed'); return undefined })
   void t.hint.then((s) => { t.got = s ?? null })
   turn = t
 }
@@ -177,6 +217,7 @@ export async function skillStop($: Pick<D, 'clock'>, e: { stop_hook_active?: boo
   turn = { ...ENDED }
   if (e.stop_hook_active || t.done || t.calls || !t.hint || (await $.clock.now()) - t.at > HINT_TTL_MS) return undefined
   const s = await Promise.race([t.hint, late($, 3000)])
+  if (s === 'late') t.lateWait = true
   return s && s !== 'late' ? hintFor(s, true) : undefined
 }
 
@@ -195,7 +236,7 @@ export const register: Register = (on) => {
     if (plainAction(e.tool, (e as unknown as { command?: unknown }).command)) { t.done = true; return next(e) }
     // Wait once, on the first look-around call; later calls read the answer only if it has come.
     let s: Skill | undefined | null | 'late' = t.got
-    if (s === undefined && !t.waited) { t.waited = true; s = await Promise.race([t.hint, late($, 1500)]); t.settled = true }
+    if (s === undefined && !t.waited) { t.waited = true; s = await Promise.race([t.hint, late($, 1500)]); t.settled = true; if (s === 'late') t.lateWait = true }
     if (t.done) return next(e) // a Skill call in the same batch ran while this one waited
     if (s === undefined || s === 'late') { if (t.settled && ++t.after >= FIRST_CALLS) t.done = true; return next(e) }
     t.done = true

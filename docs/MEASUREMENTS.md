@@ -1960,3 +1960,26 @@ shared-dev-server cause in the Pulse project is that project's setup, recorded t
   hands its settled plan on with that shape and names the next step; fleet-plan reads it; MODELS.md says to re-run the
   replays and evals on a new model and cut a line that stops paying. **Not built:** a good-words list, a separate design
   agent, deleting skills, vertical-slice and deletion-test rules (unmeasured).
+
+## M93 — Open-items sweep: unread .md deletes, hand-off model, router outcomes (2026-11-25)
+- **Unread .md deletes (60 days, 2026-09-26..11-25, main chats 6.9 GB and subagents 15 GB of transcripts):** 149
+  distinct chat+file deletes (rm, Remove-Item, del, git rm, unlink, an emptied Write; failed calls dropped), 83 of
+  files the chat never read (47 main, 36 subagent). Harm, labelled by recreated later, an owner complaint, a git restore
+  or still-true content: 0 of 83 (scratch, fleet folders, Temp, the chat's own file, owner-named files). Of the 47 main
+  unread, 18 (38%, 4 chats) were deletes the owner asked for by name, which a refusing guard would have blocked.
+  Verdict: no guard; the only seen harm is the 2026-11-17 lab A/B, not real use. Not covered: `rm -rf dir`, deletes
+  by python/node/find, reads by `git show`.
+- **hand_off_to_session (app 5.1231.2, read from the same-version app.asar):** the schema has only title and
+  remaining_plan; the call forks with `context:"fork"` and sets no model or effort, and the fork path copies the
+  parent's model and its effort (clamped to that model). Real uses on this machine: 0; `start_session` with fork: 0
+  of 213; profile logs hold 146 `side session (fresh)` lines and no fork. Inherits by the code, not seen live.
+- **Skill router outcomes:** named / none / failed / late and answer time are now counted per day (7 days) and shown by
+  `/router`; before, a failed or slow call left no trace.
+- **Edit and browser errors (14 days, api-request-blob copies skipped: they inflate counts 1.5x):** "File has not been
+  read yet" 89 (main 56, subagents 33): 73% read by cat/sed/head/Get-Content/grep then Edit/Write, 12% known from
+  context (CLAUDE.md, SKILL.md, memory), 10% a ranged Read or a subagent's read, 4% only Grep'd; 0 after a compaction;
+  62 of 72 bursts fixed within 8 calls, median 12 s, about 28 min in all. "Modified since read" 49: 32 the chat's own
+  shell command (python heredoc, node -e, PowerShell, sed -i; the harness's stale-read hint came on 6 and they failed
+  anyway), 10 another chat, 3 a build; median 21 s each. javascript_tool 45 s timeouts 34, 18 with the pane hidden, all
+  of them waiting scripts (setTimeout, rAF, polling), 3 repeats in a chat; about 13.5 min lost. Refusing shell reads is
+  out: one sed/grep/cat is 46% of turns [M36].

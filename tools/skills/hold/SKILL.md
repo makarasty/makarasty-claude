@@ -28,7 +28,8 @@ single quotes, each apostrophe in it written `'\''`: inside double quotes bash r
 
 1. First message: `hold.mjs init <codeword>`; it prints the folder `<dir>` with forward slashes. Quote it as `"<dir>"`
    in every command (a path with a space splits). A second hold in the same session after `released` archives the
-   old folder as `<id>-<YYYYMMDD-HHMM>` and starts a fresh one.
+   old folder as `<id>-<YYYYMMDD-HHMM>` and starts a fresh one. An `init` on a list still collecting changes nothing
+   (open items, old codeword kept, no archive).
 2. Each message, one item at a time, never two `add` calls at once: write the item with the Write tool to
    `<dir>/inbox/<k>.md` (a new `k` each time), then `hold.mjs add --from "<dir>/inbox/<k>.md"`.
 

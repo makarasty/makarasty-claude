@@ -221,6 +221,15 @@ t('init after release archives the folder as <sid>-<YYYYMMDD-HHMM>', arch.length
 t('and starts a fresh collecting folder with the new word', read(join(D('rr'), 'index.md')) === 'collecting новое\n' && !existsSync(join(D('rr'), '01.md')));
 t('init on a folder still collecting keeps it', H('rr', ['init', 'другое']).code === 0 && read(join(D('rr'), 'index.md')) === 'collecting новое\n');
 t('carry reads the archived folder by its name', H('rr', ['carry', arch[0]]).out.startsWith('carried 1 of 1'), H('rr', ['carry', arch[0]]).out);
+// a second init in a collecting session (same or other word) keeps the open list and archives nothing
+H('ci', ['init', 'слово']); H('ci', ['add'], 'первый'); H('ci', ['add'], 'второй');
+const before = read(join(D('ci'), 'index.md'));
+for (const w of ['слово', 'другое', undefined]) {
+  r = H('ci', w ? ['init', w] : ['init']);
+  const now = read(join(D('ci'), 'index.md'));
+  t(`init again on a collecting list (${w ?? 'no word'}) keeps both open items and the old word`, r.code === 0 && now === before && now.startsWith('collecting слово\n') && (now.match(/\| open \|/g) || []).length === 2 && existsSync(join(D('ci'), '01.md')) && existsSync(join(D('ci'), '02.md')), r.err + now);
+}
+t('and archives nothing', readdirSync(root).filter((e) => e.startsWith('ci-')).length === 0, readdirSync(root).join(','));
 
 // 8. clean: a day, not an hour; real holds and old-format lists stay
 console.log('clean');

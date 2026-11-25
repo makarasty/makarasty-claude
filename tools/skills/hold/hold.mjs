@@ -429,7 +429,7 @@ const verb = pos.shift();
 const need = (k) => pos.length >= k || die(`${verb} needs ${k} argument(s); see the header of hold.mjs`);
 switch (verb) {
   case 'init': { const d = dirFor(opt);
-    // shortcut: minute resolution, a second archive in the same minute gets a -2 suffix only once; upgrade if holds are released that fast
+    // The archive name has minute resolution: a second archive in the same minute gets a -2 suffix, a third would collide.
     if (existsSync(indexOf(d)) && firstLine(d).startsWith('released')) { const t = new Date(), s = `${t.getFullYear()}${pad(t.getMonth() + 1)}${pad(t.getDate())}-${pad(t.getHours())}${pad(t.getMinutes())}`; renameSync(d, existsSync(`${d}-${s}`) ? `${d}-${s}-2` : `${d}-${s}`); }
     ensureIndex(d, pos[0]); mkdirSync(join(d, 'inbox'), { recursive: true });
     if (!existsSync(join(d, 'rules2')) && items(d).length === 0) writeFileSync(join(d, 'rules2'), '');

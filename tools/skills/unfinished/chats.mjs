@@ -13,8 +13,8 @@
 // Transcripts: ${CLAUDE_CONFIG_DIR:-~/.claude}/projects/<cwd with every non-alphanumeric as ->/*.jsonl.
 // Desktop titles and accounts are read when the Desktop app's session folders exist.
 //
-// shortcut: Task* todo ids are assumed sequential from 1 per chat; upgrade if a transcript breaks that.
-// shortcut: an assistant line over 2 MB is not parsed; its timestamp, last text tail and edit paths come from regexes over its
+// Task* todo ids are assumed sequential from 1 per chat; upgrade if a transcript breaks that.
+// An assistant line over 2 MB is not parsed; its timestamp, last text tail and edit paths come from regexes over its
 // first and last 64 KB, so an edit in the middle of it can be missed. Such chats are counted and marked as partly read.
 import { createReadStream, readFileSync, readdirSync, statSync, openSync, readSync, closeSync, existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { createInterface } from 'node:readline';

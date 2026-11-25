@@ -21,7 +21,7 @@
 // rename only when the original's mtime and size did not change meanwhile. The original mtime is restored. No backup
 // is made, since the point is to remove the secrets.
 //
-// shortcut: a non-.jsonl file over 64 MB is streamed by line, so a PEM block split over raw lines there is missed; read
+// A non-.jsonl file over 64 MB is streamed by line, so a PEM block split over raw lines there is missed; read
 // it whole if such files appear.
 import { createReadStream, readdirSync, statSync, openSync, readSync, closeSync, writeSync, fsyncSync, fstatSync, renameSync,
     utimesSync, chmodSync, unlinkSync, readFileSync, writeFileSync, mkdirSync, mkdtempSync, rmSync, existsSync, appendFileSync } from 'node:fs';

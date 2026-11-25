@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { CONSENT, continueAnswer } from './core.mjs'
+import { mainProf } from './cli.mjs'
 
 const cli = join(dirname(fileURLToPath(import.meta.url)), 'inbox.mjs')
 const tmp = join(tmpdir(), `inbox-selftest-${process.pid}`)
@@ -122,6 +123,12 @@ try {
   check('a chat in no profile is refused, not sent to the bare link handler (it opened a fresh signed-out app)', o2.status === 1 && !o2.stdout.includes('cmd'), o2.stdout + o2.stderr)
   const o3 = runP(['open', host], '')
   check('no running window of that profile: refused', o3.status === 1 && /no running app window for profile acct2/.test(o3.stderr), o3.stdout + o3.stderr)
+  // mainProf: main wins, else the first folder that is a profile (has claude-code); apps, a folder of app copies, never is.
+  const mp = (/** @type {string[]} */ dirs, /** @type {string[]} */ prof2 = []) => { const d = join(tmp, `mp-${mpN++}`); for (const n of dirs) mkdirSync(join(d, n), { recursive: true }); for (const n of prof2) mkdirSync(join(d, n, 'claude-code'), { recursive: true }); const was = process.env.INBOX_PROFILES_DIR; process.env.INBOX_PROFILES_DIR = d; try { return mainProf() } finally { if (was === undefined) delete process.env.INBOX_PROFILES_DIR; else process.env.INBOX_PROFILES_DIR = was } }
+  let mpN = 0
+  check('mainProf: a profiles folder holding only apps has no profile', mp(['apps']) === undefined)
+  check('mainProf: apps is skipped, the real profile dev is taken', mp(['apps'], ['dev']) === 'dev')
+  check('mainProf: main is preferred over another profile', mp([], ['dev', 'main']) === 'main')
   // Two chats of acct2, the later-shown one is what its window shows now: start sends the window back to it.
   const seen = join(prof, 'acct2', 'claude-code-sessions', 'acc', 'org'), shownNow = 'local_11111111-1111-1111-1111-111111111111'
   writeFileSync(join(seen, `${shownNow}.json`), JSON.stringify({ lastFocusedAt: 2000 })); writeFileSync(join(seen, 'local_22222222-2222-2222-2222-222222222222.json'), JSON.stringify({ lastFocusedAt: 1000 }))

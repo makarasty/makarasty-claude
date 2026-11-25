@@ -15,7 +15,7 @@
 // regexes over the reply; leave both out to only compare cost and length. `--budget` caps each run in USD.
 // Results: <out>/runs.jsonl (one line per run, the reply included) and a summary per arm on stdout.
 //
-// shortcut: scores the final reply only, not the tool calls; when the behaviour is a tool call, put the
+// This scores the final reply only, not the tool calls; when the behaviour is a tool call, put the
 // call in the prompt's question ("which command would you run?") or use `claude plugin eval` (Linux/WSL).
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, mkdirSync, appendFileSync, readFileSync } from 'node:fs';

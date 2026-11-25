@@ -1,5 +1,5 @@
 import { test, expect } from 'claude-code/testing'
-import { route, type SpawnFacts } from './router.ts'
+import { register, route, type SpawnFacts } from './router.ts'
 
 const spawn = (description: string, more: Partial<SpawnFacts> = {}): SpawnFacts => ({
   parentModel: 'claude-opus-5-5', subagentType: 'general-purpose', description, plugin: 'engine',
@@ -51,4 +51,17 @@ test("the fleet's coder routes on a tag, with or without the plugin prefix, and 
   expect(route(fleet('makarasty:fleet-scenario', '[exec] Walk login')).to).toBeUndefined()
   // A user's own fleet-coder.md comes from the engine, not the plugin: its frontmatter model stands.
   expect(route(fleet('fleet-coder', '[exec] Fix t-12', { plugin: 'engine' })).to).toBeUndefined()
+})
+
+test('/router prints the skill router counts beside the spawn counts', async () => {
+  const handlers: Record<string, (...a: never[]) => unknown> = {}
+  const on = ((event: string, a: unknown, b?: unknown) => { handlers[event] = (b ?? a) as never; return { catch: () => undefined } }) as never
+  register(on, {} as never)
+  const mem = new Map<string, unknown>([['stats', { routed: { haiku: 1 }, kept: {}, last: ['a line'] }], ['skillStats', { '2026-11-25': { named: 3, none: 5, failed: 2, late: 1, answered: 9, ms: 4500 } }]])
+  const $ = { store: { get: async (k: string) => mem.get(k) }, clock: { now: async () => 0 } }
+  const out = (await handlers['command.run']!($ as never, { command: 'router' } as never, undefined as never)) as { text: string }
+  expect(out.text).toContain('routed {"haiku":1}')
+  expect(out.text).toContain('2026-11-25: named 3, none 5, failed 2, late 1; answered 9, avg 500 ms')
+  mem.delete('stats')
+  expect(((await handlers['command.run']!($ as never, { command: 'router' } as never, undefined as never)) as { text: string }).text).toContain('named 3')
 })

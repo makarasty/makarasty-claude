@@ -1,5 +1,6 @@
 import type { Register } from 'claude-code'
 import { startInboxTimer } from './inbox.ts'
+import { skillStatsText } from './skill-router.ts'
 
 // Picks a cheaper model for a subagent only where the caller says it is safe.
 // Untagged work keeps the parent's model: on three replayed ports Sonnet tied twice
@@ -72,13 +73,14 @@ export const register: Register = on => {
 
   on('session.start', async ($, e, next) => {
     await startInboxTimer($).catch(() => undefined) // first: a failed register must not leave the inbox without its wake
-    await $.command.register({ name: 'router', description: 'What the model router changed: counts and the last 50 spawns' })
+    await $.command.register({ name: 'router', description: 'What the model router changed: counts and the last 50 spawns; skill router calls per day' })
     return next(e)
   })
 
   on('command.run', { command: 'router' }, async $ => {
     const s = (await $.store.get('stats')) as Stats | undefined
-    if (!s) return { text: 'The router has not seen a spawn yet.' }
-    return { text: `routed ${JSON.stringify(s.routed)}, kept ${JSON.stringify(s.kept)}\n${s.last.join('\n')}` }
+    const skills = await skillStatsText($)
+    if (!s) return { text: `The router has not seen a spawn yet.\n${skills}` }
+    return { text: `routed ${JSON.stringify(s.routed)}, kept ${JSON.stringify(s.kept)}\n${skills}\n${s.last.join('\n')}` }
   })
 }

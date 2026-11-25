@@ -55,6 +55,9 @@ directory is inside (`/proc`, else `lsof` when installed) and leaves the worktre
 
 ## Other commands
 
+- `--base <ref>[,<ref>]` (on `scan` and `trash`, repeatable): also counts what is reachable from that ref as merged, and never offers its own branch. Use it in a repo whose work branch is not the default
+  (e.g. `main` is prod, work happens on `Max`: `scan --base origin/Max`); pass the same `--base` to `trash`.
+
 - `list` (this repo) or `list --all` (every repo on this machine that has trash).
 - `restore <id>`: a branch whose name is taken now is refused; `--as <new name>` restores it beside. A
   worktree goes back to its old path, refused when that path exists, and brings its branch back with it.

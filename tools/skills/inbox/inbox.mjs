@@ -67,7 +67,7 @@ const notifyJs = join(here, '..', '..', 'hooks', 'notify.mjs')
 /** Is a notify channel configured? Asked of notify's own --status (its config is not parsed here); unknown counts as yes, so a push is tried and a failure is reported. */
 function hasChannel() {
   if (process.env.NOTIFY_DRY_RUN) return true
-  try { return !/^channels: none/m.test(execFileSync(process.execPath, [notifyJs, '--status', '--session', 'inbox'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 20000 })) } catch { return true }
+  try { return !/^channels: none/m.test(execFileSync(process.execPath, [notifyJs, '--status', '--session', 'inbox'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true, timeout: 20000 })) } catch { return true }
 }
 const pushLine = () => (hasChannel() ? 'phone pushes: on (Telegram, with answer buttons)' : `phone pushes off: no notify channel; \`node ${notifyJs} setup\` connects Telegram (a chat can run it in the background)`)
 
@@ -124,7 +124,7 @@ function profileOf(/** @type {string} */ host) {
 function profileExe(/** @type {{name: string, dir: string}} */ prof) {
   let procs = process.env.INBOX_PROCS
   if (procs === undefined) {
-    try { procs = execFileSync('powershell', ['-NoProfile', '-Command', `Get-CimInstance Win32_Process -Filter "Name like 'Claude%'" | % { $_.ExecutablePath + '|' + $_.CommandLine }`], { encoding: 'utf8', timeout: 20e3 }) } catch { procs = '' }
+    try { procs = execFileSync('powershell', ['-NoProfile', '-Command', `Get-CimInstance Win32_Process -Filter "Name like 'Claude%'" | % { $_.ExecutablePath + '|' + $_.CommandLine }`], { encoding: 'utf8', windowsHide: true, timeout: 20e3 }) } catch { procs = '' }
   }
   const flag = `--user-data-dir="${prof.dir}"`.toLowerCase()
   const row = procs.split(/\r?\n/).find((l) => { const c = l.toLowerCase(); return c.includes(flag) && !c.includes('--type=') })
@@ -267,7 +267,7 @@ const startedAs = (/** @type {any} */ it, /** @type {Map<string, any>} */ byHost
 function onRemote(/** @type {any} */ it) {
   const ask = String(it.ask ?? ''), shas = ask.match(/\b[0-9a-f]{7,40}\b/g)
   if (!/push|пуш/i.test(ask) || !shas || !it.cwd || !existsSync(it.cwd)) return undefined
-  const git = (/** @type {string[]} */ a) => { try { return execFileSync('git', ['-C', it.cwd, ...a], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 10e3 }).split(/\r?\n/).filter((b) => b && !b.endsWith('/HEAD')) } catch { return undefined } }
+  const git = (/** @type {string[]} */ a) => { try { return execFileSync('git', ['-C', it.cwd, ...a], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true, timeout: 10e3 }).split(/\r?\n/).filter((b) => b && !b.endsWith('/HEAD')) } catch { return undefined } }
   const remote = git(['branch', '-r', '--format=%(refname:short)']) ?? [], words = ask.split(/[\s«»"'`(),?:;]+/)
   const short = (/** @type {string} */ b) => b.slice(b.indexOf('/') + 1)
   const names = new Set([...(git(['branch', '--format=%(refname:short)']) ?? []), ...remote.map(short)].filter((n) => words.includes(n)))
@@ -423,7 +423,7 @@ function gateVerdict() {
   const fg = process.env.INBOX_FG // test override; a comma list answers the 1st, 2nd... call (the last repeats)
   if (fg) { const seq = fg.split(','); return seq[Math.min(fgCalls++, seq.length - 1)] }
   let out
-  try { out = execFileSync('powershell', ['-NoProfile', '-Command', FG_PS], { encoding: 'utf8', timeout: 8e3, stdio: ['ignore', 'pipe', 'ignore'] }).trim() } catch { return 'unknown' }
+  try { out = execFileSync('powershell', ['-NoProfile', '-Command', FG_PS], { encoding: 'utf8', windowsHide: true, timeout: 8e3, stdio: ['ignore', 'pipe', 'ignore'] }).trim() } catch { return 'unknown' }
   const [exe = '', ...c] = out.split('|')
   if (!exe) return 'unknown'
   if (!/^claude[^\\/]*\.exe$/i.test(exe.split(/[\\/]/).pop() ?? '')) return 'other'
@@ -540,7 +540,7 @@ async function startOne(/** @type {{profile: string, folder: string, name: strin
     if (j.state !== 'cli-done' && !j.cliDone) {
       j.sid = randomUUID(); j.state = 'queued'; saveJournal(j) // a failed turn may have left its id used: a new one each try
       const cli = cliArgv()
-      try { execFileSync(cli[0], cli.slice(1), { cwd: folder, stdio: ['ignore', 'pipe', 'pipe'], timeout: 180e3 }) } catch (e) {
+      try { execFileSync(cli[0], cli.slice(1), { cwd: folder, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, timeout: 180e3 }) } catch (e) {
         j.state = 'failed'; j.attempts = (j.attempts || 0) + 1; j.note = `the CLI turn failed: ${/** @type {Error} */ (e).message.split('\n')[0]}`; saveJournal(j); console.error(`inbox: ${j.note}`); return end(1, 'failed: cli')
       }
       j.state = 'cli-done'; j.cliDone = true; j.note = ''; saveJournal(j)
@@ -641,7 +641,7 @@ function jobRun(/** @type {string} */ id) {
   const ok = !!row && (row.state !== 'working' || row.status === 'waiting') && !!out.trim()
   const opened = prof && bg ? openInApp(prof, j.sid) === true : false
   const head = `<b>${escHtml(j.name)}</b>\n`, tail = opened ? `\n${note(t(lang(), 'jobOpened'))}` : ''
-  try { execFileSync(process.execPath, [notifyJs, 'send', '--html'], { input: head + (ok ? mdToTg(out) : note(t(lang(), 'jobFailed'))) + tail, stdio: ['pipe', 'ignore', 'ignore'], timeout: 30000 }) } catch { /* the result stays in the job's session */ }
+  try { execFileSync(process.execPath, [notifyJs, 'send', '--html'], { input: head + (ok ? mdToTg(out) : note(t(lang(), 'jobFailed'))) + tail, stdio: ['pipe', 'ignore', 'ignore'], windowsHide: true, timeout: 30000 }) } catch { /* the result stays in the job's session */ }
   writeFileSync(f, JSON.stringify({ ...j, bg, state: ok ? 'done' : 'failed', ended: new Date().toISOString(), opened }, null, 1))
   return ok ? 0 : 1
 }
@@ -670,7 +670,7 @@ async function telegramTurn() {
     rmSync(lockF, { force: true })
     if (!create(lockF, String(Date.now()))) return 0
   }
-  const notify = (/** @type {string[]} */ args, /** @type {string} */ input) => { try { execFileSync(process.execPath, [notifyJs, ...args], { input, stdio: ['pipe', 'pipe', 'pipe'], timeout: 30000 }) } catch { /* the reply is lost; the next message still works */ } }
+  const notify = (/** @type {string[]} */ args, /** @type {string} */ input) => { try { execFileSync(process.execPath, [notifyJs, ...args], { input, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, timeout: 30000 }) } catch { /* the reply is lost; the next message still works */ } }
   const t0 = Date.now()
   try {
     // A new round only while the run is young: the hook kills it at 400 s, and a round cut off mid-turn would leave its
@@ -1176,7 +1176,7 @@ async function main() {
     const attempt = JSON.stringify({ fails: (prev?.fails ?? 0) + 1, at: now })
     if (prev) writeFileSync(mark, attempt); else if (!create(mark, attempt)) return 0
     const L = lang()
-    try { for (const phone of phoneAsks(item, Date.now(), L)) execFileSync(process.execPath, [notifyJs, 'ask'], { input: JSON.stringify({ ...phone, keyboard: phoneKeyboard(phone.options, true, L) }), stdio: ['pipe', 'pipe', 'pipe'], timeout: 20000 }) } catch (e) { console.error(`inbox: push failed: ${/** @type {Error} */ (e).message.split('\n')[0]}`); return 1 } // the attempt record stays: a later tick retries
+    try { for (const phone of phoneAsks(item, Date.now(), L)) execFileSync(process.execPath, [notifyJs, 'ask'], { input: JSON.stringify({ ...phone, keyboard: phoneKeyboard(phone.options, true, L) }), stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, timeout: 20000 }) } catch (e) { console.error(`inbox: push failed: ${/** @type {Error} */ (e).message.split('\n')[0]}`); return 1 } // the attempt record stays: a later tick retries
     writeFileSync(mark, '')
     say('inbox: pushed')
     return 0

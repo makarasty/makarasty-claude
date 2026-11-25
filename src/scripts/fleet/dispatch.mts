@@ -79,7 +79,7 @@ export function dispatch(c: Ctx, chip: string, lane: string): number {
   if ((kind === 'fix' || kind === 'root') && !(ho && hasBefore)) {
     const repro = fmValues(fm, 'repro')[0] ?? '';
     if (!repro) { out(`NEED REPRO: write one shell command that fails while the defect is there into repro: of ${ar}/tasks/ready/${id}.md, then run dispatch again\n`); return 12; }
-    // shortcut: the timeout kills only the gate process, not a repro child it started (Windows); upgrade: kill the tree.
+    // The timeout kills only the gate process, not a repro child it started (Windows); upgrade: kill the tree.
     const p = spawnSync(process.execPath, [`${HERE}/fleet-gate.mjs`, 'prove', ar, id, 'before', '--', repro],
       { cwd: process.cwd(), encoding: 'utf8', timeout: Math.min(budget * 60, 590) * 1000, maxBuffer: 64 * 1024 * 1024 });
     const last = (p.stdout || '').split('\n').map((l) => l.replace(/\r$/, '')).filter(Boolean).pop() ?? '';

@@ -130,7 +130,7 @@
    "inForce": [
     {
      "text": "global",
-     "has": "I read Russian and want it short and plain"
+     "has": "I read Russian and want it plain"
     }
    ],
    "field": {
@@ -379,7 +379,7 @@
      "canary": {
       "fn": "briefLacksDone",
       "args": [
-       "Check three tools:\n1. ponytail\n2. sunup\n3. grill\nReport verdicts."
+       "Group thirdparty. Tools:\n1. ponytail\n2. mattpocock-skills\n3. sunup\nVerdict for ponytail: ON / OFF."
       ],
       "is": true
      },

@@ -1,4 +1,5 @@
 import { expect, mock, test } from 'claude-code/testing'
+import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 import { MAX_MS, QUIET_MS, dueReports, renderReports } from '../skills/inbox/core.mjs'
 declare const setTimeout: (f: (v?: unknown) => void, ms: number) => unknown // the test runtime has it
@@ -522,7 +523,7 @@ const oldAsk = (w: ReturnType<typeof world>, id: string, at: number) => {
   w.disk.set(`${R}/items/${id}.json`, JSON.stringify({ id, kind: 'ask', at: 1, session: 'chatA', cwd: 'C:/work/x', chat: 'c', questions: [{ question: 'Что делаем?', options: [] }] }))
   w.disk.set(`${R}/answers/${id}.json`, JSON.stringify({ id, at, by: 'inbox', answers: { 'Что делаем?': 'Коммит' } }))
 }
-const idle = async (w: ReturnType<typeof world>, $: Parameters<Parameters<typeof test>[1]>[0]) => {
+const idle = async (w: ReturnType<typeof world>, $: Engine) => {
   await $.prompt.submit({ text: 'hi' } as never)
   for (let i = 0; i < 4; i++) await w.clock.advance(15000)
   return w.submitted.filter((x) => x !== 'hi')

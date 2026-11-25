@@ -74,6 +74,6 @@ test('a card the person clicked is detached when its note arrives; another chat\
     { sessionId: 'local_kid2', title: 'Other card', startedBy: 'local_parent' },
     { sessionId: 'local_kid3', title: 'Show loading in selects', startedBy: 'local_someone' },
   ] })
-  await $.prompt.submit({ text: 'The user started your suggested background task task_91d3975c ("Show loading in selects") in a separate local session.' })
+  await $.prompt.submit({ text: 'The user started your suggested background task task_91d3975c ("Show loading in selects") in a separate local session.' } as never)
   expect(a.detached()).toEqual(['local_kid1'])
 })

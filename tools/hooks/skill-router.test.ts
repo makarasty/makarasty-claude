@@ -1,7 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
-import { HINT, OFF_HINT, frontmatter, hintFor, newest, pick, plainAction, sawListing, system, worth } from './skill-router.ts'
-
+import { HINT, OFF_HINT, type SkillStats, skillStatsText, frontmatter, hintFor, newest, pick, plainAction, sawListing, system, worth } from './skill-router.ts'
+declare const setTimeout: (f: (v?: unknown) => void, ms: number) => unknown // the test runtime has it
 const SKILLS = [{ name: 'makarasty-tools:commit', description: 'Commits this chat as you.' }, { name: 'makarasty:fleet-wait', description: 'Waits for a fleet.' }]
 
 test('frontmatter: a quoted or plain description; a skill only the person starts is marked', () => {
@@ -50,7 +50,7 @@ test('newest: the highest version folder, by number, not by name or time', () =>
   expect(newest([])).toBeUndefined()
 })
 
-function world(on: On, reply: string | undefined, env: Record<string, string> = {}, hold = false, said: readonly { role: 'user' | 'assistant'; text: string }[] = []) {
+function world(on: On, reply: string | undefined, env: Record<string, string> = {}, hold = false, said: readonly { role: 'user' | 'assistant'; text: string }[] = [], gate?: Promise<void>) {
   const ran: string[] = []
   const asked: string[] = []
   const prompts: string[] = []
@@ -73,12 +73,16 @@ function world(on: On, reply: string | undefined, env: Record<string, string> = 
     return { deny: 'ENOENT' }
   })
   on('fs.stat', () => ({ value: { kind: 'file', size: 1, mtimeMs: 999_000, isLink: false } }) as never)
-  on('model.complete', (_$, e) => {
+  const store = new Map<string, unknown>()
+  on('store.get', (_$, e) => ({ value: store.get((e as unknown as { key: string }).key) }) as never)
+  on('store.set', (_$, e) => { const x = e as unknown as { key: string; value: unknown }; store.set(x.key, x.value); return { value: undefined } as never })
+  on('model.complete', async (_$, e) => {
+    await gate
     asked.push(JSON.stringify((e as { system?: unknown }).system ?? ''))
     prompts.push(String((e as { prompt?: string }).prompt ?? ''))
     return { value: reply === undefined ? { isAnswered: false, reason: 'empty-reply', usage: { input_tokens: 1, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 } } : { isAnswered: true, text: reply, usage: { input_tokens: 1, output_tokens: 1, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 } } } as never
   })
-  return { ran, asked, prompts, clock }
+  return { ran, asked, prompts, clock, store }
 }
 const typed = (text: string) => ({ text, origin: { kind: 'composer' } }) as never
 const glob = { tool: 'Glob', pattern: '**/*' } as never
@@ -218,4 +222,53 @@ test('a hint older than 60 s is dropped at the first call and at the end of the 
   await $.prompt.submit(typed('закоммить'))
   await clock.advance(30_000)
   expect(await $.tool.call(glob)).toEqual({ deny: expect.stringContaining('makarasty-tools:commit') })
+})
+
+const today = '1970-01-01'
+const counts = (w: { store: Map<string, unknown> }) => (w.store.get('skillStats') as SkillStats | undefined)?.[today]
+
+test('stats: a named call counts named, with its time', async ($, on) => {
+  const w = world(on, 'makarasty-tools:commit')
+  await $.prompt.submit(typed('закоммить'))
+  await $.tool.call(glob)
+  expect(counts(w)).toMatchObject({ named: 1, none: 0, failed: 0, late: 0, answered: 1 })
+})
+
+test('stats: the small model saying none counts none', async ($, on) => {
+  const w = world(on, 'none')
+  await $.prompt.submit(typed('what does git commit --amend do?'))
+  await $.tool.call(glob)
+  expect(counts(w)).toMatchObject({ named: 0, none: 1, failed: 0, late: 0, answered: 1 })
+})
+
+test('stats: a failed call counts failed and is not timed', async ($, on) => {
+  const w = world(on, undefined)
+  await $.prompt.submit(typed('закоммить'))
+  await $.tool.call(glob)
+  expect(counts(w)).toMatchObject({ named: 0, none: 0, failed: 1, late: 0, answered: 0, ms: 0 })
+})
+
+test('stats: an answer that comes after the wait counts late, not named, and sends nothing back', async ($, on) => {
+  let release!: () => void
+  const w = world(on, 'makarasty-tools:commit', {}, false, [], new Promise<void>((r) => { release = r }))
+  await $.prompt.submit(typed('закоммить'))
+  const call = $.tool.call(glob)
+  await w.clock.advance(1500)
+  expect(await call).toEqual({ result: 'ok' })
+  release()
+  for (let i = 0; i < 200 && !counts(w)?.late; i++) await new Promise((r) => setTimeout(r, 5))
+  expect(counts(w)).toMatchObject({ named: 0, none: 0, failed: 0, late: 1, answered: 1 })
+})
+
+test('stats: only the last 7 days are kept, and skillStatsText names every outcome and the average', async ($, on) => {
+  const w = world(on, 'none')
+  const day = (n: number) => `1970-01-${String(n).padStart(2, '0')}`
+  const rec: SkillStats = {}
+  for (let n = 2; n <= 9; n++) rec[day(n)] = { named: 1, none: 2, failed: 3, late: 4, answered: 2, ms: 300 }
+  w.store.set('skillStats', rec)
+  await $.prompt.submit(typed('what does git commit --amend do?'))
+  await $.tool.call(glob)
+  expect(Object.keys(w.store.get('skillStats') as SkillStats).sort()).toEqual([3, 4, 5, 6, 7, 8, 9].map(day))
+  const text = await skillStatsText({ store: { get: async (k: string) => w.store.get(k) }, clock: { now: async () => 0 } } as never)
+  expect(text).toContain(`${day(9)}: named 1, none 2, failed 3, late 4; answered 2, avg 150 ms`)
 })

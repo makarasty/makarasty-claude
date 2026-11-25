@@ -78,7 +78,7 @@ const now = () => new Date().toISOString();
 // file is meant to be edited by hand - a token nobody depends on costs one line of noise, and a missing
 // token costs the outage this whole file exists to prevent.
 //
-// shortcut: regex over tracked files, not a parse. It will miss a route built by concatenation and a key
+// Regex over tracked files, not a parse. It will miss a route built by concatenation and a key
 // read through a variable. Replace the patterns per project in FLEET.md when that starts to matter.
 const SURFACE_PATTERNS: [RegExp, string][] = [
   // A route or path literal: "/api/server/status", '/v1/users/:id'
@@ -406,7 +406,7 @@ function treeState(from: string, runDir: string): { head: string; tree: string }
     // A file another process holds open (a dev db, .vs/) is skipped and named, not the whole add lost: a
     // failed add left the index copy as it was and every fix read as no change. safecrlf would refuse a
     // file over its line endings, which say nothing about a fix.
-    // shortcut: changed untracked files land in .git/objects as loose objects until gc prunes them.
+    // Changed untracked files land in .git/objects as loose objects until gc prunes them.
     const add = spawnSync(`git -c core.safecrlf=false add -A --ignore-errors ${scope}`, { cwd: top, env, shell: true, encoding: 'utf8' });
     if (add.status !== 0) console.error(`prove: git could not read some files, which are left out of the tree:\n${(add.stderr || '').trim()}`);
     const tree = run('git write-tree', top, env);
@@ -458,7 +458,7 @@ function prove(runDir: string, taskId: string, phase: string, command: string[])
     try { pid = Number(fs.readFileSync(path.join(lock, 'pid'), 'utf8')); } catch { /* being written, or none */ }
     try { age = Date.now() - fs.statSync(lock).mtimeMs; } catch { /* gone meanwhile */ }
     // No pid yet: a prove in its first instant, or one killed in it (taken over after a minute).
-    // shortcut: a pid Windows reused for another live process holds the lock until it is an hour old, and a
+    // A pid Windows reused for another live process holds the lock until it is an hour old, and a
     // reproduction running longer than an hour loses its lock to a second prove.
     if (pid ? alive(pid) && age < 3600_000 : age < 60_000) die(`another prove is running on ${taskId} (${lock}): wait for it, one run at a time`);
   }
@@ -488,7 +488,7 @@ function prove(runDir: string, taskId: string, phase: string, command: string[])
 // under an empty `owns:`), written relative to the project folder that holds `.fleet` and returned from git's
 // top, as `git diff-tree` names paths: `owns: src/a.ts` of `app/.fleet/<run>` is `app/src/a.ts`. None, or no
 // task file: an empty list.
-// shortcut: a glob counts as the plain prefix before its first `*`, and a path with a blank in it splits in two;
+// A glob counts as the plain prefix before its first `*`, and a path with a blank in it splits in two;
 // match with path.matchesGlob once it is stable on every supported node.
 function ownsOf(runDir: string, taskId: string): { path: string; glob: boolean }[] {
   let text: string;
@@ -582,7 +582,7 @@ function checkTest(runDir: string, taskId: string) {
   // `<test>x` are other commands.
   const pre = '(?:timeout\\s+(?:-\\S+\\s+)*\\d+[smhd]?\\s+|cd\\s+(?:"[^"]*"|\'[^\']*\'|\\S+)\\s*&&\\s*|[A-Za-z_]\\w*=\\S*\\s+)*';
   if (!new RegExp(`^${pre}${norm(test).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`).test(norm(after.cmd))) fail(`the recorded run was \`${after.cmd}\`, which is not the task's test: line`);
-  // shortcut: no `owns:` (separate chats) skips the tree check, since a change cannot be told from another task's.
+  // No `owns:` (separate chats) skips the tree check, since a change cannot be told from another task's.
   const owned = ownsOf(runDir, taskId);
   if (owned.length && typeof after.post === 'string') {
     let moved: string[] = [];

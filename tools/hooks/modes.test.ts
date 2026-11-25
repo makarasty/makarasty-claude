@@ -1,4 +1,5 @@
 import { expect, mock, test } from 'claude-code/testing'
+import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
 const plain = (p: string): string => p.replace(/^[A-Za-z]:/, '').replaceAll('\\', '/')
@@ -19,7 +20,7 @@ function world(on: On, flags: string[]) {
 }
 const SOURCES = ['startup', 'resume', 'clear', 'compact'] as const
 // gates.ts adds its own rules to every start: only the mode texts are looked at.
-const ctx = async ($: { classic: { SessionStart: (e: { source: string }) => Promise<{ additionalContext?: string[] }> } }, source: string) =>
+const ctx = async ($: Engine, source: (typeof SOURCES)[number]) =>
   ((await $.classic.SessionStart({ source })).additionalContext ?? []).filter((s) => s === UNSLOP || s.startsWith('antislop root: '))
 const ROOT_LINE = /^antislop root: [^\\\n]+\n/
 

@@ -34,7 +34,7 @@ function world(on: On, o: { self?: string; session?: string; now?: number; failS
     if (e.argv[1] === '-e') return { value: { exitCode: 1, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } } // no tool_result: a dead dialog
     const [, , cmd, id, ...rest] = e.argv as string[]
     const ans = `${R}/answers/${id}.json`
-    if (cmd === 'names') return { value: { exitCode: 0, stdout: [id, ...rest].filter((i) => o.names?.[i]).map((i) => `${i}\t${o.names![i]}`).join('\n'), stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+    if (cmd === 'names') return { value: { exitCode: 0, stdout: [id, ...rest].filter((i) => o.names?.[i!]).map((i) => `${i}\t${o.names![i!]}`).join('\n'), stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
     if (cmd === 'wait') return { value: { exitCode: 1, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
     if (cmd === 'done' && !disk.has(ans)) disk.set(ans, JSON.stringify({ id, at: 0, by: 'chat', ...(rest.length ? { choice: rest.join(' ') } : {}) }))
     return { value: { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
@@ -174,9 +174,12 @@ test('7. a dialog asked again replaces its earlier open copy; a recap that resta
   const w = world(on)
   const Q = [{ question: 'Какую базу взять для отчётов за месяц?', header: 'База', multiSelect: false, options: [{ label: 'Postgres' }, { label: 'SQLite' }] }]
   w.disk.set(`${R}/items/chatA~old.json`, JSON.stringify({ id: 'chatA~old', kind: 'ask', at: 100 * H - 60e3, session: 'chatA', cwd: 'C:/work/reports-app', chat: 'x', questions: Q }))
-  void $.tool.call({ tool: 'AskUserQuestion', questions: Q, tool_use_id: 'new1' } as never)
+  const ask = $.tool.call({ tool: 'AskUserQuestion', questions: Q, tool_use_id: 'new1' } as never)
   await w.until(() => w.disk.has(`${R}/items/chatA~new1.json`))
   await w.until(() => w.disk.has(`${R}/answers/chatA~old.json`), 'old copy closed')
+  await w.until(() => w.opened() === 1, 'dialog')
+  w.answerDialog({ result: { answers: { [Q[0]!.question]: 'Postgres' } } })
+  await ask // the call settles inside the test: left running it reaches `next` after the world is gone (no implementation for tool.call)
   const shown = renderReports([{ id: 'r1', at: 1, session: 's', cwd: 'C:/x/proj', chat: 'c', recap: 'Выгрузка готова, тесты зелёные, отчёт лежит в export', excerpt: 'Готово. Выгрузка готова, тесты зелёные; отчёт лежит в export/2026-11.csv.' }], 60e3)
   expect(shown).not.toContain('Recap:')
   expect(shown.match(/тесты зелёные/g)?.length).toBe(1)

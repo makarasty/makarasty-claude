@@ -57,7 +57,7 @@ export function ctx(c: Ctx): number {
         out(unstarted(run) ? `DRAINED: no task in flight, relaunch by card now, no question: update ${absrun}/STATE.md, run relaunch call 1 and 2, offer the coordinator card (own_initiative), notify once; the click is the consent, and not started in 30 min notify once more (fleet-plan, 8b)\n` : `DRAINED: ${LAND}\n`);
       }
       // The cap [M57]: a claim that never closes (a hung or dead agent) must not hold the run draining for ever.
-      // shortcut: open claims are counted without liveness (sweep reads heartbeats, ops.mts), the cap bounds it.
+      // Open claims are counted without liveness (sweep reads heartbeats, ops.mts), the cap bounds it.
       const tm = `${run}/.drain-timeout-said`;
       // Paused time does not count: resume touches `.draining`, so the cap restarts there.
       if (open.length && existsSync(dr) && !existsSync(`${run}/PAUSED`) && olderThanMin(dr, calint(c, 'drain_cap_min', 60)) && !existsSync(tm)) {
@@ -242,7 +242,7 @@ function diskLow(c: Ctx): void {
 // A background command's output that has grown past runaway_log_gb, named once per file. 2026-10-08:
 // interactive python loops in closed chats had written 5 GB of tasks/*.output, which nothing reported.
 // Claude Code keeps a session's background output under <tmp>/claude/<project>/<session>/tasks/.
-// shortcut: that layout is the Windows host's as observed; elsewhere the folder is not found and nothing prints.
+// That layout is the Windows host's as observed; elsewhere the folder is not found and nothing prints.
 function runawayLogs(c: Ctx): void {
   const gb = Number(cal(c, 'runaway_log_gb', '1')) || 1;
   const root = `${slashes(tmpdir())}/claude`;

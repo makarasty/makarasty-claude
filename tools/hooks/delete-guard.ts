@@ -255,7 +255,7 @@ function closing(s: string, from: number, esc: string): number {
 
 // Splits `src` into commands and pushes every delete command (and any shell string handed on) into `out`.
 // A substitution's value is unknown, so it stands as `$()` (see `subst`).
-// shortcut: quotes inside a $( ) that hold parens can mis-pair, as in git-guard; upgrade to a real parser if that bites.
+// Quotes inside a $( ) that hold parens can mis-pair, as in git-guard; upgrade to a real parser if that bites.
 function lex(src: string, ps: boolean, out: Cmd[], depth = 0): void {
   // Too deep to read: a delete word still in the text is refused rather than guessed.
   if (depth > 4) { if (DELETISH.test(src)) out.push(mk('deep', [src], ps)); return }
@@ -381,7 +381,7 @@ function command(w: string[], ps: boolean, out: Cmd[], depth: number): void {
 
 // Where `p` lands, absolute with `/` separators. The working directory's spelling decides Windows or POSIX rules;
 // the Windows rules also read Git Bash's `/c/x` and Cygwin's `/cygdrive/c/x` as `C:/x`.
-// shortcut: a Git Bash cwd given as `/c/Users/x` reads as a POSIX path; the engine reports the Windows spelling.
+// A Git Bash cwd given as `/c/Users/x` reads as a POSIX path; the engine reports the Windows spelling.
 function resolve(p: string, cwd: string, win: boolean): string {
   let s = win ? p.replace(/\\/g, '/') : p
   const dir = win ? cwd.replace(/\\/g, '/') : cwd
@@ -678,7 +678,7 @@ export const register: Register = on => {
       const repo = deny || !outside.length ? undefined : await otherRepo($, outside)
       if (repo) deny = `Blocked by makarasty-tools delete-guard: this deletes ${repo}, another git repository; its uncommitted work and unpushed commits have no other copy. ${FIX}`
     } catch {
-      // shortcut: a bug in this guard (not a refusal) lets the call run rather than blocking every shell call.
+      // A bug in this guard (not a refusal) lets the call run rather than blocking every shell call.
     }
     return deny ? { deny } : next(e)
   }).catch(($, e, next) => next(e))

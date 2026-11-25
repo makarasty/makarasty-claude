@@ -1,4 +1,5 @@
 import { expect, mock, test } from 'claude-code/testing'
+import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 import { BEHAVIOUR, BOX, COMMAND, DEFERRED, ELSEWHERE, MESSAGE, NOT_DROPPED, OTHER_CHAT, SELF, SCREEN, asksSelf, behaviour, continueBox, continueQuestions, defers, freshLedger, holdsCommand, investigated, leftAtStop, notePassed, noteRefusal, onlyContinue, pointsAbove, reminder, screened, sendsToChat, showsScreen, staked } from './ask-guard.ts'
 
@@ -264,7 +265,7 @@ test('a reset, clean, rollback or deploy announced before "Continue?" is a real 
 
 // The screen: a question with no stake reaches the person only after the asking chat checked it could not answer it itself.
 const PLAIN = [q('Какую базу взять для отчётов?', 'Postgres', 'SQLite')]
-const ask = ($: Parameters<Parameters<typeof test>[1]>[0], questions: unknown, metadata?: unknown) => $.tool.call({ tool: 'AskUserQuestion', questions, ...(metadata ? { metadata } : {}) } as never)
+const ask = ($: Engine, questions: unknown, metadata?: unknown) => $.tool.call({ tool: 'AskUserQuestion', questions, ...(metadata ? { metadata } : {}) } as never)
 
 test('the screen: a plain question is refused once; screened (20+ chars) it passes; a short screened still does not', async ($, on) => {
   const passed = world(on, { MAKARASTY_SCREEN: 'on' })

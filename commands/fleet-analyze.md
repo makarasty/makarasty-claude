@@ -42,8 +42,8 @@ A live run is fine: tasks still claimed are counted as open, nothing is written.
 - **One tool call** and **read-only turns after another** are the M36 habit: most of a worker's time is
   turns, and a turn costs about the same whatever it does. Batching reads is the lever.
 - **Re-reads** count a read only when its lines overlap lines that chat already read; paging is not a re-read.
-- **Cost** is a list-price estimate per model (Opus 5.5 $4/$20 per million, cache read $0.20, cache writes at
-  1.25x and 2x of input), what the tokens would cost on the API, not what a subscription bills. Subagent
+- **Cost** is a list-price estimate per model (rates from the PRICES table in `src/scripts/fleet-analyze.mts`, cache
+  writes at 1.25x and 2x of input), what the tokens would cost on the API, not what a subscription bills. Subagent
   transcripts keep only the stream-start output count, so their output is estimated from what they wrote,
   a lower bound. The coordinator is its whole session, planning included.
 

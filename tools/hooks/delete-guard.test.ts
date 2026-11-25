@@ -15,7 +15,6 @@ const BLOCK = ['rm -rf .', 'rm -rf ./', 'rm -rf ..', 'rm -rf ../x', 'rm -rf *', 
   'if true; then rm -rf ..; fi', 'bash <<EOF\nrm -rf ..\nEOF', 'rm -rf \\\n ..', 'X=1 rm -rf ..',
   'powershell -Command "Remove-Item -Recurse -Force .."', 'pwsh -c "ri -r ~"',
   'rm -rf "$TMPDIR"', 'rm -rf $TMPDIR/*', 'rm -rf ${TMPDIR:-/tmp}',
-  ,
   'find . -delete', 'find / -name x -delete', 'find . -exec rm -rf {} \\;',
   'find . -execdir rm {} +', 'find -delete', 'find .git -delete', 'rmdir /s /q ..', 'del /s /q *']
 const BLOCK2 = [
@@ -28,8 +27,8 @@ const BLOCK2 = [
   // 8: a glob whose last segment starting with a dot can name .git
   'rm -rf .[!.]*', 'rm -rf .??*', 'rm -rf .g*', 'rm -rf .{git,x}', 'rm -rf .gi?', 'rm -rf ./.*', 'rm -rf .git*', 'rm -rf .[g]it',
   // 9: the working folder or a computed path as the whole path
-  'rm -rf $PWD', 'rm -rf "$PWD"', 'rm -rf "$(pwd)"', 'rm -rf `pwd`', 'rm -rf "$PWD/.."', 'rm -rf "$(pwd)"/*', ,
-  , 'rm -rf $(git rev-parse --show-toplevel)', ,
+  'rm -rf $PWD', 'rm -rf "$PWD"', 'rm -rf "$(pwd)"', 'rm -rf `pwd`', 'rm -rf "$PWD/.."', 'rm -rf "$(pwd)"/*',
+  'rm -rf $(git rev-parse --show-toplevel)',
   'x=$HOME; rm -rf $x', 'x=..; rm -rf $x',
   // 10: a cd earlier in the line moves where relative paths land
   'cd ~ && rm -rf proj', 'cd .. && rm -rf x', 'pushd .. ; rm -rf proj',
@@ -345,7 +344,7 @@ test('a folder outside the project runs, unless it is the project, holds it, or 
   expect(stop.filter((c) => !check(c, 'Bash', DEEP))).toEqual([])
 })
 
-const matcher = (register: (on: never) => void): RegExp => { let m!: RegExp; register((((_e: string, o: { tool: RegExp }) => { m = o.tool; return { catch: () => {} } }) as never)); return m }
+const matcher = (register: (on: never, options: never) => unknown): RegExp => { let m!: RegExp; register((((_e: string, o: { tool: RegExp }) => { m = o.tool; return { catch: () => {} } }) as never), {} as never); return m }
 test('Monitor is a shell: its command is read like Bash', async () => {
   expect(matcher(register).test('Monitor')).toBe(true)
   expect(await denial('rm -rf ..', 'Monitor', WIN)).toContain('delete-guard')

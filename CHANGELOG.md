@@ -1,5 +1,38 @@
 # Changelog
 
+## makarasty-tools 1.20.32, makarasty 1.18.20 — 2026-11-25
+
+- **Open-items sweep** (owner, 2026-11-25: «Все сделать», «Переписать все», the four extra items picked; M93).
+  - New `read-before-edit.ts`: when the harness refuses an Edit with "File has not been read yet" or "has been modified
+    since read" (89 + 49 in 14 days, mostly a file read or rewritten in a shell), the hook reads the file (up to 256 KB)
+    and runs the Edit once more, with a one-line note that the earlier view may be stale. Write stays refused.
+    `MAKARASTY_READ_GUARD=off`. Proven on mocks and by the read-state suffix in `claude -p`; the CLI does not refuse,
+    so the live refusal path is unverified.
+  - New `pane-guard.ts`: after a javascript_tool timeout on a hidden pane, a waiting script (long setTimeout, rAF,
+    setInterval, polling loop) is refused for 10 min with "show the pane or read instantly" (18 such timeouts,
+    13.5 min). `MAKARASTY_PANE_GUARD=off`.
+  - Skill router: named / none / failed / late and answer time counted per day (7 days), shown by `/router`; the count is
+    written in the background so the hint does not wait.
+  - `prune --base <ref>`: a repo whose work branch is not the default (LifeLines: Max) can trash worktrees and branches
+    merged there; selftest.
+  - Inbox: `windowsHide` on every console child process (8 calls); `mainProf()` takes only a real profile folder, not
+    `apps`; selftest. `hold`: a second `init` on a collecting list is proven to change nothing; selftest.
+  - `walk`: sitemap route source covered by a test (flat, index, base path, fallbacks). Hook type errors fixed (15 in
+    hooks, 22 in tests); `validate --strict` still fails on 69 TS5097 warnings for `.ts` imports, which the hooks runtime
+    requires and the validator does not allow.
+  - Flaky test fixed at the root: inbox-concept test 7 never awaited its AskUserQuestion call, so the hook's late
+    `next(e)` hit the fake after the test ended ("the file ran to its end", seen since 2026-11-18).
+  - Every `shortcut:` note in code rewritten as a plain why-comment: 75 (17 in `.mts`, 50 in hooks and skills, 7 in
+    prune, hold and inbox, 1 in the fleet-wait shell snippet). The 30 hits left are the guard, its tests, the rule data
+    and docs that name the word.
+  - R007's canary is now the measured brief (three tools, a closing line naming one): the 1.20.30 routes rule still
+    refuses it. A "Report ..." line naming one item is let through; two detectors for it re-refused 49 and 18 of 87
+    real briefs and were dropped (recorded as open).
+  - Smaller: R002 in-force phrase follows the owner's CLAUDE.md; `fleet-analyze.md` points to PRICES instead of its own
+    copy; the 2026-11-03 prompt-words study moved to `docs/research/` without third-party product names.
+- Measured, not built: no guard on deleting unread `.md` files (0 of 83 harmful in 60 days, and 18 were owner-asked);
+  `hand_off_to_session` keeps the source model and effort by the app's code (no real use seen).
+
 ## makarasty-tools 1.20.31, makarasty 1.18.19 — 2026-11-25
 
 - **The right question, asked where code is written** (M92, R149). The owner: a well-posed question lifts code quality;

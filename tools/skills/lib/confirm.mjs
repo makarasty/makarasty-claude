@@ -81,7 +81,7 @@ function transcriptOf(o) {
 
 // The last TAIL bytes of the transcript, from the first whole line: the answer asked for a moment ago is at the end, and a
 // whole-file read fails past 512 MB ("Cannot create a string longer than 0x1fffffe8 characters").
-// shortcut: an answer more than TAIL bytes from the end is not seen (a grant is 30 minutes old at most); raise TAIL if chats write that much in that time.
+// An answer more than TAIL bytes from the end is not seen (a grant is 30 minutes old at most); raise TAIL if chats write that much in that time.
 const TAIL = 16 << 20;
 function tailOf(f, tail = TAIL) {
     const size = statSync(f).size;

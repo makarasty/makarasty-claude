@@ -14,6 +14,7 @@ export const bundledCli = (/** @type {{name: string, dir: string}} */ prof) => {
   } catch { /* no bundled CLI */ }
   return 'claude'
 }
-// The profile whose CLI runs the inbox's own sessions: main, else the first one (undefined: no app profiles, the CLI on PATH).
-export const mainProf = () => { /** @type {string[]} */ let p = []; try { p = readdirSync(profilesDir()) } catch { /* no app profiles */ } return p.includes('main') ? 'main' : p[0] }
+// The profile whose CLI runs the inbox's own sessions: main, else the first real profile (one with claude-code or claude-code-sessions
+// inside; a folder like apps, holding app copies, is not one). Undefined: no app profiles, the CLI on PATH.
+export const mainProf = () => { /** @type {string[]} */ let p = []; try { p = readdirSync(profilesDir()) } catch { /* no app profiles */ } return p.includes('main') ? 'main' : p.find((n) => existsSync(join(profilesDir(), n, 'claude-code')) || existsSync(join(profilesDir(), n, 'claude-code-sessions'))) }
 export const mainCli = () => bundledCli({ name: mainProf() ?? '', dir: join(profilesDir(), mainProf() ?? '') })

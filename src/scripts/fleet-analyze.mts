@@ -526,7 +526,7 @@ function locateSessions(sids: string[], primary: string): Map<string, string> {
 // (`<slug>--claude-worktrees-<name>`), so scan the project folder and those siblings. A fork (`claude --resume --fork-session`)
 // copies the source's whole history, take-over call included, so a call counts for the session that has it first by file
 // birth time (ties by session id); a session owning none of its calls is no coordinator. Transcripts older than the run dir are skipped.
-// shortcut: no fork marker exists in the jsonl, so "first by birth time" stands in for "the source"; on a filesystem
+// No fork marker exists in the jsonl, so "first by birth time" stands in for "the source"; on a filesystem
 // without birth time it falls back to mtime. Lines are read one at a time: a transcript can pass ~512 MB.
 async function takeOverCalls(file: string, re: RegExp): Promise<string[]> {
   const uuids: string[] = [];
@@ -838,7 +838,7 @@ async function main(): Promise<void> {
   const oneChat = byChip.size === 0;
   if (oneChat) {
     // One pseudo-worker per slot id; a subagent goes to the slot whose task window (latest claimed) holds its first line.
-    // shortcut: a subagent that starts outside every task window (planning, merging) joins no slot, only the token totals.
+    // A subagent that starts outside every task window (planning, merging) joins no slot, only the token totals.
     const seen = new Set<string>();
     for (const cs of coordSessions) for (const t of cs.subs) {
       if (seen.has(resolve(t.file)) || t.first === null) continue;

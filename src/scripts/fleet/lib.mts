@@ -95,7 +95,7 @@ export function takeLock(p: string, staleMs: number, who = ''): boolean {
   if (!takeable(p, staleMs, who)) return false;
   // Two takers of one dead lock both removed it and both made it again. Only the holder of `<lock>.take`
   // removes it, after reading it again.
-  // shortcut: a taker killed inside these few lines leaves `.take` for 10 s; a pid in it if that is ever seen.
+  // A taker killed inside these few lines leaves `.take` for 10 s; a pid in it if that is ever seen.
   const t = `${p}.take`, gone = LOCK_RM;
   try { mkdirSync(t); } catch {
     const tm = mtimeMs(t);
@@ -325,7 +325,7 @@ export interface Ctx {
 
 // calibration.json beside the plugin, read the way fleet.sh's sed reads it: a bare key holding a bare
 // number, anchored at both ends, so a provenance sentence never becomes a constant.
-// shortcut: only the copy beside this script, which is where the plugin ships it; a fleet.sh copied away
+// Only the copy beside this script, which is where the plugin ships it; a fleet.sh copied away
 // from its plugin refuses to run at all.
 export function readCalibration(): Map<string, string> {
   const m = new Map<string, string>();
@@ -795,7 +795,7 @@ export function operatorWordsMd(files: string[], cap = 120 * 1024): { md: string
   all.sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0)); // stable: one session's order stays
   const blocks = all.map((w) => `## ${w.ts}\n${w.body}\n`);
   let size = 0, first = blocks.length;
-  // shortcut: one message above the cap is kept whole as the newest, no truncation inside a message.
+  // One message above the cap is kept whole as the newest, no truncation inside a message.
   while (first > 0 && (first === blocks.length || size + Buffer.byteLength(blocks[first - 1] ?? '') <= cap)) size += Buffer.byteLength(blocks[--first] ?? '');
   const cut = first;
   const head = `# Operator's own words in this run, verbatim, oldest first. Read all of it before you act; a wish or ban here outranks STATE.md.\n\n${blocks.length - cut} messages and answers from ${files.length} coordinator session(s).${cut ? ` ${cut} older ones were cut to keep this file under ${cap / 1024} KB.` : ''}\n\n`;

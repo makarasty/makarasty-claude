@@ -51,7 +51,7 @@ const TOOLS = '(?:npm|npx|pnpm|yarn|bun|bunx|node|deno|git|gh|python3?|pip|uv|ca
 const CMD = new RegExp(`&&|\\|\\||(?:^|[\\s\`(«"'])cd\\s+["']?(?:[A-Za-z]:[\\\\/]|[~./\\\\])|(?:^|[\\s\`(«"'])${TOOLS}\\s+(?:(?:"[^"\\n]*"|'[^'\\n]*'|[^\\s,;а-яё"']+)\\s+){0,8}?(?:-{1,2}[A-Za-z]|[A-Za-z]:[\\\\/]|\\.{0,2}[\\\\/]\\S|\\S+\\.(?:m?[jt]s|json|ps1|sh|py)\\b)`, 'i')
 export function holdsCommand(questions: readonly Q[]): boolean {
   if (!Array.isArray(questions)) return false
-  return questions.some((q) => [str(q?.question), ...(Array.isArray(q?.options) ? q.options : []).flatMap((o) => [str(o?.label), str(o?.description)])].some((t) => CMD.test(t)))
+  return questions.some((q) => [str(q?.question), ...(Array.isArray(q?.options) ? q.options : []).flatMap((o: Opt) => [str(o?.label), str(o?.description)])].some((t) => CMD.test(t)))
 }
 
 // Asking the person for a secret, or to run by hand what the agent could run here, stalls the chat on a question it
@@ -88,13 +88,13 @@ const OWN =/(?<![а-яё])(?:твой|твоя|твоё|твое|твоём|тв
 export function asksSelf(questions: readonly Q[]): boolean {
   if (!Array.isArray(questions)) return false
   return questions.some((q) => {
-    const labels = (Array.isArray(q?.options) ? q.options : []).map((o) => str(o?.label))
+    const labels = (Array.isArray(q?.options) ? q.options : []).map((o: Opt) => str(o?.label))
     const t = [str(q?.question), ...labels].join('\n')
     const ask = lastSentence(str(q?.question))
     // A secret merely named in a longer ask sentence or a label ("Убрать GH_TOKEN", "Только по паролю") is a decision about it;
     // a short bare ask or a question about its value ("Какой пароль у postgres на staging?") is a request.
     const short = words(ask).length <= 6
-    return SECRET.test(t) || asksEnv(t) || NEED.test(t) || (BYHAND.test(t) && !OWN.test(str(q?.question))) || (short && ENV_RE.test(ask)) || ((short || VALUE_OF.test(ask)) && NAMED.test(ask)) || BARE_KEY.test(ask) || labels.some((s) => NAMED.test(s) || BARE_KEY.test(s))
+    return SECRET.test(t) || asksEnv(t) || NEED.test(t) || (BYHAND.test(t) && !OWN.test(str(q?.question))) || (short && ENV_RE.test(ask)) || ((short || VALUE_OF.test(ask)) && NAMED.test(ask)) || BARE_KEY.test(ask) || labels.some((s: string) => NAMED.test(s) || BARE_KEY.test(s))
   })
 }
 
@@ -151,7 +151,7 @@ const BEHAVES = /(?<![a-zа-яё])(как (должн|правильно|дел�
 // A stake question is the person's whatever it asks; the gate is for the rest.
 export function behaviour(questions: readonly Q[]): boolean {
   if (!Array.isArray(questions)) return false
-  return questions.some((q) => !stakedOne(q) && BEHAVES.test([lastSentence(str(q?.question)), ...(Array.isArray(q?.options) ? q.options : []).map((o) => str(o?.label))].join('\n')))
+  return questions.some((q) => !stakedOne(q) && BEHAVES.test([lastSentence(str(q?.question)), ...(Array.isArray(q?.options) ? q.options : []).map((o: Opt) => str(o?.label))].join('\n')))
 }
 export function investigated(meta: unknown): boolean {
   const m = meta && typeof meta === 'object' ? (meta as Record<string, unknown>) : {}
@@ -169,7 +169,7 @@ export const DEFERRED =
 const DEFERS = /сначала,?\s+(я\s+(смотр|посмотр|провер|гляну|сверю|посчита|изуч|разбер|выясн)|посчитать|проверить,? (ошибк|есть ли|сколько)|посмотреть,? (логи|есть ли|сколько))|first,?\s+i('ll| will)?\s+(check|look|verify|count)/i
 export function defers(questions: readonly Q[]): boolean {
   if (!Array.isArray(questions)) return false
-  return questions.some((q) => (Array.isArray(q?.options) ? q.options : []).some((o) => DEFERS.test(`${str(o?.label)}\n${str(o?.description)}`)))
+  return questions.some((q) => (Array.isArray(q?.options) ? q.options : []).some((o: Opt) => DEFERS.test(`${str(o?.label)}\n${str(o?.description)}`)))
 }
 
 export function pointsAbove(questions: readonly Q[]): boolean {
@@ -228,7 +228,8 @@ export function onlyContinue(question: string, options: readonly string[], conte
   return kinds.includes('yes') && kinds.every((k) => k !== null)
 }
 
-type Q = { question?: unknown; header?: unknown; options?: readonly { label?: unknown; description?: unknown }[] }
+type Opt = { label?: unknown; description?: unknown }
+type Q = { question?: unknown; header?: unknown; options?: readonly Opt[] }
 const str = (v: unknown): string => (typeof v === 'string' ? v : '')
 
 // The 1-based numbers of the continue-only questions in an AskUserQuestion input. Labels are judged as replies; the
@@ -237,7 +238,7 @@ export function continueQuestions(questions: readonly Q[]): number[] {
   if (!Array.isArray(questions)) return []
   return questions.flatMap((q, i) => {
     const opts = Array.isArray(q?.options) ? q.options : []
-    return onlyContinue(str(q?.question), opts.map((o) => str(o?.label)), [str(q?.header), ...opts.map((o) => str(o?.description))].join(' ')) ? [i + 1] : []
+    return onlyContinue(str(q?.question), opts.map((o: Opt) => str(o?.label)), [str(q?.header), ...opts.map((o: Opt) => str(o?.description))].join(' ')) ? [i + 1] : []
   })
 }
 

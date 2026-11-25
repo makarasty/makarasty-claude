@@ -14,7 +14,7 @@
 // Cache of the html-to-image build: %LOCALAPPDATA%\makarasty\cache (Windows), $XDG_CACHE_HOME or
 // ~/.cache/makarasty elsewhere; PROOF_CACHE overrides it (used by the selftest).
 //
-// shortcut: blocks.jsonl is rewritten whole on an update, so two chats editing one dir at once can lose
+// The file blocks.jsonl is rewritten whole on an update, so two chats editing one dir at once can lose
 // a write; use one dir per chat.
 import http from 'node:http';
 import { homedir, tmpdir } from 'node:os';

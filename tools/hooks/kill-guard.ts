@@ -9,8 +9,8 @@ import type { Register } from 'claude-code'
 // Look the PID up first (Get-CimInstance Win32_Process, `netstat -ano`, `ps`), check it is yours, then kill that PID.
 // Shape borrowed from git-guard and delete-guard: a function hook, quotes masked, no process spawned. The person can
 // still run anything themselves with `!`.
-// shortcut: wmic/CIM Terminate, `.Kill()` on a Get-Process object, and a variable or foreach loop that holds the name
-// (`$p = Get-Process node; Stop-Process -Id $p.Id`) are not read; upgrade if one bites.
+// Not read: wmic/CIM Terminate, `.Kill()` on a Get-Process object, and a variable or foreach loop that holds the name
+// (`$p = Get-Process node; Stop-Process -Id $p.Id`); widen if one bites.
 const WHY = 'it kills every process of that name, other sessions\' and the person\'s own included. Find the PID first (`Get-CimInstance Win32_Process`, `netstat -ano`, `ps`), check it is yours, then kill that PID: `taskkill /PID <n> /F` (from Git Bash `taskkill //PID <n> //F`: it rewrites `/PID` into a path), `Stop-Process -Id <n>`, `kill <n>`'
 const TREE = 'taskkill /T kills the whole child tree, which can include other sessions\' processes: kill the one PID (`taskkill /PID n /F`; from Git Bash `taskkill //PID n //F`), then each child you own by its PID'
 const SHELL = /^((ba|z|da|k)?sh|pwsh|powershell|cmd)$/
@@ -188,7 +188,7 @@ export const register: Register = on => {
     const tools = e.tool === 'mcp__terminal__run_in_terminal' ? ['Bash', 'PowerShell'] : [e.tool]
     let deny: string | null = null
     try { const off = (await $.env.get('MAKARASTY_KILL_GUARD')) === 'off'; deny = tools.reduce<string | null>((d, t) => d ?? denial(command, off, t), null) } catch {
-      // shortcut: a bug in this guard (not a refusal) lets the call run rather than blocking every shell call.
+      // A bug in this guard (not a refusal) lets the call run rather than blocking every shell call.
     }
     return deny ? { deny } : next(e)
   }).catch(($, e, next) => next(e))

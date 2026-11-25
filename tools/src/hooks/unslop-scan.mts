@@ -69,7 +69,7 @@ const LIST = /^[ \t]*(?:[-*+]|\d+[.)])[ \t]/;
 const LEAD = /^(?:[ \t]*>)*[ \t]*(?:(?:[-*+]|\d+[.)])[ \t]+)?/;
 
 // Same length as the input, code replaced by spaces, so offsets in `prose` are offsets in the text.
-// shortcut: an indented line is code unless it follows a list item, as CommonMark has it; lazy continuation is not modelled.
+// An indented line is code unless it follows a list item, as CommonMark has it; lazy continuation is not modelled.
 function strip(text: string): Stripped {
   const blocks: string[] = [], spans: string[] = [];
   let fence = '', cur: string[] = [], inList = false;

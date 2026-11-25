@@ -4,7 +4,7 @@ import type { Register } from 'claude-code'
 // manifest, lines `<64 hex>  <relpath>`) lists every source AND every output; an edit of an output (.mjs, .js) is
 // lost at the next build and leaves the manifest check STALE. Sources (.mts, .ts) are listed too and stay editable.
 // No manifest in the folder (any other repo) = allow. A function hook: one small file read, only for these tools.
-// shortcut: the path match is case-insensitive on every OS (over-refuses a case alias on Linux, never lets one by).
+// The path match is case-insensitive on every OS (over-refuses a case alias on Linux, never lets one by).
 
 export const MESSAGE = 'compiled output (listed in src/build.sha256): edit the .mts/.ts source, then npm run build --prefix src'
 
@@ -50,7 +50,7 @@ export const register: Register = on => {
         deny = check(path, cwd, typeof manifest === 'string' ? manifest : null)
       }
     } catch {
-      // shortcut: a bug in this guard (not a refusal) lets the write through rather than blocking every edit.
+      // A bug in this guard (not a refusal) lets the write through rather than blocking every edit.
     }
     return deny ? { deny } : next(e)
   }).catch(($, e, next) => next(e))

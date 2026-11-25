@@ -456,7 +456,7 @@ function stranded(c: Ctx, args: string[]): number {
       if (k === 'branch') { if (!bs) bs = v; } else if (k === 'tip') tip = v;
     }
     // A marker with no branch line (a worker older than the branch line, or a task with no code) is looked
-    // up by its id among the branches: `rm/<id>`, `fleet/<chip>/<id>`. shortcut: an id reused by an older
+    // up by its id among the branches: `rm/<id>`, `fleet/<chip>/<id>`. Known limit: an id reused by an older
     // run's branch matches too; branch names carry no run id to tell them apart.
     if (!bs) {
       for (const h of headList) if (h.endsWith(`/${id}`)) bs += ` ${h}`;

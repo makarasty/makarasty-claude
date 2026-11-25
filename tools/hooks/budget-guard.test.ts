@@ -212,7 +212,7 @@ test('a long or odd line is lexed in a bounded time', () => {
   }
 })
 
-const matcher = (register: (on: never) => void): RegExp => { let m!: RegExp; register((((_e: string, o: { tool: RegExp }) => { m = o.tool; return { catch: () => {} } }) as never)); return m }
+const matcher = (register: (on: never, options: never) => unknown): RegExp => { let m!: RegExp; register((((_e: string, o: { tool: RegExp }) => { m = o.tool; return { catch: () => {} } }) as never), {} as never); return m }
 test('Monitor: a heavy run counts against a live one, but is never loose (its timeout_ms ends it)', () => {
   expect(matcher(register).test('Monitor')).toBe(true)
   expect(check('npm test', 'Monitor', {}, LIVE_VITEST)).toContain('another heavy verify run is live')

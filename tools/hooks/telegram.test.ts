@@ -157,7 +157,7 @@ test('a dialog of two questions, one message each: the first tap only collapses 
   await w.tick()
   expect(w.runs).toEqual([])
   expect(w.sent('editMessageText')[0]!.body.text).toBe(`<i>${Q} — SQLite</i>`)
-  w.put(`${TG}/asks/102.json`, { ...w.json(`${TG}/asks/102.json`), q: 'Какой порт?', of: 2 })
+  w.put(`${TG}/asks/102.json`, { ...w.json<object>(`${TG}/asks/102.json`), q: 'Какой порт?', of: 2 })
   w.feed([tap(8, 42, 102, 'a0')])
   await w.advance(20000)
   await w.tick()

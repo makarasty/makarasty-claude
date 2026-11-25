@@ -51,7 +51,7 @@ const day = t => new Date(t).toISOString().slice(0, 10);
 
 // ---- paths ----------------------------------------------------------------------------------------------------
 
-// The long form of the longest existing prefix of p. shortcut: realpath also resolves a junction on that prefix, so
+// The long form of the longest existing prefix of p. Realpath also resolves a junction on that prefix, so
 // such a path comes back as its target; only 8.3 paths take this route, upgrade if one runs through a junction.
 const longName = p => {
     for (let d = p; dirname(d) !== d; d = dirname(d)) {
@@ -62,7 +62,7 @@ const longName = p => {
 };
 // The one real form of an existing path, or null (refused): 8.3 names long, \\?\ and \\localhost\C$ as C:\, a junction or
 // symlink in any parent followed. A leaf that is itself a link stays that link (the act is on it, not on its target).
-// shortcut: a leaf link under an 8.3 name keeps that name; no API gives a link's own long name, upgrade if it matters.
+// A leaf link under an 8.3 name keeps that name; no API gives a link's own long name, upgrade if it matters.
 export function canon(p) {
     if (typeof p !== 'string' || !isAbsolute(p)) return null;
     try {
@@ -101,7 +101,7 @@ export function expand(pattern) {
 // modified date (scrub does, on transcripts and handoffs) sets ageBy: "modified".
 export function measure(p, now = Date.now(), birth = true) {
     const r = { bytes: 0, newest: 0, files: 0, links: 0, denied: 0, partial: false, maxPath: p.length };
-    // modified and created time; a future date reads as now: young. shortcut: a folder moved in keeps both, so it
+    // modified and created time; a future date reads as now: young. A folder moved in keeps both, so it
     // reads as old (ctime would catch it, but any attribute change resets ctime and no test can set it back).
     const seen = st => { r.newest = Math.max(r.newest, Math.min(Math.max(st.mtimeMs, birth ? st.birthtimeMs || 0 : 0), now)); };
     const s = lst(p);
@@ -649,7 +649,7 @@ function lock() {
         try { writeFileSync(f, String(process.pid), { flag: 'wx' }); return () => { if (+read(f) === process.pid) rmSync(f, { force: true }); }; } catch (e) { if (e.code !== 'EEXIST') throw e; }
         const pid = +read(f), young = Date.now() - (lst(f)?.mtimeMs ?? 0) < 60e3;
         // A stale lock is renamed away, not deleted: of two runs that rename it at once, only one succeeds.
-        // shortcut: a slow run can still rename a lock another run wrote just after; fine for a person-started command.
+        // A slow run can still rename a lock another run wrote just after; fine for a person-started command.
         const drop = () => { try { renameSync(f, `${f}.${process.pid}.stale`); rmSync(`${f}.${process.pid}.stale`, { force: true }); } catch (e) { if (e.code !== 'ENOENT') throw e; } };
         if (!(pid > 0)) { if (young) throw new Error(`another cleanup apply is starting (${f}); wait a minute`); drop(); continue; } // empty: a crash mid-write
         try { process.kill(pid, 0); throw new Error(`another cleanup apply runs (pid ${pid}); wait for it, or delete ${f} if none does`); } catch (e) { if (e.code !== 'ESRCH') throw e; drop(); }

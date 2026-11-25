@@ -75,7 +75,7 @@ test('hook: a risky line is saved for before it runs, a safe one is not, and a f
     const argv = (e as unknown as { argv: string[] }).argv
     order.push(argv[1]!)
     if (broken) return { deny: 'spawn git ENOENT' }
-    return { value: { exitCode: 0, stdout: argv[1] === 'status' ? ' M a.ts\0' : argv[1] === 'rev-parse' ? '/hookrepo\n' : 'h\n', stderr: '' } }
+    return { value: { exitCode: 0, stdout: argv[1] === 'status' ? ' M a.ts\0' : argv[1] === 'rev-parse' ? '/hookrepo\n' : 'h\n', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
   })
   expect(await $.tool.call({ tool: 'Bash', command: 'git status' } as never)).toEqual({ result: 'ok' })
   expect(order).toEqual(['ran'])

@@ -33,7 +33,7 @@ import type { Register } from 'claude-code'
 // public by design and sit in committed config. A Twilio SK SID is NOT matched either: it is an identifier, and
 // its secret is a bare 32-hex string no pattern can tell from a hash. No Bearer or JWT pattern: too noisy.
 // Git Bash (/c/...) and WSL (/mnt/c/...) paths are read as c:/... for the inside-the-project test.
-// shortcut: a secret split over two edits, or encoded, is not seen; upgrade if that bites.
+// A secret split over two edits, or encoded, is not seen; widen the scan if that bites.
 
 export type Kind = { kind: string; re: RegExp; ok?: (body: string, whole: string) => boolean }
 // The first group of each pattern is the token body, the part the fake markers are judged on.
@@ -147,7 +147,7 @@ export const register: Register = on => {
         deny = check(file, text, { cwd: await $.session.cwd(), safe: [cfg] }, `${old}\n${typeof was === 'string' ? was : ''}`)
       }
     } catch {
-      // shortcut: a bug in this guard (not a refusal) lets the write through rather than blocking every edit.
+      // A bug in this guard (not a refusal) lets the write through rather than blocking every edit.
     }
     return deny ? { deny } : next(e)
   }).catch(($, e, next) => next(e))

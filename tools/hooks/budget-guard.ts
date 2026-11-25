@@ -33,7 +33,7 @@ export type { Proc }
 // the background. `esc` is the shell's escape character.
 // A heredoc body (`<<EOF ... EOF`) and a PowerShell here-string are text, not commands: `git commit -F - <<'EOF'` with
 // "npm test passes" in it is no run. Cut only when the terminator is found; after 50 openers the rest is left in place.
-// shortcut: a heredoc fed to a shell (`bash <<EOF`) is code and is skipped too; upgrade if a run hides there.
+// A heredoc fed to a shell (`bash <<EOF`) is code and is skipped too; upgrade if a run hides there.
 function noDocs(src: string, ps: boolean): string {
   if (ps) return src.replace(/@'[\s\S]*?'@|@"[\s\S]*?"@/g, ' ')
   let out = '', pos = 0, tries = 0
@@ -398,7 +398,7 @@ export const register: Register = on => {
       const win = isWindows(await $.env.get('OS'), await $.env.get('ComSpec'), await $.env.get('SystemRoot'))
       const r = await $.process.run(win ? ['powershell', '-NoProfile', '-NonInteractive', '-Command', WIN_LIST] : ['ps', '-eo', 'pid=,etime=,args='], { timeoutMs: 8000 })
       if (r.exitCode === 0) procs = parse(r.stdout, win)
-      // shortcut: this session's own processes are not told apart; the listing runs before the call starts, so only an earlier
+      // This session's own processes are not told apart; the listing runs before the call starts, so only an earlier
       // background run of this session shows up, which is a live heavy run all the same.
     } catch {
       // The listing failed or timed out: the call runs (fail open). A guard of RAM, not of data, must not block honest work.

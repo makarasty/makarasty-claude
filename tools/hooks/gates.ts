@@ -363,7 +363,7 @@ export const register: Register = (on, options) => {
     try {
       const dir = await base($)
       const f = `${dir}/ended/${String(e.session_id ?? '').replace(/[^\w.-]/g, '_')}`
-      if (dir && e.session_id && (await $.fs.exists(f))) await $.process.run(['node', '-e', 'require("fs").rmSync(process.argv[1],{force:true})', f], { timeoutMs: 3000 }) // shortcut: the engine has no fs delete event, so node removes it
+      if (dir && e.session_id && (await $.fs.exists(f))) await $.process.run(['node', '-e', 'require("fs").rmSync(process.argv[1],{force:true})', f], { timeoutMs: 3000 }) // The engine has no fs delete event, so node removes it
     } catch { /* a marker that cannot be removed must not cost the session its start */ }
     return next(e)
   })

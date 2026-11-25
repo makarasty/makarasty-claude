@@ -100,7 +100,7 @@ while true; do
       acks="$acks $w"; last=$(date +%s); stall=0; echo "worker $w stopped"; done
   elif [ $ps = 1 ]; then ps=0; last=$(date +%s); stall=0; echo "RESUMED"
     # A pause must not eat a budget: every deadline moves out by the pause's length.
-    # shortcut: the length counts from this watch's first sight of PAUSED, so a pause that spans a re-arm shifts only the part after it; upgrade: have the pause write its start time into PAUSED.
+    # The length counts from this watch's first sight of PAUSED, so a pause that spans a re-arm shifts only the part after it; to fix, have the pause write its start time into PAUSED.
     for dl in "$d"/tasks/claimed/*/deadline; do [ -f "$dl" ] || continue; dv=""; read -r dv < "$dl"
       case "$dv" in ''|*[!0-9]*) continue;; esac; echo $((dv + last - pst)) > "$dl"; done
   fi

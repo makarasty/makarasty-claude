@@ -275,7 +275,7 @@ if (cmd === 'fixqueue') {
     // A finding's `repro` is an expression or steps (PROTOCOL, "Finding schema"). Only a one-line command that
     // names no pane action and opens like one (lower case, a path, `[`, or VAR=x) goes into `repro:`; a
     // sentence or numbered steps leave it empty and stay in the body, for the coordinator to turn into one.
-    // shortcut: a lower-case prose line ("open settings") passes; its `prove before` then fails as an unknown
+    // A lower-case prose line ("open settings") passes; its `prove before` then fails as an unknown
     // command and its `after` too, so `finish` refuses it rather than closing it - upgrade if a run shows one.
     // A ` #` comment is refused too (a root joins member repros, and it would swallow the rest), and so is a
     // JS expression a profiler writes (`performance.getEntriesByType('navigation')[0].duration`).

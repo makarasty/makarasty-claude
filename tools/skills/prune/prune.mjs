@@ -101,17 +101,25 @@ function context(repo) {
 }
 
 // origin/HEAD, else main, else master. Merged means reachable from it or from the local branch of that name.
-function defaults(cwd) {
+function defaults(cwd, bases = []) {
     const has = r => run(['rev-parse', '-q', '--verify', r + '^{commit}'], cwd).code === 0;
     const head = run(['symbolic-ref', '-q', 'refs/remotes/origin/HEAD'], cwd);
     const remote = head.code === 0 && has(head.out) ? head.out : null;
     const name = remote ? remote.replace(/^refs\/remotes\/[^/]+\//, '') : ['main', 'master'].find(n => has('refs/heads/' + n));
     if (!name) throw new Refusal('no default branch: origin/HEAD, main and master are all missing (`git remote set-head origin -a` sets origin/HEAD)');
     const refs = [remote, has('refs/heads/' + name) ? 'refs/heads/' + name : null].filter(Boolean);
-    return { name, refs, label: remote ? remote.slice('refs/remotes/'.length) : name };
+    // --base refs (a work branch the default is not): merged into one of them counts too; their own branch is never a candidate.
+    const names = [name];
+    for (const b of bases) {
+        if (!has(b)) throw new Refusal(`--base ${b}: no such commit or ref`);
+        const full = run(['rev-parse', '--symbolic-full-name', b], cwd).out || b;
+        refs.push(full); names.push(full.replace(/^refs\/(heads|remotes\/[^/]+)\//, ''));
+    }
+    const label = remote ? remote.slice('refs/remotes/'.length) : name;
+    return { name, names, refs, label: [label, ...bases].join(' or ') };
 }
 
-// shortcut: a worktree path holding a newline breaks this split (`list -z` is git 2.36+); upgrade if one appears.
+// A worktree path holding a newline breaks this split (`list -z` needs git 2.36+), so such a path is not handled.
 function worktrees(cwd) {
     return git(['worktree', 'list', '--porcelain'], cwd).split(/\n\n+/).filter(Boolean).map((blk, i) => {
         const w = { main: i === 0 };
@@ -156,8 +164,8 @@ function touched(wt) {
 // (lib/live.mjs), else the last EVENT of its transcripts, projects/<path with non-alphanumerics as '-'>. Never the file
 // mtime as the answer: one copy gave 81% of transcripts the same mtime. A write only moves mtime forward, so mtime
 // still picks which files to open.
-// shortcut: the `<slug>-` prefix (chats started in a subfolder) also catches a sibling named `<wt>-x`; that costs an
-// extra ask, never a wrong trash.
+// The `<slug>-` prefix (chats started in a subfolder) also catches a sibling named `<wt>-x`; that costs an extra ask,
+// never a wrong trash.
 function chatTouched(wt, since = Date.now() - 2 * HOUR) {
     const all = chats();
     // A chat whose session file would not read (unknown folder) may be in any worktree: ask about it, as cleanup holds everything.
@@ -198,7 +206,7 @@ function changes(wt) {
 
 // Git-ignored files the tree holds that are not regenerable build output (.env, a local config): neither `status` nor
 // ls-files shows them, trash moves them and `empty` deletes them. A link (a node_modules junction) is not data.
-// shortcut: "regenerable" is a fixed list of folder names, not a judgement; upgrade if a tree keeps data in one of them.
+// "Regenerable" is a fixed list of folder names, not a judgement: a tree that keeps data in one of them would be missed.
 const REGEN = new Set(['node_modules', 'dist', 'build', 'target', '.next', '.nuxt', '__pycache__', '.cache', 'coverage', '.turbo', '.parcel-cache', '.pytest_cache']);
 function ignoredFiles(wt) {
     const st = run(['status', '--porcelain=v1', '-z', '--ignored', '--untracked-files=normal'], wt);
@@ -212,8 +220,8 @@ const heldIn = (p, paths) => paths.find(q => inside(q, p));
 const worktreePaths = c => [...worktrees(c.cwd).map(w => w.path), ...admins(c.common).map(a => a.path)];
 
 // Linux and macOS rename a folder that is another process's working directory without a word; Windows refuses.
-// shortcut: best effort; /proc on Linux, else `lsof -d cwd` when installed, and only processes this user may
-// inspect. A process that changes into the folder after this check still loses it; upgrade to a lock if that bites.
+// Best effort: /proc on Linux, else `lsof -d cwd` when installed, and only processes this user may inspect. A process
+// that changes into the folder after this check still loses it; a lock would be needed to close that.
 function cwdHolder(dir) {
     if (process.platform === 'win32') return null;
     const hit = p => key(p) === key(dir) || inside(p, dir);
@@ -235,8 +243,8 @@ function cwdHolder(dir) {
 
 // strict: a branch checked out in any live worktree is kept, even one that is a trash candidate itself. `trash`
 // rescans this way after moving worktrees, so a branch never goes while a worktree still has it checked out.
-export function cmdScan(repo, strict = false) {
-    const c = context(repo), def = defaults(c.cwd);
+export function cmdScan(repo, strict = false, bases = []) {
+    const c = context(repo), def = defaults(c.cwd, bases);
     const mergedTips = new Set(def.refs.flatMap(r => git(['for-each-ref', `--merged=${r}`, '--format=%(objectname)', 'refs/heads'], c.cwd).split('\n')));
     const merged = sha => mergedTips.has(sha) || def.refs.some(r => run(['merge-base', '--is-ancestor', sha, r], c.cwd).code === 0);
     const ahead = sha => {
@@ -286,7 +294,7 @@ export function cmdScan(repo, strict = false) {
     }
     const current = run(['symbolic-ref', '-q', '--short', 'HEAD'], c.cwd).out;
     for (const b of brs) {
-        if (b.name === def.name || b.name === current) continue;
+        if (def.names.includes(b.name) || b.name === current) continue;
         const it = { id: 'b:' + b.name, kind: 'branch', name: b.name, sha: b.sha };
         const v = (verdict, reason) => Object.assign(it, { verdict, reason });
         items.push(it);
@@ -372,7 +380,7 @@ function newId(c) {
 
 // Takes the lock file p, judged dead while its text was `raw`. The file is renamed to a name of ours and read: if it is not
 // what was judged, another run created its own lock in between, so it goes back (a link never overwrites) and nothing is stolen.
-// shortcut: for that moment the owner's lock is missing; a third run in that instant could take it. Fine for person-started commands.
+// For that moment the owner's lock is missing and a third run in that instant could take it; acceptable for commands a person starts.
 function stealLock(p, raw) {
     const mine = `${p}.${process.pid}.${Date.now()}.stale`;
     try { renameSync(p, mine); } catch (e) { if (e.code === 'ENOENT') return true; throw e; } // gone already: free to take
@@ -445,10 +453,10 @@ function trashWorktree(c, it) {
 }
 
 // gate(ids) runs inside the lock on exactly the ids to act on (the person's grant, see confirm.mjs); false acts on nothing and returns null.
-export function cmdTrash(repo, ids, safe, gate) {
+export function cmdTrash(repo, ids, safe, gate, bases = []) {
     const c = context(repo);
     return withLock(c, () => {
-        if (gate && !gate(safe ? cmdScan(repo).items.filter(i => i.verdict === 'trash').map(i => i.id) : ids)) return null;
+        if (gate && !gate(safe ? cmdScan(repo, false, bases).items.filter(i => i.verdict === 'trash').map(i => i.id) : ids)) return null;
         const done = [], failed = [], seen = new Set();
         const act = (items, kind, fn) => {
             for (const it of items) {
@@ -459,8 +467,8 @@ export function cmdTrash(repo, ids, safe, gate) {
                 try { done.push(fn(c, it)); } catch (e) { failed.push({ id: it.id, why: e.message }); }
             }
         };
-        act(cmdScan(repo).items, 'worktree', trashWorktree);
-        act(cmdScan(repo, true).items, 'branch', trashBranch); // worktrees first, so their branches are free now
+        act(cmdScan(repo, false, bases).items, 'worktree', trashWorktree);
+        act(cmdScan(repo, true, bases).items, 'branch', trashBranch); // worktrees first, so their branches are free now
         for (const id of ids) if (!seen.has(id)) failed.push({ id, why: 'no such candidate in scan (ids look like b:<branch> or w:<worktree>)' });
         return { done, failed };
     });
@@ -837,6 +845,21 @@ function selftest() {
         assert.ok(!existsSync(lockf));
         mkdirSync(join(tmp, 'idx.jsonl.tmp')); writeIdx(join(tmp, 'idx.jsonl'), []); // the old shared name would be this directory
         assert.ok(existsSync(join(tmp, 'idx.jsonl')), 'writeIdx does not use a shared .tmp name');
+        // --base: the work branch is not the default. A clean worktree and a branch on a commit that is on origin/Max
+        // but not on main are keep without it and trash with it; the work branch itself is never a candidate.
+        const rb = join(tmp, 'rbase'), rbRemote = join(tmp, 'rbase-remote.git');
+        g(tmp, 'init', '-q', '--bare', rbRemote); g(tmp, 'init', '-q', rb);
+        commit(rb, 'a.txt', 'first'); g(rb, 'remote', 'add', 'origin', rbRemote); g(rb, 'push', '-q', 'origin', 'main'); g(rb, 'remote', 'set-head', 'origin', 'main');
+        g(rb, 'switch', '-q', '-c', 'Max'); commit(rb, 'm.txt', 'work branch commit'); g(rb, 'push', '-q', '-u', 'origin', 'Max');
+        g(rb, 'branch', 'onmax'); g(rb, 'worktree', 'add', '-q', '--detach', wt('wt-onmax'), 'Max'); backdate(wt('wt-onmax'));
+        g(rb, 'switch', '-q', 'main');
+        const bv = (...bases) => Object.fromEntries(cmdScan(rb, false, bases).items.map(i => [i.id, i.verdict]));
+        assert.deepEqual(bv(), { 'b:Max': 'keep', 'b:onmax': 'keep', 'w:wt-onmax': 'keep' }, 'without --base the work branch counts as unique work');
+        assert.deepEqual(bv('origin/Max'), { 'b:onmax': 'trash', 'w:wt-onmax': 'trash' }, 'with --base origin/Max both are trash and Max is not a candidate');
+        assert.deepEqual(bv('origin/Max', 'main'), bv('origin/Max'), 'several bases');
+        assert.match(cmdScan(rb, false, ['origin/Max']).items.find(i => i.id === 'w:wt-onmax').reason, /origin\/main or origin\/Max/);
+        assert.throws(() => cmdScan(rb, false, ['origin/nope']), /--base origin\/nope/);
+        assert.deepEqual(cmdTrash(rb, [], true, null, ['origin/Max']).done.map(r => `${r.kind}:${r.name}`).sort(), ['branch:onmax', 'worktree:wt-onmax']);
         console.log(`prune.mjs selftest done (${process.platform}, ${g(tmp, '--version')})`);
     } finally {
         stop();
@@ -858,6 +881,8 @@ function main(argv) {
     const take = (n, v) => { const i = argv.indexOf(n); if (i < 0) return undefined; const x = v ? argv[i + 1] : true; argv.splice(i, v ? 2 : 1); return x; };
     const json = take('--json'), safe = take('--safe'), all = take('--all');
     const repo = resolve(take('--repo', 1) ?? '.'), as = take('--as', 1), olderArg = take('--older', 1);
+    // --base origin/Max,origin/dev: refs a branch counts as merged into besides the default; repeatable.
+    const bases = []; for (let b; (b = take('--base', 1)) !== undefined;) bases.push(...b.split(',').filter(Boolean));
     const [cmd, ...args] = argv;
     const say = (obj, lines) => console.log(json ? JSON.stringify(obj, null, 1) : lines().join('\n'));
     const hint = `node prune.mjs`;
@@ -876,7 +901,7 @@ function main(argv) {
     };
     const home = () => key(context(repo).common);
     if (cmd === 'scan') {
-        const s = cmdScan(repo), w = Math.max(4, ...s.items.map(i => i.id.length));
+        const s = cmdScan(repo, false, bases), w = Math.max(4, ...s.items.map(i => i.id.length));
         number('prune-trash', s.items, i => ({ id: i.id, what: `${i.kind} ${i.kind === 'worktree' ? i.path : i.name}`, bytes: null, how: 'undo',
             note: 'to the makarasty trash, `restore <id>` brings it back', held: i.verdict === 'keep' ? i.reason : undefined }), home());
         const n = v => s.items.filter(i => i.verdict === v).length;
@@ -887,8 +912,8 @@ function main(argv) {
     if (cmd === 'trash') {
         if (!safe && !args.length) throw new Refusal('trash takes ids from scan, or --safe for every trash verdict');
         // --safe: the ids it would take now; only what the person granted is moved (checked inside the lock, on the final ids).
-        const ids = safe ? cmdScan(repo).items.filter(i => i.verdict === 'trash').map(i => i.id) : args, scope = home();
-        const t = cmdTrash(repo, ids, false, final => confirmed('prune-trash', final, scope));
+        const ids = safe ? cmdScan(repo, false, bases).items.filter(i => i.verdict === 'trash').map(i => i.id) : args, scope = home();
+        const t = cmdTrash(repo, ids, false, final => confirmed('prune-trash', final, scope), bases);
         if (!t) return;
         process.exitCode = t.failed.length ? 1 : 0;
         return say(t, () => [
@@ -918,7 +943,7 @@ function main(argv) {
         process.exitCode = e.failed.length ? 1 : 0;
         return say(e, () => [`deleted for good: ${e.gone.length ? e.gone.join(' ') : 'nothing'}`, ...e.notes, ...e.failed.map(f => `kept ${f.id}: ${f.why}`)]);
     }
-    console.error('usage: node prune.mjs scan | trash <id ...>|--safe | list [--all] | restore <id> [--as <name>] | empty [--older 30d] [<id> ...] | --selftest   [--repo <dir>] [--json]');
+    console.error('usage: node prune.mjs scan | trash <id ...>|--safe | list [--all] | restore <id> [--as <name>] | empty [--older 30d] [<id> ...] | --selftest   [--repo <dir>] [--base <ref>[,<ref>]] [--json]');
     process.exitCode = 2;
 }
 

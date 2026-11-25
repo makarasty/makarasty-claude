@@ -11,10 +11,10 @@
 // <session>/subagents subfolders are skipped). --save writes <config>/makarasty/selfreview/<until>.json and the
 // report then also shows the change since the latest earlier saved file. Windows are UTC days, `until` included.
 //
-// shortcut: assistant lines are read with regexes, not JSON.parse (field order of the transcript writer);
+// Assistant lines are read with regexes, not JSON.parse (field order of the transcript writer);
 //   upgrade to parse if the writer changes order.
-// shortcut: a clone's own skill calls and context size are not counted, only its new human prompts.
-// shortcut: a file untouched since before the previous window is read only up to its first prompt (clone owner).
+// A clone's own skill calls and context size are not counted, only its new human prompts.
+// A file untouched since before the previous window is read only up to its first prompt (clone owner).
 import { createReadStream, readdirSync, statSync, readFileSync, writeFileSync, mkdirSync, mkdtempSync, rmSync, existsSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { homedir, tmpdir } from 'node:os';

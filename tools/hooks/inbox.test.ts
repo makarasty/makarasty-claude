@@ -1,4 +1,5 @@
 import { expect, mock, test } from 'claude-code/testing'
+import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 import { render, sourceTag } from '../skills/inbox/core.mjs'
 import { MESSAGE as PUSH_MESSAGE } from './push-guard.ts'
@@ -307,7 +308,7 @@ test('the inbox chat asks a question of a session it started like any other: wit
   await w.until(() => w.dialog.shown === 1, 'asked with the flag')
   w.inboxAnswers('chatB~t1', { by: 'chat' }) // answered in its own chat: this dialog closes by itself
   const r = await q
-  expect((r.result as { answers: Record<string, string> }).answers).toEqual({ [reworded[0].question]: '[answered in its own chat]' })
+  expect((r.result as { answers: Record<string, string> }).answers).toEqual({ [reworded[0]!.question]: '[answered in its own chat]' })
 })
 
 test('the inbox chat is woken once per new item from another chat, never for its own or answered ones', async ($, on) => {
@@ -359,7 +360,7 @@ test('the queue: a dialog open 10 min when a new item comes in is closed to be a
   await $.prompt.submit({ text: 'hi' } as never) // the timer
   await $.turn.start({ text: 'x', turnId: 'q' } as never)
   w.disk.set('/cfg/makarasty/inbox/announced/chatB~t1', '')
-  const QX = [{ ...QUESTIONS[0], question: `x · c: ${Q}` }] // each inbox question starts with its source
+  const QX = [{ ...QUESTIONS[0]!, question: `x · c: ${Q}` }] // each inbox question starts with its source
   const call = $.tool.call({ tool: 'AskUserQuestion', questions: QX, metadata: { source: 'inbox:chatB~t1' }, tool_use_id: 'q1' })
   await w.until(() => w.dialog.shown === 1, 'shown')
   for (let i = 0; i < 8; i++) await w.clock.advance(15000) // 2 min
@@ -368,7 +369,7 @@ test('the queue: a dialog open 10 min when a new item comes in is closed to be a
   expect(w.dialog.closed).toBe(0)
   for (let i = 0; i < 6; i++) await w.clock.advance(15000) // past 10 min
   const r = await call
-  expect((r.result as { answers: Record<string, string> }).answers).toEqual({ [QX[0].question]: '[not answered yet: more items came in while this dialog waited; ask again with every open item, these first]' })
+  expect((r.result as { answers: Record<string, string> }).answers).toEqual({ [QX[0]!.question]: '[not answered yet: more items came in while this dialog waited; ask again with every open item, these first]' })
   await w.until(() => w.dialog.closed === 1, 'closed')
   expect(w.disk.has('/cfg/makarasty/inbox/answers/chatB~t1.json')).toBe(false) // still open, asked again
   expect(w.submitted.filter((s) => s.startsWith('Inbox:'))).toEqual([]) // no prompt queued behind the turn
@@ -510,7 +511,7 @@ test('the rule in profile.md as "Continue: yes" counts too', async ($, on) => {
 })
 
 // Each of these must reach the person's dialog; the answered-at-once path never opens it.
-async function notAnswered(on: On, $: Parameters<Parameters<typeof test>[1]>[0], rule: string, questions: unknown, id: string) {
+async function notAnswered(on: On, $: Engine, rule: string, questions: unknown, id: string) {
   const w = world(on)
   w.disk.set('/cfg/makarasty/profile.md', rule)
   const call = $.tool.call({ tool: 'AskUserQuestion', questions: questions as never, tool_use_id: id })
@@ -651,7 +652,7 @@ const PUSH_Q = 'Запушить коммит 08ab63c в master репозито
 const HEARD_A = (id: string) => `/cfg/makarasty/inbox/heard-answers/${id}.json`
 // Chat A asks the push in its box; the inbox answers «Да, пушь» (with the record his act left, or without it); the
 // timer delivers it; the app starts the turn with that prompt, which no prompt.submit hook of this plugin sees.
-async function boxAnsweredFromInbox($: Parameters<Parameters<typeof test>[1]>[0], on: On, heardOf?: object, phone = false) {
+async function boxAnsweredFromInbox($: Engine, on: On, heardOf?: object, phone = false) {
   const w = world(on, phone ? { on: false } : {})
   if (phone) w.disk.set('/cfg/makarasty/notify.json', TG)
   on('turn.start', (_$, e) => ({ turnId: e.turnId }))

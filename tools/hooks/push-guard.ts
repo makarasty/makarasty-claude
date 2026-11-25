@@ -17,7 +17,7 @@ import { itemId } from '../skills/inbox/core.mjs'
 // turn, "stop, don't push" withdraws it. `--dry-run`/`-n` is no push. MAKARASTY_PUSH_GUARD=off drops it.
 // 2026-11-16 «можешь спокойно сам пушить»: a plain push of a named branch runs without his word; only main/master,
 // force, delete, tags, mirror, any other flag, or a push with no branch named (it may be main) still needs it.
-// shortcut: a push inside a script (`npm run release`), an alias from ~/.gitconfig or a GUI client is not seen; this
+// A push inside a script (`npm run release`), an alias from ~/.gitconfig or a GUI client is not seen; this
 // stops a chat's own unasked `git push`, not a determined bypass.
 
 export const MESSAGE =

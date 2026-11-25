@@ -66,7 +66,7 @@ export function lockStale(txt, mtimeMs, now, isAlive = alive) {
 }
 // Takes the lock file judged stale while its text was `txt`: renamed to a name of ours and read; if it is not what was judged,
 // another scan linked its own lock in between, so it goes back (a link never overwrites) and nothing is stolen.
-// shortcut: for that moment the owner's lock is missing; a third scan in that instant could take it.
+// For that moment the owner's lock is missing; a third scan in that instant could take it.
 export function stealLock(lock, txt) {
   const mine = `${lock}.${process.pid}.${Date.now()}.stale`;
   try { fs.renameSync(lock, mine); } catch (e) { if (e.code === 'ENOENT') return true; throw e; }
@@ -521,7 +521,7 @@ async function cmdPick() {
 }
 
 // Files of the touched directories at the commit, written out with `git show`: enough context to review without the live repo.
-// shortcut: capped at 300 files / 8 MB, then only the touched files; raise the caps if reviewers report missing context.
+// Capped at 300 files / 8 MB, then only the touched files; raise the caps if reviewers report missing context.
 function snapshot(repo, sha, files, out) {
   const dirs = [...new Set(files.map((f) => path.posix.dirname(f)))];
   let list = dirs.includes('.') ? files : git(repo, ['ls-tree', '-r', '-l', sha, '--', ...dirs]).split('\n').filter(Boolean).map((l) => {

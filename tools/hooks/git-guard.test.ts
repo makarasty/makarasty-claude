@@ -488,7 +488,7 @@ test('PowerShell: any later segment that names GIT_INDEX_FILE without a scratch 
   expect(check(pre + "$env:GIT_INDEX_FILE='y'; git add -A", 'PowerShell', MAIN)).toBeNull()
 })
 
-const matcher = (register: (on: never) => void): RegExp => { let m!: RegExp; register((((_e: string, o: { tool: RegExp }) => { m = o.tool; return { catch: () => {} } }) as never)); return m }
+const matcher = (register: (on: never, options: never) => unknown): RegExp => { let m!: RegExp; register((((_e: string, o: { tool: RegExp }) => { m = o.tool; return { catch: () => {} } }) as never), {} as never); return m }
 test('Monitor is a shell: its command is read like Bash', () => {
   expect(matcher(register).test('Monitor')).toBe(true)
   expect(denial('git reset --hard', false, 'Monitor')).toContain('git reset')

@@ -1,4 +1,4 @@
-import type { EngineInterface, Register } from 'claude-code'
+import type { EngineInterface, Register, ToolCallResult } from 'claude-code'
 
 // A started session stays linked: every turn it ends wakes the chat that started it, which re-reads its whole context
 // to relay a line. 197 such wakes in 14 days, 78% with no work, about 477K context each; the starters had started up to
@@ -22,10 +22,10 @@ async function off($: Pick<EngineInterface, 'env'>): Promise<boolean> {
 export const register: Register = (on) => {
   on('tool.call', { tool: /^mcp__ccd_session__(start_session|hand_off_to_session)$/ }, async ($, e, next) => {
     const r = await next(e)
-    if (r.deny || r.isError || (e as unknown as { wake_when_done?: boolean }).wake_when_done === true || (await off($))) return r
+    if (r.deny !== undefined || r.isError || (e as unknown as { wake_when_done?: boolean }).wake_when_done === true || (await off($))) return r
     const id = startedId(r.text ?? (typeof r.result === 'string' ? r.result : JSON.stringify(r.result ?? '')))
     if (!id) return r // a proposal card or an offer: nothing started yet
-    const d = await $.tool.call({ tool: DETACH, session_id: id } as never).catch((err: unknown) => ({ deny: String(err) }))
+    const d = await $.tool.call({ tool: DETACH, session_id: id } as never).catch((err: unknown): ToolCallResult => ({ deny: String(err) }))
     const line = d.deny || d.isError ? REFUSED(id, d.deny ?? String(d.text ?? '')) : DETACHED(id)
     return { ...r, context: [...(r.context ?? []), line] }
   }).catch(($, e, next) => next(e))

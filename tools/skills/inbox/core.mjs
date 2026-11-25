@@ -243,7 +243,7 @@ export function continueShape(/** @type {string} */ question) {
  * Per question: short (60 chars), matches the continue words, and exactly two options, one yes-like and one no-like
  * ("Продолжить через REST" / "через GraphQL" is a choice between approaches, not this). Undefined when the question, header,
  * any label, description or preview touches CONSENT, or a question is multiSelect.
- * shortcut: regex stems over Russian and English, misses other languages; the standing rule gates it, so a miss only leaves the question to the person.
+ * Regex stems over Russian and English, miss other languages; the standing rule gates it, so a miss only leaves the question to the person.
  */
 export function continueAnswer(/** @type {Item} */ item) {
   const qs = item.kind === 'ask' ? item.questions ?? [] : []

@@ -11,7 +11,7 @@ import type { Register } from 'claude-code'
 // Everything else is refused in every tree. `git add -A` / `add .` / `commit -a` sweep other sessions' files: refused in the shared tree.
 // `'sweep'` (add -A, commit -a) also runs in a root-level `wt*` worktree and in a folder this very line makes with `git init <path>`
 // or `git clone`: no other session's files are there. Every other discard stays refused in a `wt*` worktree.
-// shortcut: a worktree elsewhere is not seen (no process or file read here); upgrade if one bites.
+// A worktree elsewhere is not seen (no process or file read here); upgrade if one bites.
 // `'tree'` is `'sweep'` without the scratch-index exemption: a commit rewrite still hits the real HEAD.
 type Rule = [RegExp | ((s: string) => boolean), string, (boolean | 'sweep' | 'tree')?]
 // Git takes any unambiguous prefix of a long option (`reset --har` is --hard); an ambiguous prefix fails in git,
@@ -21,7 +21,7 @@ const opt = (...names: string[]): string => `--(?:${names.map(pre).join('|')})(?
 // Config keys are case-insensitive in section and name (`-c Alias.x=..`); `-c` itself is not `-C`.
 const ci = (w: string): string => [...w].map((c) => (c === '.' ? '\\.' : `[${c}${c.toUpperCase()}]`)).join('')
 // Words after an option that takes a value are that value, not flags: `branch --sort -refname`, `commit -m -n`.
-// shortcut: only the exact flag words, not a cluster ending in the flag (`-am -n`); upgrade if that bites.
+// Only the exact flag words, not a cluster ending in the flag (`-am -n`); upgrade if that bites.
 const noValues = (s: string, ...flags: string[]): string => s.replace(new RegExp(`\\s(?:${flags.join('|')})\\s+\\S+`, 'g'), '')
 // Hooks and signing are the repo owner's checks; the commit and ship skills forbid skipping them only in prose.
 const SKIP = "hooks and signing are the repo owner's checks, and skipping them is the person's call: ask them to run it themselves with `!`"
@@ -255,7 +255,7 @@ function substs(body: string, into: string[], ps: boolean): void {
 
 // Replaces every quoted string with a numbered mark (kept in `lits`), pulls $(...) and backticks into `nested`,
 // and turns subshell parens into separators.
-// shortcut: quotes inside a $( ) that hold parens can mis-pair; upgrade to a real shell parser if that bites.
+// Quotes inside a $( ) that hold parens can mis-pair; upgrade to a real shell parser if that bites.
 function lex(src: string, lits: string[], nested: string[], ps: boolean): string {
   const esc = ps ? '`' : '\\'
   let out = ''
@@ -296,7 +296,7 @@ function inQuote(s: string): boolean {
 // goes: the rest of the opening line (`<<EOF && git push`) is still a command line. A `<<` inside quotes or `$(( ))` is no heredoc, and one
 // with no terminator line leaves its lines as commands. Linear: each line is read once, at most 20 openers per line and a scan budget in
 // total (a regex over 160 KB of `a<<b` took 17 s, past the hook's time limit, and the guard was skipped).
-// shortcut: a pipe into a wrapper (`| sudo bash`, `| xargs`) is not read as a shell; upgrade if that bites.
+// A pipe into a wrapper (`| sudo bash`, `| xargs`) is not read as a shell; upgrade if that bites.
 function heredocs(cmd: string, nested: string[]): string {
   const lines = cmd.split('\n'), out: string[] = []
   let budget = 100000
@@ -331,7 +331,7 @@ function heredocs(cmd: string, nested: string[]): string {
 // A git subcommand line, and the variable that stood in for git when one did.
 type Sub = { sub: string; via?: string; dir: string; idx?: boolean }
 // `cwd` is the tree a command runs in until a `cd`, `pushd` or `Set-Location` before it moves it.
-// shortcut: a cd inside a subshell `(cd x; git ..)` is read as lasting to the end of the line; upgrade if that bites.
+// A cd inside a subshell `(cd x; git ..)` is read as lasting to the end of the line; upgrade if that bites.
 function subcommands(cmd: string, ps: boolean, depth = 0, cwd = '', husky = false): Sub[] {
   if (depth > 4) return []
   // A line continuation (PowerShell backtick, Bash backslash before the newline) is one command, not two.
@@ -341,7 +341,7 @@ function subcommands(cmd: string, ps: boolean, depth = 0, cwd = '', husky = fals
   // A heredoc on a shell's own stdin (`bash <<EOF`, flags only, or `cat <<EOF | bash`) is code; one fed to a script
   // (`sh x.sh <<EOF`) or any other command (commit messages) is that command's text. Only the body goes: the rest
   // of the opening line (`<<EOF && git push`) is still a command line.
-  // shortcut: a pipe into a wrapper (`| sudo bash`, `| xargs`) is not read as a shell; upgrade if that bites.
+  // A pipe into a wrapper (`| sudo bash`, `| xargs`) is not read as a shell; upgrade if that bites.
   let text = heredocs(cmd, nested)
   if (ps) text = text.replace(/@'[\s\S]*?'@|@"[\s\S]*?"@/g, ' ') // PowerShell here-strings; in Bash `@'` is a quote after @
   // A here-string (`bash <<< "git stash"`) becomes one \u0004-led word, read below as a shell's stdin or dropped.
@@ -460,7 +460,7 @@ function subcommands(cmd: string, ps: boolean, depth = 0, cwd = '', husky = fals
       if (f > 0) { f++; while (f < words.length && words[f]!.startsWith('-')) f++; handOn(words.slice(f)) }
     }
   }
-  // shortcut: a string one shell hands another (`powershell -Command` from Bash) is lexed by the outer shell's
+  // A string one shell hands another (`powershell -Command` from Bash) is lexed by the outer shell's
   // escapes; lex nested by the inner shell if that ever hides a command.
   nested.forEach((n, k) => out.push(...subcommands(n, ps, depth + 1, nestedDir[k] ?? cwd, huskyOff)))
   return out
@@ -469,7 +469,7 @@ function subcommands(cmd: string, ps: boolean, depth = 0, cwd = '', husky = fals
 // The reason a refused pipe starts from; denial() tells it apart from a discard, which it is not.
 const PIPE = "a pipe hides git's exit code"
 // null = let it run, otherwise why it would destroy work. `tool` is the tool the command runs in.
-// shortcut: with no tool the command is read as Bash, so a PowerShell backtick counts as a substitution
+// With no tool the command is read as Bash, so a PowerShell backtick counts as a substitution
 // (over-blocks) and a backtick continuation is not joined; the hook always passes it, guess only for a new caller.
 export function check(cmd: string, tool = 'Bash', where: Where = {}): string | null {
   const made = new Set<string>()
@@ -522,11 +522,11 @@ export function check(cmd: string, tool = 'Bash', where: Where = {}): string | n
       if (d && d !== '?' && norm(d) !== norm(dir) && !norm(dir).startsWith(norm(d).replace(/\/?$/, '/'))) made.add(norm(d))
     }
     // `-h`/`--help` before any `--` only prints usage, whatever the subcommand (`stash -h`, `worktree remove -h`) [M53].
-    // shortcut: a `-h` that is the value of a short option (`commit -m -h`) is not told apart from help beyond -m/-F/-C/-c/-t; `--message -h` slips through.
+    // A `-h` that is the value of a short option (`commit -m -h`) is not told apart from help beyond -m/-F/-C/-c/-t; `--message -h` slips through.
     if (/(?<!\s-[a-zA-Z]*[mFCct])\s(-h|--help)(\s|$)/.test(sub.split(/\s--(?:\s|$)/)[0]!)) continue
     const own = isPrivate(dir, where.tmp)
     if (!via && name.includes('$')) return `git ${name}: ${VARIABLE}`
-    // shortcut: a bare `$var` before a guarded subcommand word is read as git, so `$pkg restore` is refused too.
+    // A bare `$var` before a guarded subcommand word is read as git, so `$pkg restore` is refused too.
     for (const [rule, why, discard] of RULES) if (!(discard === 'sweep' ? own || isWt(dir) || made.has(norm(dir)) || idx : discard === 'tree' ? own || isWt(dir) || made.has(norm(dir)) : own && discard) && (typeof rule === 'function' ? rule(sub) : rule.test(sub))) return via ? `${via} ${name}: ${VARIABLE}` : `git ${name}: ${why}`
   }
   return null

@@ -21,6 +21,8 @@ import { register as detach } from './detach.ts'
 import { register as modes } from './modes.ts'
 import { register as reviewLoop } from './review-loop.ts'
 import { register as pace } from './pace.ts'
+import { register as readBeforeEdit } from './read-before-edit.ts'
+import { register as paneGuard } from './pane-guard.ts'
 
 // The engine loads one hooks module per plugin: this is it.
 export const register: Register = (on, options) => {
@@ -50,6 +52,8 @@ export const register: Register = (on, options) => {
   modes(on, options)
   reviewLoop(on, options)
   pace(on, options)
+  readBeforeEdit(on, options)
+  paneGuard(on, options)
   // Before the inbox: a refused question never becomes an inbox item.
   askGuard(on, options)
   // Last: it waits on the dialog beneath, so every guard above has already let the call through.
