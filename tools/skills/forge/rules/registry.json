@@ -3639,6 +3639,42 @@
    },
    "eval": "evals/R148-delivery.json",
    "measured": "2026-11-23 [M88]: 5/6 vs 1/6, judge 6:0 (Sonnet, 3 runs, plugin loaded in both arms): source-file link 6/6 vs 0/6, report page on «сделай отчёт» 3/3 vs 3/3, no file on «проанализируй» 3/3 vs 3/3 (ceiling), folder sweeps 1/6 vs 3/6; routing for report and proof unchanged"
+  },
+  {
+   "id": "R149",
+   "rule": "A new source file first looks for what the codebase already has for the same job (helper, component, pattern) and reuses or extends it; new code only for what nothing covers, with one line naming what was reused. The plan note asks each code brief for the reused pieces (file:line), the guarantees and the proving test.",
+   "ru": "Новый файл с кодом: сначала найти, что в проекте уже делает то же самое (функция, компонент, приём), и переиспользовать или расширить; новое писать только для того, что ничем не покрыто, и одной строкой назвать, что переиспользовано. Напоминание при плане просит в каждом брифе: что переиспользовать (file:line), что код гарантирует и каким тестом это доказано.",
+   "layer": "plugin",
+   "enforced": "hook",
+   "enforcer": "tools/hooks/pace.ts",
+   "complaints": [
+    "owner 2026-11-25: «очень сильно поднимает качество кода, это правильно поставленный вопрос ... сначала архитектурно это сделать, а потом уже реализовать»",
+    "owner (66fc18bb:540): «Здесь получается дублирование селекта all organizational. Он есть и у пульса, и у этой штуки.»",
+    "owner (66fc18bb:565): «Вот такой кнопки ... у нас быть не должно ... сразу видно, что она не наша»"
+   ],
+   "complaintChats": 3,
+   "complaintNote": "2026-11-25 red-team scan since 2026-11-01: about 5 of 22 implementation briefs named what to reuse; 15 named a proof command, 12 the guarantees; structure complaints found were duplicates (66fc18bb, eb66f8f1)",
+   "conflicts": [],
+   "status": "active",
+   "sources": [
+    {
+     "file": "tools/hooks/pace.ts",
+     "anchor": "NEW_FILE",
+     "date": "2026-11-25"
+    }
+   ],
+   "inForce": [
+    {
+     "text": "tools:hooks/pace.ts",
+     "has": "A new source file: before filling it out"
+    }
+   ],
+   "eval": "evals/R149-reuse.json",
+   "measured": "2026-11-25 [M92]: Sonnet, fixture reuse (helpers under non-obvious names among 10 modules), 4 runs: reuse 4/4 vs 4/4, judge 2:2 (on arm names what it reused more often). At ceiling on a small repo; kept for large codebases, judged by the field count.",
+   "field": {
+    "regex": "дублир|дубликат|(уже|это) есть (у|в) |не наш(а|е|и)?\b|костыл|не dry|без повторени",
+    "since": "2026-11-25"
+   }
   }
  ],
  "industry": [

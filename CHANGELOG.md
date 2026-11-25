@@ -1,5 +1,27 @@
 # Changelog
 
+## makarasty-tools 1.20.31, makarasty 1.18.19 — 2026-11-25
+
+- **The right question, asked where code is written** (M92, R149). The owner: a well-posed question lifts code quality;
+  architect first; positive words help, "no bugs" hurts; make it automatic and cheap. Measured first: two benchmarks
+  (words: 160 runs, no effect on correctness, any added text makes code longer, slower and dearer; architect-first:
+  "design it, then build it" in the same Sonnet run gave tidier, less duplicated code, judge 5:0, for +38%, a separate
+  Opus designer cost 3.6x for nothing more), published research (spec of guarantees helps, personas and quality words
+  do not), and a red team of Opus, Sonnet and Fable.
+  - `pace.ts` plan note: each code brief names the existing helpers or components it reuses (file:line), what the code
+    must guarantee and the test that proves it; a new module or interface is designed in a few lines by the builder
+    first.
+  - `pace.ts` new-file note: the first new source file of a prompt (not tests, docs, fixtures, scratch) gets: find what
+    the codebase already has for the job and reuse or extend it, then say what was reused. Fixture `reuse` at ceiling
+    (4/4 vs 4/4); the duplication complaints in the field decide (R149 `field`).
+  - `grill`: after the yes it answers guarantees, reuse and tests from a read of the code, names the next step by size
+    and starts it; a plan handed on goes to the project's plan doc and every brief cites it. `fleet-plan` reads it.
+  - `docs/MODELS.md`: on a new model, re-run the plan-moment replay and the R147/R149 evals; cut a line that stops paying.
+  - Benchmarks kept in `tools/skills/forge/rules/bench/{words,arch}` with their reports, to rerun on a new model.
+- Not built, with the reason in M92: a good-words list, a separate design agent, deleting skills (`tune` holds the
+  model table), vertical-slice and deletion-test rules (unmeasured).
+- Checked: `claude plugin test tools` 582 pass; `rules.mjs --selftest`; R149 A/B 4/4 vs 4/4 judge 2:2.
+
 ## makarasty-tools 1.20.30, makarasty 1.18.18 — 2026-11-25
 
 - **Fewer false refusals where chats stumbled** (M91: 500 hook refusals and 1,291 tool errors in 14 days). Each fix was

@@ -1,0 +1,16 @@
+Write professional, production-grade code. Follow these practices:
+1. Read the whole spec first and list every requirement and edge case before writing code.
+2. Use clear, intention-revealing names for modules, functions and variables.
+3. Keep functions small, single-purpose and pure where possible.
+4. Validate inputs at the public boundary and fail fast with specific error types and messages.
+5. Handle edge cases deliberately: empty, minimal, maximal, malformed and boundary inputs.
+6. Use idiomatic modern JavaScript: const/let, destructuring, default parameters, private class fields, for...of.
+7. Choose the fitting design pattern when the problem calls for one (state machine, strategy, dependency injection, factory) and none when it does not.
+8. Inject dependencies such as clocks so the code is deterministic and testable.
+9. Keep state private and expose a small, stable public interface.
+10. Make invalid states unrepresentable; keep invariants in one place.
+11. Prefer simple, linear algorithms; avoid needless allocations and repeated work.
+12. Avoid floating-point and off-by-one pitfalls; reason about them explicitly.
+13. Document the contract and non-obvious decisions in short comments or JSDoc.
+14. Write additional tests for the edge cases of the spec, and run them.
+15. Re-read your final code once as a reviewer would, then simplify.

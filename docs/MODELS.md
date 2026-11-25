@@ -8,7 +8,12 @@ says so.
 Write the alias in a brief's `model:` line and in agent frontmatter; the alias follows the tier, the ID
 pins one release. Lineup as of 2026-11-25. A new release is two edits: its row here, and its price row in
 `PRICES` in `src/scripts/fleet-analyze.mts` (prices: `platform.claude.com/docs/en/about-claude/pricing`);
-an id with no price row is priced from the newest row of its family and named in the analysis report:
+an id with no price row is priced from the newest row of its family and named in the analysis report.
+Then re-measure the framing that is tuned per model, since a line that paid on one release can do nothing or
+cost tokens on the next: `node tools/skills/forge/rules/replays/plan-moment/run.mjs 6` and
+`node tools/skills/forge/rules.mjs --evals --rule R147` and `--rule R149` on the new model; a line whose
+on-arm no longer beats its off-arm is cut, with the run in `docs/MEASUREMENTS.md`. The `tune` skill
+re-checks which model each role should use.
 
 | Alias | Model, ID | Fits |
 |---|---|---|

@@ -1,0 +1,62 @@
+{
+ "rule": "R149",
+ "fixture": "reuse",
+ "tools": [
+  "--allowedTools",
+  "Read(./**),Edit(./**),Write(./**),Glob,Grep,Bash(node:*),Bash(npm test:*),Bash(ls:*)",
+  "--permission-mode",
+  "acceptEdits"
+ ],
+ "arms": {
+  "on": {
+   "env": {
+    "MAKARASTY_ECONOMY": "off"
+   },
+   "args": [
+    "--plugin-dir",
+    "{tools}",
+    "--append-system-prompt-file",
+    "@gates:habits"
+   ]
+  },
+  "off": {
+   "env": {
+    "MAKARASTY_ECONOMY": "off",
+    "MAKARASTY_PACE": "off"
+   },
+   "args": [
+    "--plugin-dir",
+    "{tools}",
+    "--append-system-prompt-file",
+    "@gates:habits"
+   ]
+  }
+ },
+ "prompts": [
+  {
+   "id": "invoice-summary",
+   "text": "Добавь сводку по счёту: функция invoiceLine(invoice) в src/invoices/summary.js. Счёт: { id, issuedAt, items: [{ priceCents, qty }] }. Строка вида «Invoice 12 — issued Mar 5, 2026 — due Apr 4, 2026 — total $25.00», срок оплаты через 30 дней после выставления. Добавь тест.",
+   "files": [
+    {
+     "file": "src/invoices/summary.js",
+     "has": "shared/fmt"
+    },
+    {
+     "file": "src/invoices/summary.js",
+     "has": "shared/when"
+    },
+    {
+     "file": "src/invoices/summary.js",
+     "not": "Intl\\.NumberFormat|toFixed|toLocaleDateString|setUTCDate|86400000|24 \\* 60"
+    }
+   ]
+  }
+ ],
+ "rubric": "The owner's structure complaints are duplicates of what the code already has («дублирование селекта ... он есть и у пульса», «кнопка ... сразу видно, что она не наша»). The better reply finds and reuses the project's own money and date helpers (src/shared/fmt.js cents2str and totalOf, src/shared/when.js shortDay and plusDays, src/shared/check.js need) instead of writing its own formatting, date arithmetic or validation, and says which it reused. Correct output and a passing test matter equally.",
+ "predict": {
+  "madeAt": "2026-11-25",
+  "onMin": 0.67,
+  "offMax": 0.5,
+  "note": "on = the pace.ts reuse note on the first new source file of a prompt; off = MAKARASTY_PACE=off. The helpers have non-obvious names among ten modules; the one existing caller (src/orders/order.js) shows them. Ran 2026-11-25: 4/4 vs 4/4, judge 2:2 [M92]."
+ }
+}

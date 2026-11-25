@@ -1,0 +1,1 @@
+Write professional, production-grade code: clear names, small pure functions, explicit input validation, idiomatic modern JavaScript, the fitting design pattern, edge cases handled deliberately.

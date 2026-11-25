@@ -35,6 +35,8 @@ instead, and the operator had to ask why.
 
 **A plan that already exists is the draft, already stopped moving.** A handoff or a plan document with its
 own task list means section 2b has been done: carry its decisions into the queue and skip the interview.
+A plan file written by `grill` (Problem, Decisions, Guarantees with their tests, Reuse) counts too: each
+brief carries the guarantees it covers, their tests as its done-when, and the Reuse lines it touches.
 Round 0 is not skipped unless that plan, or its `STATE.md`, already carries a `pace:` line.
 
 Read `docs/PROTOCOL.md`'s "Directory layout", "Brief format" and "Finding schema" before you write one -

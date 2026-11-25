@@ -1925,3 +1925,38 @@ shared-dev-server cause in the Pulse project is that project's setup, recorded t
 - **Live in this chat (2026-11-25):** two of its own red-team briefs were refused by the old routes code, one for a
   "Report under 600 words" finish line, one because "the owner asked for a feature" read as an ask licence.
 **Status:** fixes in 1.20.30; the weekly refusal count is the check.
+
+## M92 — Framing: research, two benchmarks, a red team, and what the plugin keeps (2026-11-25)
+- **Ask (owner, 2026-11-25):** a well-posed question raises code quality; architect first, then implement ("300x");
+  positive words ("professional, patterns") lift the baseline and negative ones ("no bugs") drag it; make the right
+  question automatic for agents; chain grill -> plan -> build; keep it cheap and robust to model updates.
+- **Research (published, 2024-2026):** a fixed spec preamble stating what code must guarantee cut defects for 5 models
+  (500 outputs, 95/100 differing pairs); plan-first helps most for weaker models and a bad plan is worse than none;
+  expert personas and quality adjectives show no reliable gain (Wharton 2026, a 480-completion persona study on code);
+  no measurement shows "no bugs" causing bugs; one writer plus a fresh-context reviewer has support, role splits for
+  coding do not; vendor guidance says prompts tuned for older models can cost tokens or stop working.
+- **Benchmark, words (`forge/rules/bench/words`, 160 runs, Sonnet and Haiku, 4 tasks with 16-18 hidden tests,
+  5 runs a cell):** hidden pass neutral 99.5%, negative 99.2%, positive 99.4%, long positive list 99.5% (all misses one
+  clock-goes-back test, ranges overlap); "bug" in code 0 in every arm; lines of code 90 / 109 / 135 / 141, time 41 /
+  72 / 63 / 80 s, cost $0.035 / 0.044 / 0.042 / 0.056 a run. A blind Opus judge preferred longer code (88 of 130
+  decided pairs) and ranked negative over positive 22:11. Verdict: neither direction moves correctness on these models;
+  any added text makes code longer, slower and dearer. $14.43.
+- **Benchmark, architect-first (`forge/rules/bench/arch`, an existing 390-line Node project, a recurring-tasks and
+  reminders feature, 24 hidden tests, 5 runs an arm, effort medium):** hidden pass 24/24 in all 20 runs (saturated);
+  blind judge on the src diff: direct Sonnet lost 0:5 to "design it, then build it" in the same Sonnet run (mostly
+  duplicated construction and validation) and 0:5 to a two-phase run (Opus design, Sonnet build); the same-run design
+  beat two-phase 5:0; direct Opus was about level with same-run design (3:2 on src). Cost a run: direct Sonnet $0.21,
+  same-run design $0.29 (+38%), two-phase $0.76, direct Opus $0.55. A follow-up extension on each result: 9/9 in 18
+  of 20, no arm effect. "300x" not seen; tidier, less duplicated code is. $22.4.
+- **Reuse note (R149, fixture reuse, Sonnet, 4 runs):** reuse 4/4 vs 4/4, judge 2:2: at ceiling on a 10-module repo.
+- **Red team (Opus harm and cost, Sonnet field fit, Fable independent):** an always-on session text is lost by the
+  moment it matters (M89, M90), so carry the questions where briefs and new files are written; "3+ files" fires on
+  every .mts fix here (build, version, changelog), trigger on new module or interface instead; plans already live in
+  tracked `docs/.../PLAN.md` files; the weak brief question is reuse (about 5 of 22 implementation briefs named it,
+  about 15 named a proof command, 12 the guarantees); the owner's structure complaints are duplicates (66fc18bb:540,
+  :565); no weekly per-model re-measure existed; `tune` is the model-table tool and stays.
+- **Kept:** the plan note asks each code brief for reuse (file:line), guarantees and the proving test, and a short
+  design by the builder for a new module or interface; a reuse note on the first new source file of a prompt; grill
+  hands its settled plan on with that shape and names the next step; fleet-plan reads it; MODELS.md says to re-run the
+  replays and evals on a new model and cut a line that stops paying. **Not built:** a good-words list, a separate design
+  agent, deleting skills, vertical-slice and deletion-test rules (unmeasured).

@@ -39,3 +39,21 @@ open waits for a later round.
 The frontier is empty: every branch was asked or settled by a fact you checked, and nothing is silently
 assumed. Then write the settled plan back in a few plain lines (each decision and who settled it: the
 person or a fact) and ask once whether that is the shared picture. Work starts only on their yes.
+
+## After the yes: hand it on
+
+When the plan is code, the settled picture also answers, from a read of the code and not from memory:
+what the code must guarantee; which existing helpers, components and patterns it reuses (file:line);
+and, for each guarantee, the test that proves it, written before the code. A new module, data shape or
+public interface gets this as a short design pass before any edit, written by the same agent that then
+builds it: on one feature, "design it, then build it" in one Sonnet run gave tidier code than building
+directly (judge 5:0, mostly less duplication) for +38% cost, while a separate Opus design agent cost
+3.6x and won nothing more [M92].
+
+Then name the next step by size, and start it unless the person said to wait: one piece, built here;
+several independent parts, subagents per the parallel line; a long multi-task run, `fleet-plan` with
+the plan file as its mission. When the plan goes to another step (a subagent, fleet-plan, another chat),
+write it to the project's plan doc first (where its plans already live, else `docs/<area>/PLAN.md`) in
+this shape: Problem; Decisions and who settled each; Guarantees, each with its test; Reuse (file:line);
+Out of scope. Every brief cites that file by its absolute path; a plan that stays in this chat needs no
+file.

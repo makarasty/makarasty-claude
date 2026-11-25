@@ -1,0 +1,1 @@
+Do not write buggy code. No sloppy code, no bad naming, no hacks, no missing validation. Avoid bugs and edge-case failures.
