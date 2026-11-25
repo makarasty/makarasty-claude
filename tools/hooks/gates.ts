@@ -153,17 +153,19 @@ export const plans =
 // the loop, and no throwaway agents that re-read the same files («агенты быстро умирают»). Main sessions only.
 // 2026-11-24 (M89): with the line in place a coordinator still held a push and a report of three finished items behind a
 // fourth item's 16:00 shots, and nine chats on one reloading dev server took turns in 20-minute quiet windows.
+// 2026-11-25 (M90): "a small change stays in this chat" let a chat call five items small and do them alone, and "one
+// browser pane stays in order" read as "everything waits for the browser"; the cost half of his ask was missing.
 export const parallel =
   'Size and shape the work yourself, never asking the person which: read the code the request touches first and judge ' +
-  'the size from it, not from the wording (a spacing change can need a backend change, a migration and tests). Then ' +
-  'say the shape in one line: a small change stays in this chat, independent tool calls in one message; many alike ' +
-  'pieces go to short subagents launched at once; several long parts that share no file or result get one subagent ' +
-  'each, launched at once, and every later fix to a part goes to that same agent (SendMessage, which also resumes a ' +
-  'finished one) so it keeps its context instead of a fresh one re-reading. Steps that share files, a result, one ' +
-  'browser pane or a whole-repo check stay in order. A piece that is done moves to its next step (commit, push, report, ' +
-  'review) at once and never waits for the slowest piece: a chain in a brief («collect, compare, push, report») is the ' +
-  'order of steps for each piece, not a gate for all of them. Before any wait (a wakeup, an agent\'s or chat\'s notice, a ' +
-  'long run in the background), start every step that does not need what you wait for. Chats or agents that share one ' +
+  'the size from it, not from the wording. Then say the shape in one line. One piece of work stays in this chat, its ' +
+  'independent tool calls in one message; two or more pieces that need nothing from each other go to subagents ' +
+  'launched at once in one message (many alike pieces: short ones; each long part: one agent, and its later fixes go ' +
+  'to that same agent (SendMessage resumes it) so it keeps its context). This holds over the general advice to spawn ' +
+  'only when in doubt. Workers run on Sonnet where it fits and this chat judges, which keeps the speed cheap. Steps that share ' +
+  'files, a result, one browser pane or a whole-repo check stay in order among themselves; that orders only them: do ' +
+  'one while the rest run. A piece that is done moves to its next step (commit, push, report, review) at once and ' +
+  'never waits for the slowest piece; a brief\'s chain («collect, compare, push, report») orders each piece\'s steps, ' +
+  'not all pieces. Before any wait (a wakeup, a notice, a background run), start every step that does not need what you wait for. Chats or agents that share one ' +
   'dev server which reloads on every save get their own check server where the project can run one (a build preview ' +
   'on its own port, or a copy of the commit under check), not turns or time windows. When the work turns out bigger, ' +
   "re-plan the steps left. The person's time costs more than tokens."

@@ -470,7 +470,9 @@ test('plans: goal, full item list in briefs, every item walked before the report
 test('parallel: size from the code, shape picked unasked, long parts keep one agent each', () => {
   for (const w of [/never asking the person which/, /read the code the request touches first/, /not from the wording/, /say the shape in one line/, /in one message/,
     /launched at once/, /same agent \(SendMessage/, /stay in order/, /background/, /re-plan the steps left/, /time costs more than tokens/,
-    /never waits for the slowest piece/, /not a gate for all of them/, /Before any wait/, /own check server/, /not turns or time windows/]) expect(parallel).toMatch(w)
+    /two or more pieces that need nothing from each other go to subagents/, /holds over the general advice to spawn only when in doubt/,
+    /Workers run on Sonnet/, /that orders only them: do one while the rest run/,
+    /never waits for the slowest piece/, /orders each piece's steps, not all pieces/, /Before any wait/, /own check server/, /not turns or time windows/]) expect(parallel).toMatch(w)
   // 1000 until 2026-11-24; the pipeline and wait lines [M89] cost about 130 tokens a session.
   expect(parallel.length).toBeLessThan(1500)
 })

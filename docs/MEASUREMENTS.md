@@ -1875,3 +1875,26 @@ source in no run.
   2026-11-24T14-08-37). The `ScheduleWakeup` note (`pace.ts`) is not in this A/B: `-p` runs have no wakeup tool.
 **Status:** one fixture of the barrier kind; the field count (R147 `field`) and the quiet-window share decide. The
 shared-dev-server cause in the Pulse project is that project's setup, recorded there, not changed here.
+
+## M90 — The plan moment: why chats with the parallel line still did the work alone (2026-11-25)
+- **Complaint:** the owner, 2026-11-25, with a screenshot: «мне каждый раз говорить, чтобы он запускал агентов»; make it
+  global and clean, from what he asked chats to remember.
+- **Field, every human parallel ask since 2026-11-24 14:00 UTC (all with the 1.20.28 line delivered):** 4 asks. The
+  screenshot chat (32f9ac33): the owner picked "finish 03/07/09/17/20 here" at 11:12:19; the plan put the five items in
+  one step, the chat drove the one browser alone for 6 min, and wrote both agent briefs in 40 s once he asked at
+  11:18:05 (its own words: «так как браузер один»). Two more ended a turn waiting on one shared thing (another chat's
+  test run, a pre-push suite, 8-11 min each) with other items open. No chat wrote the shape line the text asks for.
+- **His standing asks (since 2026-08-01, clones merged):** 10 real asks to remember or always work in parallel; the
+  pro-parallel text lives in six places (plugin, two memory files, project docs). Gaps: the cost half («чтобы не вышло
+  дорого») was in no rule; "a small change stays in this chat" let a chat call five items small; the harness's own
+  Agent text says to spawn only when in doubt.
+- **Replay of the plan moment (`forge/rules/replays/plan-moment/run.mjs`, Opus, the chat's real report, his answer and
+  its 8-step plan, tools off, the next message written as CALL lines), 6 runs an arm:** 1.20.28 text 0/6 launched 2+
+  agents (one run 1; four said all in this chat because of one browser); new text alone 3/6; new text plus the plan
+  note on the plan's tool result 6/6 (2-5 agents; code items to agents, Opus for the hard one and Sonnet for the rest,
+  browser checks kept in the chat in order). About $0.12 a run.
+- **`rules.mjs --evals` R147, Opus, 3 runs, off = 1.20.28 text with the hooks off:** fixture open-items (three code
+  bugs plus a one-browser check) 0/3 vs 0/3 fan-out, both arms batching 8-11 calls in one message; barrier 3/3 vs 3/3
+  (1.20.28 already carries the pipeline line); three-bugs 0/3 vs 0/3; judge 2:1:6. No run called TodoWrite, so the plan
+  note never fired there: small fixtures stay at ceiling.
+**Status:** the replay is one real moment; the field count (R147 `field`) decides.

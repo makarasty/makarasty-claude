@@ -3,21 +3,32 @@
  "fixture": "three-bugs",
  "tools": [
   "--allowedTools",
-  "Agent,Task,Read(./**),Edit(./**),Write(./**),Glob,Grep,Bash(node:*),Bash(npm test:*),Bash(git:*),Bash(ls:*)",
+  "Agent,Task,TodoWrite,Read(./**),Edit(./**),Write(./**),Glob,Grep,Bash(node:*),Bash(npm test:*),Bash(git:*),Bash(ls:*)",
   "--permission-mode",
   "acceptEdits"
  ],
  "arms": {
   "on": {
+   "env": {
+    "MAKARASTY_ECONOMY": "off"
+   },
    "args": [
+    "--plugin-dir",
+    "{tools}",
     "--append-system-prompt-file",
     "@gates:habits+gates:parallel"
    ]
   },
   "off": {
+   "env": {
+    "MAKARASTY_ECONOMY": "off",
+    "MAKARASTY_PACE": "off"
+   },
    "args": [
+    "--plugin-dir",
+    "{tools}",
     "--append-system-prompt-file",
-    "@gates:habits+file:texts/parallel-old.md"
+    "@gates:habits+file:texts/parallel-1.20.28.md"
    ]
   }
  },
@@ -46,13 +57,33 @@
    "fixture": "barrier",
    "text": "Координатор Пульса, раунд 3 (LEDGER.md): собери пункты 3 и 5, сравни, запушь, собери отчёт раунда.",
    "expectTool": "(?=[\\s\\S]*(Bash|PowerShell): [^\\n]*node [^\\n]*push\\.mjs)(?=[\\s\\S]*(Write|Edit): [^\\n]*report\\.md)"
+  },
+  {
+   "id": "open-items",
+   "fixture": "open-items",
+   "text": "Доделай открытые пункты из ITEMS.md здесь.",
+   "minFanout": 2,
+   "files": [
+    {
+     "file": "src/cart/total.js",
+     "not": "net - off"
+    },
+    {
+     "file": "src/dates/range.js",
+     "has": "<="
+    },
+    {
+     "file": "src/text/slug.js",
+     "has": "normalize"
+    }
+   ]
   }
  ],
- "rubric": "«Меня очень сильно бесит, что ИИ не работает параллельно, и мне нужно каждый раз просить»; 2026-11-24 a coordinator held the push and report of three accepted items behind a fourth item due at 16:00, until he wrote «Предлагаю параллельно что-то делать». three-bugs: the three unrelated fixes are worked at once and all three land with the tests untouched. barrier: items 3, 4 and 6 are accepted now, item 5 comes about 16:06; the better reply starts the push of the finished work and the report for 3, 4, 6 now (item 5 added when its shots arrive, a second push if needed) instead of waiting for item 5. Waiting for the slowest item is the worse reply even when it is explained well.",
+ "rubric": "«Меня очень сильно бесит, что ИИ не работает параллельно, и мне нужно каждый раз просить»; 2026-11-24 a coordinator held the push and report of three accepted items behind a fourth item due at 16:00, until he wrote «Предлагаю параллельно что-то делать». three-bugs: the three unrelated fixes are worked at once and all three land with the tests untouched. barrier: items 3, 4 and 6 are accepted now, item 5 comes about 16:06; the better reply starts the push of the finished work and the report for 3, 4, 6 now (item 5 added when its shots arrive, a second push if needed) instead of waiting for item 5. Waiting for the slowest item is the worse reply even when it is explained well. open-items (2026-11-25, «Можешь использовать несколько агентов ... быстрее и лучше» after a chat did five items alone «так как браузер один»): the three code items go to subagents launched in one message while the chat runs the one-browser live check of 07 itself; all three fixed, tests untouched, 07 reported from the check output. Doing every item in this chat one after another is the worse reply.",
  "predict": {
-  "madeAt": "2026-11-24",
-  "onMin": 0.67,
+  "madeAt": "2026-11-25",
+  "onMin": 0.5,
   "offMax": 0.34,
-  "note": "barrier: off is the 1.20.25 parallel text (live when the field case happened), on adds the pipeline and before-a-wait lines. three-bugs kept as the regression case (both at ceiling in M86). Held 2026-11-24 on barrier: 3/3 vs 1/3, judge 3:0; three-bugs 0/3 vs 0/3 [M89]."
+  "note": "off = the 1.20.28 text with the pace hook off; on = the 1.20.29 text plus the plan note on a TodoWrite of 3+ steps. Earlier: barrier 3/3 vs 1/3, judge 3:0; three-bugs 0/3 vs 0/3 [M89]. Ran 2026-11-25: open-items 0/3 vs 0/3, barrier 3/3 vs 3/3, three-bugs 0/3 vs 0/3, judge 2:1:6; no run called TodoWrite, so the plan note did not fire; the plan-moment replay is the measure (6/6 vs 0/6) [M90]."
  }
 }

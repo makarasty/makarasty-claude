@@ -1,5 +1,21 @@
 # Changelog
 
+## makarasty-tools 1.20.29 — 2026-11-25
+
+- **Agents start at the plan, without being asked** (M90, R147). The owner, with a screenshot: a chat with the parallel
+  line put five items into one plan step, did them alone for six minutes «так как браузер один», and wrote two agent
+  briefs in 40 s once he asked. Every plan of three or more steps (`update_plan` in the app, `TodoWrite` in the CLI)
+  now carries a note from `pace.ts`: shape it before the first step, steps that need nothing from each other and not
+  the shared browser, test run or file go to subagents in one message while this chat does the shared step, a step
+  naming several items is that many pieces, say the shape in one line.
+- The `parallel` line: one piece of work stays in this chat, two or more independent pieces go to subagents (it was "a
+  small change stays", which a chat could stretch to five items); it holds over the harness advice to spawn only when
+  in doubt; workers on Sonnet where it fits and this chat judging keep it cheap (his «чтобы не вышло дорого» was in no
+  rule); a shared browser, test run or file orders only the steps that use it.
+- Checked: replay of the screenshot chat's plan moment on Opus (`forge/rules/replays/plan-moment`): 1.20.28 text 0/6
+  launched agents, new text 3/6, new text plus the note 6/6. `rules.mjs --evals` R147: small fixtures at ceiling in
+  both arms (Opus batches 8-11 calls), judge 2:1:6. `claude plugin test tools` 555 pass. Not measured: real long runs.
+
 ## makarasty-tools 1.20.28 — 2026-11-24
 
 - **Finished work no longer waits for the slowest piece** (M89, R147). The owner, a day after 1.20.25: he still has to
