@@ -101,30 +101,53 @@ interface Price { in: number; out: number; cr: number; w5m: number; w1h: number 
 
 // ---------------------------------------------------------------------------------------------- prices
 
-// List prices in $ per million tokens, from the claude-api skill's model table (cached 2026-10-06). Cache
-// writes are priced at the documented 1.25x (5 minute) and 2x (1 hour) of input. ESTIMATES: what the
-// tokens would cost on the API at list price, not what a subscription is billed. Override with --prices,
-// a JSON object of the same shape keyed by model-id prefix.
+// THE model table: the next model release is one new row here and one line in docs/MODELS.md.
+// List prices in $ per million tokens, from https://platform.claude.com/docs/en/about-claude/pricing
+// (read 2026-11-25). Cache writes are 1.25x (5 minute) and 2x (1 hour) of input; cache read is 0.1x of input
+// except Fable 5.1 and later (0.025x) and Opus 5.5 / Sonnet 5.5 (0.05x). ESTIMATES: what the tokens would
+// cost on the API at list price, not what a subscription is billed. Override with --prices, a JSON object
+// of the same shape keyed by model-id prefix. An id with no row is priced from the newest row of its family
+// (claude-<family>-...) and named in the report, see priceOf.
 const PRICES: Record<string, Price> = {
-  'claude-opus-5-5': { in: 4, out: 20, cr: 0.2, w5m: 5, w1h: 8 },
-  'claude-sonnet-5-5': { in: 2, out: 10, cr: 0.1, w5m: 2.5, w1h: 4 }, // cache read 0.05x base on 5.5
-  'claude-haiku-4-5': { in: 1, out: 5, cr: 0.1, w5m: 1.25, w1h: 2 },
+  'claude-fable-5-2': { in: 8, out: 40, cr: 0.2, w5m: 10, w1h: 16 },
   'claude-fable-5-1': { in: 10, out: 50, cr: 0.25, w5m: 12.5, w1h: 20 },
-  // older and smaller models that earlier runs used; same table, cache read at 0.1x where none is listed
   'claude-fable-5': { in: 10, out: 50, cr: 1, w5m: 12.5, w1h: 20 },
+  'claude-opus-5-5': { in: 4, out: 20, cr: 0.2, w5m: 5, w1h: 8 },
   'claude-opus-5': { in: 5, out: 25, cr: 0.5, w5m: 6.25, w1h: 10 },
-  'claude-opus-4': { in: 5, out: 25, cr: 0.5, w5m: 6.25, w1h: 10 },
+  'claude-opus-4-8': { in: 5, out: 25, cr: 0.5, w5m: 6.25, w1h: 10 },
+  'claude-opus-4-7': { in: 5, out: 25, cr: 0.5, w5m: 6.25, w1h: 10 },
+  'claude-opus-4-6': { in: 5, out: 25, cr: 0.5, w5m: 6.25, w1h: 10 },
+  'claude-opus-4-5': { in: 5, out: 25, cr: 0.5, w5m: 6.25, w1h: 10 },
+  'claude-opus-4-1': { in: 15, out: 75, cr: 1.5, w5m: 18.75, w1h: 30 },
+  'claude-opus-4': { in: 15, out: 75, cr: 1.5, w5m: 18.75, w1h: 30 },
+  'claude-sonnet-5-5': { in: 2, out: 10, cr: 0.1, w5m: 2.5, w1h: 4 },
   'claude-sonnet-5': { in: 2, out: 10, cr: 0.2, w5m: 2.5, w1h: 4 },
+  'claude-sonnet-4-6': { in: 3, out: 15, cr: 0.3, w5m: 3.75, w1h: 6 },
+  'claude-sonnet-4-5': { in: 3, out: 15, cr: 0.3, w5m: 3.75, w1h: 6 },
   'claude-sonnet-4': { in: 3, out: 15, cr: 0.3, w5m: 3.75, w1h: 6 },
   'claude-haiku-5-5': { in: 0.1, out: 0.5, cr: 0.01, w5m: 0.125, w1h: 0.2 }, // the under-100K-prompt tier
+  'claude-haiku-4-5': { in: 1, out: 5, cr: 0.1, w5m: 1.25, w1h: 2 },
 };
-const FALLBACK_MODEL = 'claude-opus-5-5';
-const unpriced = new Set<string>();
+const FALLBACK_MODEL = 'claude-opus-5-5'; // a family with no row at all
+const unpriced = new Map<string, string>(); // model id -> the row its price was assumed from
 
+const versionOf = (key: string): number[] => (/^claude-[a-z]+-(\d+(?:-\d{1,2})?)$/.exec(key)?.[1] ?? '0').split('-').map(Number);
+function newerRow(a: string, b: string): boolean {
+  const [x, y] = [versionOf(a), versionOf(b)];
+  for (let i = 0; i < Math.max(x.length, y.length); i++) if ((x[i] ?? 0) !== (y[i] ?? 0)) return (x[i] ?? 0) > (y[i] ?? 0);
+  return false;
+}
+
+// A row matches an id that is the row, the row plus a date or a context suffix (`claude-opus-5-5[1m]`,
+// `claude-sonnet-4-5-20250929`), never the row plus one more version number: `claude-fable-5-3` is not Fable 5.
 function priceOf(model: string): Price {
   let best = '';
-  for (const k of Object.keys(PRICES)) if (model.startsWith(k) && k.length > best.length) best = k;
-  if (!best) { unpriced.add(model); best = FALLBACK_MODEL; }
+  for (const k of Object.keys(PRICES)) if (model.startsWith(k) && k.length > best.length && !/^-\d{1,2}(?!\d)/.test(model.slice(k.length))) best = k;
+  if (!best) {
+    const family = /^claude-[a-z]+-/.exec(model)?.[0] ?? '';
+    best = Object.keys(PRICES).filter((k) => family && k.startsWith(family)).reduce((n, k) => (n && !newerRow(k, n) ? n : k), '') || FALLBACK_MODEL;
+    unpriced.set(model, best);
+  }
   return PRICES[best] ?? { in: 0, out: 0, cr: 0, w5m: 0, w1h: 0 };
 }
 
@@ -1004,7 +1027,7 @@ async function main(): Promise<void> {
     cost: { total_usd: totalUsd, workers_usd: workerTok.cost, coordinator_usd: coordTok.cost, per_done_task_usd: perTask },
     models: Object.fromEntries(models),
     per_worker: workers, per_task: taskRows,
-    prices: { table: PRICES, note: 'list-price estimates, $ per million tokens; cache writes 1.25x (5m) / 2x (1h) input', unpriced_as_opus_5_5: [...unpriced] },
+    prices: { table: PRICES, note: 'list-price estimates, $ per million tokens; cache writes 1.25x (5m) / 2x (1h) input', price_assumed_from: Object.fromEntries(unpriced) },
     recommendations: recs.slice(0, 5).map((r) => r[1]),
   };
 
@@ -1057,8 +1080,8 @@ async function main(): Promise<void> {
     L.push(`  ${String(t.chip)} ${String(t.id).slice(0, 44).padEnd(44)} ${Number(t.min).toFixed(1).padStart(6)} min, most ${top} ${v} min`);
   }
   if (report.recommendations.length) { L.push('recommendations:'); for (const r of report.recommendations) L.push(`  - ${r}`); }
-  const assume = [`prices are list-price estimates (Opus 5.5 $4/$20, cache read $0.20, writes 1.25x/2x input)`];
-  if (unpriced.size) assume.push(`unknown models priced as Opus 5.5: ${[...unpriced].join(', ')}`);
+  const assume = [`prices are list-price estimates from the table in fleet-analyze (docs/MODELS.md), cache writes 1.25x/2x input`];
+  if (unpriced.size) assume.push(`price assumed from the newest known row of the family: ${[...unpriced].map(([m, row]) => `${m} -> ${row}`).join(', ')}`);
   if (badLines) assume.push(`${badLines} unreadable lines skipped`);
   L.push(`note: ${assume.join('; ')}; subagent output tokens partly estimated (chars/4)`);
   process.stdout.write(L.join('\n') + '\n');

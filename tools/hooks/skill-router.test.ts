@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
-import { HINT, OFF_HINT, frontmatter, hintFor, newest, pick, sawListing, worth } from './skill-router.ts'
+import { HINT, OFF_HINT, frontmatter, hintFor, newest, pick, plainAction, sawListing, system, worth } from './skill-router.ts'
 
 const SKILLS = [{ name: 'makarasty-tools:commit', description: 'Commits this chat as you.' }, { name: 'makarasty:fleet-wait', description: 'Waits for a fleet.' }]
 
@@ -28,6 +28,7 @@ test('worth: the person\'s own short prompt, pastes left out; a slash command, a
   expect(worth('<pasted_content id="1">git log\n</pasted_content id="1"> закоммить это', 'composer')).toBe(true)
   for (const [t, o] of [['/commit', 'composer'], ['<task-notification>x', 'composer'], ['ok', 'composer'], ['commit this', 'peer'], ['x'.repeat(4001), 'composer'],
     ['Another Claude session sent a message: commit and push', 'composer'], ['The makarasty-tools plugin sent a message: push', 'composer'], [`run the brief ${'x'.repeat(1000)}`, 'sdk'],
+    ['Base directory for this skill: /p/skills/ship\n\nShip does three things: commit, merge, push', 'composer'], ['<system-reminder>x</system-reminder>\nAnother Claude session sent a message: commit and push', 'composer'],
     ['<command-message>inbox</command-message>\n<command-name>/makarasty-tools:inbox</command-name>\n<command-args>подготовь shop к деплою</command-args>', 'composer']] as const)
     expect([t.slice(0, 30), o, worth(t, o)]).toEqual([t.slice(0, 30), o, false])
 })
@@ -49,13 +50,15 @@ test('newest: the highest version folder, by number, not by name or time', () =>
   expect(newest([])).toBeUndefined()
 })
 
-function world(on: On, reply: string | undefined, env: Record<string, string> = {}, hold = false) {
+function world(on: On, reply: string | undefined, env: Record<string, string> = {}, hold = false, said: readonly { role: 'user' | 'assistant'; text: string }[] = []) {
   const ran: string[] = []
   const asked: string[] = []
+  const prompts: string[] = []
+  on('session.messages', () => ({ value: said.map((m) => ({ ...m, toolUses: [] })) as never }))
   on('tool.call', async (_$, e) => { ran.push(e.tool); return { result: 'ok' } })
   on('prompt.submit', (_$, e) => ({ text: e.text }))
   mock.env(on, { CLAUDE_CONFIG_DIR: '/cfg', MAKARASTY_SCREEN: 'off', ...env })
-  mock.clock(on, { now: 1_000_000 })
+  const clock = mock.clock(on, { now: 1_000_000 })
   on('session.id', () => ({ value: 's1' }))
   on('session.cwd', () => ({ value: '/work' }))
   on('fs.exists', () => ({ value: false }))
@@ -71,10 +74,11 @@ function world(on: On, reply: string | undefined, env: Record<string, string> = 
   })
   on('fs.stat', () => ({ value: { kind: 'file', size: 1, mtimeMs: 999_000, isLink: false } }) as never)
   on('model.complete', (_$, e) => {
-    asked.push(String((e as { system?: string }).system ?? ''))
+    asked.push(JSON.stringify((e as { system?: unknown }).system ?? ''))
+    prompts.push(String((e as { prompt?: string }).prompt ?? ''))
     return { value: reply === undefined ? { isAnswered: false, reason: 'empty-reply', usage: { input_tokens: 1, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 } } : { isAnswered: true, text: reply, usage: { input_tokens: 1, output_tokens: 1, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 } } } as never
   })
-  return { ran, asked }
+  return { ran, asked, prompts, clock }
 }
 const typed = (text: string) => ({ text, origin: { kind: 'composer' } }) as never
 const glob = { tool: 'Glob', pattern: '**/*' } as never
@@ -133,13 +137,16 @@ test('a text-only turn gets the hint once at its end; a turn that made a call, o
   expect(await stop(false)).toBeUndefined()
 })
 
-test('a Write or Edit is never sent back; the look-around call after it is', async ($, on) => {
+test('a plan update keeps the hint for the look-around call after it; a Write or Edit is never sent back and ends the hint', async ($, on) => {
   const w = world(on, 'makarasty-tools:commit')
   await $.prompt.submit(typed('закоммить'))
   expect(await $.tool.call({ tool: 'mcp__ccd_turn__update_plan', items: [] } as never)).toEqual({ result: 'ok' })
-  expect(await $.tool.call({ tool: 'Write', file_path: '/work/a.ts', content: 'x' } as never)).toEqual({ result: 'ok' })
   expect(await $.tool.call(glob)).toEqual({ deny: expect.stringContaining('makarasty-tools:commit') })
-  expect(w.ran).toEqual(['mcp__ccd_turn__update_plan', 'Write'])
+  await $.prompt.submit(typed('закоммить'))
+  // A new source file may carry pace.ts's reuse note; this test is about the hint, so only the result is checked.
+  expect(await $.tool.call({ tool: 'Write', file_path: '/work/a.ts', content: 'x' } as never)).toMatchObject({ result: 'ok' })
+  expect(await $.tool.call(glob)).toEqual({ result: 'ok' })
+  expect(w.ran).toEqual(['mcp__ccd_turn__update_plan', 'Write', 'Glob'])
 })
 
 test('three look-around calls sent together keep the hint for the one that waited', async ($, on) => {
@@ -160,5 +167,55 @@ test('a prompt delivered into a running turn keeps that turn\'s hint', async ($,
   world(on, 'makarasty-tools:commit')
   await $.prompt.submit(typed('закоммить'))
   await $.prompt.submit({ text: 'и ещё одно', origin: { kind: 'composer' }, turnId: 't1' } as never)
+  expect(await $.tool.call(glob)).toEqual({ deny: expect.stringContaining('makarasty-tools:commit') })
+})
+
+test('the classifier sees the chat\'s last question, cut to its last 600 characters, and its prompt says a short reply to it is none', async ($, on) => {
+  const long = 'x'.repeat(900) + ' Запушить master в origin?'
+  const w = world(on, 'none', {}, false, [{ role: 'user', text: 'старое' }, { role: 'assistant', text: 'ранний ответ' }, { role: 'user', text: 'сделай' }, { role: 'assistant', text: long }])
+  await $.prompt.submit(typed('Да, пушь'))
+  await $.tool.call(glob)
+  expect(w.prompts[0]).toBe(`Chat asked:\n<<<ASKED\n${long.slice(-600)}\nASKED>>>\nMessage:\n<<<MSG\nДа, пушь\nMSG>>>`)
+  expect(system(SKILLS)).toContain('short answer to what the chat asked')
+  expect(w.asked[0]).toContain('short answer to what the chat asked')
+})
+
+test('with no earlier assistant message the prompt carries the message alone', async ($, on) => {
+  const w = world(on, 'none', {}, false, [{ role: 'user', text: 'привет' }])
+  await $.prompt.submit(typed('закоммить'))
+  await $.tool.call(glob)
+  expect(w.prompts[0]).toBe('Message:\n<<<MSG\nзакоммить\nMSG>>>')
+})
+
+test('plainAction: one git push, commit or pull, with a cd or -C before it; a chain, another git verb or another tool is not', () => {
+  for (const c of ['git push origin master', 'cd /c/p && git push origin master', 'git -C /c/p commit -m "a; b && c"', 'git commit -m "$(cat <<\'EOF\'\nfix\nEOF\n)"', 'git pull --ff-only'])
+    expect([c, plainAction('Bash', c)]).toEqual([c, true])
+  for (const c of ['git add -A && git commit -m x', 'git push; rm x', 'git log --oneline', 'git status | head', 'echo git push', 'git push || true', undefined])
+    expect([c, plainAction('Bash', c)]).toEqual([c, false])
+  expect(plainAction('PowerShell', 'git push')).toBe(true)
+  expect(plainAction('Read', 'git push')).toBe(false)
+})
+
+test('the held call is the plain git action: it runs, nothing is sent back, and the hint is spent', async ($, on) => {
+  const w = world(on, 'makarasty-tools:commit')
+  await $.prompt.submit(typed('закоммить и запушь'))
+  expect(await $.tool.call({ tool: 'Bash', command: 'git push origin master' } as never)).toEqual({ result: 'ok' })
+  expect(await $.tool.call(glob)).toEqual({ result: 'ok' })
+  expect(w.ran).toEqual(['Bash', 'Glob'])
+  await $.prompt.submit(typed('закоммить'))
+  expect(await $.tool.call({ tool: 'Bash', command: 'git log --oneline' } as never)).toEqual({ deny: expect.stringContaining('makarasty-tools:commit') })
+})
+
+test('a hint older than 60 s is dropped at the first call and at the end of the turn; a fresh one is not', async ($, on) => {
+  const { clock } = world(on, 'makarasty-tools:commit')
+  on('classic.Stop', async () => ({}))
+  await $.prompt.submit(typed('закоммить'))
+  await clock.advance(61_000)
+  expect(await $.tool.call(glob)).toEqual({ result: 'ok' })
+  await $.prompt.submit(typed('закоммить'))
+  await clock.advance(61_000)
+  expect(await $.classic.Stop({ stop_hook_active: false, last_assistant_message: 'x' } as never)).toEqual({})
+  await $.prompt.submit(typed('закоммить'))
+  await clock.advance(30_000)
   expect(await $.tool.call(glob)).toEqual({ deny: expect.stringContaining('makarasty-tools:commit') })
 })

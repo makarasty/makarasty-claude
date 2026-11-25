@@ -1898,3 +1898,30 @@ shared-dev-server cause in the Pulse project is that project's setup, recorded t
   (1.20.28 already carries the pipeline line); three-bugs 0/3 vs 0/3; judge 2:1:6. No run called TodoWrite, so the plan
   note never fired there: small fixtures stay at ceiling.
 **Status:** the replay is one real moment; the field count (R147 `field`) decides.
+
+## M91 — Where chats stumble on the plugin's own tooling: 14 days of refusals and errors (2026-11-25)
+- **Scope:** 2,036 main chats since 2026-11-11 (forks merged, test runs in Temp left out). 500 refusals by plugin hooks
+  plus 1,291 other tool errors. Time cost per refusal = median gap until the same tool ran again in that chat.
+- **Refusals by hook:** git-guard 151 (99 chats, 5.4 s; 99 were a `git push`/`commit` piped into tail, the refusal right
+  but its tail text "cannot be undone, other chats' work" wrong for a pipe; 15 of 52 others ran in the owner's scratch
+  clones `C:\wt*`, where the text promised discards were free and the code refused them); ask-guard 102 (61 chats, 22 s;
+  36 distinct screen refusals: 8 with no `metadata.source`, the rest a bare word; secret rule 5 still false on
+  decisions that name a token; BYHAND refused 3 asks to start the owner's own vite/server, against his global rule);
+  routes 88 Agent refusals (49 chats; replay of all 85 distinct refused briefs: 84 false under the new rules, 14 of 15
+  read by hand had a finish line in other words) plus 2 of 2 false "ask the person" refusals; push-guard 59 (relayed
+  yes, fixed 11-18); budget-guard 28 (`tsc --noCheck`, a fixture `node --test` counted heavy); skill-router 25 hints in
+  22 chats, 6 followed, 16 calls repeated unchanged, 8 of them a `ship` hint on «Да, пушь» to the chat's own question,
+  4 hints 142-565 s after the message; kill-guard 11 (4 the owner's own kill-after pattern on a PID the command
+  started); delete-guard 5 (right).
+- **Other errors:** Glob/Grep 20 s ripgrep timeouts 30 (9 of 50 timed-out Globs rooted at home or Desktop; 41 inside
+  the LifeLines repo on narrow patterns, a repo-side cause); 39 auto-mode "a hook changed this call's input" failures on
+  session-lifecycle tools (archive_session 24): the Desktop app's own PreToolUse hook adds a `session` description after
+  the classifier ran, outside these plugins; Edit "not read yet" 51, "modified since read" 37; Browser
+  `javascript_tool` 45 s timeouts on a hidden pane 14.
+- **Model routing (2,701 Agent calls):** sonnet 1,360, opus 1,236, haiku 78, fable 23, model omitted 4; effort high
+  2,094, medium 542, omitted 56, low 9 (all 11-11); no xhigh, max or ultracode. `fleet-coder` on Opus 417 of 962.
+  Stale: MODELS.md named Fable 5.1; fleet-analyze priced unknown `claude-fable-5-x` ids from the 5.0 row (cache read
+  about 5x high).
+- **Live in this chat (2026-11-25):** two of its own red-team briefs were refused by the old routes code, one for a
+  "Report under 600 words" finish line, one because "the owner asked for a feature" read as an ask licence.
+**Status:** fixes in 1.20.30; the weekly refusal count is the check.

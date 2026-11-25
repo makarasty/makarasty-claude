@@ -171,7 +171,8 @@ function heavyTool(t: string, args: string[], live: boolean): boolean {
       return !(flag(args, SCOPE) || rest.length || ps[0] === 'related')
     }
     case 'tsc': case 'vue-tsc': {
-      if (flag(args, /^(-w|--watch)$/i)) return false
+      // `--noCheck` emits without typechecking: seconds, not gigabytes.
+      if (flag(args, /^(-w|--watch)$/i) || flag(args, /^--noCheck$/i)) return false
       const p = project(args)
       return !(ps.length || (p !== undefined && !ROOT_PROJECT.test(p)))
     }
@@ -208,7 +209,7 @@ const psStart = (w: string[], from = 0): number[] => {
 
 // One command's words: is it a heavy verify run, and does a kill-after limit (`timeout N`) stand in front of it?
 // `ps`: PowerShell, which has no `timeout` prefix (its `timeout` is a sleep), so a `timeout` word is no limit there.
-function analyze(W: string[], live: boolean, ps: boolean, depth = 0, timeout = false): { heavy: boolean; timeout: boolean } {
+function analyze(W: string[], live: boolean, ps: boolean, depth = 0, timeout = false): { heavy: boolean; timeout: boolean; nodeTest?: boolean } {
   const no = { heavy: false, timeout }
   for (let i = 0; i < W.length; i++) {
     const w = W[i]!, t = tok(w)
@@ -227,7 +228,7 @@ function analyze(W: string[], live: boolean, ps: boolean, depth = 0, timeout = f
         if (/^(--import|-r|--require|--loader|--experimental-loader|--env-file|-C|--conditions|--input-type|--stack-size|--test-reporter|--test-name-pattern|--test-concurrency|--test-timeout|--test-reporter-destination)$/.test(f)) j++
       }
       // `node --test` alone runs every test file it finds; a file operand or a name pattern scopes it.
-      if (test) return { heavy: !W[j] && !flag(W, /^--test-name-pattern/) && !flag(W, WATCH), timeout }
+      if (test) { const bare = !W[j]; return { heavy: bare && !flag(W, /^--test-name-pattern/) && !flag(W, WATCH), timeout, nodeTest: bare } }
       i = j - 1; continue // the script is the next tool
     }
     if (/^(python[\d.]*|py)$/.test(t)) {
@@ -283,14 +284,36 @@ const PS_LIMIT = /\b(Wait-Process|Wait-Job|Receive-Job)\b[^\n;|]*-Timeout|\.Wait
 // Cheap first look: the words a heavy run is made of, so the lexer and the process listing never run for `git status`.
 const MAYBE = /\b(vitest|jest|mocha|ava|playwright|tsc|vue-tsc|pytest|run-many|turbo|gradlew?|cargo|fleet-selftest|tests?|tst|typecheck|type-check|check|check-types)\b|--test\b|\b(npm|pnpm|yarn|bun)\s+t\b/i
 
+// The files a command writes by heredoc (`> f <<EOF`, `<<EOF > f`) that are test files, with where in the line they are written.
+const HEREDOC_TARGET = /(?<!<)>>?[ \t]*(\S+)[ \t]*<<-?[ \t]*['"]?\w+|(?<!<)<<-?[ \t]*['"]?\w+['"]?[ \t]*>>?[ \t]*([^\s&]+)/g
+function testFiles(command: string): { path: string; at: number }[] {
+  return [...command.matchAll(HEREDOC_TARGET)]
+    .map((m) => ({ path: (m[1] ?? m[2] ?? '').replace(/^['"]|['"]$/g, ''), at: m.index ?? 0 }))
+    .filter((t) => /\.(test|spec)\.\w+$/.test(t.path))
+}
+// Is `dir` a folder this command made and wrote a test file into? Only a run inside it is that small fixture.
+function fixtureDir(dir: string | undefined, command: string, made: string[], tests: { path: string; at: number }[]): boolean {
+  if (!dir || /^(\.|\.\.|~|\/|\$HOME|[A-Za-z]:\\?)$/.test(dir)) return false
+  const under = (p: string): boolean => p === dir || p.startsWith(dir + '/')
+  const created = made.some(under) || (dir.startsWith('$') && /\bmktemp\b/.test(command))
+  const cdAt = command.search(new RegExp(String.raw`\bcd\s+['"]?${dir.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\w/.-])`))
+  const written = tests.some((t) => t.path.startsWith(dir + '/') || (t.at > cdAt && cdAt >= 0 && !/^([/~$.]|[A-Za-z]:)/.test(t.path)))
+  return created && written
+}
 // The heavy verify runs a command line starts, each with whether it is backgrounded and whether a limit stands before it.
 export function heavy(command: string, tool = 'Bash'): Run[] {
   if (!MAYBE.test(command)) return []
   const ps = tool === 'PowerShell'
   const runs: Run[] = []
+  // A bare `node --test` run inside a folder the same command made and wrote a test file into is that small fixture, not a repo suite.
+  const tests = testFiles(command), made: string[] = []
+  let dir: string | undefined
   for (const s of segments(command, ps)) {
+    const w = s.words, t0 = tok(w[0] ?? '')
+    if (t0 === 'cd' || t0 === 'pushd') { dir = w.find((x, k) => k > 0 && !x.startsWith('-')); continue }
+    if (t0 === 'mkdir') made.push(...w.slice(1).filter((x) => !x.startsWith('-')))
     const r = analyze(s.words, false, ps)
-    if (r.heavy) runs.push({ text: s.words.join(' '), bg: s.bg, timeout: r.timeout || (ps && PS_LIMIT.test(command)) })
+    if (r.heavy && !(r.nodeTest && fixtureDir(dir, command, made, tests))) runs.push({ text: s.words.join(' '), bg: s.bg, timeout: r.timeout || (ps && PS_LIMIT.test(command)) })
   }
   return runs
 }

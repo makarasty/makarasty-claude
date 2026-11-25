@@ -51,7 +51,9 @@ export async function catalog($: D): Promise<Skill[]> {
 export const system = (skills: readonly Skill[]) =>
   'You route one user message of a Claude Code chat to at most one skill. Answer with one skill name from the list, ' +
   'exactly as written, or the word none. Name a skill only when the message asks for that skill\'s job to be done now; a ' +
-  'question about the topic, a quoted or pasted text, ordinary coding work or a reply to an earlier question is none.\n\nSkills:\n' +
+  'question about the topic, a quoted or pasted text, ordinary coding work or a reply to an earlier question is none. ' +
+  'The chat\'s last words may come first, marked Chat asked: when the message is a short answer to what the chat asked ' +
+  '(yes, ok, "push it", "created it, push") it is a reply, so none, however much it sounds like a skill\'s job.\n\nSkills:\n' +
   skills.map((s) => `- ${s.name}: ${s.description}`).join('\n')
 
 // The skill the reply names: the first full name in it, or a reply that is a short name alone; "none" anywhere is none.
@@ -64,9 +66,11 @@ export function pick(reply: string | undefined, skills: readonly Skill[]): Skill
 
 // A prompt worth routing: the person's own words, short enough to be a request, not a slash command, a wrapper or
 // another session's message. A headless prompt is mostly a machine brief: only a short one is routed.
+const SKILL_BODY = /^\s*Base directory for this skill:/
 export function worth(text: string, origin: string | undefined): boolean {
-  // A slash command already chose its skill; ownWords would hand on its arguments as if typed.
-  if (PLUGIN_FRAME.test(text) || /^\s*<command-(name|message)/i.test(text)) return false
+  // A slash command already chose its skill; ownWords would hand on its arguments as if typed. A skill's own body (the
+  // app submits it as a prompt) and another session's message behind a system-reminder block are not typed either.
+  if (PLUGIN_FRAME.test(text) || PLUGIN_FRAME.test(ownWords(text)) || SKILL_BODY.test(text) || /^\s*<command-(name|message)/i.test(text)) return false
   const t = ownWords(text).trim()
   const max = origin === 'sdk' ? 1000 : 4000
   return (origin === undefined || ['composer', 'bridge', 'sdk'].includes(origin)) && t.length >= 3 && t.length <= max && !/^[/<]/.test(t)
@@ -98,6 +102,24 @@ export function sawListing(text: string, first: boolean): boolean | undefined {
 // way), so a call sent back loses nothing. A Write, an Edit or a brief is never sent back.
 const LOOK = /^(Read|Grep|Glob|ToolSearch|Bash|PowerShell|ListAgents)$/
 const FIRST_CALLS = 3
+// A hint older than this is for a message the chat has long since moved past.
+const HINT_TTL_MS = 60000
+const ASKED_CHARS = 600
+
+// The held call already is the action a skill would end with: one git push, commit or pull (a `cd dir &&` before it and
+// `-C dir` allowed), judged by the command's first line so a commit message in a heredoc does not hide it.
+export function plainAction(tool: string, command: unknown): boolean {
+  if (!/^(Bash|PowerShell)$/.test(tool)) return false
+  const first = String(command ?? '').split('\n')[0]!.replace(/^\s*cd\s+\S+\s*&&\s*/, '')
+  return /^\s*git(?:\s+-C\s+\S+)?\s+(?:push|commit|pull)\b/.test(first) && !/&&|\|\||;|\|/.test(first.replace(/(["'])(?:(?!\1).)*\1/g, ''))
+}
+
+// The chat's last words before this message: the question the message may be answering.
+async function lastAsked($: Pick<D, 'session'>): Promise<string> {
+  const msgs = await $.session.messages().catch(() => [])
+  const text = String([...msgs].reverse().find((m) => m.role === 'assistant' && String(m.text ?? '').trim())?.text ?? '').trim()
+  return text.length > ASKED_CHARS ? text.slice(-ASKED_CHARS) : text
+}
 
 // The hold command is collecting (its list file starts with `collecting`): the person dictates one item per message and
 // wants no answer but a short note, so nothing is routed. A list untouched for a day no longer counts. `dir` is the
@@ -116,8 +138,8 @@ export async function holding($: Pick<D, 'fs' | 'clock'>, dir: string, sid: stri
 let skills: { at: number; list: Promise<Skill[]> } | undefined
 // calls: main-loop calls this turn; settled: the one wait is over, so calls after it count toward FIRST_CALLS (calls
 // sent in parallel with the first one never do).
-type Turn = { hint?: Promise<Skill | undefined>; got?: Skill | null; done: boolean; calls: number; waited: boolean; settled: boolean; after: number }
-const ENDED: Turn = { done: true, calls: 0, waited: false, settled: false, after: 0 }
+type Turn = { at: number; hint?: Promise<Skill | undefined>; got?: Skill | null; done: boolean; calls: number; waited: boolean; settled: boolean; after: number }
+const ENDED: Turn = { at: 0, done: true, calls: 0, waited: false, settled: false, after: 0 }
 let turn: Turn = { ...ENDED }
 
 function late($: Pick<D, 'clock'>, ms: number): Promise<'late'> {
@@ -136,10 +158,11 @@ export async function noteSkillPrompt($: D, e: { text: string; origin?: { kind: 
   // Read again after ten minutes, so an updated or added skill is seen; an empty read is never kept.
   if (!skills || now - skills.at > 600000) skills = { at: now, list: catalog($) }
   const held = skills
-  const t: Turn = { ...ENDED, done: false }
+  const t: Turn = { ...ENDED, at: now, done: false }
   t.hint = held.list.then(async (list) => {
     if (!list.length) { if (skills === held) skills = undefined; return undefined }
-    const r = await $.model.complete({ model: 'haiku', system: [{ text: system(list), cache: true }], prompt: `Message:\n<<<MSG\n${ownWords(e.text)}\nMSG>>>`, maxTokens: 40, effort: 'low', timeoutMs: 8000 })
+    const asked = await lastAsked($)
+    const r = await $.model.complete({ model: 'haiku', system: [{ text: system(list), cache: true }], prompt: `${asked ? `Chat asked:\n<<<ASKED\n${asked}\nASKED>>>\n` : ''}Message:\n<<<MSG\n${ownWords(e.text)}\nMSG>>>`, maxTokens: 40, effort: 'low', timeoutMs: 8000 })
     return r.isAnswered ? pick(r.text, list) : undefined
   }).catch(() => undefined)
   void t.hint.then((s) => { t.got = s ?? null })
@@ -152,7 +175,7 @@ export async function noteSkillPrompt($: D, e: { text: string; origin?: { kind: 
 export async function skillStop($: Pick<D, 'clock'>, e: { stop_hook_active?: boolean }): Promise<string | undefined> {
   const t = turn
   turn = { ...ENDED }
-  if (e.stop_hook_active || t.done || t.calls || !t.hint) return undefined
+  if (e.stop_hook_active || t.done || t.calls || !t.hint || (await $.clock.now()) - t.at > HINT_TTL_MS) return undefined
   const s = await Promise.race([t.hint, late($, 3000)])
   return s && s !== 'late' ? hintFor(s, true) : undefined
 }
@@ -164,8 +187,12 @@ export const register: Register = (on) => {
     if (t.done || !t.hint || e.agentId) return next(e)
     // The model picked a skill itself: it has the conversation, so its pick stands.
     if (e.tool === 'Skill') { t.done = true; return next(e) }
+    // A hint for a message the chat has moved past (a long think, a slow model) is dropped, and so is one once a call that
+    // does the work has run: the chat is already acting on the message.
+    if ((await $.clock.now()) - t.at > HINT_TTL_MS) { t.done = true; return next(e) }
     t.calls++
-    if (!LOOK.test(e.tool)) return next(e)
+    if (!LOOK.test(e.tool)) { if (!/plan|todo/i.test(e.tool)) t.done = true; return next(e) }
+    if (plainAction(e.tool, (e as unknown as { command?: unknown }).command)) { t.done = true; return next(e) }
     // Wait once, on the first look-around call; later calls read the answer only if it has come.
     let s: Skill | undefined | null | 'late' = t.got
     if (s === undefined && !t.waited) { t.waited = true; s = await Promise.race([t.hint, late($, 1500)]); t.settled = true }

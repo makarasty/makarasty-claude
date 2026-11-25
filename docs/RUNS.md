@@ -35,8 +35,11 @@ content block and repeats the message's usage on each line, so counting lines ov
 1.5 to 1.9 times; `fleet-retro.mjs` did that until 1.5.5. A resumed session repeats its parent's messages,
 and those are counted once here. Subagent transcripts are counted in their parent session.
 
-**Dollars are API list prices**, per million tokens: Opus 5 $5 in, $25 out, $0.50 cache read; Sonnet 5
-$2, $10, $0.20; Fable 5 $10, $50, $1.00; cache writes at 1.25x input for five minutes and 2x for an hour.
+**Dollars are API list prices**, per million tokens, from the `PRICES` table in `src/scripts/fleet-analyze.mts`
+(the one place; listed at `platform.claude.com/docs/en/about-claude/pricing`). The runs below used the 5.0
+models: Opus 5 $5 in, $25 out, $0.50 cache read; Sonnet 5 $2, $10, $0.20; Fable 5 $10, $50, $1.00. Later
+models differ, mostly in the cache read (Fable 5.2 $8, $40, $0.20; Opus 5.5 $4, $20, $0.20). Cache writes are
+1.25x input for five minutes and 2x for an hour.
 The runs were made on a subscription, so this is what the same tokens would cost through the API, not
 what was paid. "Worker cost" is the worker sessions and their subagents; planner sessions are named
 separately where they could be told apart.

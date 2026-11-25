@@ -358,6 +358,27 @@ try {
   check('one-chat: tokens still counted once', o.tokens.workers_subagents.msgs, 3);
 } catch { console.log(`FAIL one-chat run: ${orr.stderr}`); failed++; }
 
+// ---- model prices: a known newest row, a dated old id, and an id with no row (priced from its family's
+// newest row and named). One worker, three messages of 1M cache-read tokens and 1M output tokens each.
+const Q = 'a9999999-0000-4000-8000-000000000009';
+const qrun = join(root, '.fleet', 'q1');
+mkdirSync(join(qrun, 'chips'), { recursive: true });
+writeFileSync(join(qrun, 'chips', Q), '09\n');
+const qmsg = (n: number, model: string): Obj => asst(`13:00:${10 + n}`, `q${n}`, model, { output_tokens: 1e6, cache_read_input_tokens: 1e6 }, { type: 'text', text: 'ok' }, 'end_turn');
+writeFileSync(join(projects, `${Q}.jsonl`), jsonl([
+  user('13:00:00', 'prices'),
+  qmsg(1, 'claude-fable-5-2'), qmsg(2, 'claude-fable-5-3'), qmsg(3, 'claude-opus-4-5-20251101'), qmsg(4, 'claude-sonnet-5-5[1m]'),
+]));
+const qx = spawnSync(process.execPath, [script, qrun, '--json'], { encoding: 'utf8', env, maxBuffer: 64e6 });
+try {
+  const q = JSON.parse(qx.stdout) as Report & { prices: { price_assumed_from: Record<string, string> } };
+  // out + cache read per million: Fable 5.2 40+0.2, Fable 5.3 assumed as 5.2, Opus 4.5 25+0.5, Sonnet 5.5 10+0.1
+  check('prices: rows, family fallback and suffixes', q.tokens.workers_parent.cost, 40.2 + 40.2 + 25.5 + 10.1, 1e-9);
+  check('prices: only the id without a row is named', q.prices.price_assumed_from, { 'claude-fable-5-3': 'claude-fable-5-2' });
+  const qt = spawnSync(process.execPath, [script, qrun], { encoding: 'utf8', env });
+  check('prices: the report says so', qt.stdout.includes('claude-fable-5-3 -> claude-fable-5-2'), true);
+} catch { console.log(`FAIL price run: ${qx.stderr}`); failed++; }
+
 rmSync(tmp, { recursive: true, force: true });
 console.log(`${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

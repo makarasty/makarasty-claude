@@ -3,6 +3,7 @@ import { register as router } from './router.ts'
 import { register as gitGuard } from './git-guard.ts'
 import { register as killGuard } from './kill-guard.ts'
 import { register as reads } from './reads.ts'
+import { register as searchGuard } from './search-guard.ts'
 import { register as deleteGuard } from './delete-guard.ts'
 import { register as snapshot } from './snapshot.ts'
 import { register as loopGuard } from './loop-guard.ts'
@@ -33,6 +34,7 @@ export const register: Register = (on, options) => {
   gitGuard(on, options)
   killGuard(on, options)
   reads(on, options)
+  searchGuard(on, options)
   deleteGuard(on, options)
   // After the git, kill and delete guards: a line they refuse is never saved for.
   snapshot(on, options)

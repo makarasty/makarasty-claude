@@ -10,7 +10,7 @@ import type { Register } from 'claude-code'
 // AskUserQuestion and the desktop app's end-of-turn box (wrap_up `ask`). MAKARASTY_ASK_GUARD=off drops it.
 // Before an AskUserQuestion reaches the person (MAKARASTY_SCREEN=off drops these three): an option that puts off a check
 // is refused, a question about how the product or code should behave needs metadata.investigated, and any other question
-// without an ask-first act needs metadata.screened.
+// without an ask-first act needs metadata.screened, unless its own text says what was checked or found.
 
 export const MESSAGE =
   'Not asked: whether to go on with work the person already asked for is answered yes, always. Carry on and report at the end. ' +
@@ -66,7 +66,7 @@ export const SELF =
 // Words are bounded (no "ключевые", "primary_key"); an env name counts only in capitals, so it is matched without the i flag.
 const SECRET_WORD = '(?:парол[ьяюе]?(?![а-яё])|password|passwd|токен(?:а|ом|у|ы)?(?![а-яё])|token|секрет(?:а|ом|у|ы)?(?![а-яё])|secret|api[-_ ]?key|(?:stripe|access|private|ssh|signing|license) key|ключ(?:а|ом|у|и)?(?![а-яё])|pin\\b|пин-код|credential|учётн[а-я]* данн|учетн[а-я]* данн)'
 const ENV = '\\b[A-Z][A-Z0-9_]*_(?:PASS|PASSWORD|TOKEN|SECRET|KEY)\\b'
-const GIVE = '(?:(?:дай|пришли|скинь|кинь|введи|вставь|вбей|напиши|подскажи|сообщи|скажи|продиктуй|отправь|укажи|назови|передай|выдай|предоставь)(?:те)?|дашь|дадите|пришлёшь|пришлешь|пришлёте|пришлете|скинешь|скинете|напишешь|подскажешь|введёшь|введешь|сообщишь|скажешь|передашь|отправишь|укажешь|назовёшь|назовешь|выдашь|вставишь|поделись|поделитесь|прислать|ввести|вставить|скинуть|назвать|написать|подсказать|send|give|paste|share|provide|enter|supply|tell me|what(?:\'s|’s| is| are)(?: the| your))'
+const GIVE = '(?:(?:дай|пришли|скинь|кинь|введи|вставь|вбей|напиши|подскажи|сообщи|скажи|продиктуй|отправь|укажи|назови|передай|выдай|предоставь)(?:те)?|дашь|дадите|пришлёшь|пришлешь|пришлёте|пришлете|скинешь|скинете|напишешь|подскажешь|введёшь|введешь|сообщишь|скажешь|передашь|отправишь|укажешь|назовёшь|назовешь|выдашь|вставишь|поделись|поделитесь|прислать|ввести|вставить|скинуть|назвать|написать|подсказать|(?:можешь|можете|сможешь|сможете)\\s+(?:мне\\s+)?(?:дать|выдать|передать|сообщить|отправить)|send|give|paste|share|provide|enter|supply|tell me|what(?:\'s|’s| is| are)(?: the| your))'
 // The gap stops at a sentence end (". ") but not at a dot inside ".env" or "v2.1".
 const GAP = '(?:[^?!.\\n]|\\.(?=\\S)){0,60}'
 const SECRET = new RegExp(`(?<![a-zа-яё])${GIVE}(?![a-zа-яё])${GAP}${SECRET_WORD}`, 'i')
@@ -76,17 +76,25 @@ const asksEnv = (t: string): boolean => [...t.matchAll(GIVE_SPAN)].some((m) => E
 // A bare ask for a key or PIN ("Ключ от Stedi?", "Your Stripe key?").
 const BARE_KEY = /(?<![a-zа-яё])(?:ключ|key|pin|пин)(?:а|ом|у)?\s+(?:от|для|к|to|for)\s+\S+\?\s*$|^\s*(?:your\s+)?\S+\s+key\?\s*$/i
 const NEED = new RegExp(`(?<![a-zа-яё])(?:нужен|нужна|нужны|need)\\s+(?:(?:мне|нам|твой|твоя|ваш|ваша|the|your)\\s+)?${SECRET_WORD}`, 'i')
-// Named in the ask or an option, singular, and not as a feature ("восстановление пароля", "secret manager", "хранить токен").
-const NAMED = /(?<![a-zа-яё])(?<!(?:ли|без|сброс|сброса|сбросить|сбрось|восстановление|восстановления|показать|хранить|храним|ротировать|reset|forgot|show|store|rotate|hash) )(парол[ьяю](?![а-яё])|password(?![\s-]+(?:reset|rules|policy|length|manager|hash|field|based))|passwd|токен(?:а|ом|у)?(?![а-яё])|token(?![a-z]| (?:refresh|budget|limit|count|usage))|секрет(?:а|ом|у)?(?![а-яё])|secret(?![a-z]| (?:manager|field|store))|api[-_ ]?key|(?:stripe|access|private|ssh|signing|license) key|ключ(?:а|ом|у)? (?:от|для|к)\s|пин-код|credential|учётн[а-я]* данн|учетн[а-я]* данн)/i
+// Named in the ask or an option, singular, and not as a feature or an object of a decision ("восстановление пароля", "secret manager", "хранить токен", "дать токену доступ", "по паролю").
+const NAMED = /(?<![a-zа-яё_])(?<!(?:ли|без|по|сброс|сброса|сбросить|сбрось|восстановление|восстановления|показать|показывать|хранить|храним|ротировать|дать|выдать|убрать|удалить|отозвать|перевыпустить|заменить|замаскировать|reset|forgot|show|store|rotate|hash|give|revoke|replace|remove|delete|mask) )(парол[ьяю](?![а-яё])|password(?![\s-]+(?:reset|rules|policy|length|manager|hash|field|based))|passwd|токен(?:а|ом|у)?(?![а-яё])|token(?![a-z]| (?:refresh|budget|limit|count|usage))|секрет(?:а|ом|у)?(?![а-яё])|secret(?![a-z]| (?:manager|field|store))|api[-_ ]?key|(?:stripe|access|private|ssh|signing|license) key|ключ(?:а|ом|у)? (?:от|для|к)\s|пин-код|credential|учётн[а-я]* данн|учетн[а-я]* данн)/i
 const RUN = '(?:запусти|выполни|прогони|подними|перезапусти)(?:те)?(?![а-яё])|(?:запустишь|выполнишь|прогонишь|поднимешь|перезапустишь)|(?:можешь|сможешь|можете|сможете)\\s+(?:[а-яё]+\\s+)?(?:запустить|выполнить|прогнать|поднять|перезапустить)|\\b(?:re)?(?:run|start)\\b|\\b(?:execute|launch|running)\\b'
 const BY = '(?<![а-яё])сам(?![а-яё])|самостоятельно|вручную|у себя|yourself|by hand|manually|on your (?:machine|side)'
 const BYHAND = new RegExp(`(?:${RUN})[^?!\\n]{0,60}(?:${BY})|(?:${BY})[^?!\\n]{0,30}(?:${RUN})|(?:можешь|сможешь|можете|сможете)\\s+(?:${BY})\\s+(?:запустить|выполнить|прогнать|поднять|перезапустить)`, 'i')
+// The question itself says the step is the person's: his own dev server, window, terminal or account, or that the chat cannot start it.
+// The owner's rule is "ask me to start what you cannot start"; a question that only names a script or a command carries none of this.
+const VALUE_OF = /(?<![a-zа-яё])(?:какой|какая|какие|какое|какую|каков[а-яё]*|what|which)(?![a-zа-яё])/i
+const OWN =/(?<![а-яё])(?:твой|твоя|твоё|твое|твоём|твоем|твоей|твои|твоих)\s+(?:сервис|окн|терминал|cmd|консол|dev|vite|приложени|процесс|сервер|браузер|аккаунт)|запускаешь (?:его|её|это|их) ты|не могу (?:сам |его )?(?:запустить|поднять|выполнить)|only you|your (?:own )?(?:service|terminal|window|app|process|dev server|server|account|browser)|(?:can'?t|cannot) (?:start|run|launch)/i
 export function asksSelf(questions: readonly Q[]): boolean {
   if (!Array.isArray(questions)) return false
   return questions.some((q) => {
     const labels = (Array.isArray(q?.options) ? q.options : []).map((o) => str(o?.label))
     const t = [str(q?.question), ...labels].join('\n')
-    return SECRET.test(t) || asksEnv(t) || NEED.test(t) || BYHAND.test(t) || [lastSentence(str(q?.question)), ...labels].some((s) => NAMED.test(s) || ENV_RE.test(s) || BARE_KEY.test(s))
+    const ask = lastSentence(str(q?.question))
+    // A secret merely named in a longer ask sentence or a label ("Убрать GH_TOKEN", "Только по паролю") is a decision about it;
+    // a short bare ask or a question about its value ("Какой пароль у postgres на staging?") is a request.
+    const short = words(ask).length <= 6
+    return SECRET.test(t) || asksEnv(t) || NEED.test(t) || (BYHAND.test(t) && !OWN.test(str(q?.question))) || (short && ENV_RE.test(ask)) || ((short || VALUE_OF.test(ask)) && NAMED.test(ask)) || BARE_KEY.test(ask) || labels.some((s) => NAMED.test(s) || BARE_KEY.test(s))
   })
 }
 
@@ -95,16 +103,27 @@ export function asksSelf(questions: readonly Q[]): boolean {
 // "continue?", a standing answer, log noise), none of them one the person then answered his own way [M72]. A stake
 // (push, merge, deploy, delete, money, sign-in) skips the screen; it is always his. The inbox chat relays screened items.
 export const SCREEN =
-  'Screen this question first; it reaches the person only if nobody else can answer it. Check yourself (or with a Haiku ' +
-  'Explore agent given this question and the project folder): the project CLAUDE.md and docs, what runs locally (ports, ' +
-  'proxies, processes), the scripts and env it uses, earlier answers in this chat and the standing answers. If that settles ' +
-  'it, do the step and do not ask. If something must be started that you cannot start, ask the person to start it (never a ' +
-  'password). Otherwise ask again with metadata {"source": "screened: <one line: what you checked and why only the person can answer>"}.' + NOT_DROPPED
+  'Screen this question first. If you already checked, send the same call again with one added field: metadata ' +
+  '{"source": "screened: <one line: what you checked and why only the person can answer>"}. If not, check yourself (or with a ' +
+  'Haiku Explore agent given this question and the project folder): the project CLAUDE.md and docs, what runs locally ' +
+  '(ports, proxies, processes), the scripts and env it uses, earlier answers in this chat and the standing answers. If that ' +
+  'settles it, do the step and do not ask. If something must be started that you cannot start, ask the person to start it ' +
+  '(never a password); otherwise ask with the field above.' + NOT_DROPPED
 export function screened(meta: unknown): boolean {
   const m = meta && typeof meta === 'object' ? (meta as Record<string, unknown>) : {}
   // Chats put it in metadata.source, the only field the tool's schema shows: 24 of 42 screen and behaviour refusals carried a bare
   // "screened" or "investigated" there [M85]. A bare word still does not pass; the detail does.
   return (typeof m.screened === 'string' && m.screened.trim().length >= 20) || /^screened\s*:\s*\S.{18,}/is.test(str(m.source).trim()) || /^inbox(:|$)/.test(str(m.source))
+}
+// A question whose own text says what was checked or found shows the screen was done; a missing metadata.source then costs
+// a refusal and a re-send of the same call (102 refusals in 61 chats in 14 days, median 22 s apart). A negated marker ("не
+// посмотрел", "not found"), a quoted one (error text), and one inside a question to the person ("ты проверил?") is no check;
+// only "не нашёл / не нашлось" counts negated, as the result of a search.
+const CHECKED = /(?<![a-zа-яё])(не наш[её]л[а-яё]*|не нашл[а-яё]*|не нахож[а-яё]*|(?<!(?:не|ни|not|never|n't) )(?:нашл[а-яё]+|нашёл|нашел|проверил[а-я]*|проверен[а-я]*|посмотрел[а-я]*|выяснил[а-я]*|сверил[а-я]*|изучил[а-я]*|прочитал[а-я]*|по логам|в логах|checked|found|looked|verified|searched|grepped))(?![a-zа-яё])/i
+const QUOTED = /«[^»]*»|“[^”]*”|"[^"\n]*"|`[^`\n]*`/g
+const stated = (s: string): string[] => s.replace(QUOTED, ' ').split(/(?<=[.!?])\s+|\n+/).filter((x) => !x.trimEnd().endsWith('?'))
+export function showsScreen(questions: readonly Q[]): boolean {
+  return Array.isArray(questions) && questions.length > 0 && questions.every((q) => stated(str(q?.question)).some((x) => CHECKED.test(x)))
 }
 // The screen is skipped only when every question's own ask (its last sentence) or an option label proposes an act that
 // stays the person's, matched at a word start. Matched anywhere, evidence did it: "коммит 2026-11-05" in a description,
@@ -358,7 +377,7 @@ export const register: Register = (on) => {
     if ((await $.env.get('MAKARASTY_SCREEN')) !== 'off' && !continueQuestions(e.questions as readonly Q[]).length && !/^inbox(:|$)/.test(str((meta as { source?: unknown } | undefined)?.source))) {
       if (defers(e.questions as readonly Q[])) return { deny: DEFERRED }
       if (behaviour(e.questions as readonly Q[]) && !investigated(meta)) return { deny: BEHAVIOUR }
-      if (!staked(e.questions as readonly Q[]) && !screened(meta) && !investigated(meta)) return { deny: SCREEN }
+      if (!staked(e.questions as readonly Q[]) && !screened(meta) && !investigated(meta) && !showsScreen(e.questions as readonly Q[])) return { deny: SCREEN }
     }
     const n = continueQuestions(e.questions as readonly Q[])
     if (!n.length) return next(e)

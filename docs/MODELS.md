@@ -6,11 +6,13 @@ says so.
 ## The roster
 
 Write the alias in a brief's `model:` line and in agent frontmatter; the alias follows the tier, the ID
-pins one release. Lineup as of 2026-10-12:
+pins one release. Lineup as of 2026-11-25. A new release is two edits: its row here, and its price row in
+`PRICES` in `src/scripts/fleet-analyze.mts` (prices: `platform.claude.com/docs/en/about-claude/pricing`);
+an id with no price row is priced from the newest row of its family and named in the analysis report:
 
 | Alias | Model, ID | Fits |
 |---|---|---|
-| `fable` | Fable 5.1, `claude-fable-5-1` | The design model: proposing how a screen should look, writing markup and copy meant to be seen, ruling on taste. The top tier, and nothing cheaper touches its result afterwards: `MISSIONS.md`, design. On an account without it, `opus`. |
+| `fable` | Fable 5.2, `claude-fable-5-2` | The design model: proposing how a screen should look, writing markup and copy meant to be seen, ruling on taste. The top tier, and nothing cheaper touches its result afterwards: `MISSIONS.md`, design. On an account without it, `opus`. |
 | `opus` | Opus 5.5, `claude-opus-5-5` | Judgement. Deciding whether an observation is a defect, ranking severity, writing a brief another model will execute without supervision. |
 | `sonnet` | Sonnet 5.5, `claude-sonnet-5-5` | Execution carrying judgement. Walking a scenario, noticing that something is wrong rather than merely different, following a spec that has gaps in it. |
 | `haiku` | Haiku 5.5, `claude-haiku-5-5` (Haiku 4.5 on Bedrock, Vertex and Foundry) | Mechanical work under an exact contract. Fetching a value, running a fixed probe, reformatting, counting. |
@@ -166,7 +168,7 @@ correctness question; `medium` for plain, well-specified work. Never `low`, `xhi
 ultracode. `fleet.sh chips` refuses anything but `medium`, `high` or `any`; a `want/` file left by an older run
 is read `max`/`xhigh` as `high`, `low` as `medium`. The agent files keep
 their own effort, each with its reason. An effort change keeps the prompt cache on the
-5.5 models and Fable 5.1; a model change does not (`code.claude.com/docs/en/prompt-caching`).
+5.5 models and Fable 5.1 and later; a model change does not (`code.claude.com/docs/en/prompt-caching`).
 
 Effort is settable per subagent, in the definition file's frontmatter. The `effort` field is documented at
 `code.claude.com/docs/en/sub-agents` as "Effort level when this subagent is active. Overrides the session

@@ -381,11 +381,45 @@ test('git commit --amend needs --only or paths', () => {
 test('git commit or push piped into tail/head/tee/Select-Object is refused unless pipefail or PIPESTATUS', () => {
   expect(['git push 2>&1 | tail -5', 'git commit -m x | Select-Object -Last 3', 'git commit -m x | select -Last 3', 'git push | tee out.log', 'git -C r push origin main | head',
     'git add a && git commit -m x 2>&1 | tail -3', 'git.exe push | Select-Object -First 2'].filter((c) => !check(c, c.includes('Select') || c.includes('select') ? 'PowerShell' : 'Bash', MAIN))).toEqual([])
-  expect(check('git push 2>&1 | tail -5')).toContain('git ls-remote')
+  expect(check('git push 2>&1 | tail -5')).toContain('set -o pipefail;')
   // inside a subshell or a group the pipe still hides the exit code
   expect(['(git push | tail)', '{ git commit -m x | tail -3; }', '( git push 2>&1 | head )'].filter((c) => !check(c, 'Bash', MAIN))).toEqual([])
   expect(['set -o pipefail; git push | tail -3', 'git push | tail -3; echo ${PIPESTATUS[0]}', 'git log | head', 'git log --grep=push | head', 'git commit -m "x | tail"', 'git push || tail x',
     'git push && git log | head', 'git commit -m x | cat'].filter((c) => check(c, 'Bash', MAIN))).toEqual([])
+})
+
+test('a refused pipe says why and the one fix, names the refused part, and does not claim the command cannot be undone', () => {
+  const m = denial('git add a.ts && git commit -m x 2>&1 | tail -3 && git status', false, 'Bash', MAIN)!
+  expect(m).toContain("a pipe hides git's exit code")
+  expect(m).toContain('git commit piped into tail')
+  expect(m).toContain('re-send it bare')
+  expect(m).toContain('set -o pipefail;')
+  expect(m).toContain('The other parts of the line need no change')
+  for (const w of ['cannot be undone', "other chats'", 'ask them to run it', 'MAKARASTY_GIT_GUARD']) expect(m.includes(w)).toEqual(false)
+  expect(denial('git push | Select-Object -First 2', false, 'PowerShell', MAIN)).toContain('git push piped into Select-Object')
+  // a real discard keeps its reason, and its note says a discard in a C:\wt* worktree is still guarded
+  const d = denial('git stash', false, 'Bash', { cwd: 'C:\\wtpush' })!
+  expect(d).toContain('cannot be undone')
+  expect(d).toContain('but a discard there still is')
+})
+
+test('in PowerShell neither pipefail nor PIPESTATUS unlocks a pipe, and its advice is not Bash advice', () => {
+  expect(['set -o pipefail; git push | Select-Object -Last 3', 'git push | select -Last 3; echo $PIPESTATUS', 'git push 2>&1 | tail -3; echo ${PIPESTATUS[0]}'].filter((c) => !check(c, 'PowerShell', MAIN))).toEqual([])
+  const m = check('git push 2>&1 | Select-Object -Last 3', 'PowerShell', MAIN)!
+  expect(m).toContain('$LASTEXITCODE')
+  expect(m.includes('pipefail')).toEqual(false)
+  expect(check('set -o pipefail; git push | tail -3', 'Bash', MAIN)).toBeNull()
+})
+
+test('a pipe refusal never says the rest of the line is fine when another part is refused too', () => {
+  const c = 'git reset --hard HEAD~1 && git commit -m x | tail -1'
+  const m = check(c, 'Bash', MAIN)!
+  expect(m).toContain('git reset')
+  expect(m).toContain('Also refused: git commit ... | tail')
+  expect(m.includes('need no change')).toEqual(false)
+  expect(denial(c, false, 'Bash', MAIN)).toContain('cannot be undone')
+  expect(check('git reset --hard HEAD~1 && git commit -m x | tail -1', 'Bash', WT)).toContain('piped into tail')
+  expect(check('git reset --hard HEAD~1 && git commit -m x | tail -1', 'Bash', WT)).toContain('need no change')
 })
 
 test('the pipefail/PIPESTATUS exemption counts only live text, not a comment, a quoted word or $?', () => {
@@ -465,8 +499,8 @@ test('Monitor is a shell: its command is read like Bash', () => {
 test('a PowerShell here-string commit message is text: an apostrophe in it does not un-pair the pipe scan', () => {
   expect(check("git commit -m @'\nfix: it's why git push | tail hid errors\n'@", 'PowerShell')).toBeNull()
   expect(check("git commit -m @\"\nfix: it's why git push | tail hid errors\n\"@", 'PowerShell')).toBeNull()
-  expect(check("git commit -m @'\nfix: it's why\n'@ | tail", 'PowerShell')).toContain('piping')
-  expect(check("git push | tail", 'PowerShell')).toContain('piping')
+  expect(check("git commit -m @'\nfix: it's why\n'@ | tail", 'PowerShell')).toContain('piped into tail')
+  expect(check("git push | tail", 'PowerShell')).toContain('piped into tail')
 })
 
 test('cmd //c (Git Bash) and cmd /k run their text as a command line', () => {

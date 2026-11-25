@@ -6,8 +6,8 @@ import type { Register } from 'claude-code'
 // Allowed on purpose: commit, branch switch without force, reset (mixed/soft), stash list/show, clean -n,
 // restore --staged, push --force-with-lease, switch/checkout -c/-b/-C/-B (the reflog keeps an overwritten branch tip;
 // this guard is about uncommitted work). The person can still run anything themselves with `!`.
-// A discard (third element `true`) is allowed in a private tree: a fleet worker's own worktree under `.claude/worktrees/`,
-// a root-level `wt*` worktree (C:\wtmerge, /c/wtRM01) or a clone under the OS temp dir, which no other session shares.
+// A discard (third element `true`) is allowed in a private tree: a fleet worker's own worktree under `.claude/worktrees/`
+// or a clone under the OS temp dir, which no other session shares. A root-level `wt*` worktree (C:\wtmerge, /c/wtRM01) is not one for a discard.
 // Everything else is refused in every tree. `git add -A` / `add .` / `commit -a` sweep other sessions' files: refused in the shared tree.
 // `'sweep'` (add -A, commit -a) also runs in a root-level `wt*` worktree and in a folder this very line makes with `git init <path>`
 // or `git clone`: no other session's files are there. Every other discard stays refused in a `wt*` worktree.
@@ -466,6 +466,8 @@ function subcommands(cmd: string, ps: boolean, depth = 0, cwd = '', husky = fals
   return out
 }
 
+// The reason a refused pipe starts from; denial() tells it apart from a discard, which it is not.
+const PIPE = "a pipe hides git's exit code"
 // null = let it run, otherwise why it would destroy work. `tool` is the tool the command runs in.
 // shortcut: with no tool the command is read as Bash, so a PowerShell backtick counts as a substitution
 // (over-blocks) and a backtick continuation is not joined; the hook always passes it, guess only for a new caller.
@@ -492,12 +494,22 @@ export function check(cmd: string, tool = 'Bash', where: Where = {}): string | n
   const expands = /\$\{?PIPESTATUS\b/.test(hd.replace(/'[^']*'|("(?:[^"\\]|\\.)*")|((?:^|\s)#.*)/gm, (_m, dq?: string, c?: string) => c === undefined ? dq ?? '""' : /^\s/.test(c) ? c[0]! : ''))
   const pipefail = (seg: string) => /^\s*(?:[({]\s*)*set\s+(?:\S+\s+)*?-[a-z]*o\s+pipefail\b/.test(seg) || /^\s*(?:[({]\s*)*shopt\s+((?:-\w+\s+)+)pipefail\b/.exec(seg)?.[1]?.match(/s.*o|o.*s/) != null
   const segs = rawc.split(/&&|\|\||[;&\n]/)
-  if (!expands) for (const seg of segs) {
-    if (pipefail(seg)) break // a set/shopt segment before the pipe; one after it never gets here
+  // pipefail and $PIPESTATUS are Bash: in PowerShell `set` is Set-Variable, so nothing unlocks the pipe there but running git bare.
+  const ps = tool === 'PowerShell'
+  let pipe: { head: string; fix: string; part: string } | undefined
+  if (ps || !expands) for (const seg of segs) {
+    if (!ps && pipefail(seg)) break // a set/shopt segment before the pipe; one after it never gets here
     const st = seg.split(/(?<!\|)\|(?!\|)/)
     const k = st.findIndex((p, n) => /^(commit|push)$/.test(stageSub(p)) && st.slice(n + 1).some((q) => /^(tail|head|tee|select-object|select)\b/i.test(q.trim())))
-    if (k >= 0) return `git ${stageSub(st[k]!)}: piping it into tail/head/tee/Select-Object hides git's exit code, so a failed hook looks like success: run it bare and check $? (or git ls-remote after a push), or use set -o pipefail / PIPESTATUS`
+    if (k >= 0) {
+      const sub = stageSub(st[k]!), into = st.slice(k + 1).map((q) => q.trim().split(/\s+/)[0]!).find((w) => /^(tail|head|tee|select-object|select)$/i.test(w))
+      pipe = { head: `git ${sub} piped into ${into}: ${PIPE}, so a failed hook looks like success`, part: `git ${sub} ... | ${into}`,
+        fix: ps ? 're-send it bare, then read $LASTEXITCODE (git push; if ($LASTEXITCODE) { ... })' : 're-send it bare, or with `set -o pipefail;` in front of it' }
+      break
+    }
   }
+  // Every other part is checked too, so the pipe message never says the rest of the line is fine when it is not.
+  const other = ((): string | null => {
   for (const { sub, via, dir, idx } of subs) {
     const name = sub.split(' ')[0]!
     // A folder this line creates: `init <path>`, or `clone <url> [dir]`. A bare `git init` in an existing tree makes nothing.
@@ -518,6 +530,10 @@ export function check(cmd: string, tool = 'Bash', where: Where = {}): string | n
     for (const [rule, why, discard] of RULES) if (!(discard === 'sweep' ? own || isWt(dir) || made.has(norm(dir)) || idx : discard === 'tree' ? own || isWt(dir) || made.has(norm(dir)) : own && discard) && (typeof rule === 'function' ? rule(sub) : rule.test(sub))) return via ? `${via} ${name}: ${VARIABLE}` : `git ${name}: ${why}`
   }
   return null
+  })()
+  if (!pipe) return other
+  return other ? `${other}. Also refused: ${pipe.part}, because ${PIPE} and a failed hook looks like success: ${pipe.fix}`
+    : `${pipe.head}. Only that part (${pipe.part}) is refused: ${pipe.fix}. The other parts of the line need no change`
 }
 // The git subcommands a shell line runs (`push origin main`), with the same lexer the guard uses: quotes, chains,
 // nested shells and heredocs read alike. `via` marks a variable standing in for git.
@@ -531,10 +547,11 @@ const MAYBE = /\bgit\b|\$/i
 export function denial(command: string, off: boolean, tool = 'Bash', where: Where = {}): string | null {
   if (off || !MAYBE.test(command)) return null
   const why = check(command, tool, where)
+  if (why && /^git \S+ piped into /.test(why)) return `Blocked by makarasty-tools git-guard: ${why}.`
   // No command is named as a way round: a discard by another route (`git show HEAD:f > f`) loses the same work.
   return why && `Blocked by makarasty-tools git-guard: ${why}. It is refused because it cannot be undone and other chats' uncommitted work may share this tree. ` +
     'Safe ways: commit your own change or copy the file aside first; undo your own edit by changing only the lines you edited; ' +
-    'or ask them to run it themselves with `!`. No answer in the chat releases this guard, so do not ask for a yes: it would be refused again (2026-11-17). A discard, `add -A` or `commit -a` in your own `.claude/worktrees/` or C:\\wt* worktree or a temp clone is not guarded. ' +
+    'or ask them to run it themselves with `!`. No answer in the chat releases this guard, so do not ask for a yes: it would be refused again (2026-11-17). A discard (stash, reset --hard, checkout --) in your own `.claude/worktrees/` worktree or a temp clone is not guarded; `add -A` and `commit -a` are also not guarded in a C:\\wt* worktree, but a discard there still is.' +
     'MAKARASTY_GIT_GUARD=off turns this off.'
 }
 

@@ -107,6 +107,34 @@ test('taskkill /T on one explicit PID stays refused: the child tree can hold oth
   expect(check('taskkill //PID 31396 //F')).toBeNull()
 })
 
+// The owner's kill-after limit on a long run: the tree it started itself (seen refused in four real transcripts).
+const OWN_START = [
+  "cd C:/x; $p = Start-Process node -ArgumentList 'tools/a.mjs','boot' -NoNewWindow -PassThru -RedirectStandardOutput C:/o.txt; if (-not $p.WaitForExit(1500000)) { taskkill /pid $p.Id /T /F; \"KILLED\" }; Get-Content C:/o.txt -Tail 25",
+  "$p = Start-Process -FilePath node -ArgumentList 'a.mjs','--full' -NoNewWindow -PassThru -RedirectStandardOutput \"$env:TEMP/f.out\"; if (-not $p.WaitForExit(900000)) { taskkill /PID $p.Id /T /F | Out-Null; 'TIMEOUT' } else { \"EXIT $($p.ExitCode)\" }",
+  "$p = Start-Process node -PassThru; if (!$p.WaitForExit(600000)) { Stop-Process -Id $p.Id -Force }",
+  'npm test & pid=$!; sleep 600; kill $pid',
+  'npm test & pid=$!; sleep 600; taskkill //PID $pid //T //F',
+]
+const OWN_NEAR = [
+  '$p = Start-Process node -PassThru; taskkill /IM node.exe /F',
+  '$p = Start-Process node -PassThru; taskkill /PID 4242 /T /F',
+  '$p = Get-Process node; taskkill /PID $p.Id /T /F',
+  '$p = Start-Process node; taskkill /PID $p.Id /T /F',
+  '$p = Start-Process node -PassThru; taskkill /PID $q.Id /T /F',
+  'taskkill /PID $p.Id /T /F',
+  'npm test & pid=$!; taskkill //PID $other //T //F',
+  '$p = Start-Process node -PassThru; $p = Get-Process node | Select-Object -First 1; taskkill /PID $p.Id /T /F',
+  'npm test & pid=$!; pid=$(pgrep node); taskkill //PID $pid //T //F',
+  'npm test & pid=$!; pid=$(pgrep node); kill -9 $pid',
+  'npm test & pid=$!; pid=`pidof node`; kill "$pid"',
+]
+
+test('a tree kill of a process the same command started is allowed; by name, a literal PID or an unstarted variable stays refused', () => {
+  expect(OWN_START.slice(0, 3).filter((c) => check(c, 'PowerShell'))).toEqual([])
+  expect(OWN_START.slice(3).filter((c) => check(c, 'Bash'))).toEqual([])
+  expect(OWN_NEAR.filter((c) => !check(c, c.includes('$!') ? 'Bash' : 'PowerShell'))).toEqual([])
+})
+
 test('only a PowerShell single-quoted here-string is text: an expandable @".."@ runs its subexpression, in either shell', () => {
   expect(check('git commit -m @"\nfix\n$(Stop-Process -Name node)\n"@', 'PowerShell')).not.toBeNull()
   expect(check('echo @"$(pkill node)"@')).not.toBeNull()

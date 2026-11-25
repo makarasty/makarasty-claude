@@ -50,25 +50,54 @@ export function unrouted(text: string): string[] {
 }
 export function claimsDone(text: string): boolean { return DONE.test(text) }
 
-// A brief that lists several items with no "done when" lets its closing line narrow the scope: two of three tools were
-// never reviewed and the hand-back called that a choice [M76].
-export const BRIEF =
-  'Not sent: this brief lists several items and has no "Done when" that covers every one. Add one line, "Done when: ' +
-  '<each item by name, with what proves it>"; put the person\'s special interest first, never as the closing line, then send again.'
-const ITEM = /^\s*(\d+[.)]|[-*•]|\([a-z0-9]\))\s+\S/gm
-const DONE_WHEN = /(done when|done-when|готово,? когда|сделано,? когда|критери[йи] готовности|acceptance)/i
+// A brief that lists several items with no finish line lets its closing line narrow the scope: two of three tools were
+// never reviewed and the hand-back called that a choice [M76]. Over 14 days 88 refusals hit briefs that already said
+// where they end ("Return a compact list", "Report what happened") or whose list was files and context, not tasks.
+const ITEM = /^[ \t]*(?:\d+[.)]|[-*•]|\([a-z0-9]\))[ \t]+(\S.*)$/gm
+// A list line is not a task when it is a question (the questions are what gets answered), a quote, or only a path: a bare
+// path, "Folder <path>", "label: <path>", several paths. A path followed by an action ("src/a.ts: fix X") is a task.
+const PATHY = /[\/]|^[.~]|\.\w{1,5}$/
+const notTask = (line: string): boolean => {
+  if (/\?\s*$/.test(line) || /^[*_`]*["«>]/.test(line)) return true
+  const label = line.match(/^([^:\/]{0,30}):\s*(.*)$/)
+  const rest = (label ? label[2]! : line).replace(/^[*_`"'«(]*(?:folders?|files?|paths?|dir|url|папка|файл|путь)(?![a-zа-яё])/i, '')
+  const tokens = rest.split(/\s+/).map((t) => t.replace(/^[*_`"'«»()[\],;:.]+|[*_`"'«»()[\],;:]+$/g, '')).filter(Boolean)
+  return tokens.length > 0 && tokens.every((t) => PATHY.test(t))
+}
+// The brief says where it ends: "done when" or a success line anywhere, or a "Return/Report/Output ..." sentence outside the
+// list items (inside an item it is a clause of the task: "1. Make parse() tolerant. Return null on bad input.").
+const FINISH_ANY = /(?:done|finished|completed?|ready) when|definition of done|success(?: criteria)?\s*:|acceptance|(?:готово|сделано|закончено),? когда|критери[йи] готовности|успех:/i
+const FINISH_LINE = /return (?:at most|up to|no more than)|(?:^|[.!?:]\s+)[*_`>]*\s*(?:return|report|deliver|output|contract|send back|write (?:up )?(?:the |your |full )?(?:findings|results?|report|answer|verdict)|your final message|верни|вернуть|сообщи|отчитайся|выдай|результат:)(?![a-zа-яё])/im
+// "Answer ..." opening the brief is the task; further down it is the output instruction.
+const ANSWER = /(?:^|[.!?:]\s+)[*_`>]*\s*(?:answer|reply|respond|ответь|отвечай)(?![a-zа-яё])/im
+const outsideItems = (prompt: string): string => prompt.replace(/```[\s\S]*?```/g, '').replace(ITEM, '')
+const closes = (prompt: string): boolean => {
+  const out = outsideItems(prompt)
+  return FINISH_ANY.test(prompt) || FINISH_LINE.test(out) || ANSWER.test(out.replace(/^[^\n]*\n/, ''))
+}
+const taskItems = (prompt: string): string[] =>
+  [...prompt.replace(/```[\s\S]*?```/g, '').matchAll(ITEM)].map((m) => m[1]!).filter((l) => !notTask(l))
+const head = (l: string) => l.replace(/[*_`]/g, '').split(/\s+/).slice(0, 5).join(' ').replace(/[,.:;]+$/, '')
+// The refusal names the one line to add, built from the brief's own items, so a retry is one line.
+export function briefDeny(prompt: string): string {
+  const its = taskItems(prompt)
+  const line = `Done when: ${its.slice(0, 4).map(head).join('; ')}${its.length > 4 ? '; ...' : ''} - each done, with what proves it.`
+  return `Not sent: this brief lists ${its.length} items and says nowhere where it ends. Add this one line at the end, edit it if needed, ` +
+    `and send again (the rest of the brief stays as it is): "${line}" Any of "Return ...", "Report ...", "Done when ..." closes it.`
+}
 // "If it is a product call, ask the owner" licensed the Schedule call question on a grep [M76].
 export const LICENSE =
   'Not sent: this brief lets the subagent ask the person on a product or behaviour call with no investigation first. Write ' +
   '"after the investigation pass (every caller, git history, real usage, what each option breaks)" into that line, then send again.'
-const ASK_LICENSE = /(?<![a-zа-яё])(if|when|если|когда)[^.\n]{0,80}(product|продукт|behaviou?r|поведени|design|choice|выбор|call\b|решени)[^.\n]{0,60}(ask|спроси|задай вопрос)/i
+// Imperative only: "the owner asked for a feature" and "the owner's ask is a file" describe, they do not license a question.
+const ASK_LICENSE = /(?<![a-zа-яё])(if|when|если|когда)[^.\n]{0,80}(product|продукт|behaviou?r|поведени|design|choice|выбор|call\b|решени)[^.\n]{0,60}(\bask (the |that |this )?(owner|person|user|human|operator|him|her|them|me|you)\b|\bask a question|(?<![’']s |\b(?:the|an?|his|her|their|its|my|your) )\bask(?=\s*(?:[.!;]|$)|\s+(?:before|first|and|once)\b)|AskUserQuestion|confirm with (the )?(owner|person|user)|спроси|задай вопрос|уточни у)/i
 const INVESTIGATE = /(investigat|расслед|callers|вызыва|git (log|history)|истори)/i
 export function briefLicensesAsk(prompt: string): boolean {
   return typeof prompt === 'string' && prompt.length < 100000 && ASK_LICENSE.test(prompt) && !INVESTIGATE.test(prompt)
 }
 export function briefLacksDone(prompt: string): boolean {
   if (typeof prompt !== 'string' || prompt.length > 100000) return false
-  return (prompt.match(ITEM) ?? []).length >= 3 && !DONE_WHEN.test(prompt)
+  return taskItems(prompt).length >= 3 && !closes(prompt)
 }
 
 let turn = { asked: false, recorded: false, recap: '' }
@@ -114,7 +143,7 @@ export const register: Register = (on) => {
     const prompt = `${String(i.prompt ?? '')}
 ${String(i.background ?? '')}`
     if (!((await $.env.get('MAKARASTY_ROUTES')) === 'off')) {
-      if (!/^makarasty:fleet-/.test(String(i.subagent_type ?? '')) && briefLacksDone(prompt)) return { deny: BRIEF }
+      if (!/^makarasty:fleet-/.test(String(i.subagent_type ?? '')) && briefLacksDone(prompt)) return { deny: briefDeny(prompt) }
       if (briefLicensesAsk(prompt)) return { deny: LICENSE }
     }
     return next(e)

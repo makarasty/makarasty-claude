@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
-import { BEHAVIOUR, BOX, COMMAND, DEFERRED, ELSEWHERE, MESSAGE, NOT_DROPPED, OTHER_CHAT, SELF, SCREEN, asksSelf, behaviour, continueBox, continueQuestions, defers, freshLedger, holdsCommand, investigated, leftAtStop, notePassed, noteRefusal, onlyContinue, pointsAbove, reminder, screened, sendsToChat, staked } from './ask-guard.ts'
+import { BEHAVIOUR, BOX, COMMAND, DEFERRED, ELSEWHERE, MESSAGE, NOT_DROPPED, OTHER_CHAT, SELF, SCREEN, asksSelf, behaviour, continueBox, continueQuestions, defers, freshLedger, holdsCommand, investigated, leftAtStop, notePassed, noteRefusal, onlyContinue, pointsAbove, reminder, screened, sendsToChat, showsScreen, staked } from './ask-guard.ts'
 
 const q = (question: string, ...labels: string[]) => ({ question, header: 'h', multiSelect: false, options: labels.map((label) => ({ label, description: '' })) })
 
@@ -359,6 +359,62 @@ test('the screen takes what the tool schema allows: metadata.source "screened: .
   expect(await ask($, WEEKEND)).toEqual({ deny: SCREEN })
   await ask($, WEEKEND, { source: 'screened: a plan and taste question only he answers; nothing on disk settles it' })
   expect(passed).toEqual(['AskUserQuestion'])
+})
+
+// 14 days of chats: 102 screen refusals, a main cause the first ask of a screened question lacking metadata.source.
+test('the screen: a question whose text says what was checked or found passes without metadata; one that does not is refused with the field to add', async ($, on) => {
+  const passed = world(on, { MAKARASTY_SCREEN: 'on' })
+  const found = [q('«Microstic Lot» не нашёлся ни в одном чате: проверил транскрипты за 14 дней. О чём речь?', 'Про другой проект', 'Опечатка')]
+  expect(showsScreen(found)).toBe(true)
+  await ask($, found)
+  await ask($, [q('Found 3 stale worktrees in the repo. Which one does the next fleet take?', 'wt-a', 'wt-b')])
+  expect(passed).toEqual(['AskUserQuestion', 'AskUserQuestion'])
+  expect(SCREEN).toContain('send the same call again with one added field: metadata {"source": "screened:')
+  expect(await ask($, PLAIN)).toEqual({ deny: SCREEN })
+  expect(await ask($, [q('Какой цвет у кнопки Save?', 'Синий', 'Зелёный'), q('Нашёл 3 варианта значка. Какой взять?', 'A', 'B')])).toEqual({ deny: SCREEN })
+  expect(showsScreen([q('Не проверено, есть ли там лимит. Какой поставить?', '1', '2')])).toBe(false)
+  expect(showsScreen([q('Проверю логи потом. Какой поставить?', '1', '2')])).toBe(false)
+  expect(passed.length).toBe(2)
+})
+
+test('a secret named in a decision is not a request for one; a short bare ask or a give verb still is', () => {
+  const no = [
+    q('Причина 403: в переменных Windows задан GH_TOKEN, токен аккаунта без доступа к репозиторию. Как исправить насовсем?', 'Дать токену доступ', 'Убрать GH_TOKEN', 'Только для git'),
+    q('Адрес VPS и пускает ли туда с этого компа по ключу? Адрес напиши в Other.', 'По ключу пускает', 'Только по паролю'),
+    q('Токен бота попал в журнал этой сессии. Замаскировать его в переписке или оставить как есть?', 'Замаскировать', 'Оставить'),
+    q('Пушить на GitHub: токен в скрипте не нужен, вход уже сохранён?', 'Да, пушить', 'Не пушить'),
+    q('Перевыпустить токен?', 'Да', 'Нет'),
+  ]
+  for (const x of no) expect([x.question, asksSelf([x])]).toEqual([x.question, false])
+  for (const x of [q('Токен бота?', 'Скину', 'Нет'), q('Пароль от базы?', 'Скину', 'Нет'), q('Как передать доступ?', 'Скину пароль в чат', 'Иначе'), q('Как передать доступ?', 'Скину api key для Stripe', 'Иначе')])
+    expect([x.question, asksSelf([x])]).toEqual([x.question, true])
+})
+
+// 2026-11-13..18: the owner's rule is to ask him to start what the chat cannot start (his dev server, a window only he has).
+test('a by-hand run is asked when the question says it is his own service or the chat cannot start it; a script the chat could run is still refused', () => {
+  for (const x of [
+    q('Pulse на твоём локальном сервере (localhost:5001, окно start-firebase-emulator.bat) отвечает 500. Лог пишется в твоё окно cmd. Как дать мне лог?', 'Перезапусти сам (рекоменд.)', 'Скопирую ошибку сам', 'Не сейчас'),
+    q('Для скриншотов нужен vite на :5173. Он не запущен, а в FLEET.md он записан как твой сервис. Поднимешь сам (`cd frontend; npm run dev`) или мне запустить его через панель браузера?', 'Запусти сам', 'Подниму сам'),
+    q('Для проверки глазами нужен vite на http://localhost:5173: он не запущен после перезагрузки, а запускаешь его ты. Запустишь vite?', 'Запустил vite', 'Запусти сам', 'Позже'),
+    q('I cannot start the emulator from this chat. Can you run it yourself and tell me when it is up?', 'Done', 'Later'),
+  ]) expect([x.question, asksSelf([x])]).toEqual([x.question, false])
+  for (const x of [q('Запустишь npm test сам и скажешь результат?', 'Да', 'Нет'), q('Запусти seed.mjs сам и скажи, что вышло', 'Да', 'Нет'), q('Can you run the migration yourself and tell me?', 'Да', 'Нет'), q('Как проверить сборку?', 'Запусти сам npm test', 'Запущу я')])
+    expect([x.question, asksSelf([x])]).toEqual([x.question, true])
+})
+
+// Review of the first change: a direct request for a secret's value is refused whatever its length or verb; a negated, quoted or asking marker is no check.
+test('a request for a secret value is refused in any length ("можешь дать", "какой пароль у ... на ..."); decisions about a secret still pass', () => {
+  for (const t of ['Можешь дать пароль от базы?', 'Можешь дать токен?', 'Сможешь выдать мне токен бота?', 'Какой пароль у пользователя postgres на staging сервере?', 'Какой токен использовать для деплоя на прод?', 'What password does the staging database use for the reports user?'])
+    expect([t, asksSelf([q(t, 'Да', 'Нет')])]).toEqual([t, true])
+  for (const x of [q('Дать токену доступ к репозиторию?', 'Да', 'Нет'), q('Как исправить?', 'Дать токену доступ', 'Убрать GH_TOKEN'), q('Токен бота попал в журнал этой сессии, замаскировать его в переписке сейчас?', 'Да', 'Нет'), q('Пушить без токена в скрипте, вход уже сохранён на этой машине?', 'Да', 'Нет')])
+    expect([x.question, asksSelf([x])]).toEqual([x.question, false])
+})
+
+test('the screen is shown by a plain statement of a check or a found fact; a negated, quoted or asked marker shows none', () => {
+  for (const t of ['Нашёл 3 варианта значка. Какой взять?', 'Я проверил docs и CLAUDE.md, ответа там нет. Какой порт взять?', '«Microstic Lot» не нашёлся ни в одном чате. О чём речь?', 'Looked at the logs: nothing there. Which port do we take?'])
+    expect([t, showsScreen([q(t, 'A', 'B')])]).toEqual([t, true])
+  for (const t of ['Не посмотрел конфиг. Какой порт у dev-сервера?', 'Have you checked whether the server is up?', 'Error says module not found. Install it?', 'Ты проверил логи? Какой порт взять?', 'Ошибка «found nothing to run». Какой порт взять?', "I haven't checked the config. Which port?", 'Ещё не проверил docs. Какой порт?'])
+    expect([t, showsScreen([q(t, 'A', 'B')])]).toEqual([t, false])
 })
 
 test('every refusal that sends the chat off to fix or check first says the question is not dropped', () => {

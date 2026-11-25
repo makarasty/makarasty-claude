@@ -4,6 +4,8 @@ import type { Register } from 'claude-code'
 // `killall`, `kill $(pgrep x)`. A name matches every process of that name, and on a shared box that includes other
 // sessions' dev servers, test runners and the person's own tools (a `taskkill /IM node.exe` once killed a sandbox proxy
 // that another chat was using). Allowed: by PID (`taskkill /PID 4242 /F`, `Stop-Process -Id 4242`, `kill 4242`). `taskkill /T` is refused: it takes the whole child tree.
+// Exception: `taskkill /PID $p.Id /T` (or `kill $pid` after `cmd & pid=$!`) when the same command started that process, `$p = Start-Process ... -PassThru`
+// or `$!`: the tree is the one it launched, the kill-after limit every long run needs.
 // Look the PID up first (Get-CimInstance Win32_Process, `netstat -ano`, `ps`), check it is yours, then kill that PID.
 // Shape borrowed from git-guard and delete-guard: a function hook, quotes masked, no process spawned. The person can
 // still run anything themselves with `!`.
@@ -125,6 +127,14 @@ export function check(cmd: string, tool = 'Bash', depth = 0): string | null {
     }
     return { head: base(w[at] ?? ''), args: w.slice(at + 1) }
   }
+  // Each variable's LAST assignment decides: `$p = Start-Process ... -PassThru` (PowerShell) and `pid=$!` (Bash) make it ours, any later one (`$p = Get-Process node`, `pid=$(pgrep node)`) takes that back.
+  const assigns = [...text.matchAll(/\$(\w+)\s*=\s*([^;\n]*)/g), ...text.matchAll(/(?:^|[\s;&|(])(\w+)=([^\s;&|]*)/g)].sort((a, b) => a.index! - b.index!)
+  const last = new Map(assigns.map((m) => [m[1]!.toLowerCase(), m[2]!.trim()]))
+  const started = new Set([...last].filter(([, v]) => v === '$!' || /^(start-process|saps|start)\b[^|]*-passthru\b/i.test(v)).map(([k]) => k))
+  // A Bash variable holding what a name lookup found.
+  const named = new Set([...last].filter(([, v]) => /^(\$\(|`)\s*(pgrep|pidof)\b/.test(v)).map(([k]) => k))
+  // `$p.Id` or `$pid` of such a variable, or `$!` itself.
+  const own = (w: string): boolean => { const m = /^\$(?:\(\$(\w+)\.id\)|(\w+)\.id|\{?(\w+)\}?)$/i.exec(w); return w === '$!' || (!!m && started.has((m[1] ?? m[2] ?? m[3]!).toLowerCase())) }
   for (const chain of text.split(/&&|\|\||[;&\n]/)) {
     const stages = chain.split('|'), whole = unq(chain)
     for (let i = 0; i < stages.length; i++) {
@@ -140,7 +150,8 @@ export function check(cmd: string, tool = 'Bash', depth = 0): string | null {
           const pid = args.some((w) => /^[/-]{1,2}pid$/i.test(w))
           const fi = args.flatMap((w, k) => (/^[/-]{1,2}fi$/i.test(w) ? [args[k + 1] ?? ''] : []))
           if (args.some((w) => /^[/-]{1,2}im$/i.test(w)) || (!pid && fi.some((f) => !/^\s*pid\s+eq\s+\d+\s*$/i.test(f)))) return `taskkill /IM (or /FI on a name): ${WHY}`
-          if (args.some((w) => /^[/-]{1,2}t$/i.test(w))) return TREE
+          const target = args[args.findIndex((w) => /^[/-]{1,2}pid$/i.test(w)) + 1]
+          if (args.some((w) => /^[/-]{1,2}t$/i.test(w)) && !(pid && target !== undefined && own(target))) return TREE
         } else if (head === 'pkill' || head === 'killall') return `${head}: ${WHY}`
         else if (head === 'stop-process' || head === 'spps' || (head === 'kill' && tool === 'PowerShell')) {
           // -ProcessName is -Name's alias.
@@ -154,7 +165,7 @@ export function check(cmd: string, tool = 'Bash', depth = 0): string | null {
           if (i > 0 && !args.some((w) => ID.test(w)) && !/-id\b|\.id\b|owningprocess/i.test(unq(stages.slice(0, i).join('|')))) return `<pipeline> | Stop-Process: ${WHY}`
           const sub = /-id[:\s]+\$?\(+\s*(?:get-process|gps)\b([^)]*)/i.exec(whole)
           if (sub && !/-id\b/i.test(sub[1]!)) return `Stop-Process -Id (Get-Process <name>).Id: ${WHY}`
-        } else if (head === 'kill' && (/\b(pgrep|pidof)\b/.test(whole) || (/\b(ps|tasklist)\b/.test(whole) && /\b(grep|findstr|awk)\b/.test(whole)) || /\bps\s[^|;&)]*-C\b/.test(whole))) return `kill with a PID looked up by name: ${WHY}`
+        } else if (head === 'kill' && (/\b(pgrep|pidof)\b/.test(whole) || (/\b(ps|tasklist)\b/.test(whole) && /\b(grep|findstr|awk)\b/.test(whole)) || /\bps\s[^|;&)]*-C\b/.test(whole) || args.some((w) => named.has(/^\$\{?(\w+)\}?$/.exec(w)?.[1]?.toLowerCase() ?? '')))) return `kill with a PID looked up by name: ${WHY}`
       }
     }
   }

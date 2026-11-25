@@ -244,3 +244,35 @@ test('an unknown PowerShell option with a value does not hide -Command', () => {
   expect(['pwsh -SettingsFile s.json -Command "npm test"'].filter((c) => heavy(c, 'Bash').length === 0)).toEqual([])
   expect(['pwsh -SettingsFile s.json -Command "git status"'].filter((c) => heavy(c, 'Bash').length > 0)).toEqual([])
 })
+
+test('tsc --noCheck is an emit, not a typecheck; a node --test on a fixture the same line writes is no repo suite', () => {
+  for (const c of ['tsc --noCheck', 'tsc --noCheck -p .', 'npx tsc --noCheck --outDir out', 'tsc -b --noCheck', 'vue-tsc --noCheck'])
+    expect([c, heavy(c).length, check(c, 'Bash', { run_in_background: true }, LIVE_VITEST)]).toEqual([c, 0, null])
+  const fixture = "F=/tmp/f; mkdir -p $F/test\ncat > $F/package.json <<'EOF'\n{ \"scripts\": { \"test\": \"node --test\" } }\nEOF\ncat > $F/test/a.test.js <<'EOF'\nimport { test } from 'node:test';\nEOF\ncd $F && node --test 2>&1 | grep -E \"^# (pass|fail)\""
+  expect(heavy(fixture)).toEqual([])
+  expect(check(fixture, 'Bash', {}, LIVE_VITEST)).toBeNull()
+  // a heredoc that only feeds a command writes nothing, and other heavy runs still count beside a fixture
+  expect(heavy("git commit -F - <<'EOF'\nfix\nEOF\nnode --test").length).toBe(1)
+  expect(heavy("cat > a.js <<'EOF'\nx\nEOF\nnpm test").length).toBe(1)
+  expect(heavy('node --test 2>&1 | tail -3').length).toBe(1)
+  expect(heavy('tsc --noEmit').length).toBe(1)
+})
+
+test('the node --test fixture exemption needs a made folder, a test file written into it and the run inside it', () => {
+  const w = (dir: string, file: string, more = ''): string => `mkdir -p ${dir}\ncat > ${file} <<'EOF'\nx\nEOF\n${more}`
+  // the exempt shapes
+  expect(heavy(w('fx', 'fx/a.test.js', 'cd fx && node --test'))).toEqual([])
+  expect(heavy(`D=$(mktemp -d)\ncat > $D/a.spec.mjs <<'EOF'\nx\nEOF\ncd $D && node --test`)).toEqual([])
+  expect(heavy("mkdir fx && cd fx && cat > a.test.js <<'EOF'\nx\nEOF\nnode --test")).toEqual([])
+  expect(heavy("mkdir -p fx\ncat <<EOF > fx/a.test.js\nx\nEOF\ncd fx; node --test")).toEqual([])
+  // a heredoc that writes a non-test file, a run not inside the written folder, or a folder that was not made stay heavy
+  expect(heavy("cat > notes.txt <<'EOF'\nx\nEOF\nnode --test").length).toBe(1)
+  expect(heavy(w('fx', 'fx/notes.md', 'cd fx && node --test')).length).toBe(1)
+  expect(heavy(w('fx', 'fx/a.test.js', 'node --test')).length).toBe(1)
+  expect(heavy(w('fx', 'fx/a.test.js', 'cd .. && node --test')).length).toBe(1)
+  expect(heavy(w('fx', 'fx/a.test.js', 'cd other && node --test')).length).toBe(1)
+  expect(heavy("cat > fx/a.test.js <<'EOF'\nx\nEOF\ncd fx && node --test").length).toBe(1)
+  expect(heavy(w('fx', 'fx/a.test.js', 'cd . && node --test')).length).toBe(1)
+  // the same folder, then the repo
+  expect(heavy(w('fx', 'fx/a.test.js', 'cd fx && node --test; cd .. && node --test')).length).toBe(1)
+})

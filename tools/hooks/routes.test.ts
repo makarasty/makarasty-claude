@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
-import { BRIEF, LICENSE, MAIN, SUB, briefLacksDone, briefLicensesAsk, unrouted } from './routes.ts'
+import { LICENSE, MAIN, SUB, briefDeny, briefLacksDone, briefLicensesAsk, unrouted } from './routes.ts'
 
 // The plugin's hooks module (gates.ts registers routes.ts and calls it from its one Stop hook) runs above these stubs.
 function world(on: On, env: Record<string, string> = {}) {
@@ -53,8 +53,36 @@ test('a brief with three items and no "done when" is refused; with one, or with 
   expect(briefLacksDone(`${brief}\nDone when: a verdict with evidence for each of ponytail, mattpocock-skills, sunup.`)).toBe(false)
   expect(briefLacksDone('Find the caller of foo.\n- in src\n- in tests')).toBe(false)
   const ran = world(on)
-  expect(await $.tool.call({ tool: 'Agent', prompt: brief } as never)).toEqual({ deny: BRIEF })
+  expect(await $.tool.call({ tool: 'Agent', prompt: brief } as never)).toEqual({ deny: briefDeny(brief) })
   await $.tool.call({ tool: 'Agent', prompt: `${brief}\nГотово, когда: вердикт по каждому из трёх.` } as never)
+  expect(ran).toEqual(['Agent'])
+})
+
+// Real refused briefs, 2026-11-11..24 [M76]: 87 of 88 refusals had three list lines and no "Done when". Paths shortened.
+const REAL_REFUSED = {
+  folders: 'Run the walk below and judge the labels.\nFolders you may use:\n1. Folder C:/Users/mky/AppData/Local/Temp/claude/a/scratch\n2. Folder C:/Users/mky/AppData/Local/Temp/claude/b/scratch\n3. Folder C:/Users/mky/AppData/Local/Temp/claude/c/scratch\nReport what happened to you, not what designers should change.',
+  rules: 'Goal: find standing rules the owner stated in chat.\nFour kinds:\n- product: a product decision (how a feature must behave)\n- pitfall: a tooling fact or trap agents got wrong\n- style: how he wants agents to talk to him\n- process: how agents must work\nOutput (your final message, at most 6 KB): one line per rule.\nMax 35 lines.',
+  research: 'Research Claude Code team context.\n1. Every file Claude Code loads at session start for a project.\n2. Does Claude Code have a team memory feature?\n3. Can @import pull a file from the repo into a personal CLAUDE.md?\nReturn a compact list (max ~700 words), each point with its doc URL.',
+  questions: 'Прочитай файл report.md. Ты его читатель.\nОтветь по-русски:\n1. Перескажи в 3-6 предложениях, о чём это.\n2. Что ты должен сделать сейчас, по шагам?\n3. Какие решения у тебя просят?\n4. Что не проверено или неизвестно?',
+}
+const STILL_REFUSED = 'Review these three plugins.\n1. Review plugin alpha for hooks that touch the shell.\n2. Review plugin beta for hooks that touch the shell.\n3. Review plugin gamma for hooks that touch the shell.\nGamma matters most.'
+
+test('briefs that already say where they end, or list files and questions, are not refused; several tasks with no finish line still are', async ($, on) => {
+  for (const [name, b] of Object.entries(REAL_REFUSED)) expect([name, briefLacksDone(b)]).toEqual([name, false])
+  expect(briefLacksDone(STILL_REFUSED)).toBe(true)
+  // Review of the first fix: three shapes the old rule refused and the loose one let through.
+  expect(briefLacksDone('1. Make parse() tolerant. Return null on bad input.\n2. Add a cache to load().\n3. Rename foo to bar.')).toBe(true)
+  expect(briefLacksDone('1. src/a.ts: fix X\n2. src/b.ts: fix Y\n3. src/c.ts: fix Z')).toBe(true)
+  expect(briefLacksDone('1. a.ts \u2014 add Y\n2. b.ts \u2014 add Z\n3. c.ts \u2014 add W')).toBe(true)
+  expect(briefLacksDone('Fix these:\n1. Folder C:/x/a\n2. BEFORE: C:/x/b\n3. `src/c.ts`')).toBe(false)
+  for (const line of ['Finished when: all three read.', 'Success: a verdict each.', 'Deliver: a table.', 'Готово, когда: все три проверены.', 'Верни список с причинами.'])
+    expect([line, briefLacksDone('Check:\n1. a thing\n2. b thing\n3. c thing\n' + line)]).toEqual([line, false])
+  expect(briefLacksDone('Fix these:\n- `src/a.ts`\n- `src/b.ts`\n- `src/c.ts`')).toBe(false)
+  const msg = briefDeny(STILL_REFUSED)
+  expect(msg).toContain('Done when: Review plugin alpha for hooks; Review plugin beta for hooks; Review plugin gamma for hooks - each done')
+  const ran = world(on)
+  expect(await $.tool.call({ tool: 'Agent', prompt: STILL_REFUSED } as never)).toEqual({ deny: msg })
+  await $.tool.call({ tool: 'Agent', prompt: REAL_REFUSED.research } as never)
   expect(ran).toEqual(['Agent'])
 })
 
@@ -63,6 +91,14 @@ test('a brief that licenses a product question with no investigation is refused,
   expect(briefLicensesAsk(item)).toBe(true)
   expect(briefLicensesAsk(`${item} Do it after the investigation pass (callers, git history, usage).`)).toBe(false)
   expect(briefLicensesAsk('Check the specific behaviour of junctions and ask nothing.')).toBe(false)
+  expect(briefLicensesAsk('If you hit a product call, ask.')).toBe(true)
+  expect(briefLicensesAsk('If a design choice comes up, ask before changing it.')).toBe(true)
+  expect(briefLicensesAsk('Если встретится продуктовое решение, спроси.')).toBe(true)
+  expect(briefLicensesAsk("When the design choice is unclear, the owner's ask.")).toBe(false)
+  expect(briefLicensesAsk('Find the owner of the design choice. If it is a product call, ask the owner which option.')).toBe(true)
+  // The two real refusals (2026-11-11..25): "ask" described what the owner did or named a request, it told nobody to ask.
+  expect(briefLicensesAsk('Read-only transcript analysis. When a chat builds a feature across 3+ files, does it design first? Sample 10 tasks (the owner asked for a feature; the chat edited 3+ files).')).toBe(false)
+  expect(briefLicensesAsk("Check the ledger. When the reviewer runs not in production (reusing the existing production check), the owner's ask is ledger-2026-11-25.md.")).toBe(false)
   const ran = world(on)
   expect(await $.tool.call({ tool: 'mcp__ccd_session__start_session', prompt: 'Close leftovers.', background: item } as never)).toEqual({ deny: LICENSE })
   await $.tool.call({ tool: 'Agent', subagent_type: 'makarasty:fleet-coder', prompt: 'Task t3:\n1. a\n2. b\n3. c' } as never)

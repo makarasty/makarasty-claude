@@ -1,5 +1,34 @@
 # Changelog
 
+## makarasty-tools 1.20.30, makarasty 1.18.18 — 2026-11-25
+
+- **Fewer false refusals where chats stumbled** (M91: 500 hook refusals and 1,291 tool errors in 14 days). Each fix was
+  then attacked by an Opus review, which found 11 defects (6 loosenings that let a refused input through); all fixed
+  with the review's inputs as tests.
+  - `routes`: an Agent brief closes with the finish lines real briefs use ("Report ...", "Return ...", «Верни», «Готово,
+    когда» outside the task items); path or quote lines are not task items; the ask-licence rule fires only on an
+    imperative ask. Replay of the 85 distinct refused briefs: 84 now pass (14 of 15 read by hand were false).
+  - `ask-guard`: a question that states what was checked passes without `metadata.source`, and the refusal names the
+    one field to add; secret decisions that only name a token pass, a request for a secret's value is refused at any
+    length; BYHAND passes when the question says the step is the person's own service or the chat cannot start it.
+  - `skill-router`: the classifier sees the chat's last question (8 of 25 hints were `ship` on «Да, пушь»); no hint on
+    a bare git push/commit/pull; injected text is not routed; a hint expires after 60 s or a non-look call.
+  - `git-guard`: the pipe refusal says the real reason and names every refused part; PowerShell gets `$LASTEXITCODE`
+    advice, never `pipefail`; the `C:\wt*` text no longer promises that discards are free there.
+  - `kill-guard`: a tree kill of a PID the same command started (`Start-Process -PassThru`, `$!`) passes; the last
+    assignment of the variable decides.
+  - `budget-guard`: `tsc --noCheck` and a `node --test` inside a folder the command just made with its test file are
+    not heavy runs.
+  - New `search-guard`: Glob/Grep rooted at a drive root, the home, above it or the Desktop (paths resolved, ~ and
+    $HOME expanded, an absolute pattern's own root read) is refused with a hint; 9 of 50 Glob timeouts were these.
+- **Model table** (makarasty): `docs/MODELS.md` names Fable 5.2; `fleet-analyze` has price rows for the 5.x family from
+  the official pricing page, and an id with no row is priced from its family's newest row and named in the output
+  (unknown Fable 5.x ids were priced from the 5.0 row, cache reads about 5x high).
+- Not changed, named: the Desktop app's own hook adds a `session` field to session-lifecycle calls after the auto-mode
+  classifier ran (39 failures, outside these plugins); discards in `C:\wt*` stay guarded (owner's decision).
+- Checked: `claude plugin test tools` 582 pass three runs in a row; `fleet-manifest check` BUILD CURRENT;
+  `fleet-analyze-test` 58 passed; selftest part g2 214 pass.
+
 ## makarasty-tools 1.20.29 — 2026-11-25
 
 - **Agents start at the plan, without being asked** (M90, R147). The owner, with a screenshot: a chat with the parallel
