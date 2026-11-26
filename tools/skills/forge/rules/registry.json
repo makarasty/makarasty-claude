@@ -3050,7 +3050,7 @@
    "inForce": [
     {
      "text": "profile",
-     "has": "research best practices and try ready-made tools first"
+     "has": "research best practice and try ready-made tools first"
     }
    ],
    "eval": "evals/R128-ready-tools.json"
@@ -3085,7 +3085,7 @@
    "inForce": [
     {
      "text": "profile",
-     "has": "check it is still needed and not already done"
+     "has": "check it is still needed and not done"
     }
    ],
    "eval": "evals/R129-still-needed.json"
@@ -3513,7 +3513,7 @@
     },
     {
      "text": "profile",
-     "has": "never about the rows of a list or export"
+     "has": "never the rows of a list or export"
     }
    ]
   },

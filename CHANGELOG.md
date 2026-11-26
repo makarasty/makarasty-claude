@@ -1,5 +1,13 @@
 # Changelog
 
+## makarasty-tools 1.20.34 — 2026-11-26
+
+- **Rules check passes again after the profile was shortened** (owner, 2026-11-26: «Да, поправь»). The 2026-11-25
+  rewrite of `~/.claude/makarasty/profile.md` (1602 to 1281 characters) kept every fact but reworded three lines, so
+  `forge/rules.mjs` reported R128, R129 and R145 as not in force and exited 1. Their `inForce` phrases in
+  `forge/rules/registry.json` now match the current wording: "research best practice and try ready-made tools first",
+  "check it is still needed and not done", "never the rows of a list or export".
+
 ## makarasty-tools 1.20.33 — 2026-11-26
 
 - **Old-chat compaction after a handoff runs without the owner** (owner, 2026-11-26: «вообще это должно работать
