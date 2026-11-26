@@ -2,7 +2,8 @@
 // confirm.mjs - consent for deletes: the script reads what the person answered, the model only relays it.
 //
 //   node confirm.mjs plan <tool> <items.json | ->   write the plan, print the numbered list
-//        items: [{id, what, bytes (number|null), how: 'undo'|'forever', note?, held?}]; held = why it cannot be chosen
+//        items: [{id, what, bytes (number|null), how: 'undo'|'forever', note?, held?, byName?}]; held = why it cannot be chosen;
+//        byName = "все" / "все кроме" skip it, only its own number picks it (games, programs, personal files)
 //   node confirm.mjs select <tool>                  read the person's answer after the list: print what it chose and GRANTED: <ids>
 //   node confirm.mjs grant <tool>                   the older second step: an answer equal to an ASK label after select; print GRANTED: <ids>
 //   node confirm.mjs --selftest
@@ -59,6 +60,7 @@ export function makePlan(tool, items, o = {}) {
         if (count.get(x.id) > 1) x = { ...x, held: o.dup ?? 'the same id is listed twice' };
         const it = { id: x.id, what: String(x.what ?? x.id), bytes: typeof x.bytes === 'number' ? x.bytes : null, how: x.how };
         if (x.note) it.note = String(x.note);
+        if (x.byName) it.byName = true;
         if (x.held) it.held = String(x.held); else it.n = ++n;
         return it;
     });
@@ -127,8 +129,8 @@ const EXC = new Set(['кроме', 'except']);
 const FILL = new Set(['удали', 'удалить', 'delete', 'remove', 'номера', 'numbers', 'пункты', 'items', 'только', 'only', 'и', 'and']);
 const HOWTO = 'answer with numbers: 1,3 or 1-4, все, все кроме 5, ничего';
 
-// -> { none } | { nums } | { err }. n = how many numbered items.
-function parse(answer, n) {
+// -> { none } | { nums } | { err }. n = how many numbered items; pool = the numbers "все" covers (a byName item needs its own number).
+function parse(answer, n, pool = Array.from({ length: n }, (_, i) => i + 1)) {
     // Text in parentheses ("(2 GB)", "(Recommended)") is a note, not an answer; every other word must be in the grammar.
     const s = norm(String(answer).replace(/\([^)]*\)/g, ' ')), bad = { err: HOWTO };
     const out = x => `${x} is not on the list (numbers 1..${n}; held items have no number)`;
@@ -151,7 +153,7 @@ function parse(answer, n) {
     if (!picked && !all) return yes && n === 1 ? { nums: [1] } : yes ? { err: "a bare 'да' is not a selection: ask which numbers" } : bad;
     const off = nums.find(x => x < 1 || x > n);
     if (off !== undefined) return { err: out(off) };
-    if (all || except) nums = Array.from({ length: n }, (_, i) => i + 1).filter(i => !nums.includes(i));
+    if (all || except) nums = pool.filter(i => !nums.includes(i));
     return { nums: [...new Set(nums)].sort((a, b) => a - b) };
 }
 
@@ -164,8 +166,10 @@ function restate(p, chosen, ru) {
     const L = [`${ru ? 'Выбрано' : 'Chosen'} ${chosen.length} ${ru ? 'из' : 'of'} ${live.length}:`];
     if (by('undo').length) L.push(`  ${ru ? 'удалю с возвратом' : 'remove, undoable'}: ${by('undo').map(word).join('; ')}`);
     if (by('forever').length) L.push(`  ${ru ? 'удалю НАВСЕГДА (не вернуть)' : 'delete FOREVER (cannot be restored)'}: ${by('forever').map(word).join('; ')}`);
-    const rest = live.filter(i => !chosen.includes(i));
-    const keep = [...(rest.length ? [rest.map(i => `${i.n}. ${i.what}`).join(', ')] : []), ...(held.length ? [`${ru ? 'занято' : 'held'}: ${held.map(i => `${i.what} (${i.held})`).join(', ')}`] : [])];
+    const rest = live.filter(i => !chosen.includes(i)), plain = rest.filter(i => !i.byName), named = rest.length - plain.length;
+    const keep = [...(plain.length ? [plain.map(i => `${i.n}. ${i.what}`).join(', ')] : []),
+        ...(named ? [ru ? `${named} игр, программ и личных файлов (только по своему номеру)` : `${named} games, programs and personal files (only by their own number)`] : []),
+        ...(held.length ? [`${ru ? 'занято' : 'held'}: ${held.map(i => `${i.what} (${i.held})`).join(', ')}`] : [])];
     if (keep.length) L.push(`${ru ? 'Не трогаю' : 'Not touched'}: ${keep.join('; ')}`);
     return L.join('\n');
 }
@@ -175,7 +179,7 @@ export function select(tool, o = {}) {
     if (!p) return fail(`no plan for ${tool}: run plan first`);
     const a = answerAfter(p.at, o);
     if (a === null) return fail('no answer from the person after the list: ask them');
-    const ru = /[а-яё]/i.test(a), live = p.items.filter(i => !i.held), r = parse(a, live.length);
+    const ru = /[а-яё]/i.test(a), live = p.items.filter(i => !i.held), r = parse(a, live.length, live.filter(i => !i.byName).map(i => i.n));
     if (r.err) return fail(r.err);
     const chosen = r.none ? [] : r.nums.map(x => live[x - 1]);
     const ids = chosen.map(i => i.id), at = nowOf(o);
@@ -278,6 +282,12 @@ function selftest() {
         r = sel('ничего'); assert.equal(r.code, 0); assert.match(r.out, /ничего не будет удалено/); r = sel('nothing'); assert.match(r.out, /nothing will be deleted/); assert.deepEqual(load('x', o()).sel, []);
         assert.equal(sel('нет').code, 0);
         r = step('1,3', 'plan', true); r = select('x', o()); assert.equal(r.code, 0, 'a typed message counts');
+        // "все" skips byName items (2026-11-26: "Все" for caches 1-25 granted 58 of 58, game uninstalls among them)
+        const own = items.map(x => (x.id === 'b' || x.id === 'e' ? { ...x, byName: true } : x));
+        const pick = a => { t += 10e3; makePlan('x', own, o()); ask(a, t + 1e3); t += 2e3; return select('x', o()); };
+        r = pick('Все'); assert.match(r.out, /GRANTED: a c d$/); assert.match(r.out, /Выбрано 3 из 5/); assert.match(r.out, /2 игр, программ и личных файлов/); assert.doesNotMatch(r.out, /2\. B|5\. E/);
+        assert.match(pick('все кроме 3').out, /GRANTED: a d$/);
+        assert.match(pick('1, 2').out, /GRANTED: a b$/, 'its own number picks a byName item');
         // a list of one: a bare yes picks it (on a longer list it picks nothing, above)
         t += 10e3; makePlan('x', [items[0]], o()); ask('Да', t + 1e3); t += 2e3;
         r = select('x', o()); assert.equal(r.code, 0); assert.match(r.out, /GRANTED: a$/, 'one item, one yes');

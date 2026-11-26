@@ -1,5 +1,15 @@
 # Changelog
 
+## makarasty-tools 1.20.36 — 2026-11-26
+
+- **cleanup: "Все" no longer reaches games, programs and personal files** (owner, 2026-11-26: «исправь скрипт чтоб он
+  не был таким страшным»). Asked "Все" for caches 1-25, `confirm.mjs select` granted 58 of 58 and printed Forza, PUBG,
+  Office and the SDKs under "удалю с возвратом". A plan item may now carry `byName`: "все" and "все кроме N" skip it,
+  only its own number picks it, and the restated block names the rest in one line ("N игр, программ и личных файлов
+  (только по своему номеру)"). `machine.mjs scan` marks every `owner` item `byName`. SKILL.md: the number question goes
+  alone in its AskUserQuestion call (a multi-question answer is read as one and refused). `confirm.mjs --selftest` passes
+  with the new byName cases.
+
 ## makarasty-tools 1.20.35 — 2026-11-26
 
 - **A plain question is no longer refused for a missing `metadata.screened`** (owner, 2026-11-26: «Да, убери»). The

@@ -191,6 +191,8 @@ whole consent.
 1. Show the numbered list exactly as `scan` printed it.
 2. Ask which numbers: one `AskUserQuestion`, options "Все" and "Ничего", numbers through Other; the question says how
    many of them are deleted for good. Plain words in the options, no command or path (ask-guard refuses those).
+   It goes alone in its call: `select` reads every answer of that call as one and refuses the mix. "Все" covers the
+   `safe` and `close-app` items only; an `owner` item (game, program, personal file) is chosen by its own number.
 3. `node "${CLAUDE_SKILL_DIR}/../lib/confirm.mjs" select cleanup`. Exit 2: ask again with its reason. Show its block as
    printed and act only on the ids after `GRANTED:`; do not ask again for the same choice (no "последнее
    подтверждение"). Nothing chosen, nothing deleted.

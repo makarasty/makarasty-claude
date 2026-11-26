@@ -1095,7 +1095,7 @@ function main(argv) {
         // The person picks by these numbers; confirm.mjs reads their answer. Same order as show() prints.
         const list = TIERS.flatMap(t => s.items.filter(i => i.tier === t));
         const plan = makePlan('cleanup', list.map(i => ({ id: i.id, what: i.title, bytes: i.bytes, how: soft(i) || i.method === 'uninstall' ? 'undo' : 'forever',
-            note: soft(i) ? 'to the local trash (restore brings it back); another drive: the Recycle Bin when it fits, else kept' : i.method === 'uninstall' ? 'its uninstaller opens' : undefined,
+            byName: i.tier === 'owner', note: soft(i) ? 'to the local trash (restore brings it back); another drive: the Recycle Bin when it fits, else kept' : i.method === 'uninstall' ? 'its uninstaller opens' : undefined,
             held: i.blockers.join('; ') || (i.tier === 'admin' ? 'admin item: written to a .bat' : i.method === 'none' ? 'yours to do by hand' : undefined) })), { scope: 'machine' });
         for (const p of plan.items) if (p.n) list.find(i => i.id === p.id).n = p.n;
         return say(s, () => show(s));
