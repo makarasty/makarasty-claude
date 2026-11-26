@@ -9,6 +9,11 @@
   (только по своему номеру)"). `machine.mjs scan` marks every `owner` item `byName`. SKILL.md: the number question goes
   alone in its AskUserQuestion call (a multi-question answer is read as one and refused). `confirm.mjs --selftest` passes
   with the new byName cases.
+- **cleanup: `trash <path>` no longer holds every path it was given.** Its own node and the shells that launched it
+  (`timeout`, `bash -c`, `xargs`) carry the paths in their command lines, so every path came back "kept: node.exe names
+  it in its command line". `gather()` now drops this process and its ancestor chain (a parent counts only if it started
+  first; the climb stops below a Claude process, whose running state still holds its caches). machine.mjs selftest
+  passes with the new chain cases.
 
 ## makarasty-tools 1.20.35 — 2026-11-26
 

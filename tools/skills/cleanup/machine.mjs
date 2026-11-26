@@ -177,7 +177,7 @@ const PS = String.raw`
 if ($ExecutionContext.SessionState.LanguageMode -ne 'FullLanguage') { 'CONSTRAINED'; exit }
 $ErrorActionPreference = 'SilentlyContinue'; [Console]::OutputEncoding = [Text.Encoding]::UTF8
 $norecycle = [int](Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer', 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer' | ? { $_.NoRecycleFiles -eq 1 } | Select -First 1 | % { 1 })
-$p = Get-CimInstance Win32_Process | % { [pscustomobject]@{ pid = [int]$_.ProcessId; name = $_.Name; exe = $_.ExecutablePath; cmd = $_.CommandLine; start = $(if ($_.CreationDate) { [string]$_.CreationDate.ToFileTimeUtc() } else { '' }) } }
+$p = Get-CimInstance Win32_Process | % { [pscustomobject]@{ pid = [int]$_.ProcessId; ppid = [int]$_.ParentProcessId; name = $_.Name; exe = $_.ExecutablePath; cmd = $_.CommandLine; start = $(if ($_.CreationDate) { [string]$_.CreationDate.ToFileTimeUtc() } else { '' }) } }
 $u = Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*', 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*', 'HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*' |
   ? { $_.DisplayName -and ($_.EstimatedSize -or $_.InstallLocation) -and -not $_.SystemComponent -and $_.UninstallString } |
   % { [pscustomobject]@{ key = ($_.PSPath -replace '^.*::', ''); name = $_.DisplayName; kb = [long]$_.EstimatedSize; loc = $_.InstallLocation; date = $_.InstallDate; un = $_.UninstallString } }
@@ -189,6 +189,19 @@ $kf = (Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explore
 // that names a folder holds it too.
 const prep = procs => procs.map(q => ({ ...q, k: q.exe ? norm(q.exe) : '',
     c: WIN ? (q.cmd ?? '').replace(/(^|[\s"'=:;,(])\/([a-z])\//gi, '$1$2:/').toLowerCase().replaceAll('/', '\\') : q.cmd ?? '' }));
+
+// This run and the shells that launched it name the paths of `trash <path>` in their command lines: they hold nothing.
+// A parent counts only if it started before its child (pids are reused); the climb stops below a Claude process, whose
+// own running state holds its caches.
+export function withoutSelf(procs, self = process.pid) {
+    const by = new Map(procs.map(q => [q.pid, q])), mine = new Set();
+    for (let q = by.get(self); q && !mine.has(q.pid) && !/claude/i.test(q.name ?? ''); ) {
+        mine.add(q.pid);
+        const up = by.get(q.ppid);
+        q = up && (!up.start || !q.start || BigInt(up.start) <= BigInt(q.start)) ? up : null;
+    }
+    return procs.filter(q => !mine.has(q.pid));
+}
 
 export function gather() {
     const ctx = { now: Date.now(), procs: [], uninstall: [], volumes: [], sid: '', steam: '' };
@@ -209,7 +222,7 @@ export function gather() {
             .map(m => ({ pid: +m[1], name: basename(m[2]), exe: m[2].startsWith('/') ? m[2] : '', cmd: m[3] }));
     }
     if (!ctx.procs.length) throw new Error('the process list came back empty; nothing was scanned');
-    ctx.procs = prep(ctx.procs);
+    ctx.procs = prep(withoutSelf(ctx.procs));
     ctx.sessions = sessions(ctx);
     return ctx;
 }
@@ -934,6 +947,11 @@ function selftest() {
         const res = loadRules().find(r => r.id === 'idle-residents');
         assert.ok(res && res.method === 'none' && res.tier === 'owner' && res.type === 'residents', 'idle-residents lists processes only: it must never carry a method that acts');
         assert.ok(holdOf(join(local, 'cache'), { ...ctx, sessions: [], procs: prep([{ pid: 7, name: 'bash.exe', cmd: `bash /${local[0].toLowerCase()}/${local.slice(3).replaceAll('\\', '/')}/cache/watch.sh` }]) }), 'a Git Bash /c/... path holds its folder');
+        // 2026-11-26: `trash <path>` held every path because its own node and launching shell name them
+        const chain = [{ pid: 1, ppid: 0, name: 'Claude.exe', start: '1' }, { pid: 2, ppid: 1, name: 'bash.exe', start: '2' }, { pid: 3, ppid: 2, name: 'node.exe', start: '3' },
+            { pid: 4, ppid: 9, name: 'bash.exe', start: '4' }, { pid: 5, ppid: 3, name: 'x.exe', start: '0' }];
+        assert.deepEqual(withoutSelf(chain, 3).map(q => q.pid), [1, 4, 5], 'self and its shell go; a Claude ancestor, a stranger and a child stay');
+        assert.deepEqual(withoutSelf([{ pid: 3, ppid: 2, name: 'node.exe', start: '5' }, { pid: 2, ppid: 0, name: 'bash.exe', start: '9' }], 3).map(q => q.pid), [2], 'a reused parent pid (younger) stays');
         mkdirSync(join(tmp, 'claude', 'makarasty', 'hold'), { recursive: true });
         writeFileSync(join(tmp, 'claude', 'makarasty', 'hold', 'n.md'), `see ${join(temp, 'claude', 'C--p', U(2), 'images', '1.png')} and ${join(temp, 'claude', H, U(5), 'x.png')}`);
         assert.ok(!evaluate([rules[0]], ctx).items.length, 'a scratch folder a hold note cites is kept');
