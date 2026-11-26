@@ -1,5 +1,22 @@
 # Changelog
 
+## makarasty-tools 1.20.33 — 2026-11-26
+
+- **Old-chat compaction after a handoff runs without the owner** (owner, 2026-11-26: «вообще это должно работать
+  автоматически»; it failed on chat local_6113f8b6 the same day for three reasons).
+  - Pinned chat: the app refuses `archive_session` for it. `compact-old.mjs check` reads `isStarred` from the app record
+    and says so; the handoff receiver prompt now unpins with `set_pinned`, archives, runs, unarchives, pins it back.
+  - Signed-out CLI: the app hands its own CLIs the login in memory (`CLAUDE_CODE_SDK_HAS_HOST_AUTH_REFRESH`), while the
+    CLI this script spawns reads `~/.claude/.credentials.json`, empty on this machine since 2026-11-25 20:11
+    (`claude auth status`: `loggedIn: false`). `check` now asks `auth status` first and skips, before anything is
+    unpinned or archived, naming the one `auth login` command; no token is read or copied.
+  - `run` reports the CLI's own error (the transcript's "Error during compaction: ...", its JSON result, else stderr)
+    instead of an empty reason.
+  - One denied call per app step: the app's hook adds a `session` field and auto mode then denies once. `check` prints
+    that field for archive and unarchive (format matched to the hook's output for local_6113f8b6), and the prompt
+    passes it up front.
+  - Selftest 13/13 (was 7): pinned, signed out, transcript error, the session field.
+
 ## makarasty-tools 1.20.32, makarasty 1.18.20 — 2026-11-25
 
 - **Open-items sweep** (owner, 2026-11-25: «Все сделать», «Переписать все», the four extra items picked; M93).

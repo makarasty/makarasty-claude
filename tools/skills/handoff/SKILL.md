@@ -161,11 +161,14 @@ turn a watch event or another session started):
 > else. Your first message after that read, before any other tool call, is a readback in at most five lines in the
 > person's language: the goal, what is done and verified, what is unverified, the first step. Then compact
 > the chat you came from, so its later wakes read a summary instead of its whole context (the owner's
-> standing answer, 2026-11-20): `node <compact script> check <id>`; on `ok`, `mcp__ccd_session_mgmt__archive_session`
-> with <id>, then `node <compact script> run <id>`, then `mcp__ccd_session_mgmt__unarchive_session` with <id>.
-> Auto mode denies each of the two app calls once because a hook adds a field: send it again with exactly
-> that input. On `skip`, a refusal or a failure: one line why, unarchive it if you archived it, go on. Never
-> for any other chat. Then work.
+> standing answer, 2026-11-20): `node <compact script> check <id>`. On `ok`: if it says pinned,
+> `mcp__ccd_sidebar__set_pinned` <id> false (the app refuses to archive a pinned chat); then
+> `mcp__ccd_session_mgmt__archive_session` with <id> and `session` set to the text after "archive session field:";
+> then `node <compact script> run <id>`; then `mcp__ccd_session_mgmt__unarchive_session` with <id> and `session`
+> set to the text after "unarchive session field:"; then, if you unpinned it, `set_pinned` <id> true. Without
+> that `session` field the app's hook adds it and auto mode denies the call once: send it again with exactly the
+> input it shows. On `skip`, a refusal or a failure: one line with its reason, and undo what you did (unarchive,
+> pin again), go on. A `skip` that the CLI is signed out names the one command the person runs once. Never for any other chat. Then work.
 > This session may have opened in a fresh worktree without the work. Load
 > mcp__ccd_directory__change_directory with ToolSearch and move to <checkout path>; until this turn ends
 > use absolute paths and `git -C <checkout path>`. If it is unavailable or refused, work here: when HEAD

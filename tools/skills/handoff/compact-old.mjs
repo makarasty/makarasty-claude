@@ -5,10 +5,12 @@
 //   node compact-old.mjs run <local_id>     the chat must be archived (its process stopped); runs /compact on its
 //                                           transcript with the bundled CLI and prints "ok: compacted <pre>K -> <post>K"
 //
-// The order is check, archive_session, run, unarchive_session (the receiving chat does the app calls). A live app
-// process keeps its history in memory and writes past the boundary, so run refuses an unarchived chat; after
-// unarchive the CLI loads the compacted view (proven twice, 2026-11-20, compact-trigger findings). Archiving cleans
-// the chat's worktree and archives its finished side sessions, so check skips both cases.
+// The order is check, [unpin], archive_session, run, unarchive_session, [pin again] (the receiving chat does the app
+// calls; the app refuses to archive a pinned chat). A live app process keeps its history in memory and writes past
+// the boundary, so run refuses an unarchived chat; after unarchive the CLI loads the compacted view (M82). Archiving
+// cleans the chat's worktree and archives its finished side sessions, so check skips both cases.
+// The app hands its own CLIs the login in memory; a CLI spawned here reads ~/.claude/.credentials.json, so check
+// asks `claude auth status` first and skips while that login is gone, before anything is archived.
 // Env for tests: INBOX_PROFILES_DIR (app profiles), INBOX_CLAUDE (the CLI), CLAUDE_CONFIG_DIR (transcripts).
 
 import { spawnSync } from 'node:child_process'
@@ -58,7 +60,37 @@ function check(/** @type {string} */ id) {
   const kids = all.filter((x) => x.rec.spawnedFrom?.sessionId === r.sessionId && !x.rec.lineageDetached && !x.rec.isArchived)
   if (kids.length) return [3, `skip: archiving it would archive its side session(s) too: ${kids.map((k) => k.rec.title || k.rec.sessionId).join(', ')}`]
   if (!transcript(r.cliSessionId)) return [3, `skip: no transcript ${r.cliSessionId}.jsonl`]
-  return [0, `ok: ${r.sessionId} (${r.title || 'untitled'}) on ${r.model}; next archive_session, then run`]
+  const exe = bundledCli(hit.prof), a = cli(exe, ['auth', 'status'], r.cwd, 60e3)
+  /** @type {{loggedIn?: boolean}} */ let st = {}
+  try { st = JSON.parse(a.stdout) } catch { /* an older CLI without JSON: let run find out */ }
+  if (st.loggedIn === false) return [3, `skip: the CLI this script starts is signed out (the app's own chats get their login in memory, a spawned CLI reads ~/.claude/.credentials.json); sign it in once in a terminal: & "${exe}" auth login`]
+  const pin = r.isStarred ? ' It is pinned: set_pinned false first, set_pinned true after unarchive.' : ''
+  return [0, `ok: ${r.sessionId} (${r.title || 'untitled'}) on ${r.model}; next archive_session, then run.${pin}${sessionLines(r)}`]
+}
+
+const cli = (/** @type {string} */ exe, /** @type {string[]} */ args, /** @type {string} */ cwd, /** @type {number} */ timeout) => {
+  const [cmd, argv] = exe.endsWith('.mjs') ? [process.execPath, [exe, ...args]] : [exe, args]
+  return spawnSync(cmd, argv, { cwd, encoding: 'utf8', timeout, windowsHide: true })
+}
+
+// The app's own hook fills a `session` field into archive/unarchive calls, and auto mode then denies the call once.
+// Sending the same text up front skips that round. Format copied from the hook's output (2026-11-26); an unknown
+// title source prints nothing and the old one-retry path stays.
+function sessionLines(/** @type {any} */ r) {
+  const label = { auto: 'auto-generated title', tool: 'title set by an agent' }[/** @type {string} */ (r.titleSource)]
+  if (!label || !r.title || !r.lastActivityAt) return ''
+  const s = (/** @type {string} */ x) => `"${r.title}" (${label}), folder ${r.cwd}, last active ${new Date(r.lastActivityAt).toISOString().slice(0, 10)}${x} (${r.sessionId})`
+  return `\narchive session field: ${s('')}\nunarchive session field: ${s(', archived')}`
+}
+
+/** The first error the CLI left: its JSON result, a compaction error in the transcript, else stderr. */
+function cliError(/** @type {import('node:child_process').SpawnSyncReturns<string>} */ p, /** @type {string} */ added) {
+  let j = {}
+  try { j = JSON.parse(p.stdout) } catch { /* not JSON */ }
+  const fromJson = /** @type {any} */ (j).is_error ? String(/** @type {any} */ (j).result ?? '') : ''
+  const fromLog = added.match(/Error during compaction:[^"\\<]*/)?.[0] ?? ''
+  const fromErr = String(p.stderr || '').split('\n').map((l) => l.trim()).find(Boolean) ?? ''
+  return (fromLog || fromJson || fromErr || 'the CLI printed no error').trim()
 }
 
 function run(/** @type {string} */ id) {
@@ -66,13 +98,13 @@ function run(/** @type {string} */ id) {
   if (code) return [code, why]
   const { prof, rec } = /** @type {NonNullable<ReturnType<typeof find>['hit']>} */ (find(id).hit)
   if (!rec.isArchived) return [2, 'refused: archive it first; a running chat keeps its old history in memory and writes past the summary']
-  const f = /** @type {string} */ (transcript(rec.cliSessionId)), before = boundaries(f).length, usd0 = spent(f), exe = bundledCli(prof), t0 = Date.now()
+  const f = /** @type {string} */ (transcript(rec.cliSessionId)), before = boundaries(f).length, usd0 = spent(f), t0 = Date.now()
+  const size0 = readFileSync(f, 'utf8').length
   // --safe-mode: no plugin hooks (no phone message, no reminders) in this one-off turn; the summary itself needs none.
   const args = ['-p', '/compact', '--resume', rec.cliSessionId, ...(rec.model ? ['--model', rec.model] : []), '--safe-mode', '--output-format', 'json']
-  const [cmd, argv] = exe.endsWith('.mjs') ? [process.execPath, [exe, ...args]] : [exe, args]
-  const p = spawnSync(cmd, argv, { cwd: rec.cwd, encoding: 'utf8', timeout: 600e3, windowsHide: true })
+  const p = cli(bundledCli(prof), args, rec.cwd, 600e3)
   const after = boundaries(f)
-  if (p.error || p.status !== 0 || after.length <= before) return [1, `failed: exit ${p.status ?? p.error?.message}, boundaries ${before} -> ${after.length}; ${String(p.stderr || '').trim().split('\n')[0] ?? ''}`]
+  if (p.error || p.status !== 0 || after.length <= before) return [1, `failed: exit ${p.status ?? p.error?.message}, boundaries ${before} -> ${after.length}; ${cliError(p, readFileSync(f, 'utf8').slice(size0))}`]
   let m = {}
   try { m = JSON.parse(/** @type {string} */ (after.at(-1))).compactMetadata ?? {} } catch { /* the size is only for the report */ }
   const k = (/** @type {unknown} */ n) => (typeof n === 'number' ? `${Math.round(n / 1000)}K` : '?')
