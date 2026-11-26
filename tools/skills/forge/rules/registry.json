@@ -175,7 +175,7 @@
    "ru": "Не проси у меня пароли и секреты, не проси запускать то, что можешь сам, и не спрашивай то, что можно найти самому.",
    "layer": "plugin",
    "enforced": "hook+text",
-   "enforcer": "tools/hooks/ask-guard.ts (SELF, SCREEN)",
+   "enforcer": "tools/hooks/ask-guard.ts (SELF)",
    "complaints": [
     "C07",
     "cl4",
@@ -191,7 +191,7 @@
     },
     {
      "file": "tools/hooks/ask-guard.ts",
-     "anchor": "SELF, SCREEN"
+     "anchor": "SELF"
     },
     {
      "file": "docs/COMPLAINTS.md",
@@ -888,11 +888,11 @@
   },
   {
    "id": "R019",
-   "rule": "Look into it before asking: a question a checked fact or plain logic settles is not asked (take it, name it in one line); a behaviour question is asked only after the investigation pass (callers, git history, real usage, what each option breaks), carrying what it found with the unchecked marked \"не проверено\"; a check you can run goes before the question; AskUserQuestion takes metadata screened or investigated; an option that defers a check is refused.",
+   "rule": "Look into it before asking: a question a checked fact or plain logic settles is not asked (take it, name it in one line); a behaviour question is asked only after the investigation pass (callers, git history, real usage, what each option breaks), carrying what it found with the unchecked marked \"не проверено\"; a check you can run goes before the question; a behaviour question takes metadata investigated; an option that defers a check is refused.",
    "ru": "Сначала разберись, потом спрашивай. Вопрос, который закрывают факты или логика, не задаётся. Вопрос о поведении - только после расследования (вызовы, история, реальное использование); непроверенное помечено «не проверено».",
    "layer": "plugin",
    "enforced": "hook+text",
-   "enforcer": "tools/hooks/ask-guard.ts staked, behaviour, defers",
+   "enforcer": "tools/hooks/ask-guard.ts stakedOne, behaviour, defers",
    "complaints": [
     "C22",
     "T06",
@@ -912,7 +912,7 @@
     },
     {
      "file": "tools/hooks/ask-guard.ts",
-     "anchor": "SCREEN, BEHAVIOUR, DEFERRED"
+     "anchor": "BEHAVIOUR, DEFERRED"
     },
     {
      "file": "docs/COMPLAINTS.md",

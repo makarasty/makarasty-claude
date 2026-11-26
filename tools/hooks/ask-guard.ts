@@ -8,9 +8,9 @@ import type { Register } from 'claude-code'
 // step only the person can do (sign in, click). The question and the labels are tested against all of it; a description,
 // header or recap only against the steps ahead (AHEAD), since a recap reports status ("fixed 12", "0 failed"). "Продолжить с миграцией схемы?" names its object and passes.
 // AskUserQuestion and the desktop app's end-of-turn box (wrap_up `ask`). MAKARASTY_ASK_GUARD=off drops it.
-// Before an AskUserQuestion reaches the person (MAKARASTY_SCREEN=off drops these three): an option that puts off a check
-// is refused, a question about how the product or code should behave needs metadata.investigated, and any other question
-// without an ask-first act needs metadata.screened, unless its own text says what was checked or found.
+// Before an AskUserQuestion reaches the person (MAKARASTY_SCREEN=off drops these two): an option that puts off a check
+// is refused, and a question about how the product or code should behave needs metadata.investigated. A plain question
+// is not refused for a missing metadata.screened: that refusal was a toll, 16 of 18 re-asks carried the same text [M85].
 
 export const MESSAGE =
   'Not asked: whether to go on with work the person already asked for is answered yes, always. Carry on and report at the end. ' +
@@ -98,44 +98,13 @@ export function asksSelf(questions: readonly Q[]): boolean {
   })
 }
 
-// The screen: a question reaches the person only after the asking chat checked it could not answer it itself. Of 95
-// questions answered 11-11..11-12, 15% were the agent's own to settle (a duplicate, its reviewer's question, a
-// "continue?", a standing answer, log noise), none of them one the person then answered his own way [M72]. A stake
-// (push, merge, deploy, delete, money, sign-in) skips the screen; it is always his. The inbox chat relays screened items.
-export const SCREEN =
-  'Screen this question first. If you already checked, send the same call again with one added field: metadata ' +
-  '{"source": "screened: <one line: what you checked and why only the person can answer>"}. If not, check yourself (or with a ' +
-  'Haiku Explore agent given this question and the project folder): the project CLAUDE.md and docs, what runs locally ' +
-  '(ports, proxies, processes), the scripts and env it uses, earlier answers in this chat and the standing answers. If that ' +
-  'settles it, do the step and do not ask. If something must be started that you cannot start, ask the person to start it ' +
-  '(never a password); otherwise ask with the field above.' + NOT_DROPPED
-export function screened(meta: unknown): boolean {
-  const m = meta && typeof meta === 'object' ? (meta as Record<string, unknown>) : {}
-  // Chats put it in metadata.source, the only field the tool's schema shows: 24 of 42 screen and behaviour refusals carried a bare
-  // "screened" or "investigated" there [M85]. A bare word still does not pass; the detail does.
-  return (typeof m.screened === 'string' && m.screened.trim().length >= 20) || /^screened\s*:\s*\S.{18,}/is.test(str(m.source).trim()) || /^inbox(:|$)/.test(str(m.source))
-}
-// A question whose own text says what was checked or found shows the screen was done; a missing metadata.source then costs
-// a refusal and a re-send of the same call (102 refusals in 61 chats in 14 days, median 22 s apart). A negated marker ("не
-// посмотрел", "not found"), a quoted one (error text), and one inside a question to the person ("ты проверил?") is no check;
-// only "не нашёл / не нашлось" counts negated, as the result of a search.
-const CHECKED = /(?<![a-zа-яё])(не наш[её]л[а-яё]*|не нашл[а-яё]*|не нахож[а-яё]*|(?<!(?:не|ни|not|never|n't) )(?:нашл[а-яё]+|нашёл|нашел|проверил[а-я]*|проверен[а-я]*|посмотрел[а-я]*|выяснил[а-я]*|сверил[а-я]*|изучил[а-я]*|прочитал[а-я]*|по логам|в логах|checked|found|looked|verified|searched|grepped))(?![a-zа-яё])/i
-const QUOTED = /«[^»]*»|“[^”]*”|"[^"\n]*"|`[^`\n]*`/g
-const stated = (s: string): string[] => s.replace(QUOTED, ' ').split(/(?<=[.!?])\s+|\n+/).filter((x) => !x.trimEnd().endsWith('?'))
-export function showsScreen(questions: readonly Q[]): boolean {
-  return Array.isArray(questions) && questions.length > 0 && questions.every((q) => stated(str(q?.question)).some((x) => CHECKED.test(x)))
-}
-// The screen is skipped only when every question's own ask (its last sentence) or an option label proposes an act that
-// stays the person's, matched at a word start. Matched anywhere, evidence did it: "коммит 2026-11-05" in a description,
-// "force" inside TWILIO_SIGNATURE_ENFORCE; 139 of 205 questions that were the agent's to check skipped the screen [M76].
+// A stake: the question's own ask (its last sentence) or an option label proposes an act that stays the person's, matched
+// at a word start. Matched anywhere, evidence did it: "коммит 2026-11-05" in a description, "force" inside
+// TWILIO_SIGNATURE_ENFORCE [M76]. A stake question skips the behaviour gate.
 const ACT = /(?<![a-zа-яё0-9_])(push|пуш|запуш|merge|мерж|смерж|влить|влей|депло|задепло|deploy|релиз|release|tag\b|delet|удал(?!ос|ас|ся)|убра|убер|сотр(?!удн)|стере(?!о)|стёр|стерл|очист|почист|корзин|wipe|eras|overwrit|перезапи|reset|сброс|revert|rollback|откат|force|оплат|pay\b|payment|купи|purchase|денег|деньг|money|\$|€|₽|prod\b|прод[еуа]?(?![а-яё])|продакшен|sign in|log in|войди|залогин|restart|перезапус|kill|pid\b|send|email|письм|отправ)/i
 // "Отправить разработчику" is a route the agent offers beside a product choice, not a send the question is about.
 const LABEL_ACT = new RegExp(ACT.source.replace('|send|email|письм|отправ', ''), 'i')
-const stakedOne = (q: Q): boolean => ACT.test(lastSentence(str(q?.question))) || (Array.isArray(q?.options) ? q.options : []).some((o) => LABEL_ACT.test(str(o?.label)))
-export function staked(questions: readonly Q[]): boolean {
-  if (!Array.isArray(questions) || !questions.length) return false
-  return questions.every(stakedOne)
-}
+export const stakedOne = (q: Q): boolean => ACT.test(lastSentence(str(q?.question))) || (Array.isArray(q?.options) ? q.options : []).some((o) => LABEL_ACT.test(str(o?.label)))
 
 // How the product or code should behave is not asked on a name or a grep: "сначала Reactivate" rested on a wrapper's name
 // while the rule it wrapped allowed only Disenrolled, and "запрещать везде" broke working pages [M76]. Such a question
@@ -378,7 +347,6 @@ export const register: Register = (on) => {
     if ((await $.env.get('MAKARASTY_SCREEN')) !== 'off' && !continueQuestions(e.questions as readonly Q[]).length && !/^inbox(:|$)/.test(str((meta as { source?: unknown } | undefined)?.source))) {
       if (defers(e.questions as readonly Q[])) return { deny: DEFERRED }
       if (behaviour(e.questions as readonly Q[]) && !investigated(meta)) return { deny: BEHAVIOUR }
-      if (!staked(e.questions as readonly Q[]) && !screened(meta) && !investigated(meta) && !showsScreen(e.questions as readonly Q[])) return { deny: SCREEN }
     }
     const n = continueQuestions(e.questions as readonly Q[])
     if (!n.length) return next(e)

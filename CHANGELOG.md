@@ -1,5 +1,16 @@
 # Changelog
 
+## makarasty-tools 1.20.35 — 2026-11-26
+
+- **A plain question is no longer refused for a missing `metadata.screened`** (owner, 2026-11-26: «Да, убери»). The
+  desktop app draws an AskUserQuestion dialog as soon as the chat writes the call; ask-guard's screen refusal then
+  turned it into a red "failed" card with text meant for the model, and the chat sent the same call again with the
+  field. By M85, 16 of 18 re-asks carried the same text and the judge called 20 of 25 screen refusals wrong. Removed
+  from `tools/hooks/ask-guard.ts`: `SCREEN`, `screened`, `showsScreen`, `staked` (`stakedOne` stays for the behaviour
+  gate). The secret, by-hand, command, other-chat, "above", behaviour (`investigated`) and deferred-check refusals stay;
+  the habits text in `gates.ts` now names only `investigated` metadata. COMPLAINTS C07/T06 and registry R004/R019
+  updated. `claude plugin test tools`: 601 pass, 0 fail; `forge/rules.mjs` exit 0.
+
 ## makarasty-tools 1.20.34 — 2026-11-26
 
 - **Rules check passes again after the profile was shortened** (owner, 2026-11-26: «Да, поправь»). The 2026-11-25

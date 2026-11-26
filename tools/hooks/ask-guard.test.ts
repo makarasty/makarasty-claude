@@ -1,7 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
-import { BEHAVIOUR, BOX, COMMAND, DEFERRED, ELSEWHERE, MESSAGE, NOT_DROPPED, OTHER_CHAT, SELF, SCREEN, asksSelf, behaviour, continueBox, continueQuestions, defers, freshLedger, holdsCommand, investigated, leftAtStop, notePassed, noteRefusal, onlyContinue, pointsAbove, reminder, screened, sendsToChat, showsScreen, staked } from './ask-guard.ts'
+import { BEHAVIOUR, BOX, COMMAND, DEFERRED, ELSEWHERE, MESSAGE, NOT_DROPPED, OTHER_CHAT, SELF, asksSelf, behaviour, continueBox, continueQuestions, defers, freshLedger, holdsCommand, investigated, leftAtStop, notePassed, noteRefusal, onlyContinue, pointsAbove, reminder, sendsToChat, stakedOne } from './ask-guard.ts'
 
 const q = (question: string, ...labels: string[]) => ({ question, header: 'h', multiSelect: false, options: labels.map((label) => ({ label, description: '' })) })
 
@@ -263,30 +263,18 @@ test('a reset, clean, rollback or deploy announced before "Continue?" is a real 
   expect(continueBox('Продолжить?', [{ label: 'Да' }, { label: 'Нет' }], 'Will revert the last 2 commits')).toBe(false)
 })
 
-// The screen: a question with no stake reaches the person only after the asking chat checked it could not answer it itself.
 const PLAIN = [q('Какую базу взять для отчётов?', 'Postgres', 'SQLite')]
 const ask = ($: Engine, questions: unknown, metadata?: unknown) => $.tool.call({ tool: 'AskUserQuestion', questions, ...(metadata ? { metadata } : {}) } as never)
 
-test('the screen: a plain question is refused once; screened (20+ chars) it passes; a short screened still does not', async ($, on) => {
+// 11-26: the screen refusal (no metadata.screened) was dropped: it showed the person a dialog that then failed red, and
+// 16 of 18 re-asks carried the same text [M85]. The real question from that day passes on its first call.
+test('a plain question passes on its first call, with no metadata, a stake or an inbox tag', async ($, on) => {
   const passed = world(on, { MAKARASTY_SCREEN: 'on' })
-  expect(await ask($, PLAIN)).toEqual({ deny: SCREEN })
-  expect(await ask($, PLAIN, { screened: 'ok' })).toEqual({ deny: SCREEN })
-  await ask($, PLAIN, { screened: 'checked CLAUDE.md, docs and ports: a choice of approach only he can make' })
-  expect(passed).toEqual(['AskUserQuestion'])
-})
-
-test('the screen: a question with a stake, one from the inbox chat, and MAKARASTY_SCREEN=off pass without metadata', async ($, on) => {
-  const passed = world(on, { MAKARASTY_SCREEN: 'on' })
+  await ask($, PLAIN)
+  await ask($, [q('Что входит в Appointment Manager? Сейчас в продукте отдельно живут: страница Schedule, записанные звонки PSS пациентам и follow-up напоминания MA в RPM.', 'Всё время в одном месте (Recommended)', 'Только записи пациентов')])
   await ask($, [q('Запушить ветку fix-login в main?', 'Да', 'Нет')])
   await ask($, PLAIN, { source: 'inbox:x' })
-  await ask($, PLAIN, { source: 'inbox' })
-  expect(passed).toEqual(['AskUserQuestion', 'AskUserQuestion', 'AskUserQuestion'])
-})
-
-test('the screen: off by env', async ($, on) => {
-  const passed = world(on, { MAKARASTY_SCREEN: 'off' })
-  await ask($, PLAIN)
-  expect(passed).toEqual(['AskUserQuestion'])
+  expect(passed).toEqual(['AskUserQuestion', 'AskUserQuestion', 'AskUserQuestion', 'AskUserQuestion'])
 })
 
 // Three questions that reached the owner on 2026-11-16..17 past the old screen [M76].
@@ -296,7 +284,7 @@ const SM14 = [{ question: 'SM-14. Человеку скрыта колонка (
 const INVESTIGATED = { investigated: 'callers: list menu, case page, server, Pulse bookCall; history: git log -S 59d6879dcd 2025-04-01, e16ecd1491; usage: не посчитано, prod proxy not running' }
 
 test('real questions: evidence words no longer wave them past; behaviour asks need an investigation, a deferred check is refused', async ($, on) => {
-  expect([staked(SCHEDULE), staked(TWILIO), staked(SM14)]).toEqual([false, false, false])
+  expect([SCHEDULE, TWILIO, SM14].map((x) => stakedOne(x[0]!))).toEqual([false, false, false])
   expect([behaviour(SCHEDULE), behaviour(SM14)]).toEqual([true, true])
   expect(defers(TWILIO)).toBe(true)
   const passed = world(on, { MAKARASTY_SCREEN: 'on' })
@@ -308,12 +296,11 @@ test('real questions: evidence words no longer wave them past; behaviour asks ne
   expect(passed).toEqual(['AskUserQuestion'])
 })
 
-test('a stake is the act the ask or a label proposes, at a word start; every question in the call must carry one', () => {
-  expect(staked([q('Запушить ветку fix-login в main?', 'Да', 'Нет')])).toBe(true)
-  expect(staked([q('Что убрать в корзину (вернуть можно)?', 'Все', 'Ничего')])).toBe(true)
-  expect(staked([q('Флаг FORCE_RELOAD включён в конфиге. Что делаем?', 'Выключить', 'Оставить')])).toBe(false)
-  expect(staked([q('Сервер проверяет это тестом — коммит 2026-11-05. Как назвать вкладку?', 'Paste', 'Output')])).toBe(false)
-  expect(staked([q('Запушить?', 'Да', 'Нет'), q('Как назвать вкладку?', 'Paste', 'Output')])).toBe(false)
+test('a stake is the act the ask or a label proposes, at a word start', () => {
+  expect(stakedOne(q('Запушить ветку fix-login в main?', 'Да', 'Нет'))).toBe(true)
+  expect(stakedOne(q('Что убрать в корзину (вернуть можно)?', 'Все', 'Ничего'))).toBe(true)
+  expect(stakedOne(q('Флаг FORCE_RELOAD включён в конфиге. Что делаем?', 'Выключить', 'Оставить'))).toBe(false)
+  expect(stakedOne(q('Сервер проверяет это тестом — коммит 2026-11-05. Как назвать вкладку?', 'Paste', 'Output'))).toBe(false)
   expect(defers([{ question: 'Где деплоить?', options: [{ label: 'Пока не знаю', description: 'Сначала посмотрю превью, потом решим.' }] }])).toBe(false)
 })
 
@@ -352,30 +339,11 @@ test('red team: real asks for a secret or a by-hand run still refuse in every fo
     expect([t, holdsCommand([q(t, 'Да', 'Нет')])]).toEqual([t, true])
 })
 
-test('the screen takes what the tool schema allows: metadata.source "screened: ..." or "investigated: ..."', async ($, on) => {
-  expect(screened({ source: 'screened: checked CLAUDE.md, ports and the answers file; his taste' })).toBe(true)
-  expect(screened({ source: 'screened' })).toBe(false)
+test('metadata.source "investigated: ..." is read, the one field the tool schema shows; the weekend dialog passes', async ($, on) => {
   expect(investigated({ source: 'investigated: callers: list menu, case page; history: git log -S e16ecd1491; usage: не посчитано, prod proxy down' })).toBe(true)
   const passed = world(on, { MAKARASTY_SCREEN: 'on' })
-  expect(await ask($, WEEKEND)).toEqual({ deny: SCREEN })
-  await ask($, WEEKEND, { source: 'screened: a plan and taste question only he answers; nothing on disk settles it' })
+  await ask($, WEEKEND)
   expect(passed).toEqual(['AskUserQuestion'])
-})
-
-// 14 days of chats: 102 screen refusals, a main cause the first ask of a screened question lacking metadata.source.
-test('the screen: a question whose text says what was checked or found passes without metadata; one that does not is refused with the field to add', async ($, on) => {
-  const passed = world(on, { MAKARASTY_SCREEN: 'on' })
-  const found = [q('«Microstic Lot» не нашёлся ни в одном чате: проверил транскрипты за 14 дней. О чём речь?', 'Про другой проект', 'Опечатка')]
-  expect(showsScreen(found)).toBe(true)
-  await ask($, found)
-  await ask($, [q('Found 3 stale worktrees in the repo. Which one does the next fleet take?', 'wt-a', 'wt-b')])
-  expect(passed).toEqual(['AskUserQuestion', 'AskUserQuestion'])
-  expect(SCREEN).toContain('send the same call again with one added field: metadata {"source": "screened:')
-  expect(await ask($, PLAIN)).toEqual({ deny: SCREEN })
-  expect(await ask($, [q('Какой цвет у кнопки Save?', 'Синий', 'Зелёный'), q('Нашёл 3 варианта значка. Какой взять?', 'A', 'B')])).toEqual({ deny: SCREEN })
-  expect(showsScreen([q('Не проверено, есть ли там лимит. Какой поставить?', '1', '2')])).toBe(false)
-  expect(showsScreen([q('Проверю логи потом. Какой поставить?', '1', '2')])).toBe(false)
-  expect(passed.length).toBe(2)
 })
 
 test('a secret named in a decision is not a request for one; a short bare ask or a give verb still is', () => {
@@ -411,15 +379,8 @@ test('a request for a secret value is refused in any length ("можешь да�
     expect([x.question, asksSelf([x])]).toEqual([x.question, false])
 })
 
-test('the screen is shown by a plain statement of a check or a found fact; a negated, quoted or asked marker shows none', () => {
-  for (const t of ['Нашёл 3 варианта значка. Какой взять?', 'Я проверил docs и CLAUDE.md, ответа там нет. Какой порт взять?', '«Microstic Lot» не нашёлся ни в одном чате. О чём речь?', 'Looked at the logs: nothing there. Which port do we take?'])
-    expect([t, showsScreen([q(t, 'A', 'B')])]).toEqual([t, true])
-  for (const t of ['Не посмотрел конфиг. Какой порт у dev-сервера?', 'Have you checked whether the server is up?', 'Error says module not found. Install it?', 'Ты проверил логи? Какой порт взять?', 'Ошибка «found nothing to run». Какой порт взять?', "I haven't checked the config. Which port?", 'Ещё не проверил docs. Какой порт?'])
-    expect([t, showsScreen([q(t, 'A', 'B')])]).toEqual([t, false])
-})
-
 test('every refusal that sends the chat off to fix or check first says the question is not dropped', () => {
-  for (const m of [SCREEN, BEHAVIOUR, SELF, DEFERRED, COMMAND, ELSEWHERE]) expect(m.endsWith(NOT_DROPPED)).toBe(true)
+  for (const m of [BEHAVIOUR, SELF, DEFERRED, COMMAND, ELSEWHERE]) expect(m.endsWith(NOT_DROPPED)).toBe(true)
   expect(MESSAGE.includes(NOT_DROPPED)).toBe(false)
 })
 
@@ -486,18 +447,18 @@ test('hook: a refused dialog the chat never asks again comes back at the Stop; a
   world(on, { MAKARASTY_SCREEN: 'on' })
   stops(on)
   const add = transcript(on)
-  const vite = [q('Для скриншотов страницы Console › External systems нужен vite на :5173. Сейчас он не запущен. Поднимаю его через панель браузера?', 'Да', 'Нет')]
-  expect(await ask($, vite)).toEqual({ deny: SCREEN })
+  const vite = [q('Для скриншотов страницы Console › External systems нужен vite на :5173. Сейчас он не запущен. Поднять его командой npm run dev --prefix frontend?', 'Да', 'Нет')]
+  expect(await ask($, vite)).toEqual({ deny: COMMAND })
   add('Жду, пока эмулятор начнёт слушать :5001, после этого вход и скриншоты.')
   const b = String((await stopNow($, 'Жду, пока эмулятор начнёт слушать :5001.')).block)
   expect(b).toContain('a question this turn tried to ask the person was refused')
   expect(b).toContain('нужен vite на :5173')
-  expect(await ask($, [q('Порт :5173 занят другим чатом. Какой порт взять для второго vite этого чата?', '5174', '5180')])).toEqual({ deny: SCREEN })
+  expect(await ask($, [q('Порт :5173 занят другим чатом. Взять второй порт: npx vite --port 5174?', '5174', '5180')])).toEqual({ deny: COMMAND })
   expect((await stopNow($, 'Жду.', true)).block).toBeUndefined()
   expect((await stopNow($)).block).toBeUndefined()
   const base = [q('Какую базу взять для отчётов флита, Postgres или SQLite?', 'Postgres', 'SQLite')]
-  expect(await ask($, base)).toEqual({ deny: SCREEN })
-  await ask($, base, { source: 'screened: a choice of approach; CLAUDE.md and docs do not settle it' })
+  expect(await ask($, [q('Какую базу взять для отчётов флита, Postgres или SQLite? Замер: node scripts/bench.mjs --db', 'Postgres', 'SQLite')])).toEqual({ deny: COMMAND })
+  await ask($, base)
   expect(await ask($, [q('Продолжать?', 'Да', 'Нет')])).toEqual({ deny: MESSAGE })
   expect(await $.tool.call({ tool: 'mcp__ccd_turn__wrap_up', recap: 'r', ask: 'Продолжить?', actions: [{ label: 'Да' }, { label: 'Нет' }] } as never)).toEqual({ deny: BOX })
   expect((await stopNow($, 'Готово.')).block).toBeUndefined()
