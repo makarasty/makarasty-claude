@@ -1176,7 +1176,7 @@ async function main() {
     const attempt = JSON.stringify({ fails: (prev?.fails ?? 0) + 1, at: now })
     if (prev) writeFileSync(mark, attempt); else if (!create(mark, attempt)) return 0
     const L = lang()
-    try { for (const phone of phoneAsks(item, Date.now(), L)) execFileSync(process.execPath, [notifyJs, 'ask'], { input: JSON.stringify({ ...phone, keyboard: phoneKeyboard(phone.options, true, L) }), stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, timeout: 20000 }) } catch (e) { console.error(`inbox: push failed: ${/** @type {Error} */ (e).message.split('\n')[0]}`); return 1 } // the attempt record stays: a later tick retries
+    try { for (const phone of phoneAsks(item, Date.now(), L)) execFileSync(process.execPath, [notifyJs, 'ask'], { input: JSON.stringify({ ...phone, keyboard: phoneKeyboard(phone.options, true, L, { multi: phone.multi, later: phone.later }) }), stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, timeout: 20000 }) } catch (e) { console.error(`inbox: push failed: ${/** @type {Error} */ (e).message.split('\n')[0]}`); return 1 } // the attempt record stays: a later tick retries
     writeFileSync(mark, '')
     say('inbox: pushed')
     return 0

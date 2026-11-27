@@ -759,7 +759,7 @@ async function ask() {
     if (!r.sent.length)
         return report(r);
     if (r.message_id)
-        writeJSON(join(tgDir, 'asks', `${r.message_id}.json`), { item: a.item, html, short, options: (a.options ?? []).map(String), reply: !!a.reply, at: Date.now(), ...(typeof a.q === 'string' && Number(a.of) > 1 ? { q: a.q, of: Number(a.of) } : {}) });
+        writeJSON(join(tgDir, 'asks', `${r.message_id}.json`), { item: a.item, html, short, options: (a.options ?? []).map(String), reply: !!a.reply, at: Date.now(), ...(typeof a.q === 'string' && Number(a.of) > 1 ? { q: a.q, of: Number(a.of) } : {}), ...(a.multi === true ? { multi: true } : {}), ...(a.later === true ? { later: true } : {}) });
     prunePhone();
     console.log(`notify: asked, message ${r.message_id}`);
     return 0;

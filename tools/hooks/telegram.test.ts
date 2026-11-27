@@ -15,7 +15,8 @@ let worlds = 0
 
 // o.config: notify.json text (null: none). o.steal: another session overwrites the poll claim at once. o.getUpdates: the
 // n-th getUpdates answer (status and body); by default the same `updates` list every time, as Telegram does until the offset moves.
-function world(o: { config?: string | null; profile?: string | null; steal?: boolean; getUpdates?: (n: number) => [number, object] } = {}) {
+// o.model: the small model's reply to a prompt (default: the explanation text).
+function world(o: { config?: string | null; profile?: string | null; steal?: boolean; getUpdates?: (n: number) => [number, object]; model?: (prompt: string) => string } = {}) {
   const NOW = 1_000_000_000 + ++worlds * 100_000_000 // a module that keeps state between tests never sees a time it has paused until
   let t = NOW
   const disk = new Map<string, string>()
@@ -63,7 +64,7 @@ function world(o: { config?: string | null; profile?: string | null; steal?: boo
     plugin: { root: '/plugin/tools' },
     session: { id: async () => 'chatA' },
     clock: { now: async () => t, sleep: async (ms: number) => { t += ms }, every: () => ({ cancel() { /* the 3 s timer after traffic is not run here */ } }) },
-    model: { complete: async () => { completions.push('x'); return { isAnswered: true as const, text: 'Чат делает выгрузку и спрашивает, какую базу взять.' } } },
+    model: { complete: async (r: { prompt: string }) => { completions.push(r.prompt); return { isAnswered: true as const, text: o.model ? o.model(r.prompt) : 'Чат делает выгрузку и спрашивает, какую базу взять.' } } },
   }
   const tick = () => telegramTick($ as never)
   const advance = async (ms: number) => { t += ms }
@@ -162,6 +163,130 @@ test('a dialog of two questions, one message each: the first tap only collapses 
   await w.advance(20000)
   await w.tick()
   expect(w.runs).toEqual([{ argv: ['answer', 'chatB~t1'], stdin: JSON.stringify({ [Q]: 'SQLite', 'Какой порт?': '5432' }) }])
+})
+
+// 2026-11-27: he answered by writing his next message, not by Telegram's Reply, and the question stayed up.
+test('a plain message that is one of the options: answered with that option, collapsed, a 👍, no inbox turn', async () => {
+  const w = world({ model: () => 'ANSWER 1' })
+  w.item('chatB~t1'); w.ask(101)
+  w.feed([say(7, 'sqlite')])
+  await w.tick()
+  expect(w.completions[0]).toContain(`#1 ${Q} · reports-app · вопрос · 5 мин (options: "Postgres" | "SQLite")`)
+  expect(w.completions[0]).toContain('<<<\nsqlite\n>>>')
+  expect(w.runs).toEqual([{ argv: ['answer', 'chatB~t1'], stdin: 'SQLite' }])
+  expect(w.sent('editMessageText')[0]!.body.text).toBe(`<i>${Q} — SQLite</i>`)
+  expect(w.sent('setMessageReaction')[0]!.body.reaction).toEqual([{ type: 'emoji', emoji: '👍' }])
+  expect(w.inbound()).toEqual([])
+  expect(w.json(`${TG}/log.json`)[0]).toMatchObject({ kind: 'plain-answer' })
+})
+
+// Review 2026-11-27: "Да, но сначала бэкап" must reach the chat whole, never as the bare option "Да".
+for (const text of ['возьми ту, что уже в проде', 'Postgres, но сначала бэкап']) {
+  test(`a plain message in his own words ("${text}"): the item gets the whole message`, async () => {
+    const w = world({ model: () => 'ANSWER 1' })
+    w.item('chatB~t1'); w.ask(101)
+    w.feed([say(7, text)])
+    await w.tick()
+    expect(w.runs).toEqual([{ argv: ['answer', 'chatB~t1'], stdin: text }])
+  })
+}
+
+test('a plain message that answers a question and asks for more: answered, and the inbox gets it, told it was passed on', async () => {
+  const w = world({ model: () => 'ANSWER 1\nMORE' })
+  w.item('chatB~t1'); w.ask(101)
+  w.feed([say(7, 'постгрес, и скинь скриншот')])
+  await w.tick()
+  await w.wait()
+  expect(w.runs).toEqual([{ argv: ['answer', 'chatB~t1'], stdin: 'постгрес, и скинь скриншот' }, { argv: ['telegram'], stdin: undefined }])
+  expect(w.json(`${TG}/inbound/7.json`).about).toEqual({ item: 'chatB~t1', short: Q, answered: true })
+})
+
+// Red team 2026-11-27: a bare "да" with yes/no questions of two chats could approve the wrong chat's push.
+test('a plain message the model ties to questions of two different chats: none answered, he is asked to reply to the right one', async () => {
+  const w = world({ model: () => 'ANSWER 1\nANSWER 2' })
+  w.item('chatB~t1'); w.item('chatC~t2', { session: 'chatC' })
+  w.ask(101); w.ask(102, { item: 'chatC~t2' })
+  w.feed([say(7, 'да')])
+  await w.tick()
+  expect(w.runs).toEqual([])
+  expect(w.sent('sendMessage')[0]!.body.text).toContain('ответь реплаем на нужный')
+  expect(w.json(`${TG}/log.json`)[0]).toMatchObject({ kind: 'plain-ambiguous' })
+})
+
+test('a model that echoes the question list answers nothing', async () => {
+  const w = world({ model: () => `#1 ${Q}\n1. ${Q}\n1: SQLite\nNONE` })
+  w.item('chatB~t1'); w.ask(101)
+  w.feed([say(7, 'сделай бэкап базы')])
+  await w.tick()
+  expect(w.runs.filter((r) => r.argv[0] === 'answer')).toEqual([])
+  expect(w.inbound()).toEqual([`${TG}/inbound/7.json`])
+})
+
+for (const [what, text, reply] of [['a message the model ties to no question', 'что нового', 'NONE'], ['a message ending in "?"', 'а что с базой?', 'ANSWER 1']] as const) {
+  test(`${what}: no answer, the inbox gets it as before`, async () => {
+    const w = world({ model: () => reply })
+    w.item('chatB~t1'); w.ask(101)
+    w.feed([say(7, text)])
+    await w.tick()
+    expect(w.runs.filter((r) => r.argv[0] === 'answer')).toEqual([])
+    expect(w.inbound()).toEqual([`${TG}/inbound/7.json`])
+    expect(w.json(`${TG}/asks/101.json`).closed).toBeUndefined()
+    if (text.endsWith('?')) expect(w.completions).toEqual([]) // a question about it never goes to the model
+  })
+}
+
+test('a plain message with no question open: no model call at all', async () => {
+  const w = world({ model: () => '1: x' })
+  w.feed([say(7, 'сделай скриншот')])
+  await w.tick()
+  expect(w.completions).toEqual([])
+})
+
+// 2026-11-27: two of three picked, the third asked him to look at something later, and only "looked" was offered.
+test('one question of several: "Later" answers it, so the dialog goes on with the picks he made', async () => {
+  const w = world()
+  w.item('chatB~t1')
+  w.ask(101, { q: Q, of: 2, later: true }); w.ask(102, { q: 'Какой порт?', short: 'Какой порт?', options: ['5432', '5433'], of: 2, later: true })
+  w.feed([tap(7, 42, 101, 'a1'), tap(8, 42, 102, 's')])
+  await w.tick()
+  expect(w.sent('answerCallbackQuery').map((c) => c.body.text)).toEqual(['Принято, отправляю в чат', 'Позже: остальные ответы идут дальше'])
+  const later = 'Позже: посмотрю сам, когда смогу. Продолжай по остальным ответам, этот не жди и сейчас не переспрашивай.'
+  expect(w.runs).toEqual([{ argv: ['answer', 'chatB~t1'], stdin: JSON.stringify({ [Q]: 'SQLite', 'Какой порт?': later }) }])
+  expect(w.sent('editMessageText').map((c) => c.body.text)).toEqual([`<i>${Q} — SQLite</i>`, '<i>Какой порт? — позже</i>'])
+})
+
+test('"Later" on every question of a dialog: nothing is sent, the dialog waits on the computer', async () => {
+  const w = world()
+  w.item('chatB~t1')
+  w.ask(101, { q: Q, of: 2, later: true }); w.ask(102, { q: 'Какой порт?', short: 'Какой порт?', options: ['5432', '5433'], of: 2, later: true })
+  w.feed([tap(7, 42, 101, 's'), tap(8, 42, 102, 's')])
+  await w.tick()
+  expect(w.runs).toEqual([])
+  expect(w.sent('editMessageText').map((c) => c.body.text)).toEqual([`<i>${Q} — позже</i>`, '<i>Какой порт? — позже</i>'])
+})
+
+test('"Later" on an ask that has no such button answers nothing', async () => {
+  const w = world()
+  w.item('chatB~t1'); w.ask(101)
+  w.feed([tap(7, 42, 101, 's')])
+  await w.tick()
+  expect(w.runs).toEqual([])
+  expect(w.sent('answerCallbackQuery')[0]!.body.text).toBe('Уже закрыто')
+})
+
+test('a multi-select question: taps tick and untick, Done sends every ticked option', async () => {
+  const w = world()
+  w.item('chatB~t1'); w.ask(101, { multi: true, options: ['Postgres', 'SQLite', 'MySQL'] })
+  w.feed([tap(7, 42, 101, 'a0'), tap(8, 42, 101, 'a2'), tap(9, 42, 101, 'a0'), tap(10, 42, 101, 'a1')])
+  await w.tick()
+  expect(w.runs).toEqual([])
+  expect(w.json(`${TG}/asks/101.json`).sel).toEqual([1, 2])
+  const kb = w.sent('editMessageReplyMarkup').at(-1)!.body.reply_markup.inline_keyboard as { text: string; callback_data: string }[][]
+  expect(kb.map((r) => r.map((b) => b.text))).toEqual([['☐ Postgres'], ['☑ SQLite'], ['☑ MySQL'], ['✅ Готово', '❔ Подробнее']])
+  w.feed([tap(11, 42, 101, 'd')])
+  await w.advance(20000)
+  await w.tick()
+  expect(w.runs).toEqual([{ argv: ['answer', 'chatB~t1'], stdin: 'SQLite, MySQL' }])
 })
 
 test('a message while the headless inbox is busy with an earlier one: a silent "in the queue" line at once', async () => {

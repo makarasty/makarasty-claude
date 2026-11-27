@@ -1,5 +1,22 @@
 # Changelog
 
+## makarasty-tools 1.20.37 — 2026-11-27
+
+- **Telegram: a plain next message answers the question** (owner, 2026-11-27: «я не нажал на кнопку «Ответить», я просто
+  продолжил переписку… а вопрос висит»). Without Telegram's Reply his message went only to the headless inbox and the
+  question stayed up. `telegram.ts` `routePlain`: while asks are open, Haiku names which ones the message answers
+  (`ANSWER n`, `NONE` when unsure, `MORE` for an extra request); the answer is his whole message, or an option only when
+  the message is exactly that option. Hits on two different chats answer nothing and ask him to reply to the right one.
+- **Telegram: several questions no longer hold each other back** («я отвечаю на 2, а 3 оставляю… там нет варианта
+  потом… на эти 2 вопроса я нигде не ответил»). Each of several questions has "⏭ Позже"; all "Позже" sends nothing.
+  Picks of a dialog left half answered go with his next typed prompt in that chat (`inbox.ts` `phonePicks`, each once).
+  Multi-select questions tick and "✅ Готово" on the phone (a one-question one had no buttons; one of several took one tap,
+  as on 11-25, when he left such a question and re-answered all four on the computer 43 min later).
+- A phone-only box is closed by his typing even after a plugin reload dropped the phone timer (it stayed up 12 h).
+- Reviewed and red-teamed: option-only answers that dropped his condition, a bare "да" over two chats, echoed model
+  lines, all-"Позже" dialogs, a tick on an answered ask and repeated or "Позже" picks in the chat context were fixed.
+  `claude plugin test tools` 618 pass, 0 fail; notify selftest 248/0; inbox selftest 199/0; watcher 13/0.
+
 ## makarasty-tools 1.20.36 — 2026-11-26
 
 - **cleanup: "Все" no longer reaches games, programs and personal files** (owner, 2026-11-26: «исправь скрипт чтоб он

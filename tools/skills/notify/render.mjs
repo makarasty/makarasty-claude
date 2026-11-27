@@ -44,13 +44,18 @@ export function phoneHtml(/** @type {{ question: string, meta: string, note?: st
   return `<b>${rich(cut(m.question, 600))}</b>\n<i>${esc(m.meta)}${m.note ? esc(`\n${m.note}`) : ''}</i>`
 }
 
-/** The inline keyboard: options in one row when short (up to 3, 34 characters together), else one per row; "Details" last. */
-export function phoneKeyboard(/** @type {string[]} */ options, more = true, lang = 'en') {
+/**
+ * The inline keyboard: options in one row when short (up to 3, 34 characters together), else one per row; "Details" last.
+ * `multi`: a multi-select question, one option per row, a tap ticks it (`sel` holds the ticked indexes) and "Done" sends
+ * them. `later`: one question of several, "Later" answers it so the others need not wait for it.
+ */
+export function phoneKeyboard(/** @type {string[]} */ options, more = true, lang = 'en', /** @type {{ multi?: boolean, sel?: number[], later?: boolean }} */ o = {}) {
   const btn = (/** @type {string} */ text, /** @type {string} */ data) => ({ text: cut(text, 40), callback_data: data })
-  const row = options.length <= 3 && options.join('').length <= 34
-  const rows = row ? (options.length ? [options.map((o, i) => btn(o, `a${i}`))] : []) : options.map((o, i) => [btn(o, `a${i}`)])
-  const label = t(lang, 'more')
-  if (more) { if (row && rows.length) rows[0].push(btn(label, 'm')); else rows.push([btn(label, 'm')]) }
+  const row = !o.multi && options.length <= 3 && options.join('').length <= 34
+  const label = (/** @type {string} */ x, /** @type {number} */ i) => (o.multi ? `${o.sel?.includes(i) ? '☑' : '☐'} ${x}` : x)
+  const rows = row ? (options.length ? [options.map((x, i) => btn(x, `a${i}`))] : []) : options.map((x, i) => [btn(label(x, i), `a${i}`)])
+  const tail = [...(o.multi ? [btn(t(lang, 'done1'), 'd')] : []), ...(o.later ? [btn(t(lang, 'later'), 's')] : []), ...(more ? [btn(t(lang, 'more'), 'm')] : [])]
+  if (row && rows.length && tail.length === 1 && more) rows[0].push(tail[0]); else if (tail.length) rows.push(tail)
   return { inline_keyboard: rows }
 }
 

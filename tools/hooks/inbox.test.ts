@@ -66,13 +66,14 @@ function world(on: On, o: { on?: boolean; session?: string; self?: string; child
     if (e.tool === 'mcp__ccd_session__start_session') return { result: 'Proposed "Чистка логов" (task_id: task_ab12cd34)' }
     return { result: 'Shown in the next-step box.' }
   })
-  on('prompt.submit', (_$, e) => { submitted.push(e.text); return { text: e.text } })
+  const contexts: string[] = [] // what the hook added to a prompt the person typed
+  on('prompt.submit', (_$, e) => { submitted.push(e.text); contexts.push(...((e as { context?: string[] }).context ?? [])); return { text: e.text } })
   on('model.complete', () => ({ value: { isAnswered: true as const, text: 'Чат делает выгрузку и спрашивает, какую базу взять.', usage: { input_tokens: 1, output_tokens: 1, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 } } }) as never)
   const items = () => [...disk.keys()].filter((k) => k.startsWith('/cfg/makarasty/inbox/items/')).map((k) => JSON.parse(disk.get(k)!))
   // The inbox chat's `inbox.mjs answer`: the first answer file wins.
   const inboxAnswers = (id: string, body: object) => { disk.set(`/cfg/makarasty/inbox/answers/${id}.json`, JSON.stringify({ id, at: 1, by: 'inbox', ...body })); wake?.() }
   const until = async (f: () => boolean, what = '') => { for (let i = 0; i < 200 && !f(); i++) await new Promise((r) => setTimeout(r, 5)); expect([what, f(), JSON.stringify(cli), JSON.stringify(dialog)]).toEqual([what, true, JSON.stringify(cli), JSON.stringify(dialog)]) }
-  return { dialog, clock, disk, submitted, cli, items, inboxAnswers, until, answerDialog: (v: unknown) => answerDialog?.(v) }
+  return { dialog, clock, disk, submitted, contexts, cli, items, inboxAnswers, until, answerDialog: (v: unknown) => answerDialog?.(v) }
 }
 
 test('a question from chat A shows up in the inbox, and the inbox answer comes back to chat A as the dialog\'s own', async ($, on) => {
@@ -423,6 +424,39 @@ test('phone ask: he types in that chat, and its open phone box is closed', async
   await w.until(() => w.items().length === 1, 'box filed')
   await $.prompt.submit({ text: 'нет, сначала тесты', origin: { kind: 'composer' } } as never)
   await w.until(() => w.cli.some((c) => c[0] === 'done' && c[1] === 'chatA~w2'), 'closed by his typing')
+})
+
+// 2026-11-27: two of three picked on the phone, the third left for later, then he wrote in the chat: the two never arrived.
+test('phone ask of several questions, part picked on the phone: his typing here carries each pick to the chat once, never a "Later"', async ($, on) => {
+  const w = world(on, { on: false })
+  w.disk.set('/cfg/makarasty/notify.json', TG)
+  const later = 'Позже: посмотрю сам, когда смогу. Продолжай по остальным ответам, этот не жди и сейчас не переспрашивай.'
+  const two = [...QUESTIONS, { question: 'Какой порт?', header: 'Порт', multiSelect: false, options: [{ label: '5432', description: '' }, { label: '5433', description: '' }] }, { question: 'Глянь макет', header: 'Макет', multiSelect: false, options: [{ label: 'Посмотрел', description: '' }] }]
+  const call = $.tool.call({ tool: 'AskUserQuestion', questions: two, tool_use_id: 'p7' })
+  await w.until(() => w.items().length === 1 && w.dialog.shown === 1, 'filed')
+  const partial = '/cfg/makarasty/telegram/partial/chatA~p7.json'
+  w.disk.set(partial, JSON.stringify({ [Q]: 'SQLite', 'Глянь макет': later }))
+  await $.prompt.submit({ text: 'порт скажу потом', origin: { kind: 'composer' } } as never)
+  await $.prompt.submit({ text: 'и ещё одно', origin: { kind: 'composer' } } as never) // nothing new: nothing told
+  w.disk.set(partial, JSON.stringify({ [Q]: 'SQLite', 'Глянь макет': later, 'Какой порт?': '5432' }))
+  await $.prompt.submit({ text: 'вот', origin: { kind: 'composer' } } as never)
+  const told = w.contexts.filter((c) => c.startsWith('Answers from his phone'))
+  expect(told.length).toBe(2)
+  expect(told[0]).toContain(`${JSON.stringify(Q)}: "SQLite"`)
+  expect(told[1]).toContain('"Какой порт?": "5432"')
+  expect(told[1]).not.toContain(Q)
+  expect(told.join('')).not.toContain('Позже')
+  w.answerDialog({ result: { questions: two, answers: { [Q]: 'SQLite', 'Какой порт?': '5432', 'Глянь макет': 'Посмотрел' } } })
+  await call
+})
+
+test('phone ask: a plugin reload dropped the phone timer, and his typing still closes the open box', async ($, on) => {
+  const w = world(on, { on: false })
+  w.disk.set('/cfg/makarasty/notify.json', TG)
+  // The box as a chat before the reload left it: on disk, with no timer in this copy of the module.
+  w.disk.set('/cfg/makarasty/inbox/items/chatA~w9.json', JSON.stringify({ id: 'chatA~w9', kind: 'choice', at: 1_000_000, session: 'chatA', cwd: 'C:/work/x', chat: 'c', ask: 'Запушить?', actions: ['Да'], phone: true }))
+  await $.prompt.submit({ text: 'не пушь пока', origin: { kind: 'composer' } } as never)
+  await w.until(() => w.cli.some((c) => c[0] === 'done' && c[1] === 'chatA~w9'), 'closed by his typing')
 })
 
 test('phone ask: MAKARASTY_PHONE_ASK=off: the dialog alone, nothing filed', async ($, on) => {

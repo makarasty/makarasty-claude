@@ -606,7 +606,7 @@ async function hook() {
 // hook engine, which reads the taps (tools/hooks/telegram.ts). The engine cannot delete a file, so the asks it closed and
 // the inbound messages it answered are pruned here, two days on.
 
-interface AskIn { item: string; html: string; short: string; options?: string[]; reply?: boolean; keyboard?: object; q?: string; of?: number }
+interface AskIn { item: string; html: string; short: string; options?: string[]; reply?: boolean; keyboard?: object; q?: string; of?: number; multi?: boolean; later?: boolean }
 async function ask() {
   let a: Partial<AskIn>;
   const usage = 'notify: ask wants {item, html, short, options?, reply?, keyboard?} on stdin';
@@ -623,7 +623,7 @@ async function ask() {
   // is answered "closed". The inbox pushes it again; a repeated question beats one that cannot be answered.
   if (r.unconfirmed) r = { sent: [], failed: [{ name: 'telegram', error: `${r.unconfirmed.join('; ')} (no message id, so the ask is sent again)` }] };
   if (!r.sent.length) return report(r);
-  if (r.message_id) writeJSON(join(tgDir, 'asks', `${r.message_id}.json`), { item: a.item, html, short, options: (a.options ?? []).map(String), reply: !!a.reply, at: Date.now(), ...(typeof a.q === 'string' && Number(a.of) > 1 ? { q: a.q, of: Number(a.of) } : {}) });
+  if (r.message_id) writeJSON(join(tgDir, 'asks', `${r.message_id}.json`), { item: a.item, html, short, options: (a.options ?? []).map(String), reply: !!a.reply, at: Date.now(), ...(typeof a.q === 'string' && Number(a.of) > 1 ? { q: a.q, of: Number(a.of) } : {}), ...(a.multi === true ? { multi: true } : {}), ...(a.later === true ? { later: true } : {}) });
   prunePhone();
   console.log(`notify: asked, message ${r.message_id}`);
   return 0;

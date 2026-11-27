@@ -2,7 +2,7 @@
 export function esc(s: string): string
 export function rich(s: string, md?: boolean): string
 export function phoneHtml(m: { question: string; meta: string; note?: string }): string
-export function phoneKeyboard(options: string[], more?: boolean, lang?: string): { inline_keyboard: { text: string; callback_data: string }[][] }
+export function phoneKeyboard(options: string[], more?: boolean, lang?: string, o?: { multi?: boolean; sel?: number[]; later?: boolean }): { inline_keyboard: { text: string; callback_data: string }[][] }
 export function collapsed(short: string, outcome: string): string
 export function note(text: string): string
 export function helpHtml(lang: string | undefined): string

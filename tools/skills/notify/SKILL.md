@@ -86,8 +86,10 @@ anyone else. One setup serves every account that shares this config dir. `test` 
   in any other chat, the inbox on or off, after 5 minutes (`MAKARASTY_PHONE_ASK=<minutes>` changes it, `off` turns it
   off; a dialog and a wrap_up box, with no timer or poll while none is open). The
   question bold, "project · kind · age" under it, a button per option and "❔ Подробнее" (a plain explanation,
-  written only when tapped). A tap or a reply answers it; a reply ending in "?" asks the inbox about it. The
-  message then collapses to one grey line "question — answer"; answered on the computer, it collapses too.
+  written only when tapped). A tap, a reply, or a plain next message that answers it does; a message ending in "?"
+  asks the inbox about it. Several questions come one message each, with "⏭ Later" on each; a multi-select one ticks,
+  then "✅ Done". The message then collapses to one grey line "question — answer"; answered on the computer, it
+  collapses too.
 
 All messages are Telegram HTML in Russian; a finish rings silently, everything that needs the person rings.
 Nothing is sent for routine steps (an edit, an agent starting or ending).

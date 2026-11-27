@@ -621,6 +621,10 @@ if (JSON.stringify(sm.reply_markup) === JSON.stringify(kbd)) ok('with its keyboa
 if (sm.disable_notification === undefined) ok('and a question rings'); else bad('and a question rings', JSON.stringify(sm));
 const saved1 = JSON.parse(read(`${askDir}/${askId}.json`) || '{}');
 if (saved1.item === 'i1' && saved1.short === askIn.short && saved1.html === askIn.html && String(saved1.options) === 'Да,Нет' && saved1.reply === true && typeof saved1.at === 'number') ok('the ask is saved under its message id for the hook engine'); else bad('the ask is saved under its message id', JSON.stringify(saved1));
+if (saved1.multi === undefined && saved1.later === undefined) ok('a plain ask saves no multi-select or "Later" flag'); else bad('a plain ask saves no multi-select or "Later" flag', JSON.stringify(saved1));
+const a1b = node([n, 'ask'], { input: JSON.stringify({ ...askIn, item: 'i1b', q: 'Q', of: 2, multi: true, later: true }), env: liveTg });
+const saved1b = JSON.parse(read(`${askDir}/${/message (\d+)/.exec(a1b.out)?.[1]}.json`) || '{}');
+if (saved1b.multi === true && saved1b.later === true && saved1b.of === 2) ok('one of several, multi-select: both flags are saved for the poller'); else bad('multi-select and "Later" flags are saved', JSON.stringify(saved1b));
 
 // A question can carry what a chat printed: no secret leaves, in the message or in the saved copy.
 resetLog();

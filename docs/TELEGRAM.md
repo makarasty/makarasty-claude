@@ -6,7 +6,8 @@ The person's own bot (`/makarasty-tools:notify setup`) carries, both ways:
   "❔ Подробнее"; a finish he armed (`notify --arm`), silent; needs-you and errors, with sound; the inbox's answers to
   his messages.
 - **in**: a tap (answers the item), a reply to a question (a free answer, or a question about it when it ends in "?"),
-  and any plain text, which the inbox model does: answers, starts a chat, sends a desktop screenshot, a file, a
+  a plain message while questions are open (a small model says which ones it answers, edge case 38), and any other
+  plain text, which the inbox model does: answers, starts a chat, sends a desktop screenshot, a file, a
   picture, a video or a voice note (`notify.mjs file|screenshot`), adds a task to Obsidian. The only command is
   `/start` (what the bot does); `/status` is a debug view in no menu (owner, 2026-11-17: no commands, everything is
   text; the ideas list is gone, "create a task in Obsidian" replaces it).
@@ -95,6 +96,10 @@ UX
 27. Voice, sticker, a picture without a caption: "понимаю только текст"; a caption is read as text.
 29. A dialog of several questions: one ask per question (`q`, `of` in the ask file); a tap or reply records its pick
     in `telegram/partial/<item>.json`, collapses that message, and the last one answers the item with the whole map.
+    Each has "⏭ Later" (`later`, callback `s`): it answers that question with "later, go on with the rest", so the
+    picks he made are not held back by one he cannot answer yet (owner, 2026-11-27). "Later" on every question sends
+    nothing: the dialog waits on the computer. Picks of a dialog left half answered reach the chat with the next prompt
+    he types there (inbox.ts `phonePicks`; each pick once, `<partial>.told` lists them; a "Later" is never told).
 30. The headless turn runs with `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`: `claude -p` waits for its background tasks,
     so one started there held the answer and "typing…" until the kill (2026-11-18). Long work goes to a started chat.
 31. A run busy with an earlier message: a new one gets a silent "in the queue" line; what is left after a run is taken
@@ -115,5 +120,19 @@ Watcher
     it stops when that chat restarts.
 37. The watcher runs headless turns with the Task Scheduler user environment, not the app's: `CLAUDE_CONFIG_DIR` is
     passed to it with `--config`, and the CLI login in that dir pays, as for every headless turn.
+Answers in his own way
+38. A plain message, not a Telegram reply, while questions are open (owner, 2026-11-27: he answered by writing his next
+    message, and the question stayed up): Haiku gets the open asks (the latest eight, each with its project line,
+    secrets blanked) and the message, and answers only `ANSWER <n>` lines, `NONE` when unsure, `MORE` when the message
+    also asks for something. The answer is his whole message, or an option only when the whole message is that option
+    ("sqlite" → "SQLite"; "Да, но сначала бэкап" goes whole): the record is his words or his option, never the model's.
+    Hits on asks of two different items answer nothing and he is asked to reply to the right one (a bare "да" could
+    approve the wrong chat's push). `MORE`: the inbox does the rest, told the answer already went to its chat. No match:
+    the inbox as before. A message starting with `/` or ending in "?", or no open ask: no model call. A failed call
+    answers nothing. The poll waits for the call (up to 30 s; about 3 s in the watcher) before the next update.
+39. A multi-select question (`multi`): a tap ticks or unticks (`sel` in the ask file, the keyboard redrawn), "✅ Done"
+    (callback `d`) sends the ticked labels joined by ", ". Until 1.20.37 a one-question multi-select had no buttons and
+    one of several took a single tap.
+40. Asks saved before 1.20.37 have no `multi` or `later`: their taps work as before, and `s`/`d` on them are "closed".
 28. Until 1.19.63 `inbox.mjs telegram` sat after the item-id check and exited "needs an item id": no free message was
     ever answered with the inbox chat closed. The inbox selftest now runs it.

@@ -160,23 +160,26 @@ const age = (/** @type {string} */ lang, /** @type {number} */ ms) => (ms < 3600
  */
 export function phoneAsk(/** @type {Item} */ item, now = Date.now(), /** @type {string | undefined} */ lang = undefined) {
   const qs = item.questions ?? []
-  const one = item.kind === 'ask' && qs.length === 1 && !qs[0].multiSelect
+  // A one-question multi-select ask is answered on the phone too: ticks, then Done (`multi`); until 1.20.37 it had no buttons.
+  const one = item.kind === 'ask' && qs.length === 1
   const first = (item.kind === 'ask' ? qs[0]?.question : item.kind === 'choice' ? item.ask : t(lang, 'cardQuestion', { title: item.title ?? '' })) ?? ''
   const options = one ? (qs[0].options ?? []).map((o) => o.label) : item.kind === 'choice' ? (item.actions ?? []) : []
   const note = item.kind === 'ask' && qs.length > 1 ? t(lang, 'moreQuestions', { n: qs.length - 1 }) : item.kind === 'card' ? t(lang, 'cardNote') : ''
   const kind = t(lang, { ask: 'kindAsk', choice: 'kindChoice', card: 'kindCard' }[item.kind])
   const message = { question: first, meta: `${project(item.cwd)} · ${kind} · ${age(lang ?? 'en', now - item.at)}`, note }
-  return { item: item.id, html: phoneHtml(message), message, short: cut(first, 90), options, reply: one || item.kind === 'choice' }
+  return { item: item.id, html: phoneHtml(message), message, short: cut(first, 90), options, reply: one || item.kind === 'choice', ...(one && qs[0].multiSelect ? { multi: true } : {}) }
 }
 
 /** The phone messages for an item: one, or for a dialog of several questions one per question, each with its own
- *  buttons (owner, 2026-11-18: "where are the answer options?"); `q`/`of` let the poller gather the answers into one. */
+ *  buttons (owner, 2026-11-18: "where are the answer options?"); `q`/`of` let the poller gather the answers into one.
+ *  Each of several has "Later" (`later`), so the answers given are not held back by one he cannot answer yet (owner,
+ *  2026-11-27: two picked, the third asked him to look at something, and only "looked" was offered). */
 export function phoneAsks(/** @type {Item} */ item, now = Date.now(), /** @type {string | undefined} */ lang = undefined) {
   const qs = item.questions ?? []
   if (item.kind !== 'ask' || qs.length < 2) return [phoneAsk(item, now, lang)]
   return qs.map((q, i) => {
     const message = { question: q.question, meta: `${project(item.cwd)} · ${i + 1}/${qs.length} · ${age(lang ?? 'en', now - item.at)}`, note: '' }
-    return { item: item.id, html: phoneHtml(message), message, short: cut(q.question, 90), options: (q.options ?? []).map((o) => o.label), reply: true, q: q.question, of: qs.length }
+    return { item: item.id, html: phoneHtml(message), message, short: cut(q.question, 90), options: (q.options ?? []).map((o) => o.label), reply: true, q: q.question, of: qs.length, later: true, ...(q.multiSelect ? { multi: true } : {}) }
   })
 }
 
@@ -343,9 +346,10 @@ export function renderReports(/** @type {Report[]} */ reports, now = Date.now(),
 export const TG_PROMPT = '[Telegram]'
 /** His own words go in quoted lines and nothing else does: they count as his word (owner, 2026-11-17), and push-guard and
  *  the start consent read only those lines (telegramWords). */
-export function inboundPrompt(/** @type {{ text: string, about?: { item: string, short: string } }[]} */ ms, /** @type {string | undefined} */ root = undefined) {
-  const one = (/** @type {{ text: string, about?: { item: string, short: string } }} */ m) =>
-    `${m.about ? `(a reply to the phone question "${m.about.short}", inbox item ${m.about.item})\n` : ''}> ${m.text.replace(/\n/g, '\n> ')}`
+export function inboundPrompt(/** @type {{ text: string, about?: { item: string, short: string, answered?: boolean } }[]} */ ms, /** @type {string | undefined} */ root = undefined) {
+  const one = (/** @type {{ text: string, about?: { item: string, short: string, answered?: boolean } }} */ m) =>
+    `${m.about?.answered ? `(already passed to its chat as his answer to the phone question "${m.about.short}", inbox item ${m.about.item}: do only what else it asks)\n`
+      : m.about ? `(a reply to the phone question "${m.about.short}", inbox item ${m.about.item})\n` : ''}> ${m.text.replace(/\n/g, '\n> ')}`
   const n = root && `node "${root}/hooks/notify.mjs"`
   return `${TG_PROMPT} The person wrote from Telegram${ms.length > 1 ? ` (${ms.length} messages)` : ''}. His own words:\n${ms.map(one).join('\n')}\n` +
     'This is full remote control of his computer by plain text: do what he asks, with the makarasty-tools inbox skill where ' +

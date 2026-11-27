@@ -4,7 +4,7 @@ import { find as secretIn } from './secret-guard.ts'
 import { deliveredYes, heardYes, notePrompt, noteTurnStart } from './push-guard.ts'
 import { configDir as claudeDir, deliveredPairs, readHeard, writeHeard, type Pair } from './consent.ts'
 import { PLUGIN_FRAME, ownWords } from './own-words.ts'
-import { bot, isTelegramPrompt, startTelegram, stopTelegram, telegramTick, telegramWords } from './telegram.ts'
+import { LATER, bot, isTelegramPrompt, startTelegram, stopTelegram, telegramTick, telegramWords } from './telegram.ts'
 import { noteSkillPrompt } from './skill-router.ts'
 
 // The cross-chat inbox (skill /makarasty-tools:inbox, layout in skills/inbox/core.mjs). Off unless
@@ -401,11 +401,15 @@ export const register: Register = (on) => {
         return next({ ...e, context: [...(e.context ?? []), `Inbox: ${finishedLine(waiting)} Show them with the makarasty-tools inbox skill (inbox.mjs list) along with what the person asks.`] })
       }
     }
-    // A phone-only ask open here: his typing answers it too (read only while one is open, so a chat with none pays nothing).
-    const a = (await active($).catch(() => undefined)) ?? (phoneTimer ? await phoneOnly($).catch(() => undefined) : undefined)
     const his = typed && hisWords(e.text) // a plugin message typed as composer text answers nothing
+    // A phone-only ask open here: his typing answers it too. Read on his own typing as well, not only while the phone timer
+    // runs: a plugin reload drops the timer, and the ask then stayed on the phone 12 h after he had answered here.
+    const a = (await active($).catch(() => undefined)) ?? (phoneTimer || his ? await phoneOnly($).catch(() => undefined) : undefined)
+    let phone: string | undefined
     if (a && (his || started)) {
-      for (const it of await openItems($, a)) {
+      const open = await openItems($, a)
+      if (his) phone = await phonePicks($, a, open).catch(() => undefined)
+      for (const it of open) {
         // He writes here: every question of this chat but a card (it stays a proposal) and a dialog still open here is
         // answered by what he writes, so the inbox stops asking it.
         if ((his && it.kind !== 'card' && !waited.has(it.id)) || (started && it.kind === 'card' && it.taskId === started)) await cli($, a.dir, ['done', it.id]).catch(() => undefined)
@@ -418,7 +422,7 @@ export const register: Register = (on) => {
       briefed = true
       return next({ ...e, context: [...(e.context ?? []), STARTED_BRIEF] })
     }
-    return next(e)
+    return next(phone ? { ...e, context: [...(e.context ?? []), phone] } : e)
   }).catch(($, e, next) => next(e))
 
   // The inbox writes into another chat only on the person's command (owner, 2026-11-13: a finished chat asked him for X, the
@@ -624,6 +628,24 @@ async function typedAfter($: D, a: { root: string; session: string }, at: number
     try { const s = JSON.parse(l) as { at: number; session: string }; if (s.session === a.session && s.at > at) return true } catch { /* torn line */ }
   }
   return false
+}
+
+// Picks he made on the phone for part of a dialog of several questions, the rest left there: without this they reached the
+// chat only once every question had a pick, and were lost when he came back and wrote in the chat instead (owner,
+// 2026-11-27). They go with what he types now, each pick once (`<partial>.told` lists the questions told); a "Later" is no
+// pick of his and is never told.
+async function phonePicks($: D, a: { dir: string }, open: Item[]): Promise<string | undefined> {
+  const parts: string[] = []
+  for (const it of open) {
+    if (it.kind !== 'ask') continue
+    const p = `${a.dir}/makarasty/telegram/partial/${it.id}.json`
+    const told = (await readJSON<string[]>($, `${p}.told`)) ?? []
+    const fresh = Object.entries((await readJSON<Record<string, string>>($, p)) ?? {}).filter(([q, v]) => !LATER.includes(v) && !told.includes(q))
+    if (!fresh.length) continue
+    await $.fs.write(`${p}.told`, JSON.stringify([...told, ...fresh.map(([q]) => q)]))
+    parts.push(fresh.map(([q, v]) => `${JSON.stringify(q)}: ${JSON.stringify(v)}`).join('; '))
+  }
+  return parts.length ? `Answers from his phone: before this message the person answered part of your open questions in Telegram and left the rest unanswered there. Take these as his answers, together with what he writes now: ${parts.join('; ')}.` : undefined
 }
 
 // Inbox answers of this chat not delivered yet are dropped: skipped/<id> holds why, and `list` shows that line once.

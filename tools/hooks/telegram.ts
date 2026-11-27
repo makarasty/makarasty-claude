@@ -1,7 +1,7 @@
 import type { EngineInterface } from 'claude-code'
 import { explainPrompt, isTelegramPrompt, STALE_MS, TG_PROMPT, telegramWords, type Item } from '../skills/inbox/core.mjs'
 import { collapsed, esc, explainHtml, helpHtml, note, phoneKeyboard, statusHtml } from '../skills/notify/render.mjs'
-import { langOf, t } from '../skills/notify/strings.mjs'
+import { STRINGS, langOf, t } from '../skills/notify/strings.mjs'
 import { writeHeard } from './consent.ts'
 
 // The Telegram side of notify, read inside the hook engine: `$.http.fetch`, so polling starts no process. Every chat with
@@ -21,11 +21,14 @@ import { writeHeard } from './consent.ts'
 // Design and edge cases: docs/TELEGRAM.md.
 
 type D = Pick<EngineInterface, 'env' | 'fs' | 'http' | 'process' | 'plugin' | 'session' | 'clock' | 'model'>
-type Ask = { item: string; html: string; short: string; options: string[]; reply: boolean; at: number; more?: boolean; closed?: number; q?: string; of?: number }
+// multi: a multi-select question (taps tick `sel`, "Done" sends); later: one of several, with a "Later" button.
+type Ask = { item: string; html: string; short: string; options: string[]; reply: boolean; at: number; more?: boolean; closed?: number; q?: string; of?: number; multi?: boolean; sel?: number[]; later?: boolean }
 type Msg = { message_id: number; chat: { id: number; type?: string }; from?: { id: number }; text?: string; caption?: string; reply_to_message?: { message_id: number }; forward_origin?: unknown; voice?: unknown; photo?: unknown; document?: unknown; sticker?: unknown; video?: unknown }
 type Update = { update_id: number; message?: Msg; callback_query?: { id: string; from: { id: number }; data?: string; message?: Msg } }
-export type Inbound = { id: number; text: string; message_id: number; at: number; about?: { item: string; short: string }; taken?: number; done?: number }
+export type Inbound = { id: number; text: string; message_id: number; at: number; about?: { item: string; short: string; answered?: boolean }; taken?: number; done?: number }
 
+// The "Later" answer in every language: a pick that is one of these is no answer of his (inbox.ts phonePicks reads it too).
+export const LATER: string[] = Object.values(STRINGS).map((s) => s.laterAnswer)
 const LEASE_MS = 30000, LONG_S = 20, SHORT_MS = 2000, HUNG_MS = 60000, ALIVE_MS = 60000
 const API = 'https://api.telegram.org'
 
@@ -164,19 +167,28 @@ async function handle($: D, dir: string, b: { token: string; me: string }, u: Up
     const a = await openAsk($, `${tg}/asks/${msg}.json`)
     if (!a) { await ack(t(L, 'ackClosed')); await call($, b.token, 'editMessageReplyMarkup', { chat_id: b.me, message_id: msg, reply_markup: { inline_keyboard: [] } }).catch(() => undefined); return 'tap-closed' }
     if (cq.data === 'm') { await ack(t(L, 'ackExplain')); await explain($, dir, b, msg, a); return 'more' }
-    const i = Number(/^a?(\d+)$/.exec(cq.data ?? '')?.[1] ?? NaN)
-    const pick = a.options[i]
-    if (pick === undefined) { await ack(t(L, 'ackClosed')); return 'tap-closed' }
-    // Answered in the app meanwhile: say so at once, and the message collapses with it.
+    // Answered in the app meanwhile: say so at once, and the message collapses with it (a tick included).
     if (await $.fs.exists(`${dir}/makarasty/inbox/answers/${a.item}.json`)) {
       await ack(t(L, 'ackAnsweredApp'))
       await call($, b.token, 'editMessageText', { chat_id: b.me, message_id: msg, text: collapsed(a.short, t(L, 'outAnsweredApp')), parse_mode: 'HTML' }).catch(() => undefined)
       await close($, `${tg}/asks/${msg}.json`, a)
       return 'tap-answered'
     }
-    await ack(t(L, 'ackTaken'))
-    await answer($, dir, b, msg, a, pick)
-    return 'tap'
+    const i = Number(/^a?(\d+)$/.exec(cq.data ?? '')?.[1] ?? NaN)
+    if (a.multi && a.options[i] !== undefined) {
+      // A multi-select question: the tap ticks or unticks; nothing is answered until "Done".
+      const was = a.sel ?? [], ticked = { ...a, sel: was.includes(i) ? was.filter((x) => x !== i) : [...was, i].sort((x, y) => x - y) }
+      await $.fs.write(`${tg}/asks/${msg}.json`, JSON.stringify(ticked))
+      await ack('')
+      await call($, b.token, 'editMessageReplyMarkup', { chat_id: b.me, message_id: msg, reply_markup: keyboardOf(ticked, !a.more, L) }).catch(() => undefined)
+      return 'tick'
+    }
+    const later = cq.data === 's' && !!a.later
+    const pick = later ? t(L, 'laterAnswer') : cq.data === 'd' && a.multi ? (a.sel ?? []).map((x) => a.options[x]).filter(Boolean).join(', ') || t(L, 'noneSelected') : a.options[i]
+    if (pick === undefined) { await ack(t(L, 'ackClosed')); return 'tap-closed' }
+    await ack(t(L, later ? 'ackLater' : 'ackTaken'))
+    await answer($, dir, b, msg, a, pick, undefined, later ? t(L, 'outLater') : pick)
+    return later ? 'later' : 'tap'
   }
   const m = u.message
   if (!m || m.chat.type !== 'private' || String(m.chat.id) !== b.me || String(m.from?.id) !== b.me || m.forward_origin) return 'ignored'
@@ -191,7 +203,23 @@ async function handle($: D, dir: string, b: { token: string; me: string }, u: Up
   // A reply to an ask: a question about it goes to the inbox; anything else is the answer, where a free answer fits.
   const about = m.reply_to_message ? await openAsk($, `${tg}/asks/${m.reply_to_message.message_id}.json`) : undefined
   if (about && m.reply_to_message && !/[?？]\s*$/.test(text) && about.reply) { await answer($, dir, b, m.reply_to_message.message_id, about, text, m.message_id); return 'reply' }
-  const inbound: Inbound = { id: u.update_id, text: text + extra, message_id: m.message_id, at: now, ...(about ? { about: { item: about.item, short: about.short } } : {}) }
+  // Not a reply, while questions wait on the phone: he often just writes the answer as his next message (owner, 2026-11-27:
+  // the question stayed up after he had answered it that way). The questions it answers are answered with his words.
+  let routedTo: Ask | undefined
+  if (!m.reply_to_message && !text.startsWith('/') && !/[?？]\s*$/.test(text)) {
+    const routed = await routePlain($, tg, `${dir}/makarasty/inbox`, text, now, t(L, 'hidden'))
+    // Questions of two different chats: a "да" could be either's push, so none is answered and he picks by Reply.
+    if (new Set(routed.hits.map((h) => h.a.item)).size > 1) { await send($, b, note(t(L, 'whichQuestion')), replyTo(m.message_id)).catch(() => undefined); return 'plain-ambiguous' }
+    for (const h of routed.hits) await answer($, dir, b, h.msg, h.a, h.pick, m.message_id)
+    if (routed.hits.length && !routed.more) {
+      await call($, b.token, 'setMessageReaction', { chat_id: b.me, message_id: m.message_id, reaction: [{ type: 'emoji', emoji: '👍' }] }).catch(() => undefined)
+      return 'plain-answer'
+    }
+    // It also asks for something: the inbox does that part, told the answer already went to that chat.
+    routedTo = routed.hits[0]?.a
+  }
+  const told = routedTo ?? about
+  const inbound: Inbound = { id: u.update_id, text: text + extra, message_id: m.message_id, at: now, ...(told ? { about: { item: told.item, short: told.short, ...(routedTo ? { answered: true } : {}) } } : {}) }
   await $.fs.write(`${tg}/inbound/${u.update_id}.json`, JSON.stringify(inbound))
   await call($, b.token, 'setMessageReaction', { chat_id: b.me, message_id: m.message_id, reaction: [{ type: 'emoji', emoji: '👀' }] }).catch(() => undefined)
   // Always the headless inbox (a small Sonnet session), never a chat: a working Opus chat paid a whole turn per message and
@@ -218,8 +246,49 @@ async function status($: D, dir: string, now: number, L: string): Promise<string
   return statusHtml(L, open.length, items, now - beat < ALIVE_MS)
 }
 
+// A plain message while questions wait: a small model says which of the open ones it answers (at most the latest eight).
+// A line naming one of the question's options exactly answers with that option; any other line answers with his whole
+// message, so the answer on record is always his own words or his option, never the model's. `more`: the message also
+// asks for something else (or answers nothing), so it goes on to the inbox as well. A failed call answers nothing.
+async function routePlain($: D, tg: string, root: string, text: string, now: number, hidden: string): Promise<{ hits: { msg: number; a: Ask; pick: string }[]; more: boolean }> {
+  const open: { msg: number; a: Ask }[] = []
+  for (const f of await $.fs.list(`${tg}/asks`).catch(() => [])) {
+    if (!/^\d+\.json$/.test(f.name)) continue
+    const a = await openAsk($, `${tg}/asks/${f.name}`)
+    if (!a?.reply || now - a.at > STALE_MS || (await $.fs.exists(`${root}/answers/${a.item}.json`)) || !(await $.fs.exists(`${root}/items/${a.item}.json`))) continue
+    open.push({ msg: Number(f.name.slice(0, -5)), a })
+  }
+  if (!open.length) return { hits: [], more: true }
+  open.sort((x, y) => x.msg - y.msg).splice(0, Math.max(0, open.length - 8))
+  const plain = (h: string) => h.split('\n').slice(0, 2).join(' · ').replace(/<[^>]+>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')
+  const prompt = [
+    'Questions are waiting on the person\'s phone, numbered (question · project · position):',
+    ...open.map((o, n) => `#${n + 1} ${redact(plain(o.a.html), hidden)}${o.a.options.length ? ` (options: ${o.a.options.map((x) => JSON.stringify(x)).join(' | ')})` : ''}`),
+    'Then he wrote this message, not as a reply to any of them:', '<<<', text, '>>>',
+    'Which of the questions does his message answer? Write one line "ANSWER <number>" for each question it clearly answers. ' +
+    'Write NONE when it answers none of them (a new request, a question, a remark about something else), and NONE when you are not sure ' +
+    'which question he means. Add a last line MORE when the message also asks for something beyond these answers. Nothing else.',
+  ].join('\n')
+  const r = await $.model.complete({ model: 'haiku', prompt, maxTokens: 200, timeoutMs: 30000 }).catch(() => undefined)
+  if (!r?.isAnswered) return { hits: [], more: true }
+  const hits: { msg: number; a: Ask; pick: string }[] = []
+  // The answer is his message as he wrote it; an option only when the whole message is that option ("sqlite" → "SQLite"):
+  // "Да, но сначала бэкап" must reach the chat whole, not as "Да".
+  const norm = (s: string) => s.toLowerCase().replace(/[\s"'«».!]+/g, ' ').trim()
+  for (const line of r.text.split('\n')) {
+    const o = open[Number(/^\s*ANSWER\s+#?(\d+)\s*$/i.exec(line)?.[1] ?? 0) - 1]
+    if (!o || hits.some((h) => h.msg === o.msg)) continue
+    hits.push({ ...o, pick: (!o.a.multi && o.a.options.find((x) => norm(x) === norm(text))) || text })
+  }
+  return { hits, more: !hits.length || /^\s*MORE\s*$/m.test(r.text) }
+}
+
+// The keyboard of an open ask as it stands: ticks of a multi-select, "Later" of one question of several.
+function keyboardOf(a: Ask, more: boolean, L: string) { return phoneKeyboard(a.options, more, L, { multi: a.multi, sel: a.sel, later: a.later }) }
+
 // The tap or reply answers the item through `inbox.mjs answer`, as the inbox chat would; the message then collapses.
-async function answer($: D, dir: string, b: { token: string; me: string }, msg: number, a: Ask, pick: string, replyId?: number): Promise<void> {
+// `label`: what the collapsed line shows when it is not the pick itself ("later" for the long "Later" answer).
+async function answer($: D, dir: string, b: { token: string; me: string }, msg: number, a: Ask, pick: string, replyId?: number, label = pick): Promise<void> {
   const L = await lang($, dir)
   // His tap or reply, on record before the answer file (consent.ts Heard): handle() checked it came from his Telegram id.
   const it = await readJSON<Item>($, `${dir}/makarasty/inbox/items/${a.item}.json`)
@@ -230,8 +299,10 @@ async function answer($: D, dir: string, b: { token: string; me: string }, msg: 
     const p = `${dir}/makarasty/telegram/partial/${a.item}.json`
     const got = { ...((await readJSON<Record<string, string>>($, p)) ?? {}), [a.q]: pick }
     await $.fs.write(p, JSON.stringify(got))
-    if (Object.keys(got).length < (a.of ?? 1)) {
-      await call($, b.token, 'editMessageText', { chat_id: b.me, message_id: msg, text: collapsed(a.short, pick), parse_mode: 'HTML' }).catch(() => undefined)
+    // Every one "Later": nothing to go on with, so nothing is sent and the dialog waits on the computer as it was.
+    const allLater = Object.values(got).every((v) => LATER.includes(v))
+    if (Object.keys(got).length < (a.of ?? 1) || allLater) {
+      await call($, b.token, 'editMessageText', { chat_id: b.me, message_id: msg, text: collapsed(a.short, label), parse_mode: 'HTML' }).catch(() => undefined)
       await close($, `${dir}/makarasty/telegram/asks/${msg}.json`, a)
       return
     }
@@ -242,7 +313,7 @@ async function answer($: D, dir: string, b: { token: string; me: string }, msg: 
   const r = await $.process.run(['node', `${$.plugin.root}/skills/inbox/inbox.mjs`, 'answer', a.item], { stdin, timeoutMs: 20000, env: { CLAUDE_CONFIG_DIR: dir } }).catch(() => undefined)
   const line = `${r?.stdout ?? ''}\n${r?.stderr ?? ''}`.trim().split('\n').filter(Boolean).pop()?.replace(/^inbox: /, '') ?? t(L, 'outFailed')
   const sent = r?.exitCode === 0 && !/NOT SENT/.test(line)
-  const outcome = sent ? pick : /already answered/.test(line) ? t(L, 'outAlready', { pick }) : t(L, 'outNotSent', { pick, why: line.replace(/^answered \S+, NOT SENT to the chat: /, '') })
+  const outcome = sent ? label : /already answered/.test(line) ? t(L, 'outAlready', { pick: label }) : t(L, 'outNotSent', { pick: label, why: line.replace(/^answered \S+, NOT SENT to the chat: /, '') })
   await call($, b.token, 'editMessageText', { chat_id: b.me, message_id: msg, text: collapsed(a.short, outcome), parse_mode: 'HTML' }).catch(() => undefined)
   if (replyId && !sent) await send($, b, esc(outcome), replyTo(replyId)).catch(() => undefined)
   await close($, `${dir}/makarasty/telegram/asks/${msg}.json`, a)
@@ -261,7 +332,7 @@ async function explain($: D, dir: string, b: { token: string; me: string }, msg:
     if (cur && text) await $.fs.write(file, JSON.stringify({ ...cur, explain: text }))
   }
   const body = explainHtml(L, a.html, text ? redact(text, t(L, 'hidden')).slice(0, 1500) : undefined)
-  await call($, b.token, 'editMessageText', { chat_id: b.me, message_id: msg, text: body, parse_mode: 'HTML', reply_markup: phoneKeyboard(a.options, false, L) }).catch(() => undefined)
+  await call($, b.token, 'editMessageText', { chat_id: b.me, message_id: msg, text: body, parse_mode: 'HTML', reply_markup: keyboardOf(a, false, L) }).catch(() => undefined)
   await $.fs.write(`${dir}/makarasty/telegram/asks/${msg}.json`, JSON.stringify({ ...a, html: body, more: true }))
 }
 

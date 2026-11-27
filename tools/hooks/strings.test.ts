@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { phoneAsk, type Item } from '../skills/inbox/core.mjs'
+import { phoneAsk, phoneAsks, type Item } from '../skills/inbox/core.mjs'
 import { phoneKeyboard, rich } from '../skills/notify/render.mjs'
 import { STRINGS, langOf, t } from '../skills/notify/strings.mjs'
 
@@ -50,6 +50,23 @@ test('phoneKeyboard: the details button is in the language', () => {
   expect(phoneKeyboard(['Yes', 'No']).inline_keyboard[0]!.at(-1)!.text).toBe('❔ Details')
   expect(phoneKeyboard(['Yes', 'No'], true, 'ru').inline_keyboard[0]!.at(-1)!.text).toBe('❔ Подробнее')
   expect(phoneKeyboard(['Yes', 'No'], false, 'ru').inline_keyboard[0]).toHaveLength(2)
+})
+
+test('phoneKeyboard: "Later" on one of several questions; a multi-select question ticks and has Done', () => {
+  const data = (k: { inline_keyboard: { callback_data: string }[][] }) => k.inline_keyboard.map((r) => r.map((b) => b.callback_data))
+  expect(data(phoneKeyboard(['Yes', 'No'], true, 'ru', { later: true }))).toEqual([['a0', 'a1'], ['s', 'm']])
+  expect(phoneKeyboard(['Yes', 'No'], true, 'ru', { later: true }).inline_keyboard[1]![0]!.text).toBe('⏭ Позже')
+  const multi = phoneKeyboard(['A', 'B'], true, 'en', { multi: true, sel: [1], later: true })
+  expect(multi.inline_keyboard.map((r) => r.map((b) => b.text))).toEqual([['☐ A'], ['☑ B'], ['✅ Done', '⏭ Later', '❔ Details']])
+})
+
+test('phoneAsk/phoneAsks: a one-question multi-select ask has its options; each of several questions has "Later"', () => {
+  const opts = [{ label: 'A' }, { label: 'B' }]
+  const one = phoneAsk(item({ kind: 'ask', questions: [{ question: 'Which?', options: opts, multiSelect: true }] }))
+  expect([one.options, one.reply, one.multi]).toEqual([['A', 'B'], true, true])
+  const two = phoneAsks(item({ kind: 'ask', questions: [{ question: 'Q1', options: opts }, { question: 'Q2', options: opts, multiSelect: true }] }))
+  expect(two.map((p) => [p.q, p.of, p.later, p.multi])).toEqual([['Q1', 2, true, undefined], ['Q2', 2, true, true]])
+  expect(phoneAsks(item())[0]!.later).toBeUndefined() // a single box or question waits as it is
 })
 
 // Paths, file names, code and commit hashes read as <code>: monospace, copied by a tap, never a link (Telegram linked
