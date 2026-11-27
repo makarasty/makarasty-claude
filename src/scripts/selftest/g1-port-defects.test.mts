@@ -5,7 +5,7 @@ import { spawn } from 'node:child_process';
 import { readdirSync, rmdirSync, unlinkSync } from 'node:fs';
 import {
   FLEET_SH, ROOT, absent, check, code, copyFleet, exec, execAsync, exists, fleet, git, has, junction, mk, read,
-  rm, setup, sh, SHELL, skip, sleep, touch, OLD, truthy, watchLoop, write,
+  rm, setup, sh, SHELL, skip, sleep, touch, OLD, truthy, write,
 } from './lib.mts';
 
 const t = setup('g1-port-defects');
@@ -264,21 +264,23 @@ rm(hs, `${tmp}/hs-cfg`);
 
 // A run has one watch: arming a second ends the first, and the second does not repeat what the first said.
 if (has('timeout')) {
-  // A project with an empty run r, and the watch loop of fleet-wait.md pointed at it for n workers.
+  // A project with an empty run r, and `fleet.sh wait-watch` (the verb fleet-wait.md arms) pointed at it for n workers.
   const watchDir = (name: string, n: number, ...dirs: string[]): string => {
     const dir = `${tmp}/${name}`;
     mk(...dirs.map((d) => `${dir}/.fleet/r/${d}`));
-    write(`${dir}/loop.sh`, watchLoop().split('\n').map((l) => l.replace(/^run=RUNID; n=N/, `run=r; n=${n}`)).join('\n'));
+    write(`${dir}/loop.sh`, `FLEET_WATCH_TICK=1 sh "${FLEET_SH}" wait-watch r ${n}\n`);
     return dir;
   };
   const env = { CLAUDE_CODE_SESSION_ID: undefined, CLAUDE_PLUGIN_ROOT: ROOT };
-  const watch = (dir: string, secs: number): string => sh(`timeout ${secs} sh loop.sh`, { cwd: dir, env }).out;
+  // The watch ends itself at its expiry; the `timeout` is only the backstop.
+  const expiring = (secs: number) => ({ ...env, FLEET_WATCH_EXPIRE: String(secs) });
+  const watch = (dir: string, secs: number): string => sh(`timeout ${secs + 10} sh loop.sh`, { cwd: dir, env: expiring(secs) }).out;
   // A watch in the background, driven by what it prints (a TICK line per pass, a second apart) and ended by a
   // FINISHED file, never by a fixed sleep or a short `timeout`: a slow box (the first pass runs `fleet.sh ctx`)
   // only makes the waits longer. The 120 s poll limit is the deadline; the 150 s `timeout` is the backstop.
   const live = (dir: string) => {
-    write(`${dir}/loop.sh`, read(`${dir}/loop.sh`).replace('\n  sleep 10\n', '\n  echo "TICK $tick"; sleep 1\n'));
-    const done = execAsync('sh', ['-c', 'timeout 150 sh loop.sh > live.out 2>&1'], { cwd: dir, env });
+    write(`${dir}/loop.sh`, `FLEET_WATCH_TRACE=1 ${read(`${dir}/loop.sh`)}`);
+    const done = execAsync('sh', ['-c', 'timeout 160 sh loop.sh > live.out 2>&1'], { cwd: dir, env: expiring(150) });
     const out = (): string => read(`${dir}/live.out`);
     const until = (ok: () => boolean): boolean => { for (let i = 0; i < 480 && !ok(); i++) sleep(0.25); return ok(); };
     const ticks = (): number => Number([...out().matchAll(/TICK (\d+)/g)].pop()?.[1] ?? 0);
@@ -291,7 +293,7 @@ if (has('timeout')) {
 
   let ww = watchDir('twowatch', 99, 'tasks/done', 'tasks/ready');
   write(`${ww}/.fleet/r/tasks/done/d1`, '');
-  const firstRun = execAsync('sh', ['-c', 'timeout 25 sh loop.sh > first.out 2>&1'], { cwd: ww, env });
+  const firstRun = execAsync('sh', ['-c', 'timeout 35 sh loop.sh > first.out 2>&1'], { cwd: ww, env: expiring(25) });
   sleep(4);
   const second = watch(ww, 18);
   await firstRun;
@@ -303,7 +305,7 @@ if (has('timeout')) {
   // A STALL prints once per unchanged disk state; after something changed and went quiet again, once more.
   ww = watchDir('stalls', 99, 'tasks/done', 'tasks/ready', 'tasks/claimed/t1');
   write(`${ww}/.fleet/r/tasks/claimed/t1/owner`, 'chip 01\n');
-  write(`${ww}/loop.sh`, read(`${ww}/loop.sh`).replace('quiet=600', 'quiet=3'));
+  write(`${ww}/loop.sh`, read(`${ww}/loop.sh`).replace('wait-watch r 99', 'wait-watch r 99 3'));
   const sw = live(ww);
   sw.until(() => sw.count('STALL:') >= 1);
   sw.passes(6); // still unchanged, longer than quiet: without the `stall` guard a second STALL prints here
@@ -342,7 +344,7 @@ if (has('timeout')) {
   // A retire's replacement counts at once: the old worker's .retired is no completion while it waits.
   ww = watchDir('replwatch', 1, 'tasks/ready', 'offered', 'replaced', 'chips');
   write(`${ww}/.fleet/r/offered/01`, 'repo\n'); write(`${ww}/.fleet/r/offered/02`, 'repo\n'); write(`${ww}/.fleet/r/chips/s1`, '01\n');
-  const repl = execAsync('sh', ['-c', 'timeout 15 sh loop.sh > repl.out 2>&1'], { cwd: ww, env });
+  const repl = execAsync('sh', ['-c', 'timeout 25 sh loop.sh > repl.out 2>&1'], { cwd: ww, env: expiring(15) });
   sleep(3); write(`${ww}/.fleet/r/replaced/01`, '02\n'); write(`${ww}/.fleet/r/01.retired`, 'retired\n'); // between two ticks
   await repl;
   absent("the watch waits for a retire's replacement", 'run complete', read(`${ww}/repl.out`));
@@ -355,4 +357,48 @@ if (has('timeout')) {
   absent('the watch calls no run complete while it is paused', 'run complete', paused);
   check('but says once that every worker landed under the pause', 'BUT THE RUN IS PAUSED', paused);
   rm(ww);
+  // The lines the coordinator acts on: a service that refuses, a spent budget, a question, a pause and its acks.
+  ww = watchDir('events', 99, 'tasks/done', 'tasks/ready', 'tasks/claimed/t1', 'ask', 'stopped');
+  write(`${ww}/.fleet/r/tasks/claimed/t1/owner`, 'chip 01\n'); write(`${ww}/.fleet/r/tasks/claimed/t1/deadline`, '1\n');
+  write(`${ww}/.fleet/r/ask/q1.md`, 'which port?\n');
+  if (has('curl')) write(`${ww}/FLEET.md`, '- Services: http://127.0.0.1:1 (start: operator)\n');
+  const ev = live(ww);
+  ev.until(() => ev.out().includes('QUESTION FOR PLANNER') && ev.out().includes('budget-elapsed-t1'));
+  const dl = (): string => read(`${ww}/.fleet/r/tasks/claimed/t1/deadline`).trim();
+  write(`${ww}/.fleet/r/PAUSED`, '2026-01-01T00:00:00 test pause\n');
+  ev.until(() => ev.out().includes('PAUSED: '));
+  write(`${ww}/.fleet/r/stopped/01`, '');
+  ev.until(() => ev.out().includes('worker 01 stopped'));
+  ev.passes(2); // a pause that lasted a few seconds, to move the deadline by
+  rm(`${ww}/.fleet/r/PAUSED`);
+  ev.until(() => ev.out().includes('RESUMED'));
+  const moved = dl();
+  const events = await ev.stop();
+  check('a question is passed to the planner with its text', 'QUESTION FOR PLANNER: ', events);
+  check('and its text', 'which port?', events);
+  check('a spent budget is named by its task', 'budget-elapsed-t1', events);
+  check('a pause is announced with its reason', 'PAUSED: 2026-01-01T00:00:00 test pause', events);
+  check('each ack once', 'worker 01 stopped', events);
+  check('and the resume', 'RESUMED', events);
+  truthy("a resume moves a claim's deadline out by the pause", Number(moved) > 1, moved);
+  check('the run landed when FINISHED appeared', 'run landed', events);
+  if (has('curl')) {
+    check('a refused service is named', 'SERVICE DOWN: http://127.0.0.1:1 refuses connections', events);
+    truthy('and announced once', events.split('SERVICE DOWN').length === 2, events);
+  } else check('no FLEET.md Services line says so', "WATCH: no '- Services:' line in FLEET.md", events);
+  rm(ww);
+  // One chat (a run dir with slots/): a finished task and a .done are the coordinator's own writes, not announced.
+  ww = watchDir('onechat', 1, 'slots', 'tasks/done', 'tasks/ready');
+  write(`${ww}/.fleet/r/tasks/done/d1`, ''); write(`${ww}/.fleet/r/01.done`, '');
+  const oc = watch(ww, 10);
+  absent('in one chat a finished task is not announced', 'task finished', oc);
+  absent('nor a worker .done', 'worker finished queue', oc);
+  check('but the run still completes', 'run complete: 1 of 1', oc);
+  check('a run with no Services line is told so', "WATCH: no '- Services:' line in FLEET.md", oc);
+  rm(ww);
+  // A run that is not there is named, with exit 1, rather than watched.
+  mk(`${tmp}/norun`);
+  r = sh(`sh "${FLEET_SH}" wait-watch nope 1`, { cwd: `${tmp}/norun`, env });
+  check('a missing run is named', 'NO RUN DIR', r.out);
+  code('and the watch exits 1', 1, r.code);
 }

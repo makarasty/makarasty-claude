@@ -45,6 +45,8 @@
 #   fleet.sh cleared <run-dir> <task-id>           planner: the operator did a task's `operator:` part; next hands it out
 #   fleet.sh procs   <run-dir> [--kill]            orphaned test runs and typechecks, and shells ended chat
 #                                                  processes left; --kill ends those, never a tree serving something
+#   fleet.sh wait-watch <run-id> <n> [quiet]       the coordinator's watch loop (commands/fleet-wait.md): prints one line per event until the run
+#                                                  completes or lands. Run it with Monitor. Takes the run id, not a run dir
 #   fleet.sh drained <run-dir> <chip> [lane]       queue empty: write <chip>.done. exit 5 = queue still open,
 #                                                  or a ready task in that lane nobody holds yet. exit 2 =
 #                                                  HOLDING, this chip still holds a claim. 8 paused, 9 retired

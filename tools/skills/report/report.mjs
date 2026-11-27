@@ -62,10 +62,29 @@ export function build(md, baseDir = '.', { chat = '', account = '', accountOf = 
   };
   const caption = (lines) => lines.find((l) => /^=\s/.test(l.trim()));
 
-  // A shot inside a question: ![caption](a.png#box=x1,y1,x2,y2;x1,y1,x2,y2) in image pixels; boxes need a PNG (its size is in the header).
+  // A shot inside a question: ![caption](a.png#box=x1,y1,x2,y2:label;…&dim=x1,y1,x2,y2:16 px;…) in image pixels of a PNG
+  // (its size is in the header). box frames a changed spot, the first one gets the arrow; dim is a ruler with its size
+  // written on it (vertical when x1=x2, horizontal when y1=y2), with dashed level lines back to the first box.
+  const marksOf = (path, frag) => {
+    const out = { box: [], dim: [] };
+    for (const part of frag.split('&').filter(Boolean)) {
+      const eq = part.indexOf('='), key = part.slice(0, eq), val = part.slice(eq + 1);
+      if (!(key in out)) { errors.push(`shot "${path}": unknown mark "${part.slice(0, 20)}", write #box=…&dim=…`); continue; }
+      for (const it of val.split(';').filter((x) => x.trim())) {
+        const c = it.indexOf(':');
+        let t = c < 0 ? '' : it.slice(c + 1).trim();
+        try { t = decodeURIComponent(t); } catch { /* a literal % stays */ }
+        out[key].push({ n: (c < 0 ? it : it.slice(0, c)).split(',').map(Number), t });
+      }
+    }
+    return out;
+  };
+  const rr = (a, b, c, d, r) => { r = Math.max(0, Math.min(r, (c - a) / 2, (d - b) / 2)); return `M${a + r} ${b}H${c - r}Q${c} ${b} ${c} ${b + r}V${d - r}Q${c} ${d} ${c - r} ${d}H${a + r}Q${a} ${d} ${a} ${d - r}V${b + r}Q${a} ${b} ${a + r} ${b}Z`; };
+  const tip = (cx, cy, ex, ey, L) => { const t = Math.atan2(ey - cy, ex - cx); return `M${ex - L * Math.cos(t - 0.5)} ${ey - L * Math.sin(t - 0.5)}L${ex} ${ey}L${ex - L * Math.cos(t + 0.5)} ${ey - L * Math.sin(t + 0.5)}`; };
+  const r1 = (v) => Math.round(v * 10) / 10;
   const shot = (alt, ref) => {
-    const [path, frag = ''] = ref.split('#');
-    const boxes = (frag.match(/^box=(.+)$/)?.[1] ?? '').split(';').filter(Boolean).map((b) => b.split(',').map(Number));
+    const [path, ...fr] = ref.split('#');
+    const { box: boxes, dim: dims } = marksOf(path, fr.join('#'));
     let rel = path.trim();
     try { rel = decodeURI(rel); } catch { /* a literal % stays as written */ }
     const file = resolve(baseDir, rel);
@@ -73,11 +92,32 @@ export function build(md, baseDir = '.', { chat = '', account = '', accountOf = 
     if (!mime || !existsSync(file)) { errors.push(`shot "${path}": ${mime ? 'not found (paths are relative to the .md file)' : 'use png, jpg, gif, webp or svg'}`); return ''; }
     const buf = readFileSync(file);
     let mk = '';
-    if (boxes.length) {
-      if (mime !== 'image/png' || buf.length < 24) { errors.push(`shot "${path}": a #box mark needs a PNG`); return ''; }
+    if (boxes.length || dims.length) {
+      if (mime !== 'image/png' || buf.length < 24) { errors.push(`shot "${path}": a #box or #dim mark needs a PNG`); return ''; }
       const w = buf.readUInt32BE(16), h = buf.readUInt32BE(20), pct = (v, of) => `${((v / of) * 100).toFixed(2)}%`;
-      if (boxes.some((b) => b.length !== 4 || b.some((v) => !Number.isFinite(v)) || b[0] >= b[2] || b[1] >= b[3] || b[2] > w || b[3] > h)) { errors.push(`shot "${path}": #box=x1,y1,x2,y2 in pixels inside ${w}x${h}`); return ''; }
-      mk = `<div class="ak-mk">${boxes.map(([a, b, c, d], k) => `<i style="left:${pct(a, w)};top:${pct(b, h)};width:${pct(c - a, w)};height:${pct(d - b, h)}"></i>${k ? '' : `<svg style="left:${pct(a, w)};top:${pct(b, h)}" viewBox="0 0 24 24" aria-hidden="true"><path class="h" d="M3 3L19 19M19 19H10M19 19V10"/><path d="M3 3L19 19M19 19H10M19 19V10"/></svg>`}`).join('')}</div>`;
+      const inside = ({ n }) => n.length === 4 && n.every((v) => Number.isFinite(v) && v >= 0) && n[2] <= w && n[3] <= h;
+      if (boxes.some((b) => !inside(b) || b.n[0] >= b.n[2] || b.n[1] >= b.n[3])) { errors.push(`shot "${path}": #box=x1,y1,x2,y2 in pixels inside ${w}x${h}`); return ''; }
+      if (dims.some((x) => !inside(x) || (x.n[0] === x.n[2]) === (x.n[1] === x.n[3]))) { errors.push(`shot "${path}": #dim=x1,y1,x2,y2 inside ${w}x${h}, either x1=x2 (vertical) or y1=y2 (horizontal)`); return ''; }
+      if (dims.some((x) => !x.t)) { errors.push(`shot "${path}": a #dim ruler says its size after a colon, e.g. dim=432,154,432,170:16 px`); return ''; }
+      // Geometry is in image pixels; s keeps the arrow and ticks the same on screen for a 2x shot.
+      const s = Math.max(1, w / 1000), two = (p) => `<path class="h" d="${p}"/><path d="${p}"/>`;
+      let svg = '', labs = '';
+      boxes.forEach(({ n: [a, b, c, d], t }) => { svg += two(rr(a, b, c, d, 8 * s)); if (t) labs += `<span class="ak-lab ak-lab-box" style="left:${pct(a, w)};top:${pct(b, h)}">${inline(t)}</span>`; });
+      if (boxes.length) {
+        // One curved arrow onto the first box, from above it, or from below when there is no room above.
+        const [a, b, c, d] = boxes[0].n, ex = r1(c - Math.min(80 * s, (c - a) / 2)), up = b - 62 * s < 0;
+        const ey = r1(up ? Math.min(h, d + 4 * s) : b - 4 * s), sy = r1(up ? Math.min(h - 2, d + 62 * s) : b - 62 * s);
+        const sx = r1(ex + 120 * s <= w - 4 ? ex + 120 * s : Math.max(4, ex - 120 * s));
+        svg += two(`M${sx} ${sy}Q${ex} ${sy} ${ex} ${ey}${tip(ex, sy, ex, ey, 17 * s)}`);
+      }
+      const bx = boxes[0]?.n;
+      for (const { n: [a, b, c, d], t } of dims) {
+        const v = a === c, T = 6 * s;
+        if (bx) svg += `<path class="lv" d="${v ? (a > bx[0] ? `M${bx[0]} ${b}H${a}M${bx[0]} ${d}H${a}` : `M${a} ${b}H${bx[2]}M${a} ${d}H${bx[2]}`) : (b > bx[1] ? `M${a} ${bx[1]}V${b}M${c} ${bx[1]}V${d}` : `M${a} ${b}V${bx[3]}M${c} ${d}V${bx[3]}`)}"/>`;
+        svg += two(v ? `M${a} ${b}V${d}M${a - T} ${b}H${a + T}M${a - T} ${d}H${a + T}` : `M${a} ${b}H${c}M${a} ${b - T}V${b + T}M${c} ${d - T}V${d + T}`);
+        labs += `<span class="ak-lab ${v ? 'ak-lab-v' : 'ak-lab-h'}" style="left:${pct(v ? a : (a + c) / 2, w)};top:${pct(v ? (b + d) / 2 : b, h)}">${inline(t)}</span>`;
+      }
+      mk = `<div class="ak-mk"><svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true">${svg}</svg>${labs}</div>`;
     }
     return `<figure class="ak-shot">${alt ? `<figcaption>${inline(alt)}</figcaption>` : ''}<div class="ak-frame"><img src="data:${mime};base64,${buf.toString('base64')}" alt="${esc(alt)}">${mk}</div></figure>`;
   };
@@ -339,8 +379,8 @@ export function build(md, baseDir = '.', { chat = '', account = '', accountOf = 
   const css = readFileSync(new URL('./report.css', import.meta.url), 'utf8') + readFileSync(new URL('./ask.css', import.meta.url), 'utf8');
   // Always inlined: the chat bar's copy button needs it on a page without questions too; it stops early there.
   const askJs = readFileSync(new URL('./ask.js', import.meta.url), 'utf8');
-  // A page opened from disk may have no clipboard API: then select the code so Ctrl+C works.
-  const copy = `document.addEventListener('click',e=>{const b=e.target.closest('pre button');if(!b)return;const c=b.nextElementSibling,say=t=>{b.textContent=t;setTimeout(()=>b.textContent=${JSON.stringify(ui.copy)},2000)},sel=()=>{const r=document.createRange();r.selectNodeContents(c);getSelection().removeAllRanges();getSelection().addRange(r);say(${JSON.stringify(ui.sel)})};try{navigator.clipboard.writeText(c.textContent).then(()=>say(${JSON.stringify(ui.done)}),sel)}catch(x){sel()}})`;
+  // Code blocks copy through ask.js's one copy routine (clipboard, then execCommand, then a box to copy by hand).
+  const copy = `document.addEventListener('click',e=>{const b=e.target.closest('pre button');if(!b)return;const c=b.nextElementSibling;window.akCopy(c.textContent,()=>{b.textContent=${JSON.stringify(ui.done)};setTimeout(()=>b.textContent=${JSON.stringify(ui.copy)},2000)})})`;
   const html = `<!doctype html>
 <html lang="${ui.lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(title.replace(/`/g, ''))}</title><style>${css}</style></head>

@@ -32,133 +32,31 @@ is for opt-in separate chats.
 
 ## The loop
 
-`run` and `n` are the run id and the expected worker count. `quiet` is the stall interval in seconds:
+`RUNID` and `N` are the run id and the expected worker count. `quiet` is the stall interval in seconds:
 `quiet_interval_seconds` in the plugin's `calibration.json`, 600 as shipped.
 
-`svc` is every service the run depends on, as URLs. The loop builds it from the project's `FLEET.md`, from the
+The services are every URL the run depends on. The verb builds them from the project's `FLEET.md`, from the
 one line `- Services: <url> (start: <how>|operator); <url> (start: ...)` (`fleet-init` writes it; leave the
 line out for a run that needs none), and you add the URL of the integration checkout's dev server when the
-run has one (the commented line in the loop is an example to replace, not a default). Do not retype the
+run has one, in the environment variable `FLEET_WATCH_SERVICES` (space-separated URLs) before the call. Do not retype the
 `FLEET.md` URLs. Only a URL that comes before an item's `(start: ...)` part is taken, so a start command that
-mentions a URL is not probed. An empty `svc` prints `WATCH: no '- Services:' line in FLEET.md, services are
+mentions a URL is not probed. No URL at all prints `WATCH: no '- Services:' line in FLEET.md, services are
 not being checked`: an old-format `FLEET.md` (`fleet-init` converts it) looks exactly like a run that needs
 no services, and the notice is what tells them apart. On that notice, read `FLEET.md` before deciding: if it
-names services in any other shape, convert the line (`fleet-init` section 3) and re-arm. The loop
+names services in any other shape, convert the line (`fleet-init` section 3) and re-arm. The verb
 finds `.fleet/<run>` and `FLEET.md` in the main checkout when the cwd, a worktree, lacks them. A refused connection prints `SERVICE DOWN` once, and `SERVICE BACK` when it answers again. A slow
 answer is not down: only curl's "connection refused" counts.
 
 ```bash
-run=RUNID; n=N; quiet=600
-m=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)")   # the main checkout, from any worktree of it
-d=.fleet/$run; [ -d "$d" ] || d=$m/.fleet/$run
-fm=FLEET.md; [ -f "$fm" ] || fm=$m/FLEET.md
-svc=$(sed -n 's/^- Services: *//p' "$fm" 2>/dev/null | sed 's/(start:[^)]*)//g' | grep -oE '(^|; *)https?://[^ ;]+' | grep -oE 'https?://.*' | tr '\n' ' ')
-# svc="$svc http://localhost:5199"   # EXAMPLE only: uncomment with the integration checkout's real dev-server URL
-[ -z "$svc" ] && echo "WATCH: no '- Services:' line in FLEET.md, services are not being checked"
-[ -d "$d" ] || { echo "NO RUN DIR $d from $(pwd)"; exit 1; }
-d=$(cd "$d" && pwd)
-# .watch-seen holds paths relative to the run, wherever a watch was armed from; older watches wrote them
-# from the cwd (.fleet/<run>/...) or absolute, and an entry in another spelling would be announced again.
-seen="$d"/.watch-seen; touch "$seen"; sed -i "s|^.*\.fleet/$run/||" "$seen"
-# A .waiting is keyed by its mtime, so a worker blind a second time is announced again; an older watch's
-# bare entry gets the mtime of the file it announced.
-while IFS= read -r e; do case "$e" in *.waiting) [ -e "$d/$e" ] && e="$e@$(date -r "$d/$e" +%s)";; esac; printf '%s\n' "$e"; done < "$seen" > "$seen.tmp" && mv "$seen.tmp" "$seen"
-last=$(date +%s); down=""; tick=0; ps=0; acks=""; ps0=0; pst=0; t0=$last; cr=$(printf '\r'); pl=""; stall=0
-tok="$$.$t0"; echo "$tok" > "$d/.watch-owner"   # one watch per run: arming a new one ends the one before
-sf=$(grep -ls "\"sessionId\":\"${CLAUDE_CODE_SESSION_ID:-none}\"" "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sessions"/*.json 2>/dev/null | head -1)  # this chat's record; gone when it ends
-[ -n "${CLAUDE_CODE_SESSION_ID:-}" ] && echo "$CLAUDE_CODE_SESSION_ID" > "$d/coordinator"  # whoever watches, coordinates
-FS="${CLAUDE_PLUGIN_ROOT}/scripts/fleet.sh"
-while true; do
-  [ -e "$(cd "$d" 2>/dev/null && pwd)/FINISHED" ] && { echo "run landed"; break; }
-  # It ends itself before the monitor's timeout: on Windows the timeout did not reach it, and a watch re-armed
-  # every 30 minutes left one more loop running each time (2026-10-08: one ran three hours past its timeout).
-  [ $(( $(date +%s) - t0 )) -ge 1780 ] && { echo "watch expired: re-arm it"; break; }
-  cur=""; read -r cur < "$d/.watch-owner" 2>/dev/null; [ "$cur" = "$tok" ] || { echo "watch superseded: a newer watch runs this run"; break; }
-  tick=$((tick+1))
-  one=0; [ -d "$d/slots" ] && one=1   # one chat: the run dir has slots/
-  if [ $((tick % 6)) -eq 1 ]; then
-    if [ -n "$sf" ] && [ ! -e "$sf" ]; then echo "coordinator chat gone"; break; fi
-    for u in $svc; do
-      curl -g -s -o /dev/null --max-time 5 "$u"; rc=$?
-      case " $down " in *" $u "*) was=1;; *) was=0;; esac
-      if [ $rc -eq 7 ] && [ $was = 0 ]; then down="$down $u"; echo "SERVICE DOWN: $u refuses connections"; fi
-      if [ $rc -ne 7 ] && [ $was = 1 ]; then down=$(printf '%s\n' $down | grep -vxF "$u" | tr '\n' ' '); echo "SERVICE BACK: $u"; fi
-    done
-    [ -f "$FS" ] && sh "$FS" ctx "$d"
-  fi
-  if [ $((tick % 30)) -eq 2 ] && [ -f "$FS" ]; then   # every five minutes: what closed chats left running
-    sh "$FS" procs "$d" 2>/dev/null | grep -E '^(CLOSED CHAT|ORPHANED RUN|CLOSED CHAT SERVING.*\))  pid ' | while IFS= read -r l; do
-      p=$(printf '%s' "$l" | sed -n 's/.*  pid \([0-9]*\) .*/\1/p'); grep -qx "$p" "$d/.leftover-seen" 2>/dev/null && continue
-      echo "$p" >> "$d/.leftover-seen"
-      case "$l" in "CLOSED CHAT SERVING"*) echo "LEFTOVER, ASK THE OPERATOR: $l";; *) echo "LEFTOVER: $l";; esac; done
-  fi
-  if [ -e "$d/PAUSED" ]; then   # a pause is announced once, each ack once, and the stall timer rests
-    [ $ps = 1 ] || { ps=1; acks=""; ps0=$(date +%s); pst=$ps0; last=$ps0; stall=0; echo "PAUSED: $(head -1 "$d/PAUSED")"; }
-    if [ $ps0 -gt 0 ] && [ $(( $(date +%s) - ps0 )) -ge 150 ]; then ps0=0   # once: who has not stopped 150 s in
-      [ -f "$FS" ] && sh "$FS" status "$d" | sed -n '/^== PAUSED/,/^== /{/^== PAUSED/p;/still working/p;}'; fi
-    for a in "$d"/stopped/*; do [ -e "$a" ] || continue; w=$(basename "$a"); case " $acks " in *" $w "*) continue;; esac
-      acks="$acks $w"; last=$(date +%s); stall=0; echo "worker $w stopped"; done
-  elif [ $ps = 1 ]; then ps=0; last=$(date +%s); stall=0; echo "RESUMED"
-    # A pause must not eat a budget: every deadline moves out by the pause's length.
-    # The length counts from this watch's first sight of PAUSED, so a pause that spans a re-arm shifts only the part after it; to fix, have the pause write its start time into PAUSED.
-    for dl in "$d"/tasks/claimed/*/deadline; do [ -f "$dl" ] || continue; dv=""; read -r dv < "$dl"
-      case "$dv" in ''|*[!0-9]*) continue;; esac; echo $((dv + last - pst)) > "$dl"; done
-  fi
-  # Budget deadlines, after the pause block so a resume has shifted them before they are read; one chat only has them.
-  if [ $((tick % 6)) -eq 1 ] && [ $ps = 0 ]; then
-    for dl in "$d"/tasks/claimed/*/deadline; do [ -f "$dl" ] || continue; t=$(basename "$(dirname "$dl")")
-      case "$t" in *.released-*|*.dead-*) continue;; esac   # a handed-back claim
-      [ -e "$d/tasks/done/$t" ] && continue; dv=""; read -r dv < "$dl"; case "$dv" in ''|*[!0-9]*) continue;; esac
-      k="deadline:$t@$dv"; case "|$(tr '\n' '|' < "$seen")" in *"|$k|"*) continue;; esac   # a rearm writes a new value: announced again
-      [ "$(date +%s)" -ge "$dv" ] && { echo "$k" >> "$seen"; echo "budget-elapsed-$t"; }
-    done
-  fi
-  sl="|$(tr '\n' '|' < "$seen")"   # read each tick: a watch being superseded appends here too
-  for f in "$d"/tasks/claimed/*/owner "$d"/tasks/done/* "$d"/ask/*.md "$d"/*.done "$d"/*.blocked "$d"/*.retired "$d"/*.waiting; do
-    [ -e "$f" ] || continue; r=${f#"$d"/}; case "$f" in *.waiting) r="$r@$(date -r "$f" +%s)";; esac; case "$sl" in *"|$r|"*) continue;; esac; echo "$r" >> "$seen"; sl="$sl$r|"; last=$(date +%s); stall=0
-    case "$f" in
-      *.waiting) echo "NEEDS OPERATOR: $f -- $(cat "$f")";;
-      */ask/*) echo "QUESTION FOR PLANNER: $f -- $(head -c 300 "$f")";;
-      */owner) ;;
-      */tasks/done/*) [ $one = 1 ] || echo "task finished: $f";;
-      *.retired) echo "worker retired: $f";;
-      *.done) [ $one = 1 ] || echo "worker finished queue: $f";;
-      *) echo "worker finished queue: $f";;
-    esac
-  done
-  now=$(date +%s)
-  # Once per unchanged disk state: `stall` is set by the block and cleared by the next event, ack or resume,
-  # so a run that waits only on the operator is not told every `quiet` seconds.
-  if [ $ps = 0 ] && [ $one = 0 ] && [ $stall = 0 ] && [ $((now-last)) -ge $quiet ]; then   # not in one chat: there it is information only
-    stall=1
-    echo "STALL: nothing on disk changed for $(( (now-last)/60 ))m"
-    for c in "$d"/tasks/claimed/*/; do
-      [ -d "$c" ] || continue; t=$(basename "$c"); [ -e "$d/tasks/done/$t" ] && continue
-      echo "  held: $t by $(head -1 "$c/owner" 2>/dev/null || echo 'NO OWNER')"
-    done
-    rdy=$(ls "$d"/tasks/ready/*.md 2>/dev/null | wc -l); dne=$(ls "$d"/tasks/done 2>/dev/null | wc -l)
-    lw=$(ls "$d"/*.done "$d"/*.blocked "$d"/*.retired 2>/dev/null | sed 's|.*/||; s|\.[^.]*$||' | sort -u | wc -l)
-    echo "  progress: $dne of $rdy tasks done, $lw of $n workers landed"
-    if [ -f "$FS" ]; then sh "$FS" status "$d" | sed -n '/^== \(markers\|lanes with work\|waits for ever\|bottlenecks\|waiting on the operator\|task files\)/,/^== workers/{/^== workers/!p;}'; fi
-    if [ -d "$d/pane/requests" ] && [ -f "$FS" ]; then sh "$FS" pane-status "$d" | sed 's/^/  /'; fi
-    last=$now
-  fi
-  # Every tick, right before the count: a retire writes the old worker's .retired and its replacement's
-  # replaced/ in one command, and a count from a minute ago called the run complete in between.
-  # The registered chips, read once per tick with the shell's own read, not a grep per offered chip (a chips
-  # file has no last newline, so cat would run two of them together).
-  reg="|"; for f in "$d"/chips/* "$d"/replaced/*; do [ -f "$f" ] || continue; l=""; read -r l < "$f"; reg="$reg${l%"$cr"}|"; done
-  n2=0; for o in "$d"/offered/*; do [ -e "$o" ] || continue; oc=${o##*/}   # a chip that started, or a retire's replacement
-    case "$reg" in *"|$oc|"*) n2=$((n2+1));; esac; done; [ "$n2" -gt "$n" ] && n=$n2
-  c=$(ls "$d"/*.done "$d"/*.blocked "$d"/*.retired 2>/dev/null | sed 's|.*/||; s|\.[^.]*$||' | sort -u | wc -l)
-  # Never while paused: a relaunch hands its workers back (their .retired) before its replacements exist. A
-  # run whose workers all landed under a pause is said once, since `landed` refuses a paused run too.
-  if [ -e "$d/PAUSED" ]; then
-    [ "$c" -ge "$n" ] && [ -z "${pl:-}" ] && { pl=1; echo "ALL $c OF $n WORKERS LANDED, BUT THE RUN IS PAUSED: resume it (fleet.sh resume) to collect"; }
-  else pl=""; [ "$c" -ge "$n" ] && { echo "run complete: $c of $n"; break; }; fi
-  sleep 10
-done
+sh "${CLAUDE_PLUGIN_ROOT}/scripts/fleet.sh" wait-watch RUNID N
 ```
+
+It is `src/scripts/fleet/waitwatch.mts`. It prints one line per event and nothing between them: every
+marker named in this file, `watch expired: re-arm it`, `watch superseded`, `run landed`, `run complete: <c> of
+<n>`, `coordinator chat gone`, `NO RUN DIR` and the `WATCH:` notice. It takes the run id (or the run directory) and
+the expected worker count; an optional third argument is `quiet` in seconds, else `quiet_interval_seconds` from
+`calibration.json`. The run's `FLEET.md` services are read by the verb, never typed. Do not retype the loop and do not
+write your own.
 
 Run it with `Monitor`, `timeout_ms: 1800000`, the most a monitor can be given. A fleet run outlasts that,
 so **re-arm the same loop on every expiry notice, and when it prints `watch expired: re-arm it`**, until it
@@ -169,9 +67,6 @@ crashed and the watch died with it. Run `/makarasty:fleet-resume` before anythin
 across re-arms, so nothing already reported is reported twice. A run has one watch: arming a new one
 makes the one before print `watch superseded` within ten seconds and end. That line is not an expiry; do
 not re-arm on it. Two watches at once used to announce events twice or lose them, by how their ticks fell.
-
-For a run with fixed briefs and no queue, drop the three `tasks/` globs from the `for` line. Everything
-else, the stall timer included, still applies.
 
 **A `LEFTOVER:` line is a process nobody waits for**: run `fleet.sh procs <run> --kill` in that turn
 (`fleet-plan` 8b, "Watch the machine's memory"). `LEFTOVER, ASK THE OPERATOR:` is a closed chat's tree that
@@ -254,11 +149,10 @@ shows up by name in the stall report, but it does not wake you on its own. A cla
 planner: of 62 notifications one planner received, 13 were claims it took no action on, each costing a full
 model turn to read and dismiss [M18].
 
-Copy the `seen` matching as it stands: `*"|$r|"*` is a whole-entry test, and the substring version it
-replaced let the presence of `task-22b` silently suppress every event for `task-22`, which is exactly the
-pair a reclaimed task produces. It is matched in the shell, against `sl` read once a tick (a watch that is
-being superseded still appends for up to one tick): a `grep` per file every ten seconds forked about a hundred processes
-a tick on a 60-task run, 1.5 s on Git Bash [M37].
+`seen` is matched by whole entry, never by substring: the substring test let the presence of `task-22b` silently
+suppress every event for `task-22`, which is exactly the pair a reclaimed task produces. It is read once a tick
+and matched in node, with no process per file: a `grep` per file every ten seconds forked about a hundred
+processes a tick on a 60-task run, 1.5 s on Git Bash [M37].
 
 **A stall report whose counts moved since the last one is a fleet doing long tasks; one whose counts are
 identical is a fleet that has stopped.** You can tell them apart without opening a worker chat, and the next

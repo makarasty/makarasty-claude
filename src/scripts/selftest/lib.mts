@@ -273,13 +273,3 @@ export function copyFleet(dir: string, ...extra: string[]): void {
 export function junction(link: string, target: string): boolean {
   try { symlinkSync(target, link, process.platform === 'win32' ? 'junction' : 'dir'); return true; } catch { return false; }
 }
-
-// The watch loop in commands/fleet-wait.md: the first ```sh block, as the sh version's awk cut it out.
-export function watchLoop(): string {
-  const lines = readFileSync(`${ROOT}/commands/fleet-wait.md`, 'utf8').split('\n');
-  const fence = /^```(sh|bash)?$/;
-  const start = lines.findIndex((l) => fence.test(l));
-  if (start < 0) return '';
-  const end = lines.findIndex((l, i) => i > start && fence.test(l));
-  return lines.slice(start + 1, end < 0 ? undefined : end).map((l) => `${l}\n`).join('');
-}

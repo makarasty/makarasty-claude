@@ -1,6 +1,6 @@
 // 00-lib.test.mts - the self-test's own harness, checked before any part leans on it: the run it sets up,
 // fleet.sh through sh, the merged output order, and a check registered after an await still running.
-import { setup, fleet, fleetAsync, sh, hp, task, check, absent, code, starts, truthy, exists, read, touch, OLD, watchLoop, MULT, HOOKS, shPwd } from './lib.mjs';
+import { setup, fleet, fleetAsync, sh, hp, task, check, absent, code, starts, truthy, exists, read, touch, OLD, MULT, HOOKS, shPwd } from './lib.mjs';
 import { statSync } from 'node:fs';
 const t = setup('lib');
 truthy('setup stands in the run directory', process.cwd().split('\\').join('/') === t.run, process.cwd());
@@ -25,7 +25,6 @@ touch(`${t.run}/old`, OLD);
 truthy('touch takes a time', statSync(`${t.run}/old`).mtime.getFullYear() === 2020);
 truthy('read of a missing file is empty', read(`${t.run}/nope`) === '' && !exists(`${t.run}/nope`));
 check('shPwd spells the run as fleet.sh does', '/fleet-selftest-', shPwd(t.run));
-check('the watch loop is cut out of fleet-wait.md', 'run=RUNID', watchLoop());
 starts('hp runs a hook on a payload and answers from its exit', '0 ', hp(`${HOOKS}/fleet-memory.mjs`, t.run, 'sess-none', 'Bash', 'git status'));
 // Claims at the same instant, then a check registered after the await: node:test must still run it.
 task(t.run, 'task-03', 'repo', 10);

@@ -1,5 +1,44 @@
 # Changelog
 
+## makarasty-tools 1.20.40 — 2026-11-27
+
+- **One large visual format for every page a chat hands the owner** (owner, 2026-11-27: pages and mockups all looked and
+  worked differently, he zoomed every page, «13 или 14 px я не пойму, пока не покажешь скриншот со стрелкой, лучше с
+  линейкой»). He picked format 2 «Шторка» on a choice page of four (Рядом / Шторка / Лупа по шагам / Чертёж) with a curved
+  arrow, 8 px corners and 18 px text; this is now the shared layer of report.mjs, so report, proof, unfinished and video
+  pages get it, and the LifeLines mockup kit copy of ask.js/ask.css is updated to match.
+  - Text: cards 18 px like the page body, a question 28 px, nothing under 16 px; one palette for report.css and ask.css.
+  - Marks: `#box=x1,y1,x2,y2:label` boxes with an 8 px radius and one curved arrow; new `#dim=x1,y1,x2,y2:16 px` rulers
+    with the size written on them and dashed level lines back to the box; labels are text, so they stay readable on a
+    small shot. proof takes `--box …:label` and `--dim`.
+  - Swipe: a question's «now» shot and its options' shots (or a before and an after) become one frame to drag; the
+    right side follows the pick. Keys 1–9 pick, arrows go to the next question; «Решение n из N» above each.
+  - Complaints from the page: «Отметить место на картинке» drops a numbered point on any shot with a line of text; the
+    points go into the copied plain text. A page without questions now has a notes box and points too.
+  - Code blocks copy through the same routine as the answers.
+- **Cleanup the owner approved** (2026-11-27, from a scan of 11 170 transcripts over 30 days): the `craft` skill (0 uses,
+  pointed at a skill that does not exist) and two files nothing referenced are removed; the skill count is gone from the
+  plugin and marketplace descriptions (it said 26 and 25, there are more). Two session rules that a hook already enforces
+  are dropped (Edit after Read: read-before-edit.ts; no "continue?": ask-guard.ts), 103 characters; four other
+  candidates stay because their hook covers less (git-guard refuses only after the fact; the line was added on
+  2026-11-20 to cut 96 refusals). Rare sections of handoff (fleet-next.md) and review (score.md) moved to files read on
+  demand.
+- Checked: report selftest all passed (new box label, ruler and bad-ruler cases), proof selftest done (label, `--dim`,
+  ruler on the page), `claude plugin test tools` 618 pass 0 fail, `forge/rules.mjs` exit 0. The built page was driven in
+  the browser: swipe, drag, keys 1/2 and arrows, a point on the swipe and on a page picture (no zoom opens), copied text,
+  everything back after a reload, phone width without side scroll, dark theme looked at.
+
+## makarasty 1.18.21 — 2026-11-27
+
+- **fleet-wait's watch loop is a script**: `fleet.sh wait-watch <run-id> <n> [quiet]` (`scripts/fleet/waitwatch.mjs`)
+  prints the same lines as the 18 KB bash block the coordinator used to retype on every wait (51 times in 30 days).
+  fleet-wait.md went from 28 306 to 19 805 bytes. `FLEET_WATCH_SERVICES` replaces editing the dev-server line.
+  Checked: build current (90 files), typecheck clean, g1-port-defects 77/77 (new cases: planner question, budget,
+  pause and resume, service down once, run landed, NO RUN DIR), 00-lib and f-file-stranded-status 134/134.
+- Rare parts of fleet-plan 8b and fleet-collect moved to `docs/fleet-plan-coordinate.md` and
+  `docs/fleet-collect-worktrees.md` (read on demand; the bold lead and a pointer stay in place). Old run leftovers
+  outside git removed (`.fleet/2026-10-05-rt3`, one `evals/results` run).
+
 ## makarasty-tools 1.20.39 — 2026-11-27
 
 - **Every chat name on an owner page carries its Desktop account** (owner, 2026-11-27: «вверху хорошо писать, с какого аккаунта это чат», for answers gathered from several devices and accounts on one machine). The chat bar, each block header and the first line of the copied answers say «аккаунт dev». `--chat-id` reads title and account; another chat's account is looked up by its title when unique, or written `ask <title> | <account>`; `--account` overrides. proof passes it too; the LifeLines mockup starter takes `new --account`. The owner picked the new page shape on 2026-11-27 («Новый», with «лучше но я бы еще поигрался с UI UX»). Checked: report selftest all passed (account cases), proof selftest done, chats selftest done, page looked at in the browser.

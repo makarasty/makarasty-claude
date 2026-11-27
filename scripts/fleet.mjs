@@ -21,6 +21,7 @@ import { commands as ops } from './fleet/ops.mjs';
 import { commands as pane } from './fleet/pane.mjs';
 import { commands as trees } from './fleet/trees.mjs';
 import { commands as dispatch } from './fleet/dispatch.mjs';
+import { waitWatch } from './fleet/waitwatch.mjs';
 const commands = { ...queue, ...watch, ...planner, ...pause, ...ops, ...pane, ...trees, ...dispatch };
 // ---- entry -----------------------------------------------------------------------------------------------
 // fleet.sh switched Git Bash's argument conversion off for its exec of node; what node runs (git, hooks,
@@ -44,6 +45,9 @@ function main(argv) {
         err('usage: fleet.sh <command> <run-dir> [args]\n');
         return 2;
     }
+    // Its run may be a bare run id, and a missing one prints NO RUN DIR: it finds its own run.
+    if (cmd === 'wait-watch')
+        return waitWatch(sh, run, rest);
     const c = context(sh, run);
     // Every worker-side call whose third argument is the worker's own chip registers the session, not only
     // `next`: a worker on an assigned brief never calls `next`. `integration` is the coordinator's own tree.

@@ -191,7 +191,7 @@ const findingsOn = async ($: Dollar) => (await $.env.get('MAKARASTY_FINDINGS')) 
 // standing answers of people who run many chats at once. The fix-at-the-source line: 6/6 vs 0/6 in its A/B [M77]. A
 // person's own limits go in profile.md. Rides with the economy text and its switch.
 export const habits =
-  "Working rules: Edit a file only after reading it. Wait for a task's completion notice; never poll. " +
+  "Working rules: Wait for a task's completion notice; never poll. " +
   'Call a fix done only after a check you ran shows it, and say plainly what you did not check. Report in this order: what happened, why, ' +
   'what you did, what the person must do. Told it is urgent: the core change and one check, no extra review rounds, then list what you skipped. ' +
   'Do without asking, then report: run the scoped tests, typecheck or build; start the dev server the task needs, after checking its port ' +
@@ -210,8 +210,8 @@ export const habits =
 // here, instead of in every skill and command that asks. Rides with the economy text and its switch.
 export const asking =
   'Asking the person: write each question so it stands alone (what happened, why it is asked, what each option does): ' +
-  'they answer it hours later among other chats. Number every list they answer point by point. Work they already asked ' +
-  'for is finished without asking "continue?". A step only they can do (restart an app and look, sign in, click in ' +
+  'they answer it hours later among other chats. Number every list they answer point by point. ' +
+  'A step only they can do (restart an app and look, sign in, click in ' +
   'another app, check by eye) is one click or one command, with its link or exact path, asked in AskUserQuestion (or the ' +
   'end-of-turn ask) with the outcomes as options, never only in prose; a command goes above it in a code block (PowerShell ' +
   '5.1: `;` not `&&`). A step in another chat is no dialog: end the turn with one line and its link and account. A delete-or-keep question says what the thing is, what made it, its size, what breaks without it, and your recommendation. ' +

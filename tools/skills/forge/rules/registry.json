@@ -263,10 +263,6 @@
      "anchor": "onlyContinue"
     },
     {
-     "file": "tools/hooks/gates.ts",
-     "anchor": "asking: Work they already asked for is finished"
-    },
-    {
      "file": "docs/COMPLAINTS.md",
      "anchor": "C06",
      "date": "2026-08-07"
@@ -1836,16 +1832,16 @@
    "rule": "Edit a file only after reading it.",
    "ru": "Правь файл только после того, как прочитал его.",
    "layer": "plugin",
-   "enforced": "text",
-   "enforcer": null,
+   "enforced": "hook",
+   "enforcer": "tools/hooks/read-before-edit.ts (re-reads the file and reruns the Edit on the harness refusal; no session text since 2026-11-27)",
    "complaints": [],
    "complaintChats": null,
    "conflicts": [],
    "status": "active",
    "sources": [
     {
-     "file": "tools/hooks/gates.ts",
-     "anchor": "habits: Edit a file only after reading it"
+     "file": "tools/hooks/read-before-edit.ts",
+     "anchor": "STALE retry"
     },
     {
      "file": "docs/MEASUREMENTS.md",

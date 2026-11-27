@@ -121,8 +121,15 @@ const pngDir = mkdtempSync(join(tmpdir(), 'report-shot-'));
 const png = Buffer.alloc(33); Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(png); png.writeUInt32BE(10, 16); png.writeUInt32BE(10, 20);
 writeFileSync(join(pngDir, 's.png'), png);
 const marked = build(askMd('? А?\n![до](s.png#box=1,1,5,5)\n- Да | x | высокая: y\n- Нет | z'), pngDir);
-check('ask: a #box mark draws a box in % of the PNG', marked.html.includes('class="ak-mk"') && marked.html.includes('left:10.00%;top:10.00%;width:40.00%'), marked.errors.join(' | '));
+check('ask: a #box mark draws a rounded box in image pixels of the PNG, with the arrow', marked.html.includes('class="ak-mk"') && marked.html.includes('viewBox="0 0 10 10"') && marked.html.includes('d="M3 1H3Q5 1 5 3') && (marked.html.match(/<path class="h"/g) ?? []).length === 2, marked.errors.join(' | '));
 check('ask: a box outside the image is refused', /inside 10x10/.test(build(askMd('? А?\n![до](s.png#box=1,1,50,5)\n- Да | x | высокая: y\n- Нет | z'), pngDir).errors.join(' ')));
+const ruled = build(askMd('? А?\n![до](s.png#box=1,2,6,8:текст 16 px&dim=8,3,8,7:16 px)\n- Да | x | высокая: y\n- Нет | z'), pngDir);
+check('ask: a box label and a ruler render as text labels, with level lines back to the box', ruled.errors.length === 0 && ruled.html.includes('ak-lab ak-lab-box') && ruled.html.includes('>текст 16 px<') && ruled.html.includes('ak-lab ak-lab-v') && ruled.html.includes('class="lv" d="M1 3H8M1 7H8"'), ruled.errors.join(' | '));
+check('ask: a horizontal ruler without a box renders', build(askMd('? А?\n![до](s.png#dim=1,5,9,5:8 px)\n- Да | x | высокая: y\n- Нет | z'), pngDir).html.includes('ak-lab ak-lab-h'));
+for (const [n, frag, re] of [['a ruler without its size', 'dim=8,3,8,7', /says its size/], ['a slanted ruler', 'dim=1,1,5,5:4 px', /x1=x2/], ['a ruler outside the image', 'dim=8,3,8,70:4 px', /inside 10x10/], ['an unknown mark', 'arrow=1,1,2,2', /unknown mark/]]) {
+  const e = build(askMd(`? А?\n![до](s.png#${frag})\n- Да | x | высокая: y\n- Нет | z`), pngDir).errors.join(' | ');
+  check(`ask error: ${n}`, re.test(e), e || '(no error)');
+}
 writeFileSync(join(pngDir, 'Screenshot 1 (2).png'), png);
 const spaced = build(askMd('? А?\n![до](Screenshot 1 (2).png "t") ![после](Screenshot%201%20(2).png)\n- Да | x | высокая: y\n- Нет | z'), pngDir);
 check('ask: a shot path with spaces, parentheses, %20 or a "title" embeds', (spaced.html.match(/class="ak-shot"/g) ?? []).length === 2 && !spaced.html.includes('!['), spaced.errors.join(' | '));

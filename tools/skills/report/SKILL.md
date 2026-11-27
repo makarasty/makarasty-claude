@@ -125,11 +125,22 @@ machine can gather chats from several accounts and devices, so every chat name o
 before the first `? ` are the block's one-line intro. `? question` (short; details on the next lines, with links and
 shots); then options `* label | what changes if picked | level: why` (`*` = recommended, at most one) or `- label |
 what changes`. Level is `высокая`, `средняя`, `низкая` (how sure you are of the facts behind it) or `вкус` for a
-taste call; at least one option per question says it. Lines indented under an option add text or shots to it. A shot
-`![caption](file.png#box=x1,y1,x2,y2;…)` boxes the changed spot in image pixels (PNG); a UI choice shows each option
-as a shot of the real screen. Each card gets buttons, a comment field, the block a notes box and «Скопировать ответы»,
-whose text starts with the chat's name and numbers each answer; picks save themselves in the browser. Questions are
-numbered straight through the page.
+taste call; at least one option per question says it. Lines indented under an option add text or shots to it.
+
+Whatever can be shown is shown: a choice about a size, gap, alignment or color is a shot of the real screen with the
+spot boxed and its size on a ruler, never a description of pixels (the owner, 2026-11-27: «13 или 14 px я не пойму,
+пока не покажешь скриншот со стрелкой, лучше с линейкой»). Take the shots and measure first (`getBoundingClientRect`,
+`getComputedStyle`), however many it takes. Marks go after `#` in image pixels of a PNG (CSS px times the shot's scale):
+`![Сейчас](now.png#box=56,146,420,226:текст 16 px&dim=434,154,434,170:16 px)`. `box=x1,y1,x2,y2[:label]` frames a spot,
+the first box gets a curved arrow; `dim=x1,y1,x2,y2:size` is a ruler with its size written on it, vertical when x1=x2,
+horizontal when y1=y2, with dashed level lines back to the first box (for font size: the letter box, top = line top +
+(line-height − font-size)/2). Several of each join with `;`. A question with a «now» shot and a shot under each option
+(or two shots, before and after) shows them as one swipe frame the owner drags; the right side follows the picked option.
+
+Each card gets buttons (keys 1–9, arrows to the next card), a comment field, «Отметить место на картинке» (a numbered
+point on any shot plus a line of text, copied with the answers), the block a notes box and «Скопировать ответы», whose
+plain text starts with the chat's name and numbers each answer; everything saves itself in the browser. A page without
+questions still gets a notes box and points for its pictures. Questions are numbered straight through the page.
 
 `bars`: `label: number unit` per line (thousands with a space: `2 400`), `*` marks the one that matters,
 `= what they count` is required; sizes only, signed numbers go in a table.

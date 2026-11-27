@@ -1,7 +1,7 @@
 // f-file-stranded-status.test.mts - filing tasks, what status names, model wishes and retire, stranded
 // branches, and the leftovers census (fleet-selftest.sh "== file, stranded, and what status names").
 
-import { setup, fleet, sh, node, git, exec, shPwd, check, absent, code, truthy, write, read, exists, mk, rm, touch, watchLoop, ROOT, SCRIPTS } from './lib.mts';
+import { setup, fleet, sh, node, git, exec, shPwd, check, absent, code, truthy, write, read, exists, mk, rm, touch, ROOT, SCRIPTS } from './lib.mts';
 import { readdirSync, readFileSync } from 'node:fs';
 
 const t = setup('file-stranded-status');
@@ -350,9 +350,7 @@ fleet(['find', bw, 'integration'], { env: { CLAUDE_CODE_SESSION_ID: 'sess-coord'
 truthy("the coordinator's integration tree is never registered as a worker", !exists(`${bw}/chips/sess-coord`), read(`${bw}/chips/sess-coord`));
 rm(bw);
 
-// The watch loop lives in fleet-wait.md, where nothing else parses it: a stray quote there once broke it.
-const wlFile = `${t.base}/fleet-watch.sh`;
-const loop = watchLoop();
-write(wlFile, loop);
-code("fleet-wait's watch loop parses", 0, loop.length > 0 ? sh(`sh -n "${wlFile}"`).code : 1);
+// fleet-wait.md arms the watch with one verb call: the loop is code, tested in g1-port-defects.
+check('fleet-wait.md arms the watch by the wait-watch verb', 'scripts/fleet.sh" wait-watch RUNID N', readFileSync(`${ROOT}/commands/fleet-wait.md`, 'utf8'));
+
 

@@ -39,7 +39,10 @@ folder under the system temp dir for this task (it holds the PNGs, `blocks.jsonl
      block gets one. Image pixels are CSS pixels times the shot's scale: take the rect with `getBoundingClientRect()`
      (as is for a viewport shot, minus the shot element's own rect for a selector shot) and multiply by
      `w / innerWidth` (the snippet returns `w`; on a 150 % display the PNG is 1.5x the CSS size). A shot the box does
-     not fit gets no box and a warning.
+     not fit gets no box and a warning. A box may carry a label (`--box 40,120,360,180:отступ 12 px`). A change of a
+     size, gap or alignment also gets `--dim x1,y1,x2,y2:14 px` (a ruler with its measured size: vertical when x1=x2,
+     horizontal when y1=y2; several joined by `;`), so the owner sees the number on the picture instead of reading it.
+     The page shows each block's two shots as one swipe frame (drag between before and after).
 4. After the work, write the page to the person's Desktop (`[Environment]::GetFolderPath('Desktop')`):
    `node "${CLAUDE_SKILL_DIR}/proof.mjs" report <dir> --title "..." --out "<Desktop>/<Topic>.html" --chat-id ${CLAUDE_SESSION_ID}`
    (`--chat "<sidebar title>"` instead when the id has no Desktop title; neither flag is an error). It writes

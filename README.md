@@ -407,7 +407,6 @@ screenshot per candidate), `fleet-naive-user` (a first-time user with no code ac
 | `video` | A short vertical explainer video: local voice (ru, en, uk), a new look each time, burned-in captions, sound checked for dropouts |
 | `antislop` | A rule set against AI-looking UI, plus an audit of existing UI [M47] |
 | `forge` | How to build or check a skill, command, hook, agent or plugin, with an A/B script |
-| `craft` | Refactor, dedupe and test rules: pin behaviour first, keep tests seen failing |
 | `grill` | Rounds of questions on a plan until nothing is assumed, before any code |
 | `unslop` | Strips assistant tics from text; a fact lock keeps numbers, paths and negations |
 | `say` | Simple English for a vendor call, ticket or email |

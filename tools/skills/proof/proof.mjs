@@ -6,7 +6,7 @@
 //   node proof.mjs serve <dir> [--port 0]        receiver on 127.0.0.1; prints PORT=<n>, writes <dir>/.port ("<port> <token>")
 //   node proof.mjs snippet <dir> <name> [css-selector]   one JS expression for the pane's javascript_tool
 //   node proof.mjs block <dir> --title "..." [--what ".."] [--files a,b] [--before n] [--after n]
-//                              [--viewport WxH] [--theme light|dark] [--note ".."] [--box x1,y1,x2,y2[;..]] [--id N]
+//                              [--viewport WxH] [--theme light|dark] [--note ".."] [--box x1,y1,x2,y2[:label][;..]] [--dim x1,y1,x2,y2:16 px[;..]] [--id N]
 //   node proof.mjs report <dir> (--chat "<sidebar title>" | --chat-id <session id>) [--title ".."] [--out <dir>/report.html]
 //                              [--lang en]    (renders <dir>/report.md with the report skill; --inline is a no-op)
 //   node proof.mjs stop <dir>
@@ -201,17 +201,26 @@ export function readBlocks(dir) {
     return out.sort((a, b) => a.id - b.id);
 }
 
-// image pixels "x1,y1,x2,y2[;x1,y1,x2,y2]"; report.mjs checks them against the PNG size when it renders
+// image pixels "x1,y1,x2,y2[:label][;…]"; report.mjs checks them against the PNG size when it renders
+const MARK_RE = /^(\d+(?:\.\d+)?),(\d+(?:\.\d+)?),(\d+(?:\.\d+)?),(\d+(?:\.\d+)?)(?::([^;&#()[\]]+))?$/;
+const marks = s => String(s).split(';').map(x => x.trim()).filter(Boolean).map(x => { const m = x.match(MARK_RE); return m && { n: m.slice(1, 5).map(Number), t: (m[5] ?? '').trim() }; });
+const markText = list => list.map(({ n, t }) => n.join(',') + (t ? `:${t}` : '')).join(';');
 export function parseBox(s) {
-    const boxes = String(s).split(';').map(x => x.trim()).filter(Boolean).map(x => (/^\d+,\d+,\d+,\d+$/.test(x) ? x.split(',').map(Number) : null));
-    if (!boxes.length || boxes.some(b => !b || b[0] >= b[2] || b[1] >= b[3])) throw new Error('--box must look like x1,y1,x2,y2[;x1,y1,x2,y2] in image pixels, with x1<x2 and y1<y2');
-    return boxes.map(b => b.join(',')).join(';');
+    const boxes = marks(s);
+    if (!boxes.length || boxes.some(b => !b || b.n[0] >= b.n[2] || b.n[1] >= b.n[3])) throw new Error('--box must look like x1,y1,x2,y2[:label][;x1,y1,x2,y2] in image pixels, with x1<x2 and y1<y2');
+    return markText(boxes);
+}
+// a ruler "x1,y1,x2,y2:16 px": vertical (x1=x2) or horizontal (y1=y2), its size written after the colon
+export function parseDim(s) {
+    const dims = marks(s);
+    if (!dims.length || dims.some(d => !d || !d.t || (d.n[0] === d.n[2]) === (d.n[1] === d.n[3]))) throw new Error('--dim must look like x1,y1,x2,y2:16 px[;…] in image pixels, vertical (x1=x2) or horizontal (y1=y2), with its size after the colon');
+    return markText(dims);
 }
 
 export function upsertBlock(dir, o) {
     mkdirSync(resolve(dir), { recursive: true });
     const blocks = readBlocks(dir);
-    const fields = { title: o.title, what: o.what, files: o.files === undefined ? undefined : String(o.files).split(',').map(s => s.trim()).filter(Boolean), before: o.before, after: o.after, viewport: o.viewport, theme: o.theme, note: o.note, box: o.box === undefined ? undefined : parseBox(o.box) };
+    const fields = { title: o.title, what: o.what, files: o.files === undefined ? undefined : String(o.files).split(',').map(s => s.trim()).filter(Boolean), before: o.before, after: o.after, viewport: o.viewport, theme: o.theme, note: o.note, box: o.box === undefined ? undefined : parseBox(o.box), dim: o.dim === undefined ? undefined : parseDim(o.dim) };
     if (fields.viewport !== undefined && !/^\d{2,5}x\d{2,5}$/.test(fields.viewport)) throw new Error('--viewport must look like 1280x720');
     if (fields.theme !== undefined && !['light', 'dark'].includes(fields.theme)) throw new Error('--theme must be light or dark');
     for (const k of ['before', 'after']) if (fields[k] !== undefined && !NAME_RE.test(fields[k])) throw new Error(`--${k} is not a valid image name`);
@@ -293,12 +302,15 @@ export function buildReport(dir, { title, out, chat, account = '', lang = 'ru', 
         const hasB = has(b.before), hasA = has(b.after);
         // A shot taken by selector can grow after the edit: a box goes only on the shots it fits inside.
         const mark = name => {
-            if (!b.box) return '';
+            if (!b.box && !b.dim) return '';
             const png = readFileSync(join(dir, `${name}.png`));
             const w = png.readUInt32BE(16), h = png.readUInt32BE(20);
-            if (b.box.split(';').every(r => { const [, , x2, y2] = r.split(',').map(Number); return x2 <= w && y2 <= h; })) return `#box=${b.box}`;
-            warn.push(`block ${b.id}: --box does not fit ${name}.png (${w}x${h}), left off that shot`);
-            return '';
+            const parts = [['box', b.box], ['dim', b.dim]].filter(([, v]) => v).filter(([k, v]) => {
+                if (v.split(';').every(r => { const [, , x2, y2] = r.split(':')[0].split(',').map(Number); return x2 <= w && y2 <= h; })) return true;
+                warn.push(`block ${b.id}: --${k} does not fit ${name}.png (${w}x${h}), left off that shot`);
+                return false;
+            });
+            return parts.length ? `#${parts.map(([k, v]) => `${k}=${v}`).join('&')}` : '';
         };
         const shots = [hasB && `![${W.before}](${b.before}.png${mark(b.before)})`, hasA && `![${W.after}](${b.after}.png${mark(b.after)})`].filter(Boolean).join(' ');
         const files = (b.files ?? []).map(f => `\`${f.replace(/`/g, "'")}\``).join(', ');
@@ -504,6 +516,11 @@ async function selftest() {
         const off = buildReport(dir, { chat: SIDE });
         assert.ok(off.warn.some(w => /does not fit 01-before\.png \(1x1\)/.test(w)) && !readFileSync(join(dir, 'report.md'), 'utf8').includes('#box=0,0,2,2'), 'a box a shot cannot hold is left off it, with a warning');
         upsertBlock(dir, { id: 1, box: '0,0,1,1' });
+        assert.equal(upsertBlock(dir, { id: 1, box: '0,0,1,1: текст 16 px ' }).box, '0,0,1,1:текст 16 px', '--box keeps its label');
+        assert.equal(upsertBlock(dir, { id: 1, dim: '1,0,1,1:1 px' }).dim, '1,0,1,1:1 px', '--dim stored');
+        for (const bad of ['1,0,1,1', '0,0,1,1:1 px', 'a', '1,0,1,1:x;y,']) assert.throws(() => upsertBlock(dir, { id: 1, dim: bad }), /--dim must look like/, `bad --dim "${bad}" refused`);
+        const ruled = buildReport(dir, { chat: SIDE });
+        assert.ok(readFileSync(join(dir, 'report.md'), 'utf8').includes('#box=0,0,1,1:текст 16 px&dim=1,0,1,1:1 px') && readFileSync(ruled.out, 'utf8').includes('ak-lab ak-lab-v'), 'box label and ruler reach the page');
         const tiny = buildReport(dir, { chat: SIDE, maxInline: 100 });
         assert.ok(tiny.warn.some(w => w.includes('over')), 'a page past the size limit warns');
         const en = join(root, 'en');

@@ -182,20 +182,8 @@ turn a watch event or another session started):
 A session started this way, or by `hand_off_to_session`, stays linked: every turn it ends wakes this chat [M56]. The tools hook `detach.ts` detaches it at once and says so after the start result [M81]; without that line (hook off or older plugin), call `mcp__ccd_session_mgmt__detach_session` with its id yourself. If detach is refused (it shares this worktree; a chat started from a clicked card detaches fine), say your last line and call `mcp__ccd_session_mgmt__clear_session` with "self" as the last call.
 
 When the next chat is to run a fleet (a coordinator relaunch builds its own chip, with its own prompt, and
-never reaches this step), the first Next step depends on whether a run exists. A new run:
-`/makarasty:fleet-plan` with the plan's path as its mission. A run already under way: read
-`<run>/STATE.md` (it holds the plan path, the run dir, the worker count `n`, the chips offered by lane, the
-integration checkout's path and URL, any extra watched URLs, whether the queue is open, the merges in
-order, the reviews in flight, the fix tasks and why, the operator's decisions and the pane check tasks
-filed with their state), re-arm `/makarasty:fleet-wait <run> <n>` with that `n` and the integration URL
-added to `svc` (which records the new chat as the coordinator), and use `/makarasty:fleet-resume` only if
-the worker chats are gone. Read sections 3b and 8b of `/makarasty:fleet-plan` before re-arming - the review,
-queue and pane-check rules live there - without re-running its interview or its chips. If `/makarasty:fleet-plan` does not resolve (a chat started before the plugin was
-updated keeps the old install until it restarts), read the command file at `<plugin root>/commands/fleet-plan.md`
-and follow it. Offer no new chips
-there, since the existing ones carry the same titles; the one exception is a lane `fleet.sh status` names
-as without a worker. Name `opus` in the Model line for a fleet coordinator. A coordinator that improvises
-the launch from docs gets the chips wrong, and the project's own rules fill the gaps.
+never reaches this step), read `${CLAUDE_SKILL_DIR}/fleet-next.md` for what its first Next step is and which
+Model line the chip carries; without a fleet, skip it.
 
 Without `start_session` (the CLI), print that prompt in a fenced block for the person to paste into a new
 chat started in the checkout, with the directory step dropped, the patch step kept, the transcript path
