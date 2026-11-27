@@ -1,5 +1,32 @@
 # Changelog
 
+## makarasty-tools 1.20.38 — 2026-11-27
+
+- **One fixed shape for every page a chat hands the owner** (owner, 2026-11-27, as his chat condensed it: pages were walls
+  of text with no focus, answers typed by hand, every chat's page looked different). `report.mjs` now builds the same
+  skeleton for every page: the name of the chat that made it on top (`--chat-id ${CLAUDE_SESSION_ID}` reads the sidebar
+  title, `--chat` names it), the title and opening paragraph, the questions as cards, the rest, and «Чем проверено» last
+  with every «не доказано» line marked red and counted. A new ```` ```ask <chat> ```` block turns questions into cards:
+  buttons for the options, under each what changes, how sure (высокая / средняя / низкая, or «вкус» for a taste call)
+  and why, the recommended one marked, shots with `#box=` marks for before/after, a comment per card, a notes box and
+  «Скопировать ответы» per chat whose numbered text starts with the chat's name; picks save in the browser, a dock
+  bottom-right counts what is answered and copies for the chat in view. The page refuses to build without the chat,
+  «## Чем проверено», what an option changes, or any confidence. Runtime: `ask.js` + `ask.css`.
+- **proof** renders through the same `build()`: one card per block (как было / как стало with `--box` marks,
+  «Принять» / «Переделать»), the page goes to the Desktop; its own CSS and linked variant are gone.
+- **unfinished**: a page of waiting questions is one `ask` block per chat, the chats' own options, no invented
+  recommendation. The LifeLines mockup kit vendors the same runtime (its own commit there).
+- Reviewed (Opus, 12 defects, all fixed with a selftest case each): two blocks for one chat merge into one section, text
+  after the cards stays below them, a nested «не проверено» marks its own line, «Proof of concept» is not the proof
+  section, an empty or doubled proof section is refused, shot paths with spaces, `(1)`, `%20` or a title embed, the chat
+  bar's copy button works on a page without questions, stale picks drop on a rebuilt page, Enter on a link inside an
+  option opens it; proof leaves a `--box` off a shot it does not fit (with a warning) and code-spans `<tag>`, TODO and
+  `{{ }}` in a title; proof's SKILL says how to turn CSS pixels into image pixels for `--box`.
+- Research behind the shape: BLUF / Minto (answer first), MADR's fixed option layout, ICD 203 confidence with its basis,
+  GitHub and Percy review flows (per-item pick, pending until copied, accept all recommended). Checked: report selftest
+  all passed (new ask and skeleton cases), proof selftest done, chats selftest done; the rebuilt «Ответы в чаты» page
+  read by one blind reader (retold all 15 decisions right) and diffed against its old text by a second agent.
+
 ## makarasty-tools 1.20.37 — 2026-11-27
 
 - **Telegram: a plain next message answers the question** (owner, 2026-11-27: «я не нажал на кнопку «Ответить», я просто

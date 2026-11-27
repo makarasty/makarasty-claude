@@ -70,6 +70,13 @@ In the person's language, short, grouped, each item with the chat title and the 
 Closed and abandoned chats go in one line each at the end, or a count. Nothing is left out silently: the
 count of chats read is stated.
 
+When the waiting questions go to the person as a page (they ask for one, or there are more than a few), build it
+with the report skill (`/makarasty-tools:report`): one ```` ```ask <chat title exactly as the card shows it> ```` block
+per waiting chat, so each block carries its own «Скопировать ответы» for pasting into that chat. Each question as
+the chat asked it, its options as the chat gave them; a recommendation or confidence level the chat did not give is
+either left out (`вкус`) or marked as yours, and «Чем проверено» says which. A step outside the page (open a mockup
+and pick there) is a card too, its outcomes as the options.
+
 Then one `AskUserQuestion`: continue one of them here (`/makarasty-tools:handoff from "<title>"`),
 collect the open items into a hold list (`/makarasty-tools:hold`), hand them to a fleet, or nothing.
 Start none of them before the answer.

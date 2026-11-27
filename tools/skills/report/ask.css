@@ -1,0 +1,74 @@
+/* The answer part of every page a chat hands the owner: chat bar, question cards, option tiles, dock, proof list.
+   Same file in LifeLines tools/design/mockup/kit/ask.css; keep both the same. */
+:root{--ak-card:light-dark(#fff,#1b1e22);--ak-fg:light-dark(#1c1f24,#e8eaed);--ak-muted:light-dark(#5f6670,#9aa1ab);
+--ak-line:light-dark(#d9dce1,#30353c);--ak-soft:light-dark(#f2f3f5,#23272c);--ak-ink:light-dark(#1c1f24,#e8eaed);--ak-on:light-dark(#fff,#111315);
+--ak-hi:light-dark(#1f7a4d,#6fd29f);--ak-mid:light-dark(#8a5a00,#ffb547);--ak-lo:light-dark(#b42318,#ff7b6e);--ak-mark:#ff5a1f}
+:is(.ak-chatbar,.ak-sum,.ak-chat,.ak-q,.ak-dock,.ak-manual,.ak-proof,.ak-none){color-scheme:light dark;color:var(--ak-fg);font-family:var(--sans,system-ui,"Segoe UI",sans-serif)}
+/* A page with its own theme switch: .dark/.light on html or on a direct child of body (LifeLines mockups toggle .dark on .ll-mockup). */
+:is(html.dark,body:has(>.dark)) :is(.ak-chatbar,.ak-sum,.ak-chat,.ak-q,.ak-dock,.ak-manual,.ak-proof,.ak-none){color-scheme:dark}
+:is(html.light,body:has(>.light),body:has(>.ll-mockup:not(.dark))) :is(.ak-chatbar,.ak-sum,.ak-chat,.ak-q,.ak-dock,.ak-manual,.ak-proof,.ak-none){color-scheme:light}
+.ak-chatbar{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;font-size:.95rem;color:var(--ak-muted);margin:0 0 1rem}
+.ak-chatbar b,.ak-chat-h b{color:var(--ak-fg);font-weight:650}
+.ak-name{font:inherit;font-size:.8rem;color:var(--ak-muted);background:none;border:1px solid var(--ak-line);border-radius:.4rem;padding:.1rem .5rem;cursor:pointer}
+.ak-name:hover{color:var(--ak-fg)}
+.ak-asks{margin:1.5rem calc(50% - min(33rem,50vw - 1rem)) 2rem;display:grid;gap:1.25rem}
+.ak-sum{font-size:1rem;background:var(--ak-soft);border-radius:.6rem;padding:.75rem 1rem}
+.ak-sum b{font-weight:650}
+.ak-chat{background:var(--ak-card);border:1px solid var(--ak-line);border-radius:.8rem;padding:1rem 1.1rem 1.1rem;display:grid;gap:1rem;font-size:1rem;line-height:1.5}
+.ak-chat-h{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;font-size:1.05rem;color:var(--ak-muted);border-bottom:1px solid var(--ak-line);padding-bottom:.7rem}
+.ak-chat-h .ak-all{margin-left:auto}
+.ak-intro{margin:0;color:var(--ak-muted)}
+.ak-q{display:grid;gap:.6rem;border-top:1px solid var(--ak-line);padding-top:1rem}
+.ak-chat-h+.ak-q,.ak-intro+.ak-q{border-top:0;padding-top:0}
+.ak-q h3{display:flex;gap:.6rem;align-items:flex-start;margin:0;font-size:1.1rem;line-height:1.35}
+.ak-n{flex:none;display:grid;place-items:center;min-width:1.75rem;height:1.75rem;border-radius:1rem;background:var(--ak-ink);color:var(--ak-on);font-size:.9rem;font-weight:700}
+.ak-q.ak-done .ak-n{background:var(--ak-hi)}
+.ak-ctx{margin:0;color:var(--ak-muted)}
+.ak-opts{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,15rem),1fr));gap:.6rem}
+.ak-opts.ak-wide{grid-template-columns:1fr}
+.ak-opt{position:relative;display:grid;align-content:start;gap:.35rem;text-align:left;font:inherit;color:inherit;background:var(--ak-card);border:1px solid var(--ak-line);border-radius:.6rem;padding:.65rem .8rem .7rem 2.6rem;cursor:pointer;min-height:2.75rem}
+.ak-opt:hover{border-color:var(--ak-muted)}
+.ak-opt::before{content:"";position:absolute;left:.8rem;top:.8rem;width:1.1rem;height:1.1rem;border-radius:50%;border:2px solid var(--ak-line);box-sizing:border-box}
+.ak-opt[aria-checked=true]{border:2px solid var(--ak-ink);padding:calc(.65rem - 1px) calc(.8rem - 1px) calc(.7rem - 1px) calc(2.6rem - 1px)}
+.ak-opt[aria-checked=true]::before{left:calc(.8rem - 1px);top:calc(.8rem - 1px);border-color:var(--ak-ink);background:var(--ak-ink)}
+.ak-opt[aria-checked=true]::after{content:"";position:absolute;left:calc(1.2rem - 1px);top:calc(1.03rem - 1px);width:.28rem;height:.5rem;border:solid var(--ak-on);border-width:0 2px 2px 0;rotate:45deg}
+.ak-opt-h{display:flex;flex-wrap:wrap;gap:.4rem;align-items:center}
+.ak-opt-h b{font-weight:650;font-size:1.05rem}
+.ak-rec{font-size:.75rem;font-weight:650;color:var(--ak-hi);border:1px solid currentColor;border-radius:1rem;padding:0 .5rem;white-space:nowrap}
+.ak-opt p{margin:0}
+.ak-sure{font-size:.88rem;color:var(--ak-muted)}
+.ak-sure span{font-weight:650;color:var(--c)}
+.ak-sure.hi{--c:var(--ak-hi)}.ak-sure.mid{--c:var(--ak-mid)}.ak-sure.lo{--c:var(--ak-lo)}
+.ak-shots{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,20rem),1fr));gap:.5rem;margin:.2rem 0 0}
+.ak-shot{margin:0;min-width:0}
+.ak-shot figcaption{font-size:.75rem;font-weight:650;text-transform:uppercase;letter-spacing:.04em;color:var(--ak-muted);margin:0 0 .2rem;text-align:left}
+.ak-frame{position:relative;cursor:zoom-in}
+.ak-frame img{display:block;width:100%;height:auto;border:1px solid var(--ak-line);border-radius:.35rem;background:#fff;margin:0}
+.ak-mk{position:absolute;inset:0;pointer-events:none}
+.ak-mk i{position:absolute;border:2px solid var(--ak-mark);border-radius:.3rem;box-shadow:0 0 0 1.5px rgba(255,255,255,.9);box-sizing:border-box}
+.ak-mk svg{position:absolute;width:1.3rem;height:1.3rem;overflow:visible;transform:translate(-100%,-100%) translate(-2px,-2px)}
+.ak-mk path{fill:none;stroke:var(--ak-mark);stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round}.ak-mk path.h{stroke:#fff;stroke-width:5.5}
+.ak-nomk .ak-mk{display:none}
+.ak-cbtn{justify-self:start;font:inherit;font-size:.85rem;color:var(--ak-muted);background:none;border:0;padding:0;text-decoration:underline;text-underline-offset:.15em;cursor:pointer}
+.ak-chat textarea{display:block;width:100%;box-sizing:border-box;font:inherit;font-size:.95rem;color:var(--ak-fg);background:var(--ak-soft);border:1px solid var(--ak-line);border-radius:.5rem;padding:.45rem .6rem;resize:vertical}
+.ak-chat textarea[hidden]{display:none}
+.ak-end{display:grid;gap:.5rem;border-top:1px solid var(--ak-line);padding-top:1rem}
+.ak-end label{font-weight:650}
+.ak-row{display:flex;flex-wrap:wrap;gap:.6rem;align-items:center}
+.ak-btn{font:inherit;font-size:.95rem;border-radius:.5rem;padding:.45rem .9rem;cursor:pointer;border:1px solid var(--ak-ink);background:var(--ak-ink);color:var(--ak-on);white-space:nowrap}
+.ak-btn.ak-sec{background:transparent;color:var(--ak-fg);border-color:var(--ak-line)}
+.ak-msg{font-size:.85rem;color:var(--ak-muted)}
+.ak-dock{position:fixed;right:1rem;bottom:1rem;z-index:40;display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;max-width:calc(100vw - 2rem);background:var(--ak-card);color:var(--ak-fg);border:1px solid var(--ak-line);border-radius:.75rem;padding:.5rem;box-shadow:0 .25rem 1.1rem rgba(0,0,0,.16);font:.9rem/1.3 system-ui,"Segoe UI",sans-serif}
+.ak-dock .ak-msg{padding:0 .3rem}
+.ak-dock .ak-btn{max-width:22rem;overflow:hidden;text-overflow:ellipsis}
+.ak-zoom{position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.88);display:grid;place-items:center;overflow:auto;cursor:zoom-out}
+.ak-zoom img{max-width:100vw;max-height:100vh;width:auto;height:auto}
+.ak-manual{position:fixed;inset:10vh 1rem auto;z-index:61;max-width:40rem;margin:0 auto;background:var(--ak-card);color:var(--ak-fg);border:1px solid var(--ak-line);border-radius:.75rem;padding:1rem;display:grid;gap:.6rem;box-shadow:0 .5rem 2rem rgba(0,0,0,.3)}
+.ak-manual textarea{min-height:14rem;font:.9rem/1.4 Consolas,monospace;width:100%;box-sizing:border-box}
+.ak-proof li.ak-un{list-style:none;margin-left:-1.6rem;padding:.4rem .6rem;border-left:.25rem solid var(--ak-lo);background:var(--ak-soft);border-radius:.25rem}
+.ak-proof li.ak-un::before{content:attr(data-un);display:inline-block;font-size:.75rem;font-weight:700;color:var(--ak-lo);border:1px solid currentColor;border-radius:1rem;padding:0 .5rem;margin-right:.5rem}
+.ak-proof-sum{font-size:.95rem;color:var(--ak-muted)}
+.ak-none{font-size:1rem;background:var(--ak-soft);border-radius:.6rem;padding:.75rem 1rem;margin:0 0 1.5rem}
+main{padding-bottom:7rem}
+@media (max-width:40rem){.ak-dock{left:.5rem;right:.5rem;bottom:.5rem}.ak-opt{padding-left:2.4rem}}
+@media print{.ak-dock,.ak-name,.ak-cbtn,.ak-all{display:none}}

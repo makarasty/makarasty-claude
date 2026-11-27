@@ -1,13 +1,14 @@
 #!/usr/bin/env node
-// proof.mjs - before/after screenshots of UI work as a numbered HTML report, without the images entering
+// proof.mjs - before/after screenshots of UI work as a numbered report page (rendered by the report skill), without the images entering
 // the model's context. The browser pane renders the page to PNG with html-to-image and POSTs it to a tiny
 // local receiver; only a small JSON line comes back to the model.
 //
 //   node proof.mjs serve <dir> [--port 0]        receiver on 127.0.0.1; prints PORT=<n>, writes <dir>/.port ("<port> <token>")
 //   node proof.mjs snippet <dir> <name> [css-selector]   one JS expression for the pane's javascript_tool
 //   node proof.mjs block <dir> --title "..." [--what ".."] [--files a,b] [--before n] [--after n]
-//                              [--viewport WxH] [--theme light|dark] [--note ".."] [--id N]
-//   node proof.mjs report <dir> [--title ".."] [--out <dir>/report.html] [--inline]
+//                              [--viewport WxH] [--theme light|dark] [--note ".."] [--box x1,y1,x2,y2[;..]] [--id N]
+//   node proof.mjs report <dir> (--chat "<sidebar title>" | --chat-id <session id>) [--title ".."] [--out <dir>/report.html]
+//                              [--lang en]    (renders <dir>/report.md with the report skill; --inline is a no-op)
 //   node proof.mjs stop <dir>
 //   node proof.mjs --selftest
 //
@@ -18,13 +19,14 @@
 // a write; use one dir per chat.
 import http from 'node:http';
 import { homedir, tmpdir } from 'node:os';
-import { join, resolve, relative, dirname, sep, isAbsolute } from 'node:path';
+import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, rmSync, statSync, mkdtempSync, readdirSync, copyFileSync } from 'node:fs';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { unmsys } from '../lib/msys.mjs';
+import { build } from '../report/report.mjs';
 
 const LIB_VERSION = '1.11.11';
 const LIB_URL = `https://cdn.jsdelivr.net/npm/html-to-image@${LIB_VERSION}/dist/html-to-image.js`;
@@ -199,10 +201,17 @@ export function readBlocks(dir) {
     return out.sort((a, b) => a.id - b.id);
 }
 
+// image pixels "x1,y1,x2,y2[;x1,y1,x2,y2]"; report.mjs checks them against the PNG size when it renders
+export function parseBox(s) {
+    const boxes = String(s).split(';').map(x => x.trim()).filter(Boolean).map(x => (/^\d+,\d+,\d+,\d+$/.test(x) ? x.split(',').map(Number) : null));
+    if (!boxes.length || boxes.some(b => !b || b[0] >= b[2] || b[1] >= b[3])) throw new Error('--box must look like x1,y1,x2,y2[;x1,y1,x2,y2] in image pixels, with x1<x2 and y1<y2');
+    return boxes.map(b => b.join(',')).join(';');
+}
+
 export function upsertBlock(dir, o) {
     mkdirSync(resolve(dir), { recursive: true });
     const blocks = readBlocks(dir);
-    const fields = { title: o.title, what: o.what, files: o.files === undefined ? undefined : String(o.files).split(',').map(s => s.trim()).filter(Boolean), before: o.before, after: o.after, viewport: o.viewport, theme: o.theme, note: o.note };
+    const fields = { title: o.title, what: o.what, files: o.files === undefined ? undefined : String(o.files).split(',').map(s => s.trim()).filter(Boolean), before: o.before, after: o.after, viewport: o.viewport, theme: o.theme, note: o.note, box: o.box === undefined ? undefined : parseBox(o.box) };
     if (fields.viewport !== undefined && !/^\d{2,5}x\d{2,5}$/.test(fields.viewport)) throw new Error('--viewport must look like 1280x720');
     if (fields.theme !== undefined && !['light', 'dark'].includes(fields.theme)) throw new Error('--theme must be light or dark');
     for (const k of ['before', 'after']) if (fields[k] !== undefined && !NAME_RE.test(fields[k])) throw new Error(`--${k} is not a valid image name`);
@@ -224,70 +233,99 @@ export function upsertBlock(dir, o) {
 }
 
 // ---- report ----
-const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
-
-const CSS = `:root{--bg:#f6f7f9;--card:#fff;--fg:#1b1f24;--mut:#5c6670;--line:#d8dde3;--acc:#2b6cb0;--chip:#e9edf2}
-@media(prefers-color-scheme:dark){:root{--bg:#14171a;--card:#1d2227;--fg:#e8ebee;--mut:#9aa4ae;--line:#323a42;--acc:#7ab4f0;--chip:#2a3138}}
-*{box-sizing:border-box}body{margin:0;padding:24px 16px 64px;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
-main{max-width:1280px;margin:0 auto}h1{font-size:26px;margin:0 0 4px}.sub{color:var(--mut);margin:0 0 24px}
-section{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px;margin:0 0 20px}
-.num{font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--acc)}
-h2{font-size:21px;margin:2px 0 8px}.chips{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
-.chip{background:var(--chip);color:var(--mut);border-radius:999px;padding:2px 10px;font-size:12px}
-.what{margin:6px 0}.files{color:var(--mut);font-size:13px;word-break:break-all}.files code{background:var(--chip);padding:1px 5px;border-radius:4px}
-.pair{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}@media(max-width:700px){.pair{grid-template-columns:1fr}}
-figure{margin:0;min-width:0}figcaption{font-size:12px;font-weight:600;color:var(--mut);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px}
-img{display:block;width:100%;height:auto;border:1px solid var(--line);border-radius:6px;cursor:zoom-in;background:#fff}
-.none{border:1px dashed var(--line);border-radius:6px;padding:14px;color:var(--mut)}.note{margin-top:12px;padding:8px 12px;border-left:3px solid var(--acc);background:var(--chip)}
-#zoom{position:fixed;inset:0;background:rgba(0,0,0,.85);display:none;overflow:auto;cursor:zoom-out;z-index:9}#zoom.on{display:block}#zoom img{width:auto;max-width:none;margin:0 auto;border:0;border-radius:0;cursor:zoom-out}`;
-
-const JS = `document.addEventListener('click',function(e){var z=document.getElementById('zoom');if(e.target.matches&&e.target.matches('figure img')){z.firstChild.src=e.target.src;z.className='on'}else if(z.className){z.className='';z.firstChild.removeAttribute('src')}});document.addEventListener('keydown',function(e){if(e.key==='Escape'){var z=document.getElementById('zoom');z.className='';z.firstChild.removeAttribute('src')}});`;
-
-// The page's fixed words, in the person's language (`report --lang en`); ru is the default.
+// The report is a Markdown file rendered by the report skill's build(), so it has the same fixed shape as every
+// page handed to the person: chat bar, one question card per block, "Чем проверено" last.
 const WORDS = {
-    ru: { title: 'Отчёт по UI', before: 'Как было', after: 'Как стало', block: 'Блок', missing: n => `Файл ${n}.png не найден.`, theme: 'тема', none: 'Снимка нет', why: ': причина в примечании ниже', nowhy: ' (причина не записана)', sub: n => `Блоков: ${n}. Скажите «блок N переделай» - переделаю один блок.` },
-    en: { title: 'UI report', before: 'Before', after: 'After', block: 'Block', missing: n => `${n}.png not found.`, theme: 'theme', none: 'No screenshot', why: ': the reason is in the note below', nowhy: ' (no reason recorded)', sub: n => `Blocks: ${n}. Say "redo block N" to redo one block.` },
+    ru: {
+        title: 'Отчёт по UI', before: 'Как было', after: 'Как стало', block: 'Блок', accept: 'Принять', redo: 'Переделать', files: 'Файлы',
+        lead: (n, boxed) => `Сделано и снято блоков: ${n}. У каждого — как было и как стало${boxed ? '; рамкой отмечено, что поменялось' : ''}.`,
+        acceptWhat: 'Остаётся как стало.', redoWhat: 'Чат переделает этот блок по твоему комментарию.',
+        hi: 'высокая', mid: 'средняя', lo: 'низкая', pair: 'снимки до и после правки', win: v => ` в одном окне ${v}`, theme: t => `тема ${t}`,
+        noBefore: 'снимка «до» нет', noAfter: 'снимка «после» нет', noShots: 'снимков нет',
+        proof: 'Чем проверено', shotsBy: (v, t) => `снимки сделаны через html-to-image${v ? `, окно ${v}` : ''}${t ? `, тема ${t}` : ''}`,
+        unBefore: 'снимок «до» не сделан, сравнение с прежним видом не доказано', unAfter: 'снимок «после» не сделан, результат не доказан снимком',
+        unNone: 'снимков нет, на экране это не доказано',
+        pixels: 'Пиксельная точность снимков: не доказано — это перерисовка страницы html-to-image, не снимок экрана',
+    },
+    en: {
+        title: 'UI report', before: 'Before', after: 'After', block: 'Block', accept: 'Accept', redo: 'Redo', files: 'Files',
+        lead: (n, boxed) => `Blocks done and shot: ${n}. Each shows before and after${boxed ? '; a box marks what changed' : ''}.`,
+        acceptWhat: 'Stays as it is now.', redoWhat: 'The chat redoes this block from your comment.',
+        hi: 'high', mid: 'medium', lo: 'low', pair: 'before and after shots', win: v => ` in one window ${v}`, theme: t => `theme ${t}`,
+        noBefore: 'no "before" shot', noAfter: 'no "after" shot', noShots: 'no shots',
+        proof: 'How it was checked', shotsBy: (v, t) => `shots made with html-to-image${v ? `, window ${v}` : ''}${t ? `, theme ${t}` : ''}`,
+        unBefore: 'no "before" shot, the comparison with the old look is not proven', unAfter: 'no "after" shot, the result is not proven by a shot',
+        unNone: 'no shots, not proven on screen',
+        pixels: 'Pixel accuracy of the shots: not proven. They are a re-render of the page by html-to-image, not a screen capture',
+    },
 };
 
-export function buildReport(dir, { title, out, inline = false, maxInline = MAX_INLINE, lang = 'ru' } = {}) {
+// User text sits on one line of the ask grammar: a line start or "![" would read as a question, an option or an image.
+const oneLine = s => String(s ?? '').replace(/\s+/g, ' ').trim().replace(/!\[/g, '! [');
+const ctxText = s => oneLine(s).replace(/^(?=[?*+\-`~])/, '​');
+const optText = s => oneLine(s).replace(/\|/g, '¦'); // "|" splits the fields of an option line
+// The title is page prose, which the renderer checks for raw HTML and template leftovers: code-span those words.
+const titleText = s => oneLine(s).replace(/`/g, "'").replace(/<[^>]*>|\{\{|\}\}|\[\[|\bTODO\b|\bTBD\b/g, m => `\`${m}\``);
+
+function atomicWrite(file, data) {
+    mkdirSync(dirname(file), { recursive: true });
+    const tmp = `${file}.${process.pid}.tmp`;
+    writeFileSync(tmp, data);
+    renameSync(tmp, file);
+}
+
+export function buildReport(dir, { title, out, chat, lang = 'ru', maxInline = MAX_INLINE } = {}) {
+    if (!chat) throw new Error('the report must name the chat that made it: pass --chat "<title as in the sidebar>" or --chat-id <session id>');
     const W = WORDS[lang] ?? WORDS.ru;
-    title ??= W.title;
     dir = resolve(dir);
     out = resolve(out || join(dir, 'report.html'));
     const warn = [];
-    const rel = relative(dir, dirname(out));
-    const outside = rel.startsWith('..') || isAbsolute(rel); // another folder or drive: relative links would break
-    const img = (name, label, alt) => {
-        if (!name) return null;
-        const f = join(dir, `${name}.png`);
-        if (!existsSync(f)) { warn.push(`image missing: ${name}.png`); return `<figure><figcaption>${esc(label)}</figcaption><div class="none">${esc(W.missing(name))}</div></figure>`; }
-        let src;
-        if (inline) src = `data:image/png;base64,${readFileSync(f).toString('base64')}`;
-        else if (outside) { mkdirSync(dirname(out), { recursive: true }); copyFileSync(f, join(dirname(out), `${name}.png`)); src = encodeURIComponent(`${name}.png`); }
-        else src = relative(dirname(out), f).split(sep).map(encodeURIComponent).join('/');
-        return `<figure><figcaption>${esc(label)}</figcaption><img src="${esc(src)}" alt="${esc(alt)}" loading="lazy"></figure>`;
+    const blocks = readBlocks(dir);
+    if (!blocks.length) throw new Error(`no blocks in ${dir}: add one with proof.mjs block first`);
+    const has = name => {
+        if (!name) return false;
+        if (existsSync(join(dir, `${name}.png`))) return true;
+        warn.push(`image missing: ${name}.png`);
+        return false;
     };
-    const sections = readBlocks(dir).map(b => {
-        const pair = [img(b.before, W.before, `${W.block} ${b.id}: ${W.before}`), img(b.after, W.after, `${W.block} ${b.id}: ${W.after}`)].filter(Boolean);
-        const chips = [b.viewport && `viewport ${b.viewport}`, b.theme && `${W.theme}: ${b.theme}`].filter(Boolean).map(c => `<span class="chip">${esc(c)}</span>`).join('');
-        return `<section id="b${b.id}"><div class="num">${W.block} ${b.id}</div><h2>${esc(b.title)}</h2>` +
-            (chips ? `<div class="chips">${chips}</div>` : '') +
-            (b.what ? `<p class="what">${esc(b.what)}</p>` : '') +
-            (b.files?.length ? `<div class="files">${b.files.map(f => `<code>${esc(f)}</code>`).join(' ')}</div>` : '') +
-            (pair.length ? `<div class="pair">${pair.join('')}</div>` : `<div class="none">${W.none}${b.note ? W.why : W.nowhy}.</div>`) +
-            (b.note ? `<div class="note">${esc(b.note)}</div>` : '') + `</section>`;
-    });
-    const html = `<!doctype html>\n<html lang="${lang in WORDS ? lang : 'ru'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>${esc(title)}</title><style>${CSS}</style></head><body><main><h1>${esc(title)}</h1><p class="sub">${esc(W.sub(sections.length))}</p>${sections.join('\n')}</main><div id="zoom"><img alt=""></div><script>${JS}</script></body></html>\n`;
-    const bytes = Buffer.byteLength(html);
-    if (inline && bytes > maxInline) { // too big for an Artifact: write the linked variant instead
-        const r = buildReport(dir, { title, out, inline: false, maxInline, lang });
-        r.warn.unshift(`inline report would be ${(bytes / 1048576).toFixed(1)} MB, over ${maxInline / 1048576} MB: wrote the linked variant (PNGs beside it) instead`);
-        r.linked = true;
-        return r;
+    const ask = [], proof = [];
+    for (const b of blocks) {
+        const hasB = has(b.before), hasA = has(b.after);
+        // A shot taken by selector can grow after the edit: a box goes only on the shots it fits inside.
+        const mark = name => {
+            if (!b.box) return '';
+            const png = readFileSync(join(dir, `${name}.png`));
+            const w = png.readUInt32BE(16), h = png.readUInt32BE(20);
+            if (b.box.split(';').every(r => { const [, , x2, y2] = r.split(',').map(Number); return x2 <= w && y2 <= h; })) return `#box=${b.box}`;
+            warn.push(`block ${b.id}: --box does not fit ${name}.png (${w}x${h}), left off that shot`);
+            return '';
+        };
+        const shots = [hasB && `![${W.before}](${b.before}.png${mark(b.before)})`, hasA && `![${W.after}](${b.after}.png${mark(b.after)})`].filter(Boolean).join(' ');
+        const files = (b.files ?? []).map(f => `\`${f.replace(/`/g, "'")}\``).join(', ');
+        const ctx = [b.what && oneLine(b.what).replace(/[.!?]?$/, '.'), files && `${W.files}: ${files}.`].filter(Boolean).join(' ');
+        const note = b.note ? optText(b.note) : '';
+        const noteInOption = hasA && !hasB;
+        ask.push(`? ${W.block} ${b.id}. ${oneLine(b.title)}`);
+        if (ctx) ask.push(ctxText(ctx));
+        if (note && !noteInOption) ask.push(ctxText(b.note));
+        if (shots) ask.push(shots);
+        let sure, bad, shotsBy;
+        if (hasB && hasA) { sure = `${W.hi}: ${W.pair}${b.viewport ? W.win(b.viewport) : ''}${b.theme ? `, ${W.theme(b.theme)}` : ''}`; shotsBy = W.shotsBy(b.viewport, b.theme); }
+        else if (hasA) { sure = `${W.mid}: ${W.noBefore}${note ? `, ${note}` : ''}`; bad = W.unBefore; shotsBy = W.shotsBy(b.viewport, b.theme); }
+        else if (hasB) { sure = `${W.lo}: ${W.noAfter}`; bad = W.unAfter; shotsBy = W.shotsBy(b.viewport, b.theme); }
+        else { sure = `${W.lo}: ${W.noShots}`; bad = W.unNone; }
+        ask.push(`* ${W.accept} | ${W.acceptWhat} | ${sure}`, `- ${W.redo} | ${W.redoWhat}`, '');
+        proof.push(`- ${W.block} ${b.id}: ${[shotsBy, bad].filter(Boolean).join('; ')}.`);
     }
-    mkdirSync(dirname(out), { recursive: true });
-    writeFileSync(out, html);
-    return { out, bytes, blocks: sections.length, warn };
+    const md = `# ${titleText(title) || W.title}\n\n${W.lead(blocks.length, blocks.some(b => b.box))}\n\n\`\`\`ask\n${ask.join('\n')}\`\`\`\n\n## ${W.proof}\n\n${proof.join('\n')}\n- ${W.pixels}.\n`;
+    atomicWrite(join(dir, 'report.md'), md);
+    const r = build(md, dir, { chat });
+    if (r.errors.length) throw new Error(`report.md does not render:\n${r.errors.join('\n')}`);
+    warn.push(...r.notes);
+    const bytes = Buffer.byteLength(r.html);
+    if (bytes > maxInline) warn.push(`the page is ${(bytes / 1048576).toFixed(1)} MB, over ${maxInline / 1048576} MB: too big for an Artifact, hand over the local file`);
+    atomicWrite(out, r.html);
+    return { out, bytes, blocks: blocks.length, warn };
 }
 
 // ---- cli ----
@@ -434,29 +472,45 @@ async function selftest() {
         cli('block', dir, '--title', 'T4', '--what', 'C:/Program Files/Git/settings кнопка');
         assert.equal(readBlocks(dir).find(b => b.title === 'T4').what, '/settings кнопка', 'block --what undone under Git Bash');
 
-        const plain = buildReport(dir, { title: 'T <b>x</b>' });
+        assert.equal(upsertBlock(dir, { id: 1, box: ' 0,0,1,1 ; 0,0,1,1' }).box, '0,0,1,1;0,0,1,1', '--box stored normalised');
+        for (const bad of ['1,2,3', '5,5,1,9', 'a,b,c,d', '', '0,0,1,1;x']) assert.throws(() => upsertBlock(dir, { id: 1, box: bad }), /--box must look like/, `bad --box "${bad}" refused`);
+        upsertBlock(dir, { title: 'После без до', after: '01-after', what: '- как стало', note: '?: правка | до неё снимка нет' });
+        const SIDE = 'Мой чат';
+        assert.throws(() => buildReport(dir, {}), /--chat.*--chat-id/, 'no chat named: error naming both flags');
+        const noChat = cli('report', dir);
+        assert.ok(noChat.status === 1 && /--chat/.test(noChat.stderr) && /--chat-id/.test(noChat.stderr), 'CLI without --chat: exit 1, both flags named');
+        const plain = buildReport(dir, { title: 'T <b>x</b>', chat: SIDE });
         let html = readFileSync(plain.out, 'utf8');
-        assert.ok(html.includes('Блок 1') && html.includes('Блок 2'), 'both blocks');
-        assert.ok(/<img src="01-before\.png"/.test(html), 'relative img');
-        assert.ok(!html.includes('<script>alert(1)'), 'title escaped');
-        assert.ok(html.includes('&lt;script&gt;alert(1)') && html.includes('T &lt;b&gt;x&lt;/b&gt;'), 'escaped text present');
-        assert.ok(html.includes('Снимка нет'), 'imageless block says why');
-        html = readFileSync(buildReport(dir, { out: join(dir, 'en.html'), lang: 'en' }).out, 'utf8');
-        assert.ok(html.includes('<html lang="en">') && html.includes('Block 1') && html.includes('No screenshot') && html.includes('UI report') && !/[а-яё]/i.test(html.replace(/<section[\s\S]*?<\/section>/g, '')), 'lang en: fixed words in English');
-        const inl = buildReport(dir, { inline: true, out: join(dir, 'inline.html') });
-        html = readFileSync(inl.out, 'utf8');
-        assert.ok(html.includes('src="data:image/png;base64,'), 'inline data uri');
-        assert.equal(inl.warn.length, 0, 'no warnings for a tiny report');
-        const big2 = buildReport(dir, { inline: true, out: join(dir, 'big.html'), maxInline: 100 });
-        html = readFileSync(big2.out, 'utf8');
-        assert.ok(big2.linked && big2.warn.some(w => w.includes('linked variant')), 'oversize inline says it fell back');
-        assert.ok(!html.includes('data:image/png') && /<img src="01-before\.png"/.test(html), 'oversize inline wrote the linked variant');
-        const ext = buildReport(dir, { out: join(root, 'ext', 'r.html') });
-        html = readFileSync(ext.out, 'utf8');
-        assert.ok(readFileSync(join(root, 'ext', '01-before.png')).equals(png), 'PNG copied next to an --out outside <dir>');
-        assert.ok(/<img src="01-before\.png"/.test(html), 'out-of-dir report links the copied PNG');
-        const sub = buildReport(dir, { out: join(dir, 'sub', 'r.html') });
-        assert.ok(readFileSync(sub.out, 'utf8').includes('src="../01-before.png"') && !existsSync(join(dir, 'sub', '01-before.png')), '--out inside <dir> keeps the relative link');
+        assert.equal(plain.out, join(dir, 'report.html'), 'default out is <dir>/report.html');
+        assert.ok(html.includes(`Страницу сделал чат <b>«${SIDE}»</b>`), 'chat bar names the chat');
+        assert.ok(html.includes('Блок 1. Кнопка') && html.includes('Блок 2. Второй') && html.includes('Блок 5. После без до'), 'a question per block');
+        assert.ok(html.includes('src="data:image/png;base64,'), 'shots embedded');
+        assert.ok(!/<img src="[^d]/.test(html), 'no linked image');
+        assert.ok(html.includes('class="ak-mk"') && html.includes('Как было') && html.includes('Как стало'), 'box mark and both captions');
+        assert.ok(!html.includes('<script>alert(1)') && html.includes('&lt;script&gt;alert(1)') && html.includes('T <code>&lt;b&gt;</code>x<code>&lt;/b&gt;</code>'), 'title escaped, its tags code-spanned');
+        assert.ok(html.includes('Принять') && html.includes('Переделать') && html.includes('высокая') && html.includes('средняя') && html.includes('низкая'), 'options and confidence levels');
+        assert.ok(html.includes('средняя</span>: снимка «до» нет, ?: правка ¦ до неё снимка нет'), 'block 5: note in the option, | and leading ? made safe');
+        assert.ok(html.includes('CSP blocked the script'), 'block without shots keeps its note');
+        assert.ok(html.includes('Чем проверено') && html.includes('Пиксельная точность снимков: не доказано'), 'proof section with the fixed unproven line');
+        assert.equal(html.match(/<article class="ak-q"/g).length, 5, 'exactly one question per block');
+        assert.ok(readFileSync(join(dir, 'report.md'), 'utf8').startsWith('# T `<b>`x`</b>`\n'), 'report.md written beside the shots');
+        assert.doesNotThrow(() => buildReport(dir, { title: 'Убрал <style> из письма, TODO {{name}}', chat: SIDE }), 'a title with <style>, TODO or {{ }} still builds');
+        assert.deepEqual(readdirSync(dir).filter(f => f.endsWith('.tmp')), [], 'no temp left by the report');
+        const out2 = join(root, 'Desk', 'Тема.html');
+        const viaCli = cli('report', dir, '--chat', SIDE, '--out', out2, '--inline');
+        assert.ok(viaCli.status === 0 && existsSync(out2), `CLI report to --out, --inline accepted: ${viaCli.stderr}`);
+        upsertBlock(dir, { id: 1, box: '0,0,2,2' });
+        const off = buildReport(dir, { chat: SIDE });
+        assert.ok(off.warn.some(w => /does not fit 01-before\.png \(1x1\)/.test(w)) && !readFileSync(join(dir, 'report.md'), 'utf8').includes('#box=0,0,2,2'), 'a box a shot cannot hold is left off it, with a warning');
+        upsertBlock(dir, { id: 1, box: '0,0,1,1' });
+        const tiny = buildReport(dir, { chat: SIDE, maxInline: 100 });
+        assert.ok(tiny.warn.some(w => w.includes('over')), 'a page past the size limit warns');
+        const en = join(root, 'en');
+        upsertBlock(en, { title: 'Button', what: 'padding', files: 'a.vue', before: '01-before', after: '01-after', viewport: '1280x720', theme: 'light' });
+        copyFileSync(join(dir, '01-before.png'), join(en, '01-before.png')); copyFileSync(join(dir, '01-before.png'), join(en, '01-after.png'));
+        html = readFileSync(buildReport(en, { chat: 'My chat', lang: 'en' }).out, 'utf8');
+        assert.ok(html.includes('<html lang="en">') && html.includes('Block 1. Button') && html.includes('Accept') && html.includes('Redo') && html.includes('UI report') && html.includes('not proven'), 'lang en: fixed words in English');
+        assert.ok(!/[а-яё]/i.test(html.replace(/<(style|script)>[\s\S]*?<\/\1>/g, '')), 'lang en: no Russian left outside style and script');
     } finally {
         assert.equal(await stopServer(dir), true, 'stop finds the port');
         assert.equal(await alive(srv.port, T), false, 'server is down');
@@ -494,9 +548,14 @@ async function main(argv) {
             return;
         }
         case 'report': {
-            const r = buildReport(need(0, '<dir> [--title ..] [--out file] [--inline]'), { title: flags.title, out: flags.out, inline: !!flags.inline, lang: flags.lang });
+            let chat = flags.chat;
+            if (!chat && flags['chat-id']) {
+                chat = (await import('../unfinished/chats.mjs')).desktopTitle(flags['chat-id']) ?? '';
+                if (!chat) throw new Error(`no Desktop title found for session ${flags['chat-id']}: pass --chat "<title as in the sidebar>"`);
+            }
+            const r = buildReport(need(0, '<dir> (--chat "<sidebar title>" | --chat-id <session id>) [--title ..] [--out file] [--lang en]'), { title: flags.title, out: flags.out, chat, lang: flags.lang });
             for (const w of r.warn) console.error(`warning: ${w}`);
-            console.log(`${r.out} (${r.blocks} blocks, ${(r.bytes / 1024).toFixed(0)} KB${r.linked ? ', linked, not inline' : ''})`);
+            console.log(`${r.out} (${r.blocks} blocks, ${(r.bytes / 1024).toFixed(0)} KB)`);
             return;
         }
         case 'stop': {

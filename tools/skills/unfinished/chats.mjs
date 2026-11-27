@@ -176,6 +176,9 @@ function desktopTitles(sinceMs) {
     return map;
 }
 
+// The sidebar title of one Desktop session, by its CLI session id; null when the Desktop app has no record of it.
+export const desktopTitle = (id) => desktopTitles(0).get(id)?.title ?? null;
+
 function projectFiles(cfg, cwd, sinceMs) {
     const root = join(cfg, 'projects'), slug = slugOf(cwd), out = [];
     let dirs = []; try { dirs = readdirSync(root); } catch {}

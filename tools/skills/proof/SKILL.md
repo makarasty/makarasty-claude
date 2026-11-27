@@ -9,7 +9,7 @@ cannot be saved. So the pane renders the page to PNG itself (html-to-image) and 
 receiver, and you get back one small JSON line. A report of 30 blocks costs no image tokens.
 
 Shell variables do not survive between calls, so every command spells the full path: `node "${CLAUDE_SKILL_DIR}/proof.mjs" <cmd> <dir> ...`. `<dir>` is a fresh
-folder under the system temp dir for this task (it holds the PNGs, `blocks.jsonl`, `report.html`).
+folder under the system temp dir for this task (it holds the PNGs, `blocks.jsonl`, `report.md`).
 
 ## Flow
 
@@ -33,16 +33,23 @@ folder under the system temp dir for this task (it holds the PNGs, `blocks.jsonl
      `block ... --note "no baseline: the edit came before the shot"`. A baseline from a second dev server
      on a clean worktree is out of scope for this skill.
    - Run `snippet ... NN-after` the same way, in the same viewport and theme.
-   - `node "${CLAUDE_SKILL_DIR}/proof.mjs" block <dir> --title "..." --what "one line of what changed" --files a.vue,b.css --before NN-before --after NN-after --viewport 1280x720 --theme light`.
-     Read the viewport from `innerWidth x innerHeight`; for a dark shot emulate the scheme first.
-4. After the work: `node "${CLAUDE_SKILL_DIR}/proof.mjs" report <dir> --title "..." --inline`. Publish `<dir>/report.html` with the
-   Artifact tool as a private artifact; if there is none, give the local path. Without `--inline` the file
-   links the PNGs beside it and must stay with them. `--out` outside `<dir>` copies the PNGs next to the
-   out file. If the inline file would pass 15 MB, `report --inline` writes the linked variant instead and
-   prints a warning saying so; publish the local file then, not an artifact.
+   - `node "${CLAUDE_SKILL_DIR}/proof.mjs" block <dir> --title "..." --what "one line of what changed" --files a.vue,b.css --before NN-before --after NN-after --viewport 1280x720 --theme light --box 40,120,360,180`.
+     Read the viewport from `innerWidth x innerHeight`; for a dark shot emulate the scheme first. `--box
+     x1,y1,x2,y2[;x1,y1,x2,y2]` (image pixels of the shot) marks the changed spot on both shots; every before/after
+     block gets one. Image pixels are CSS pixels times the shot's scale: take the rect with `getBoundingClientRect()`
+     (as is for a viewport shot, minus the shot element's own rect for a selector shot) and multiply by
+     `w / innerWidth` (the snippet returns `w`; on a 150 % display the PNG is 1.5x the CSS size). A shot the box does
+     not fit gets no box and a warning.
+4. After the work, write the page to the person's Desktop (`[Environment]::GetFolderPath('Desktop')`):
+   `node "${CLAUDE_SKILL_DIR}/proof.mjs" report <dir> --title "..." --out "<Desktop>/<Topic>.html" --chat-id ${CLAUDE_SESSION_ID}`
+   (`--chat "<sidebar title>"` instead when the id has no Desktop title; neither flag is an error). It writes
+   `<dir>/report.md` and renders it with the report skill, so the page has the same fixed shape as every report
+   page: this chat's name on top, one question per block with its shots (embedded, so the file stands alone) and
+   the buttons «Принять» / «Переделать», «Скопировать ответы», and «Чем проверено» at the bottom. Give the person
+   the path. `--inline` is accepted and does nothing; a page over 15 MB prints a warning.
 5. "блок N переделай ...": redo only that block, take a new `NN-after`, `block <dir> --id N` with the changed
-   fields, rebuild with `report --inline`, and republish to the same artifact or path. Block numbers never
-   change, so the person's references stay valid.
+   fields, rebuild with the same `report` command to the same `--out`. Block numbers never change, so the
+   person's references stay valid.
 6. `node "${CLAUDE_SKILL_DIR}/proof.mjs" stop <dir>` when the task is done.
 
 ## When the shot fails
@@ -64,5 +71,5 @@ wires that. The report is in the person's language: `report --lang en` for a per
 
 ## Done when
 
-Every UI change has a numbered block (shots, or the reason there are none), the report is published or its
-path given, and the receiver is stopped.
+Every UI change has a numbered block (shots, or the reason there are none), the report page is on the
+Desktop and its path given, and the receiver is stopped.

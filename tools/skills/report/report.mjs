@@ -9,9 +9,11 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, renameSync, realpat
 import { dirname, resolve, extname, basename, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-export function build(md, baseDir = '.') {
+export function build(md, baseDir = '.', { chat = '' } = {}) {
   const errors = [];
   const notes = [];
+  const asks = [];
+  let qn = 0, askWords = 0;
   const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   // Code spans become placeholders first, so bold and links may wrap them and nothing inside them is touched.
   const inline = (s) => {
@@ -57,6 +59,79 @@ export function build(md, baseDir = '.') {
     return out;
   };
   const caption = (lines) => lines.find((l) => /^=\s/.test(l.trim()));
+
+  // A shot inside a question: ![caption](a.png#box=x1,y1,x2,y2;x1,y1,x2,y2) in image pixels; boxes need a PNG (its size is in the header).
+  const shot = (alt, ref) => {
+    const [path, frag = ''] = ref.split('#');
+    const boxes = (frag.match(/^box=(.+)$/)?.[1] ?? '').split(';').filter(Boolean).map((b) => b.split(',').map(Number));
+    let rel = path.trim();
+    try { rel = decodeURI(rel); } catch { /* a literal % stays as written */ }
+    const file = resolve(baseDir, rel);
+    const mime = MIME[extname(file).toLowerCase()];
+    if (!mime || !existsSync(file)) { errors.push(`shot "${path}": ${mime ? 'not found (paths are relative to the .md file)' : 'use png, jpg, gif, webp or svg'}`); return ''; }
+    const buf = readFileSync(file);
+    let mk = '';
+    if (boxes.length) {
+      if (mime !== 'image/png' || buf.length < 24) { errors.push(`shot "${path}": a #box mark needs a PNG`); return ''; }
+      const w = buf.readUInt32BE(16), h = buf.readUInt32BE(20), pct = (v, of) => `${((v / of) * 100).toFixed(2)}%`;
+      if (boxes.some((b) => b.length !== 4 || b.some((v) => !Number.isFinite(v)) || b[0] >= b[2] || b[1] >= b[3] || b[2] > w || b[3] > h)) { errors.push(`shot "${path}": #box=x1,y1,x2,y2 in pixels inside ${w}x${h}`); return ''; }
+      mk = `<div class="ak-mk">${boxes.map(([a, b, c, d], k) => `<i style="left:${pct(a, w)};top:${pct(b, h)};width:${pct(c - a, w)};height:${pct(d - b, h)}"></i>${k ? '' : `<svg style="left:${pct(a, w)};top:${pct(b, h)}" viewBox="0 0 24 24" aria-hidden="true"><path class="h" d="M3 3L19 19M19 19H10M19 19V10"/><path d="M3 3L19 19M19 19H10M19 19V10"/></svg>`}`).join('')}</div>`;
+    }
+    return `<figure class="ak-shot">${alt ? `<figcaption>${inline(alt)}</figcaption>` : ''}<div class="ak-frame"><img src="data:${mime};base64,${buf.toString('base64')}" alt="${esc(alt)}">${mk}</div></figure>`;
+  };
+  const shots = (list) => (list.length ? `<div class="ak-shots">${list.map(([a, p]) => shot(a, p)).join('')}</div>` : '');
+  // A path may hold spaces and one level of parentheses ("a (1).png"); a trailing "title" is dropped.
+  const IMG = /!\[([^\]]*)\]\(((?:[^()]|\([^()]*\))+?)(?:\s+"[^"]*")?\)/g;
+  const SURE = /^(высокая|средняя|низкая|вкус|high|medium|low|taste)(?!\p{L})[\s:—–-]*(.*)$/iu;
+  const LEVEL = { высокая: 'hi', high: 'hi', средняя: 'mid', medium: 'mid', низкая: 'lo', low: 'lo', вкус: 'taste', taste: 'taste' };
+
+  // ```ask <chat name as in the sidebar>: the chat's questions as cards. Lines before the first "? " are the block's intro;
+  // "? question", then context lines and its shots; "* label | what changes | level: why" (the * marks the recommended one)
+  // or "- label | what changes | level: why"; lines indented under an option add text or shots to it.
+  const ask = (info, lines) => {
+    const to = info.trim() || chat;
+    if (!to) errors.push('an ```ask block needs the chat its answers go to: ```ask <title as in the sidebar>, or pass --chat');
+    askWords += lines.join(' ').split(/\s+/).filter((w) => /\p{L}/u.test(w)).length;
+    const intro = [], qs = [];
+    let q = null, o = null;
+    for (const raw of lines) {
+      if (!raw.trim()) continue;
+      const ind = /^\s/.test(raw), l = raw.trim();
+      let m;
+      if (!ind && l.startsWith('? ')) { q = { text: l.slice(2).trim(), ctx: [], shots: [], opts: [] }; qs.push(q); o = null; continue; }
+      if (!q) { intro.push(l); continue; }
+      if (!ind && (m = l.match(/^([*-])\s+(.+)$/))) {
+        const f = splitOutside(m[2], '|', false).map((s) => s.trim().replace(/\\\|/g, '|'));
+        if (f.length > 3) errors.push(`option "${f[0]}": write "label | what changes | level: why", a | inside text goes in \`code\``);
+        const s = f[2] ? f[2].match(SURE) : null;
+        if (f[2] && !s) errors.push(`option "${f[0]}": the third part says how sure: высокая / средняя / низкая (вкус when it is a taste call; high / medium / low / taste), then why`);
+        o = { rec: m[1] === '*', label: f[0], what: f[1] ?? '', sure: s ? { lv: LEVEL[s[1].toLowerCase()], word: s[1].toLowerCase(), why: s[2] } : null, extra: [], shots: [] };
+        q.opts.push(o);
+        continue;
+      }
+      const imgs = [...l.matchAll(IMG)].map((x) => [x[1], x[2]]);
+      const rest = l.replace(IMG, '').trim();
+      if (ind && o) { o.shots.push(...imgs); if (rest) o.extra.push(rest); continue; }
+      if (!o) { q.shots.push(...imgs); if (rest) q.ctx.push(rest); continue; }
+      errors.push(`question "${q.text}": the line "${l}" comes after its options; indent it under an option or start a new "? " question`);
+    }
+    if (!qs.length) errors.push('an ```ask block has no "? " question');
+    const cards = qs.map((x) => {
+      const n = ++qn;
+      if (x.opts.length < 2) errors.push(`question ${n} "${x.text}": give at least two options to press`);
+      if (x.opts.filter((y) => y.rec).length > 1) errors.push(`question ${n}: mark one recommended option (*), not several`);
+      if (!x.opts.some((y) => y.sure)) errors.push(`question ${n}: say how sure you are on at least one option (| высокая: why), a taste call says so`);
+      for (const y of x.opts) if (!y.what) errors.push(`question ${n}, option "${y.label}": say what changes if it is picked ("label | what changes | level: why")`);
+      if (x.text.split(/\s+/).length > 22) notes.push(`question ${n} is ${x.text.split(/\s+/).length} words: keep the question short, the rest goes in the line under it`);
+      const wide = x.opts.some((y) => y.shots.length);
+      const opts = x.opts.map((y) => `<div class="ak-opt" data-v="${esc(y.label)}"${y.rec ? ' data-rec' : ''}><div class="ak-opt-h"><b>${inline(y.label)}</b>${y.rec ? `<span class="ak-rec">${ui.rec}</span>` : ''}</div>${y.what ? `<p>${inline(y.what)}</p>` : ''}${y.extra.map((e) => `<p>${inline(e)}</p>`).join('')}${y.sure ? `<p class="ak-sure ${y.sure.lv}"><span>${y.sure.lv === 'taste' ? ui.taste : `${ui.sure} ${esc(y.sure.word)}`}</span>${y.sure.why ? `${y.sure.why.startsWith('(') ? ' ' : ': '}${inline(y.sure.why)}` : ''}</p>` : ''}${shots(y.shots)}</div>`).join('');
+      return `<article class="ak-q" data-n="${n}" data-q="${esc(x.text.replace(/`/g, ''))}"><h3><span class="ak-n">${n}</span><span>${inline(x.text)}</span></h3>${x.ctx.map((c) => `<p class="ak-ctx">${inline(c)}</p>`).join('')}${shots(x.shots)}<div class="ak-opts${wide ? ' ak-wide' : ''}">${opts}</div></article>`;
+    });
+    // Two blocks for one chat become one section: one copy button must carry all of that chat's answers.
+    const same = asks.find((a) => a.to === to);
+    if (same) { same.intro.push(...intro); same.cards.push(...cards); } else asks.push({ to, intro, cards });
+  };
+  const askSection = (a) => `<section class="ak-chat" data-chat="${esc(a.to)}"><header class="ak-chat-h"><span>${ui.to}</span><b>«${esc(a.to)}»</b><button type="button" class="ak-name" data-ak-name="${esc(a.to)}">${ui.name}</button></header>${a.intro.length ? `<p class="ak-intro">${a.intro.map(inline).join('<br>')}</p>` : ''}${a.cards.join('')}</section>`;
 
   // ```flow: one row per line, "label | step -> step (ok: note) -> step (bad: note)"; a last line "= caption".
   // Boxes are HTML, not SVG, so long words wrap instead of overflowing.
@@ -117,7 +192,8 @@ export function build(md, baseDir = '.') {
         while (i < lines.length && !close.test(lines[i])) body.push(lines[i++]);
         if (i >= lines.length) errors.push('a code block is never closed');
         i++;
-        if (lang === 'svg') { const s = svgSafe(body.join('\n')); if (s) out.push(`<figure>${s}</figure>`); }
+        if (lang === 'ask') ask(l.slice(m[0].length), body);
+        else if (lang === 'svg') { const s = svgSafe(body.join('\n')); if (s) out.push(`<figure>${s}</figure>`); }
         else if (lang === 'flow') out.push(flow(body));
         else if (lang === 'bars') out.push(bars(body));
         else out.push(`<pre><button type="button">${ui.copy}</button><code>${esc(body.join('\n'))}</code></pre>`);
@@ -208,25 +284,71 @@ export function build(md, baseDir = '.') {
   const cyr = (prose.match(/\p{Script=Cyrillic}/gu) ?? []).length;
   const lat = (prose.match(/[A-Za-z]/g) ?? []).length;
   const ru = cyr >= lat;
-  const ui = ru ? { lang: 'ru', copy: 'Копировать', done: 'Скопировано', sel: 'Выделено, нажми Ctrl+C' } : { lang: 'en', copy: 'Copy', done: 'Copied', sel: 'Selected, press Ctrl+C' };
+  const plural = (n, one, few, many) => `${n} ${n % 10 === 1 && n % 100 !== 11 ? one : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? few : many}`;
+  const ui = ru ? {
+    lang: 'ru', copy: 'Копировать', done: 'Скопировано', sel: 'Выделено, нажми Ctrl+C', from: 'Страницу сделал чат', to: 'Ответ — в чат', name: 'Скопировать название',
+    rec: 'рекомендую', sure: 'Уверенность:', taste: 'Дело вкуса, решаешь ты', proof: 'Чем проверено и как доказано', un: 'не доказано', none: 'От тебя ничего не нужно: вопросов на этой странице нет.',
+    sum: (q, c) => `<b>Нужно от тебя: ${plural(q, 'ответ', 'ответа', 'ответов')}${c > 1 ? ` в ${c} чат${c % 10 === 1 && c % 100 !== 11 ? 'е' : 'ах'}` : ''}.</b> Нажми вариант в каждой карточке; выбор сохраняется сам. ${c > 1 ? 'У каждого чата своя кнопка «Скопировать ответы» в конце его блока: вставь текст в этот чат, он продолжит работу сам.' : 'Затем «Скопировать ответы» в конце блока: вставь текст в этот чат, он продолжит работу сам.'}`,
+    proofSum: (a, b) => `Доказано: ${a}. Не доказано: ${b}.`,
+  } : {
+    lang: 'en', copy: 'Copy', done: 'Copied', sel: 'Selected, press Ctrl+C', from: 'Page made by the chat', to: 'Answers go to the chat', name: 'Copy name',
+    rec: 'recommended', sure: 'Confidence:', taste: 'A taste call, yours to make', proof: 'How it was checked and proven', un: 'not proven', none: 'Nothing needed from you: this page asks no questions.',
+    sum: (q, c) => `<b>Needed from you: ${q} answer${q === 1 ? '' : 's'}${c > 1 ? ` for ${c} chats` : ''}.</b> Press an option on each card; picks save themselves. ${c > 1 ? 'Each chat has its own "Copy answers" at the end of its block: paste the text into that chat and it carries on.' : 'Then "Copy answers" at the end of the block: paste the text into that chat and it carries on.'}`,
+    proofSum: (a, b) => `Proven: ${a}. Not proven: ${b}.`,
+  };
+  if (!chat) errors.push('the page must name the chat that made it: pass --chat "<this chat\'s title as in the sidebar>" or --chat-id <session id>');
 
-  const body = blocks(lines.filter((l, i) => i !== h1[0]));
-  const words = prose.split(/\s+/).filter((w) => /\p{L}/u.test(w)).length;
+  // The fixed skeleton: chat bar, title, lead, the questions, the rest, then "Чем проверено" last whatever its place in the text.
+  const h2s = lines.map((l, i) => (!inFence[i] && /^## /.test(l) ? i : -1)).filter((i) => i >= 0);
+  const PROOF = /^##\s+(чем проверено|как доказано|как проверено|how it was checked|how it was proven)(?!\p{L})/iu;
+  const pis = h2s.filter((i) => PROOF.test(lines[i]));
+  const pi = pis[0];
+  if (pis.length > 1) errors.push('two "## Чем проверено" sections: keep one, every check as a line of its list');
+  if (pi === undefined) errors.push('no "## Чем проверено" section: every page ends with how each claim was checked, and says "не доказано" where it was not');
+  const pEnd = pi === undefined ? pi : (h2s.find((i) => i > pi) ?? lines.length);
+  const keep = (i) => i !== h1[0] && (pi === undefined || i < pi || i >= pEnd);
+  // The lead ends at the first other heading or the first question block, so text after the cards never rises above them.
+  const firstAsk = lines.findIndex((l, i) => (l.match(FENCE)?.[3] ?? '').toLowerCase() === 'ask' && !(i > 0 && inFence[i - 1] && !FENCE.test(lines[i - 1])));
+  const firstH2 = Math.min(h2s.find((i) => i !== pi) ?? lines.length, firstAsk < 0 ? lines.length : firstAsk);
+  const lead = blocks(lines.filter((l, i) => keep(i) && i < firstH2));
+  const rest = blocks(lines.filter((l, i) => keep(i) && i >= firstH2));
+  let proofHtml = '';
+  if (pi !== undefined) {
+    const UN = /не доказано|не проверено|не подтверждено|not proven|not checked|unverified/i;
+    let good = 0, bad = 0;
+    // Each item is judged by its own text only, up to its nested list, so a child line marks the child.
+    const list = blocks(lines.slice(pi + 1, pEnd)).replace(/<li>((?:(?!<\/?li>|<[uo]l[ >])[\s\S])*)/g, (m, own) => (UN.test(own) ? (bad++, `<li class="ak-un" data-un="${ui.un}">${own}`) : (good++, m)));
+    if (!good && !bad) errors.push('"## Чем проверено" has no list: one item per claim, how it was checked, «не доказано» where it was not');
+    proofHtml = `<section class="ak-proof"><h2>${ui.proof}</h2>${good + bad ? `<p class="ak-proof-sum">${ui.proofSum(good, bad)}</p>` : ''}${list}</section>`;
+  }
+  const body = lead + rest + proofHtml;
+  const leadWords = lead.replace(/<[^>]+>/g, ' ').split(/\s+/).filter((w) => /\p{L}/u.test(w)).length;
+  if (leadWords > 50) notes.push(`the part above the questions is ${leadWords} words: the owner reads the top in a minute, move the rest below`);
+  const askHtml = asks.length
+    ? `<section class="ak-asks">${asks.length > 1 || asks[0].to !== chat || qn > 1 ? `<p class="ak-sum">${ui.sum(qn, asks.length)}</p>` : ''}${asks.map(askSection).join('')}</section>`
+    : `<p class="ak-none">${ui.none}</p>`;
+  const words = prose.split(/\s+/).filter((w) => /\p{L}/u.test(w)).length + askWords;
   if (words > 1500) notes.push(`${words} words: long. Fine if it explains; cut whatever the reader would skip`);
   for (const p of body.match(/<p>[\s\S]*?<\/p>/g) ?? []) { const n = p.split(/\s+/).length; if (n > 130) notes.push(`a paragraph of ${n} words: split it where the thought turns`); }
 
-  const css = readFileSync(new URL('./report.css', import.meta.url), 'utf8');
+  const css = readFileSync(new URL('./report.css', import.meta.url), 'utf8') + readFileSync(new URL('./ask.css', import.meta.url), 'utf8');
+  // Always inlined: the chat bar's copy button needs it on a page without questions too; it stops early there.
+  const askJs = readFileSync(new URL('./ask.js', import.meta.url), 'utf8');
   // A page opened from disk may have no clipboard API: then select the code so Ctrl+C works.
   const copy = `document.addEventListener('click',e=>{const b=e.target.closest('pre button');if(!b)return;const c=b.nextElementSibling,say=t=>{b.textContent=t;setTimeout(()=>b.textContent=${JSON.stringify(ui.copy)},2000)},sel=()=>{const r=document.createRange();r.selectNodeContents(c);getSelection().removeAllRanges();getSelection().addRange(r);say(${JSON.stringify(ui.sel)})};try{navigator.clipboard.writeText(c.textContent).then(()=>say(${JSON.stringify(ui.done)}),sel)}catch(x){sel()}})`;
   const html = `<!doctype html>
 <html lang="${ui.lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(title.replace(/`/g, ''))}</title><style>${css}</style></head>
-<body><main>
+<body data-chat="${esc(chat)}" data-page="${esc(title.replace(/`/g, ''))}"><main>
+<div class="ak-chatbar">${ui.from} <b>«${esc(chat)}»</b><button type="button" class="ak-name" data-ak-name="${esc(chat)}">${ui.name}</button></div>
 <h1>${inline(title)}</h1>
-${body}
-</main><script>${copy}</script></body></html>
+${lead}
+${askHtml}
+${rest}
+${proofHtml}
+</main><script>${copy}</script>${askJs ? `<script>${askJs.replace(/<\/script/gi, '<\\/script')}</script>` : ''}</body></html>
 `;
-  return { html, errors, notes, words, title };
+  return { html, errors, notes, words, title, questions: qn, chats: asks.map((a) => a.to) };
 }
 
 // Windows refuses <>:"/\|?* in a file name, and a ":" silently makes an empty file with a hidden stream instead.
@@ -234,11 +356,19 @@ export const safeName = (name) => name.replace(/[<>:"/\\|?*\u0000-\u001f]+/g, ' 
 
 const real = (p) => { try { return realpathSync(p); } catch { return resolve(p); } };
 if (process.argv[1] && import.meta.url === pathToFileURL(real(process.argv[1])).href) {
-  const [src, out] = process.argv.slice(2);
-  if (!src || !out) { console.error('usage: node report.mjs <explain.md> <out.html>'); process.exit(2); }
+  const args = process.argv.slice(2);
+  const flag = (k) => { const i = args.indexOf(k); return i < 0 ? undefined : args.splice(i, 2)[1]; };
+  let chat = flag('--chat');
+  const chatId = flag('--chat-id');
+  const [src, out] = args;
+  if (!src || !out) { console.error('usage: node report.mjs <explain.md> <out.html> --chat "<this chat\'s sidebar title>" | --chat-id <session id>'); process.exit(2); }
+  if (!chat && chatId) {
+    chat = (await import('../unfinished/chats.mjs')).desktopTitle(chatId) ?? '';
+    if (!chat) console.error(`NOTE no Desktop title found for session ${chatId}: pass --chat "<title as in the sidebar>"`);
+  }
   const text = readFileSync(src, 'utf8');
   if (/\.json$/i.test(src) || /^\s*\{\s*"/.test(text)) { console.error('ERROR the report skill changed: it now takes a Markdown explanation, not JSON. Re-read the skill\'s SKILL.md and write the text again from the facts.'); process.exit(1); }
-  const r = build(text, dirname(resolve(src)));
+  const r = build(text, dirname(resolve(src)), { chat: chat ?? '' });
   for (const n of r.notes) console.error('NOTE ' + n);
   if (r.errors.length) { for (const e of r.errors) console.error('ERROR ' + e); process.exit(1); }
   const dir = dirname(resolve(out));

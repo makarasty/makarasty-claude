@@ -1,5 +1,5 @@
 ---
-description: "Explains a result, plan or decision to someone who saw none of the work: the story first, a picture or example where it helps, in chat or as an HTML page. make a report, explain it clearly / сделай отчёт, объясни понятно, сводка. Not screenshots (proof) or data exports (export)."
+description: "Explains a result, plan or decision to someone who saw none of the work, in chat or as an HTML page with one fixed shape: chat name on top, questions as button cards, proof at the bottom. make a report, a decision page / сделай отчёт, страницу с вопросами, объясни понятно, сводка. Not screenshots (proof) or data exports (export)."
 ---
 
 You hold all the context and the reader holds none: they saw no tool calls, files, agents or other chats, and they
@@ -35,17 +35,21 @@ Order:
    essential and chat cannot hold it, make the page.
 4. **Explanation** in connected prose: why it happened, what each part means, with a concrete example for every
    abstract claim: the real error text, a real case, the real question a user typed, the exact number.
-5. **Что от тебя нужно** (when something is): a numbered list, one action per item, each with how: the exact menu
-   path in «quotes», the file path, or the command in a code block. A decision is its own `### N. Question?` heading
-   with every option as a bullet: what it is, what changes if picked, «(рекомендую)» on yours and why; no
-   recommendation you cannot back. Actions and questions share one count straight through (actions 1–2, then
-   `### 3. Question?`), in chat too, so the person can answer «3 две, 4 свернуть».
+5. **What is needed from the reader**: on a page, every decision and every step only they can do is a card in an
+   ```` ```ask ```` block (section 3), never a prose list: the page puts the cards right under the opening paragraph,
+   whatever their place in the text, so the reader answers by pressing buttons and copying, not typing. A step only
+   they can do is a card too, its outcomes as the options («Сделал» / «Не вышло»), its how (menu path, file, link)
+   in the line under the question. No recommendation you cannot back; a taste call says so. In chat text: a numbered
+   list, one item each, decisions as `### N. Question?` with every option as a bullet (what changes, «(рекомендую)»
+   and why), one count straight through so the person can answer «3 две, 4 свернуть».
 6. **Подробности** (when there is more): the full steps of later actions (who, where, what to click, what to undo
    after), the rest of the facts, smaller risks. Plain headings lower on the page, never collapsed: the important
    part is on top and the reader scrolls down for the rest. A later action the person may answer about continues
    the numbering of the questions above it.
-7. **Чем проверено**, always: what you checked yourself now (a command and its result, a file read, a page looked
-   at), what you took from someone else's report, and what nobody checked. This is the one place for your process.
+7. **Чем проверено**, always, as a list, one claim per item: what you checked yourself now (a command and its result,
+   a file read, a page looked at), what you took from someone else's report («со слов чата X»), and what nobody
+   checked, written «не доказано» or «не проверено» in that item (the page marks those lines red and counts them).
+   A confidence level you set yourself where the source gave none is said here. This is the one place for your process.
 
 Complete, then short. Before writing, list every action (with who does it and how), decision, open question,
 risk, way back and "not checked" flag in your facts; each one is on the page, on top or in Подробности, with its
@@ -77,7 +81,12 @@ Plain words:
 
 Write `<name>.md` in your scratchpad or the system temp dir (never on the Desktop) with the Write tool, which saves
 UTF-8 (PowerShell 5.1 `Set-Content` turns Cyrillic into `?`), then:
-`node "${CLAUDE_SKILL_DIR}/report.mjs" <name>.md "<Desktop>/<Topic>.html"`
+`node "${CLAUDE_SKILL_DIR}/report.mjs" <name>.md "<Desktop>/<Topic>.html" --chat-id ${CLAUDE_SESSION_ID}`
+(`--chat "<title as in the sidebar>"` when the id finds no title). Every page has the same fixed skeleton, built by the
+script so no chat can drift from it: the name of the chat that made it on top (the reader pastes answers there), the
+title and opening paragraph, the question cards, the rest of the text, «Чем проверено» last. A page with no
+questions says «От тебя ничего не нужно». An ERROR names what is missing (the chat, «## Чем проверено», what an
+option changes, how sure you are).
 `<Topic>` is a short name of the subject that stays the same across updates («Stedi на проде»), not the title
 sentence. Desktop: `[Environment]::GetFolderPath('Desktop')` on Windows, `~/Desktop` elsewhere. An `ERROR` writes no file:
 fix the text and run again. A `NOTE` is advice. Never hand-write HTML or CSS; the look, both themes and phone
@@ -100,6 +109,26 @@ Sonnet: 61 %
 = Доля ответов с ошибкой на 200 вопросах
 ```
 ````
+````
+```ask Hub: cards, mockups, push (cont.)
+Одна строка о том, что делает этот чат и что он сделает после ответа.
+? Перенести ошибки «Cannot send…» во вкладку «Claim data»?
+Сейчас они во вкладке «Other». ![Сейчас](before.png#box=410,62,610,118)
+* Перенести | Ошибки про сумму лежат рядом с остальными ошибками претензии. | высокая: так сгруппированы остальные, прочитал код
+- Оставить | Как сейчас.
+  ![Станет](after.png#box=410,62,610,118)
+```
+````
+`ask`: one block per chat that gets the answers, its sidebar title after `ask` (none: the page's own chat). Lines
+before the first `? ` are the block's one-line intro. `? question` (short; details on the next lines, with links and
+shots); then options `* label | what changes if picked | level: why` (`*` = recommended, at most one) or `- label |
+what changes`. Level is `высокая`, `средняя`, `низкая` (how sure you are of the facts behind it) or `вкус` for a
+taste call; at least one option per question says it. Lines indented under an option add text or shots to it. A shot
+`![caption](file.png#box=x1,y1,x2,y2;…)` boxes the changed spot in image pixels (PNG); a UI choice shows each option
+as a shot of the real screen. Each card gets buttons, a comment field, the block a notes box and «Скопировать ответы»,
+whose text starts with the chat's name and numbers each answer; picks save themselves in the browser. Questions are
+numbered straight through the page.
+
 `bars`: `label: number unit` per line (thousands with a space: `2 400`), `*` marks the one that matters,
 `= what they count` is required; sizes only, signed numbers go in a table.
 Also: tables (`| a | b |` with a `|---|` line) for side-by-side facts, `> ` for a warning or a way back,
@@ -114,8 +143,8 @@ nothing about your work. If it needs to know who the reader is, give it a card w
 messages and profile (their company, people, products), never from this work and never a term the page explains.
 Ask, in the page's language:
 1. Retell in 3–6 sentences what this is about and what happened.
-2. What must you do now, step by step?
-3. Which decisions are asked, and what changes with each option?
+2. What must you do now, step by step, and which text goes into which chat?
+3. Which decisions are asked, and what changes with each option, which is recommended and how sure?
 4. What is not checked or unknown?
 5. Every word, name, number or sentence you did not understand or had to guess, quoted.
 Compare 1–4 with what you meant. Fix every miss and every quote in 5 that the person would not know either
