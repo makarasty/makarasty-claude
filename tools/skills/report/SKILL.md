@@ -119,7 +119,9 @@ Sonnet: 61 %
   ![Станет](after.png#box=410,62,610,118)
 ```
 ````
-`ask`: one block per chat that gets the answers, its sidebar title after `ask` (none: the page's own chat). Lines
+`ask`: one block per chat that gets the answers, its sidebar title after `ask` (none: the page's own chat), and
+`| <account>` after it when the script cannot find that chat's Desktop account itself (it looks the title up; one
+machine can gather chats from several accounts and devices, so every chat name on the page carries its account). Lines
 before the first `? ` are the block's one-line intro. `? question` (short; details on the next lines, with links and
 shots); then options `* label | what changes if picked | level: why` (`*` = recommended, at most one) or `- label |
 what changes`. Level is `высокая`, `средняя`, `низкая` (how sure you are of the facts behind it) or `вкус` for a

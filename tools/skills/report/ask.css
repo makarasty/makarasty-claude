@@ -72,3 +72,4 @@
 main{padding-bottom:7rem}
 @media (max-width:40rem){.ak-dock{left:.5rem;right:.5rem;bottom:.5rem}.ak-opt{padding-left:2.4rem}}
 @media print{.ak-dock,.ak-name,.ak-cbtn,.ak-all{display:none}}
+.ak-acct{font-size:.85rem;color:var(--ak-muted);border:1px solid var(--ak-line);border-radius:1rem;padding:0 .55rem}.ak-acct b{font-weight:650;color:var(--ak-fg)}

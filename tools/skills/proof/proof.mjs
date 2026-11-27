@@ -274,7 +274,7 @@ function atomicWrite(file, data) {
     renameSync(tmp, file);
 }
 
-export function buildReport(dir, { title, out, chat, lang = 'ru', maxInline = MAX_INLINE } = {}) {
+export function buildReport(dir, { title, out, chat, account = '', lang = 'ru', maxInline = MAX_INLINE } = {}) {
     if (!chat) throw new Error('the report must name the chat that made it: pass --chat "<title as in the sidebar>" or --chat-id <session id>');
     const W = WORDS[lang] ?? WORDS.ru;
     dir = resolve(dir);
@@ -319,7 +319,7 @@ export function buildReport(dir, { title, out, chat, lang = 'ru', maxInline = MA
     }
     const md = `# ${titleText(title) || W.title}\n\n${W.lead(blocks.length, blocks.some(b => b.box))}\n\n\`\`\`ask\n${ask.join('\n')}\`\`\`\n\n## ${W.proof}\n\n${proof.join('\n')}\n- ${W.pixels}.\n`;
     atomicWrite(join(dir, 'report.md'), md);
-    const r = build(md, dir, { chat });
+    const r = build(md, dir, { chat, account });
     if (r.errors.length) throw new Error(`report.md does not render:\n${r.errors.join('\n')}`);
     warn.push(...r.notes);
     const bytes = Buffer.byteLength(r.html);
@@ -494,6 +494,7 @@ async function selftest() {
         assert.ok(html.includes('Чем проверено') && html.includes('Пиксельная точность снимков: не доказано'), 'proof section with the fixed unproven line');
         assert.equal(html.match(/<article class="ak-q"/g).length, 5, 'exactly one question per block');
         assert.ok(readFileSync(join(dir, 'report.md'), 'utf8').startsWith('# T `<b>`x`</b>`\n'), 'report.md written beside the shots');
+        assert.ok(readFileSync(buildReport(dir, { title: 'T', chat: SIDE, account: 'dev2', out: join(root, 'acc.html') }).out, 'utf8').includes('аккаунт <b>dev2</b>'), 'chat bar names the account');
         assert.doesNotThrow(() => buildReport(dir, { title: 'Убрал <style> из письма, TODO {{name}}', chat: SIDE }), 'a title with <style>, TODO or {{ }} still builds');
         assert.deepEqual(readdirSync(dir).filter(f => f.endsWith('.tmp')), [], 'no temp left by the report');
         const out2 = join(root, 'Desk', 'Тема.html');
@@ -548,12 +549,14 @@ async function main(argv) {
             return;
         }
         case 'report': {
-            let chat = flags.chat;
-            if (!chat && flags['chat-id']) {
-                chat = (await import('../unfinished/chats.mjs')).desktopTitle(flags['chat-id']) ?? '';
+            let chat = flags.chat, account = flags.account;
+            if (flags['chat-id']) {
+                const me = (await import('../unfinished/chats.mjs')).desktopSessions().find(s => s.id === flags['chat-id']);
+                chat ||= me?.title ?? '';
+                account ||= me?.account ?? '';
                 if (!chat) throw new Error(`no Desktop title found for session ${flags['chat-id']}: pass --chat "<title as in the sidebar>"`);
             }
-            const r = buildReport(need(0, '<dir> (--chat "<sidebar title>" | --chat-id <session id>) [--title ..] [--out file] [--lang en]'), { title: flags.title, out: flags.out, chat, lang: flags.lang });
+            const r = buildReport(need(0, '<dir> (--chat "<sidebar title>" | --chat-id <session id>) [--account <name>] [--title ..] [--out file] [--lang en]'), { title: flags.title, out: flags.out, chat, account, lang: flags.lang });
             for (const w of r.warn) console.error(`warning: ${w}`);
             console.log(`${r.out} (${r.blocks} blocks, ${(r.bytes / 1024).toFixed(0)} KB)`);
             return;

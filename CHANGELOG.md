@@ -1,5 +1,9 @@
 # Changelog
 
+## makarasty-tools 1.20.39 — 2026-11-27
+
+- **Every chat name on an owner page carries its Desktop account** (owner, 2026-11-27: «вверху хорошо писать, с какого аккаунта это чат», for answers gathered from several devices and accounts on one machine). The chat bar, each block header and the first line of the copied answers say «аккаунт dev». `--chat-id` reads title and account; another chat's account is looked up by its title when unique, or written `ask <title> | <account>`; `--account` overrides. proof passes it too; the LifeLines mockup starter takes `new --account`. The owner picked the new page shape on 2026-11-27 («Новый», with «лучше но я бы еще поигрался с UI UX»). Checked: report selftest all passed (account cases), proof selftest done, chats selftest done, page looked at in the browser.
+
 ## makarasty-tools 1.20.38 — 2026-11-27
 
 - **One fixed shape for every page a chat hands the owner** (owner, 2026-11-27, as his chat condensed it: pages were walls

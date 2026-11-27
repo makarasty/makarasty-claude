@@ -10,13 +10,13 @@
     c: 'Комментарий', cph: 'Что поправить, что добавить (необязательно)', notes: 'Общие заметки для этого чата', nph: 'Всё, что не про один вопрос',
     copy: 'Скопировать ответы', copyTo: (c) => `Скопировать ответы для «${c}»`, done: 'Скопировано: вставь в чат', none: 'не отвечено',
     of: (a, b) => `Отвечено ${a} из ${b}`, saved: 'сохранено', unsaved: 'не сохраняется: скопируй ответы до закрытия', name: 'Скопировать название',
-    named: 'Название скопировано', mk: (on) => `Рамки: ${on ? 'вкл' : 'выкл'}`, head: (c, p) => `Чат «${c}»: мои ответы со страницы «${p}»`,
+    named: 'Название скопировано', mk: (on) => `Рамки: ${on ? 'вкл' : 'выкл'}`, head: (c, p, a) => `Чат «${c}»${a ? ` (аккаунт ${a})` : ""}: мои ответы со страницы «${p}»`, acct: "аккаунт",
     cm: 'комментарий', gn: 'Общие заметки', from: 'Страницу сделал чат', un: 'не доказано', all: 'Взять все рекомендованные', manual: 'Скопировать не вышло: выдели текст (Ctrl+A, Ctrl+C) и вставь в чат', close: 'Закрыть',
   } : {
     c: 'Comment', cph: 'What to fix or add (optional)', notes: 'General notes for this chat', nph: 'Anything not about one question',
     copy: 'Copy answers', copyTo: (c) => `Copy answers for "${c}"`, done: 'Copied: paste it into the chat', none: 'no answer',
     of: (a, b) => `Answered ${a} of ${b}`, saved: 'saved', unsaved: 'not saved: copy the answers before closing', name: 'Copy name',
-    named: 'Name copied', mk: (on) => `Marks: ${on ? 'on' : 'off'}`, head: (c, p) => `Chat "${c}": my answers from the page "${p}"`,
+    named: 'Name copied', mk: (on) => `Marks: ${on ? 'on' : 'off'}`, head: (c, p, a) => `Chat "${c}"${a ? ` (account ${a})` : ""}: my answers from the page "${p}"`, acct: "account",
     cm: 'comment', gn: 'General notes', from: 'Page made by the chat', un: 'not proven', all: 'Take all recommended', manual: 'Copy failed: select the text (Ctrl+A, Ctrl+C) and paste it into the chat', close: 'Close',
   };
   const el = (tag, cls, text) => { const e = D.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
@@ -42,7 +42,9 @@
   if (B.dataset.chat && !D.querySelector('.ak-chatbar')) {
     const bar = el('div', 'ak-chatbar'), nb = el('button', 'ak-name', T.name);
     nb.type = 'button'; nb.dataset.akName = B.dataset.chat;
-    bar.append(T.from, ' ', el('b', '', `«${B.dataset.chat}»`), nb);
+    bar.append(T.from, ' ', el('b', '', `«${B.dataset.chat}»`));
+    if (B.dataset.account) { const ac = el('span', 'ak-acct', `${T.acct} `); ac.append(el('b', '', B.dataset.account)); bar.append(ac); }
+    bar.append(nb);
     (D.querySelector('body > main') || B).prepend(bar);
   }
   D.querySelectorAll('.ak-proof li:not(.ak-un)').forEach((li) => { if (/не доказано|не проверено|не подтверждено|not proven|not checked|unverified/i.test(li.textContent)) { li.className = 'ak-un'; li.dataset.un = T.un; } });
@@ -59,6 +61,7 @@
   }
   const chatOf = (q) => q.closest('.ak-chat') || chats[chats.length - 1];
   const name = (c) => c.dataset.chat || B.dataset.chat || '';
+  const acctOf = (c) => c.dataset.account || (name(c) === B.dataset.chat ? B.dataset.account : '') || '';
 
   qs.forEach((q) => {
     const n = q.dataset.n, k = q.dataset.k;
@@ -91,7 +94,7 @@
 
   const textFor = (c) => {
     const mine = qs.filter((q) => chatOf(q) === c);
-    const lines = [T.head(name(c), B.dataset.page || D.title)];
+    const lines = [T.head(name(c), B.dataset.page || D.title, acctOf(c))];
     mine.forEach((q) => {
       const n = q.dataset.n, k = q.dataset.k;
       lines.push(`${n}. ${q.dataset.q} — ${st.p[k] || T.none}`);

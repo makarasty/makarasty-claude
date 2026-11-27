@@ -178,6 +178,8 @@ function desktopTitles(sinceMs) {
 
 // The sidebar title of one Desktop session, by its CLI session id; null when the Desktop app has no record of it.
 export const desktopTitle = (id) => desktopTitles(0).get(id)?.title ?? null;
+// Title and Desktop account (the Claude-Profiles folder, or 'default') of every Desktop session, for pages that name chats.
+export const desktopSessions = () => [...desktopTitles(0)].map(([id, v]) => ({ id, title: v.title, account: v.account }));
 
 function projectFiles(cfg, cwd, sinceMs) {
     const root = join(cfg, 'projects'), slug = slugOf(cwd), out = [];

@@ -9,7 +9,9 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, renameSync, realpat
 import { dirname, resolve, extname, basename, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-export function build(md, baseDir = '.', { chat = '' } = {}) {
+// chat: the sidebar title of the chat that made the page; account: its Desktop account; accountOf(title): the account of
+// another chat a block names, '' when unknown (several devices can feed one machine, so the owner needs both to paste).
+export function build(md, baseDir = '.', { chat = '', account = '', accountOf = () => '' } = {}) {
   const errors = [];
   const notes = [];
   const asks = [];
@@ -89,7 +91,9 @@ export function build(md, baseDir = '.', { chat = '' } = {}) {
   // "? question", then context lines and its shots; "* label | what changes | level: why" (the * marks the recommended one)
   // or "- label | what changes | level: why"; lines indented under an option add text or shots to it.
   const ask = (info, lines) => {
-    const to = info.trim() || chat;
+    const [named = '', acctNamed = ''] = splitOutside(info, '|', false).map((s) => s.trim());
+    const to = named || chat;
+    const acct = acctNamed || (to === chat ? account : accountOf(to)) || '';
     if (!to) errors.push('an ```ask block needs the chat its answers go to: ```ask <title as in the sidebar>, or pass --chat');
     askWords += lines.join(' ').split(/\s+/).filter((w) => /\p{L}/u.test(w)).length;
     const intro = [], qs = [];
@@ -129,9 +133,10 @@ export function build(md, baseDir = '.', { chat = '' } = {}) {
     });
     // Two blocks for one chat become one section: one copy button must carry all of that chat's answers.
     const same = asks.find((a) => a.to === to);
-    if (same) { same.intro.push(...intro); same.cards.push(...cards); } else asks.push({ to, intro, cards });
+    if (same) { same.intro.push(...intro); same.cards.push(...cards); same.acct ||= acct; } else asks.push({ to, acct, intro, cards });
   };
-  const askSection = (a) => `<section class="ak-chat" data-chat="${esc(a.to)}"><header class="ak-chat-h"><span>${ui.to}</span><b>«${esc(a.to)}»</b><button type="button" class="ak-name" data-ak-name="${esc(a.to)}">${ui.name}</button></header>${a.intro.length ? `<p class="ak-intro">${a.intro.map(inline).join('<br>')}</p>` : ''}${a.cards.join('')}</section>`;
+  const acctTag = (a) => (a ? `<span class="ak-acct">${ui.acct} <b>${esc(a)}</b></span>` : '');
+  const askSection = (a) => `<section class="ak-chat" data-chat="${esc(a.to)}" data-account="${esc(a.acct)}"><header class="ak-chat-h"><span>${ui.to}</span><b>«${esc(a.to)}»</b>${acctTag(a.acct)}<button type="button" class="ak-name" data-ak-name="${esc(a.to)}">${ui.name}</button></header>${a.intro.length ? `<p class="ak-intro">${a.intro.map(inline).join('<br>')}</p>` : ''}${a.cards.join('')}</section>`;
 
   // ```flow: one row per line, "label | step -> step (ok: note) -> step (bad: note)"; a last line "= caption".
   // Boxes are HTML, not SVG, so long words wrap instead of overflowing.
@@ -286,12 +291,12 @@ export function build(md, baseDir = '.', { chat = '' } = {}) {
   const ru = cyr >= lat;
   const plural = (n, one, few, many) => `${n} ${n % 10 === 1 && n % 100 !== 11 ? one : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? few : many}`;
   const ui = ru ? {
-    lang: 'ru', copy: 'Копировать', done: 'Скопировано', sel: 'Выделено, нажми Ctrl+C', from: 'Страницу сделал чат', to: 'Ответ — в чат', name: 'Скопировать название',
+    lang: 'ru', copy: 'Копировать', done: 'Скопировано', sel: 'Выделено, нажми Ctrl+C', from: 'Страницу сделал чат', to: 'Ответ — в чат', name: 'Скопировать название', acct: 'аккаунт',
     rec: 'рекомендую', sure: 'Уверенность:', taste: 'Дело вкуса, решаешь ты', proof: 'Чем проверено и как доказано', un: 'не доказано', none: 'От тебя ничего не нужно: вопросов на этой странице нет.',
     sum: (q, c) => `<b>Нужно от тебя: ${plural(q, 'ответ', 'ответа', 'ответов')}${c > 1 ? ` в ${c} чат${c % 10 === 1 && c % 100 !== 11 ? 'е' : 'ах'}` : ''}.</b> Нажми вариант в каждой карточке; выбор сохраняется сам. ${c > 1 ? 'У каждого чата своя кнопка «Скопировать ответы» в конце его блока: вставь текст в этот чат, он продолжит работу сам.' : 'Затем «Скопировать ответы» в конце блока: вставь текст в этот чат, он продолжит работу сам.'}`,
     proofSum: (a, b) => `Доказано: ${a}. Не доказано: ${b}.`,
   } : {
-    lang: 'en', copy: 'Copy', done: 'Copied', sel: 'Selected, press Ctrl+C', from: 'Page made by the chat', to: 'Answers go to the chat', name: 'Copy name',
+    lang: 'en', copy: 'Copy', done: 'Copied', sel: 'Selected, press Ctrl+C', from: 'Page made by the chat', to: 'Answers go to the chat', name: 'Copy name', acct: 'account',
     rec: 'recommended', sure: 'Confidence:', taste: 'A taste call, yours to make', proof: 'How it was checked and proven', un: 'not proven', none: 'Nothing needed from you: this page asks no questions.',
     sum: (q, c) => `<b>Needed from you: ${q} answer${q === 1 ? '' : 's'}${c > 1 ? ` for ${c} chats` : ''}.</b> Press an option on each card; picks save themselves. ${c > 1 ? 'Each chat has its own "Copy answers" at the end of its block: paste the text into that chat and it carries on.' : 'Then "Copy answers" at the end of the block: paste the text into that chat and it carries on.'}`,
     proofSum: (a, b) => `Proven: ${a}. Not proven: ${b}.`,
@@ -339,8 +344,8 @@ export function build(md, baseDir = '.', { chat = '' } = {}) {
   const html = `<!doctype html>
 <html lang="${ui.lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(title.replace(/`/g, ''))}</title><style>${css}</style></head>
-<body data-chat="${esc(chat)}" data-page="${esc(title.replace(/`/g, ''))}"><main>
-<div class="ak-chatbar">${ui.from} <b>«${esc(chat)}»</b><button type="button" class="ak-name" data-ak-name="${esc(chat)}">${ui.name}</button></div>
+<body data-chat="${esc(chat)}" data-account="${esc(account)}" data-page="${esc(title.replace(/`/g, ''))}"><main>
+<div class="ak-chatbar">${ui.from} <b>«${esc(chat)}»</b>${acctTag(account)}<button type="button" class="ak-name" data-ak-name="${esc(chat)}">${ui.name}</button></div>
 <h1>${inline(title)}</h1>
 ${lead}
 ${askHtml}
@@ -358,17 +363,21 @@ const real = (p) => { try { return realpathSync(p); } catch { return resolve(p);
 if (process.argv[1] && import.meta.url === pathToFileURL(real(process.argv[1])).href) {
   const args = process.argv.slice(2);
   const flag = (k) => { const i = args.indexOf(k); return i < 0 ? undefined : args.splice(i, 2)[1]; };
-  let chat = flag('--chat');
+  let chat = flag('--chat'), account = flag('--account');
   const chatId = flag('--chat-id');
   const [src, out] = args;
-  if (!src || !out) { console.error('usage: node report.mjs <explain.md> <out.html> --chat "<this chat\'s sidebar title>" | --chat-id <session id>'); process.exit(2); }
-  if (!chat && chatId) {
-    chat = (await import('../unfinished/chats.mjs')).desktopTitle(chatId) ?? '';
-    if (!chat) console.error(`NOTE no Desktop title found for session ${chatId}: pass --chat "<title as in the sidebar>"`);
-  }
+  if (!src || !out) { console.error('usage: node report.mjs <explain.md> <out.html> --chat "<this chat\'s sidebar title>" | --chat-id <session id> [--account <name>]'); process.exit(2); }
+  // The Desktop app's session records give each chat's sidebar title and account; a block's chat gets its account when its title is unique.
+  let sessions = [];
+  try { sessions = (await import('../unfinished/chats.mjs')).desktopSessions(); } catch { /* not on a Desktop machine */ }
+  const me = chatId ? sessions.find((s) => s.id === chatId) : null;
+  chat ||= me?.title ?? '';
+  account ||= me?.account ?? '';
+  if (chatId && !me) console.error(`NOTE no Desktop record for session ${chatId}: pass --chat "<title as in the sidebar>" and --account`);
+  const accountOf = (title) => { const a = [...new Set(sessions.filter((s) => s.title === title).map((s) => s.account))]; return a.length === 1 ? a[0] : ''; };
   const text = readFileSync(src, 'utf8');
   if (/\.json$/i.test(src) || /^\s*\{\s*"/.test(text)) { console.error('ERROR the report skill changed: it now takes a Markdown explanation, not JSON. Re-read the skill\'s SKILL.md and write the text again from the facts.'); process.exit(1); }
-  const r = build(text, dirname(resolve(src)), { chat: chat ?? '' });
+  const r = build(text, dirname(resolve(src)), { chat: chat ?? '', account: account ?? '', accountOf });
   for (const n of r.notes) console.error('NOTE ' + n);
   if (r.errors.length) { for (const e of r.errors) console.error('ERROR ' + e); process.exit(1); }
   const dir = dirname(resolve(out));
